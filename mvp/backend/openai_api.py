@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # take environment variables from .env.
 openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.organization = "org-wXczH2vyiAmy2mzvznzF7dfJ" # My Personal org id
 
 async def call_openai_gpt3(prompt: str):
     try:

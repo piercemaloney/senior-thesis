@@ -1,5 +1,5 @@
 import React from 'react';
-import ProofComponent from './components/ProofComponent';
+import ProofComponent from './components/CoTProofComponent';
 
 function App() {
   return (
