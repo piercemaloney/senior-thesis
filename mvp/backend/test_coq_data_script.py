@@ -67,7 +67,7 @@ def remove_ansi_escape_sequences(text):
     ansi_escape_pattern = re.compile(r'\x1B[@-_][0-?]*[ -/]*[@-~]')
     return ansi_escape_pattern.sub('', text)
 
-def make_data_file(path: str = "examples/leavemult.v"):
+def make_data_file(path: str = "examples/simple1.v"):
     # execute each line of the file one by one and write a text file with the output
     with ProofFile(os.path.join(os.getcwd(), path)) as proof_file:
         with open(path+'.txt', "w") as f:
