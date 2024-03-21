@@ -10,7 +10,6 @@ from pathlib import Path
 import sys
 sys.path.append('/workspace/CoqGym')
 
-from utils import SexpCache
 
 # Load JSON Data
 def load_json_data(json_path):
@@ -42,7 +41,7 @@ def construct_goal_states_mapping(data):
     return goal_states_mapping
 
 
-def generate_enhanced_text(data, goal_states_mapping, coq_file_path):
+def annotate_coq_file_with_goals(data, goal_states_mapping, coq_file_path):
     enhanced_text = []
     with open(coq_file_path, 'r') as file:
         lines = file.readlines()
@@ -78,7 +77,7 @@ def main():
 
     data = load_json_data(json_path)
     goal_states_mapping = construct_goal_states_mapping(data)
-    enhanced_text = generate_enhanced_text(data, goal_states_mapping, coq_file_path)
+    enhanced_text = annotate_coq_file_with_goals(data, goal_states_mapping, coq_file_path)
     write_to_txt_file(enhanced_text, destination_dir)
 
 if __name__ == "__main__":

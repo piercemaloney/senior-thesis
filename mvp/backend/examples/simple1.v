@@ -2,7 +2,8 @@
 Require Import PeanoNat.
 
 (* The theorem statement: for all natural numbers n, 0 + n equals n. *)
-Theorem zero_plus_n_equals_n : forall n : nat, 0 + n = n.
+Theorem zero_plus_n_equals_n : forall n : nat, 
+0 + n = n.
 Proof.
   (* We start the proof by introducing variable n, which is a natural number. *)
   intro n.
