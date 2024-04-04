@@ -7,60 +7,93 @@ from pathlib import Path
 
 import sys
 
-def remove_comments_from_text(coq_file_path):
+
+def remove_comments_from_file(coq_file_path: str) -> list:
     with open(coq_file_path, 'r') as file:
         lines = file.readlines()
 
-    cleaned_text = []
-    in_comment = False
-    for line in lines:
-        original_line = line  # Keep the original line for appending later if needed
-        if in_comment:
-            if '*)' in line:
-                in_comment = False
-                line = line.split('*)', 1)[1]  # Keep the text after the closing comment
-        else:
-            if '(*' in line:
-                in_comment = True
-                line, _, following = line.partition('(*')
-                # Check if the comment ends on the same line
-                if '*)' in following:
-                    in_comment = False
-                    line += following.split('*)', 1)[1]
-        
-        # Append non-comment or outside-comment text, unless it's empty
-        if not in_comment and line.strip():
-            cleaned_text.append(line)
+    cleaned_lines = []
+    num_left = 0
+    in_string = False
+    current_line = []
 
-    return cleaned_text
+    for line in lines:
+        i = 0
+        while i < len(line):
+            if line[i] == '"':
+                in_string = not in_string
+            if not in_string and line[i:i+2] == "(*":
+                num_left += 1
+                i += 2
+                continue  # Skip the rest of the loop and proceed with the next iteration
+            elif not in_string and num_left > 0 and line[i:i+2] == "*)":
+                num_left -= 1
+                i += 2
+                continue  # Skip the rest of the loop and proceed with the next iteration
+            if num_left == 0:
+                current_line.append(line[i])
+            i += 1
+
+        # At the end of processing each line, join the characters to form the cleaned line
+        # and reset current_line for the next iteration
+        if current_line and len(current_line) > 0:  # Only add non-empty lines
+            cleaned_lines.append("".join(current_line))
+            current_line = []  # Reset for the next line
+
+    return cleaned_lines
+
 
 def remove_proofs_from_text(lines):
-    cleaned_lines = []
-    in_proof = False
-    capture_statement = False
-    proof_start_keywords = ['Theorem', 'Lemma', 'Corollary', 'Proposition']
+    reversed_lines = lines[::-1]  # Reverse the list of lines to work from bottom to top
+
+    proof_start_keywords = ['Theorem', 'Lemma', 'Corollary', 'Proposition', 'Fact', 'Global Instance', 'Definition', 'Remark', 'Let', "Goal", "Fixpoint"]
     proof_end_keywords = ['Qed.', 'Defined.', 'Admitted.']
 
-    for line in lines:
+    cleaned_lines_reversed = []  # This will store the cleaned lines in reverse order
+    skip = False  # Flag to indicate whether we're skipping lines (inside a proof)
+
+    for i, line in enumerate(reversed_lines):
+
+        if not skip:
+            if any(keyword in line for keyword in proof_end_keywords):
+                skip = True  # Start skipping lines once we hit a proof end keyword  # Skip the proof end line itself
+            else:
+                cleaned_lines_reversed.append(line)
+            continue
+
+        # Check if the line contains any of the proof start keywords
         if any(keyword in line for keyword in proof_start_keywords):
-            in_proof = True
-            cleaned_lines.append(line)
-            if '.' not in line: 
-                capture_statement = True # Start capturing the multi-line statement
-            continue
+            skip = False  # Stop skipping once we hit a proof start keyword
+        else:
+            continue  # Keep skipping lines until we find a proof start keyword
 
-        if capture_statement:
-            cleaned_lines.append(line)  # Continue adding lines as part of the statement
-            if '.' in line:  # Check if the line contains a period, indicating the end of the statement
-                capture_statement = False  # Stop capturing the statement
-            continue  # Skip the rest of the loop to avoid adding lines twice
+ 
+        # Handle possible multi-line statements by looking for the period
+        statement_lines = []
+        while i > 0 and '.' not in reversed_lines[i]:
+            statement_lines.append(reversed_lines[i])
+            i -= 1
+        statement_lines.append(reversed_lines[i])
+        
+        cleaned_lines_reversed.extend(statement_lines[::-1])  # Add the statement in the correct (reversed) order
 
-        if in_proof and any(keyword in line for keyword in proof_end_keywords):
-            in_proof = False  # End of proof found, stop skipping lines
-            continue
+    # Since we've been working in reverse, reverse the cleaned lines to restore original order
+    return cleaned_lines_reversed[::-1]
 
-        if not in_proof and not capture_statement:
-            cleaned_lines.append(line)  # Add lines outside of proofs
+def remove_back_to_back_empty_lines(lines):
+    cleaned_lines = []
+    last_line_empty = False  # Flag to track if the last line was empty
+
+    for line in lines:
+        # Check if the current line is empty
+        if not line.strip():
+            if last_line_empty:  # If the last line was also empty, skip adding this line
+                continue
+            last_line_empty = True  # Mark this line as empty for the next iteration
+        else:
+            last_line_empty = False  # Current line is not empty, reset the flag
+
+        cleaned_lines.append(line)
 
     return cleaned_lines
 
@@ -76,8 +109,9 @@ def main():
     coq_file_path = sys.argv[1]
     destination_dir = sys.argv[2]
 
-    cleaned_text = remove_comments_from_text(coq_file_path)
+    cleaned_text = remove_comments_from_file(coq_file_path)
     cleaned_text = remove_proofs_from_text(cleaned_text)
+    cleaned_text = remove_back_to_back_empty_lines(cleaned_text)
     write_to_txt_file(cleaned_text, destination_dir)
 
 if __name__ == "__main__":

@@ -58,3 +58,4 @@ for project_name in os.listdir(projects_dir):
 
             # print(f"Calling context file builder for {v_file_path}.")
             call_context_file_builder(v_file_path, output_txt_path)
+    

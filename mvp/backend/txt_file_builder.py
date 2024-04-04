@@ -53,7 +53,7 @@ def annotate_coq_file_with_goals(data, goal_states_mapping, coq_file_path):
                 hash_code = cmd[2]
                 if hash_code in goal_states_mapping:
                     for goal in goal_states_mapping[hash_code]:
-                        # Format and append the goal state here
+                        # Format and append the goal state
                         enhanced_text.append(f"(* Goal: {goal['type']} *)\n")
                 break  # Stop looking after the first match to avoid duplicates
         enhanced_text.append(line)
