@@ -24,16 +24,9 @@ os.makedirs(output_dir, exist_ok=True)
 def insert_import_context(data_dir, import_context_dir, output_dir):
     # Iterate through the files in the data directory
     for root, dirs, files in os.walk(data_dir):
+        proj_name = root.split('/')[-1]
         for file in files:
             if file.endswith(".txt"):
-                
-                
-                # Check if the file name does not contain "PureInsts"
-                if "PureInsts" not in file:
-                    # Continue processing without specific action
-                    continue
-
-
                 
                 print(f"Processing {file}")
                 # Construct the path to the data file
@@ -45,19 +38,12 @@ def insert_import_context(data_dir, import_context_dir, output_dir):
                 # Ensure the directory for the output file exists
                 os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
-
                 
                 # Open the data file for reading and the output file for writing
                 with open(data_file_path, 'r') as data_file, open(output_file_path, 'w') as output_file:
-                    # Read each line from the data file
+                    # Read each line from the data file              
                     
-                    
-                    i = 0
                     for line in data_file:
-                        if i == 0:
-                            i += 1
-                            continue
-
 
                         # Write the line to the output file
                         output_file.write(line)
@@ -75,20 +61,20 @@ def insert_import_context(data_dir, import_context_dir, output_dir):
                             if line.startswith("From"):
                                 base_import_name = import_statement_parts[1]
                                 import_names = [base_import_name + '.' + name for name in import_names]
-                            print(import_names)
+                            # print(import_names)
                             
                             for import_name in import_names:
                                 # Construct a pattern to match files ending with the import name
                                 pattern = f"*{import_name}.txt"
                                 # Search for matching files in the import_context_dir
-                                for import_context_root, _, import_context_files in os.walk(import_context_dir):
+                                for import_context_root, _, import_context_files in os.walk(import_context_dir+'/'+proj_name):
                                     for import_context_file in import_context_files:
                                         if fnmatch.fnmatch(import_context_file, pattern):
                                             import_context_path = os.path.join(import_context_root, import_context_file)
-                                            print(f"Inserting import context from {import_context_path} into {output_file_path}")
+                                            # print(f"Inserting import context from {import_context_path} into {output_file_path}")
                                             with open(import_context_path, 'r') as import_context_file:
                                                 import_context_content = import_context_file.read().strip()
                                                 output_file.write(f"(* {import_name}:\n{import_context_content} *)\n")
-                    raise Exception()
+
 
 insert_import_context(data_dir, import_context_dir, output_dir)
