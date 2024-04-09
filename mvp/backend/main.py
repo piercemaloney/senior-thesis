@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from openai_api import call_openai_gpt3
@@ -16,6 +16,10 @@ class VoteInput(BaseModel):
 
 class Proof(BaseModel):
     current_proof: str
+
+class GenerateTacticsInput(BaseModel):
+    proof_step_eval_txt: str
+
 
 # --- FastAPI ---
 
@@ -52,9 +56,26 @@ async def vote(vote_input: VoteInput):
     result = await call_openai_gpt3(vote_prompt.format(input=vote_input.current_proof, proposed_steps=proposed_steps_formatted))
     return {"index": int(result) - 1, "step": vote_input.proposed_steps[int(result) - 1]}
 
-@app.post("/run_coq")
-async def run_coq(proof: Proof):
-    return 
+@app.post("/generate_tactics")
+async def generate_tactics(input_data: GenerateTacticsInput) -> dict:
+    # Example processing - replace with your actual logic
+    proof_step_eval_txt = input_data.proof_step_eval_txt
+    if not proof_step_eval_txt:
+        raise HTTPException(status_code=400, detail="proof_step_eval_txt is required")
+
+    # Here, you would have your logic to determine the next tactic based on fg_goals
+    # For demonstration, let's just return a placeholder tactic
+    # next_tactics = ["tac1.", "induction l.", "intros."]
+
+    response = await call_openai_gpt3(generate_prompt.format(input=proof_step_eval_txt))
+    proposed_steps = [step.strip() for step in response.split("\n") if step.strip()]
+    print("PROPOSED STEPS", proposed_steps)
+    proposed_steps = [step[step.index(")")+1:] for step in proposed_steps]
+    proposed_steps = [step.strip() for step in proposed_steps]
+    print(proposed_steps)
+    return {"tactics": proposed_steps}
+
+    # return {"tactics": next_tactics}
 
 # --- Test ---
 
