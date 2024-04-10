@@ -15,9 +15,10 @@ model_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend
 tokenizer_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/models/llemma_7b_tokenizer'
 
 # Load model and tokenizer
-model = AutoModelForCausalLM.from_pretrained(model_save_path, torch_dtype="auto",).to(device)  # Move model to the specified device
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_save_path)
 tokenizer.pad_token = "</s>"
+# print(tokenizer.decode([10456]))
+model = AutoModelForCausalLM.from_pretrained(model_save_path, torch_dtype="auto",).to(device)  # Move model to the specified device
 
 # model.eval()  # Ensure the model is in evaluation mode
 

@@ -263,7 +263,11 @@ class TreeNode:
         path = []
         node = self
         while node is not None:
-            path[0:0] = ["(* Goal: %s *) " % goal['type'] for goal in node.feedback.get('fg_goals', [])]
+            fg_goals = node.feedback.get('fg_goals', [])
+            path[0:0] = ["(* Goal: %s *) " % goal['type'] for goal in fg_goals]
+            # if not fg_goals:
+                # bg_goals = node.feedback.get('bg_goals', [])
+                # path[0:0] = ["(* Background goal: %s *) " % goal['type'] for goal in bg_goals]
             path.insert(0, node.tactic)
             node = node.parent
         return path
@@ -278,7 +282,7 @@ class TreeNode:
 
 class ProofSolver:
     """ For every proof in an eval file, a ProofSolver is created. """
-    def __init__(self, json_file_path, import_context_path, proof_env, initial_feedback):
+    def __init__(self, json_file_path, import_context_path, proof_env, initial_feedback, model="llemma-base"):
         self.json_file_path = json_file_path
         self.import_context_path = import_context_path
         self.proof_env = proof_env
@@ -288,6 +292,7 @@ class ProofSolver:
         self.state = 'PROVING'
         self.generate_queries = 0
         self.evaluate_queries = 0
+        self.model = model
 
         # self.tactic_generator = tactic_generator
         # self.state_scorer = state_scorer
@@ -316,6 +321,15 @@ class ProofSolver:
             node.cost = min(child.cost for child in node.children)
         if node.parent:
             self._update_costs_from_node(node.parent)
+
+    def _call_model_generate(self, txt):
+        if self.model == "llemma-base":
+            server_url = "http://host.docker.internal:8000/generate_tactics_llemma_base"
+            response = requests.post(server_url, json={"inputs": txt})
+        elif self.model == "gpt-3":
+            server_url = "http://host.docker.internal:8000/generate_tactics"
+            response = requests.post(server_url, json={"inputs": txt})
+        return response
     
     def get_proof_step_eval_txt(self) -> str:
         """ For each proof step, this generates the text before which the next tactic will be generated. """
@@ -333,8 +347,7 @@ class ProofSolver:
         
         proof_step_eval_txt = self.get_proof_step_eval_txt()
         
-        server_url = "http://host.docker.internal:8000/generate_tactics"
-        response = requests.post(server_url, json={"proof_step_eval_txt": proof_step_eval_txt})
+        response = self._call_model_generate(proof_step_eval_txt)
         if response.status_code == 200:
             next_tactics = response.json().get("tactics")
             # next_tactics = ['induction l.']  # TODO testing
@@ -348,7 +361,7 @@ class ProofSolver:
                         self.current_node.add_child(new_node)
                     if feedback["result"] == "SUCCESS":
                         print("Proof succeeded.")
-                        self.solved = True
+                        self.state = 'SUCCESS'
                         return 'SUCCESS'
                     elif feedback["result"] == "GIVEN_UP":
                         new_node.cost = float('inf')
@@ -380,9 +393,8 @@ class ProofSolver:
         # Traverse through the tree, choosing each subsequent child with the smallest cost until that node has no children
         # Also steps self.proof_env to the chosen node
         while self.current_node.children:
-            # print("Children tactics and their costs:")
-            # for child in self.current_node.children:
-            #     print(f"Tactic: {child.tactic}, Cost: {child.cost}")
+            for child in self.current_node.children:
+                print(f"Tactic: {child.tactic}, Cost: {child.cost}")
             
             min_cost = float('inf')
             chosen_node = None
@@ -394,17 +406,9 @@ class ProofSolver:
             if chosen_node is None:
                 self.state = 'ERROR'
                 return
-
-            if min_cost >= 5:
-                self.state = 'FAILURE'
-                return
             
-            print(f"Chosen tactic: {chosen_node.tactic} with cost: {chosen_node.cost}")
             self.current_node = chosen_node
             self.proof_env.step(chosen_node.tactic)
-        if not self.current_node.children:
-            print(self.current_node.get_path())
-        
         
         
         
@@ -423,7 +427,7 @@ if __name__ == "__main__":
 
     f = "data/StructTact/Assoc.json"
     proj_name = f.split("/")[-2]
-    with FileEnv(f, max_num_tactics=20, timeout=600) as file_env:
+    with FileEnv(f, max_num_tactics=50, timeout=600) as file_env:
         for proof_env in file_env:
             # Get import context path
             path_parts = f.split('/')[1:]  # Split after data/
