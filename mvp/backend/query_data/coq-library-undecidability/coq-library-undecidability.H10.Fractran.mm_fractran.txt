@@ -1,0 +1,3257 @@
+
+
+Require Import List Arith Omega Permutation.
+
+
+
+Import ListNotations.
+
+
+
+Require Import utils_tac utils_list utils_nat gcd prime rel_iter pos vec.
+(* utils_tac:
+Require Import Arith List Wellfounded.
+
+Set Implicit Arguments.
+
+Definition eqdec X := forall x y : X, { x = y } + { x <> y }.
+
+Definition swap {X Y} (c : X * Y) := let (x,y) := c in (y,x).
+
+Theorem measure_rect X (m : X -> nat) (P : X -> Type) :
+      (forall x, (forall y, m y < m x -> P y) -> P x) -> forall x, P x.
+
+Tactic Notation "induction" "on" hyp(x) "as" ident(IH) "with" "measure" uconstr(f) :=
+  pattern x; revert x; apply measure_rect with (m := fun x => f); intros x IH.
+
+Tactic Notation "eq" "goal" hyp(H) := 
+  match goal with 
+    |- ?b => match type of H with ?t => replace b with t; auto end 
+  end.
+
+Ltac eqgoal := let H := fresh in intro H; eq goal H; clear H.
+
+Tactic Notation "spec" "in" hyp(H) :=
+  let Q := fresh 
+  in match goal with G: ?h -> _ |- _ => 
+       match G with 
+         | H => assert (h) as Q; [ | specialize (H Q); clear Q ] 
+       end 
+     end.
+
+Ltac solve_list_eq := simpl; repeat progress (try rewrite app_ass; try rewrite <- app_nil_end; simpl; auto); auto.
+
+Tactic Notation "solve" "list" "eq" := solve_list_eq.
+
+Tactic Notation "solve_list_eq" "in" hyp(H) := generalize H; clear H; solve_list_eq; intro H.
+
+Tactic Notation "solve" "list" "eq" "in" hyp(H) := 
+   let Q := fresh in 
+   match goal with 
+     |- ?t => set (Q := t); generalize H; clear H; solve_list_eq; intro H; unfold Q; clear Q
+   end.
+
+Ltac msplit n := 
+  match n with 
+    | 0    => idtac 
+    | S ?n => split; [ | msplit n ]
+   end.
+
+Tactic Notation "define" ident(f) "of" hyp(n) hyp(m) "as" uconstr(t)  :=
+  match type of n with ?N =>  
+    match type of m with ?M  => pose (f (n:N) (m:M) := t) end end.
+
+Tactic Notation "induction" "on" hyp(x) hyp(y) "as" ident(IH) "with" "measure" uconstr(f) :=
+  generalize I; intro IH;
+  let mes := fresh "measure" in let rel := fresh "relation" in let loop := fresh "loop" in
+  let u := fresh "u" in let u' := fresh x in let Hu := fresh "Hu" in 
+  let v := fresh "v" in let v' := fresh y in let Hv := fresh "Hv" 
+  in clear IH; 
+     define mes of x y as (f : nat);
+     set (rel u v := mes (fst u) (snd u) < mes (fst v) (snd v)); unfold fst, snd in rel;
+     pattern x, y; match goal with
+       |- ?T _ _ => 
+       refine ((fix loop u v (Hu : Acc rel (u,v)) { struct Hu } : T u v := _) x y _);
+       [ assert (forall u' v', rel (u',v') (u,v) -> T u' v') as IH;
+         [ intros u' v' Hv; apply (loop u' v'), (Acc_inv Hu), Hv 
+         | unfold rel, mes in *; clear mes rel Hu loop x y; rename u into x; rename v into y ]
+       | unfold rel; apply wf_inverse_image, lt_wf ]
+     end.
+
+Section forall_equiv.
+
+  Variable (X : Type) (A P Q : X -> Prop) (HPQ : forall n, A n -> P n <-> Q n).
+
+  Theorem forall_bound_equiv : (forall n, A n -> P n) <-> (forall n, A n -> Q n).
+
+End forall_equiv.
+
+Section exists_equiv.
+
+  Variable (X : Type) (P Q : X -> Prop) (HPQ : forall n, P n <-> Q n).
+
+  Theorem exists_equiv : (exists n, P n) <-> (exists n, Q n).
+
+End exists_equiv. *)
+(* utils_list:
+Require Import List Arith Omega Permutation.
+
+Require Import list_focus utils_tac.
+
+Set Implicit Arguments.
+
+Create HintDb length_db.
+
+Tactic Notation "rew" "length" := autorewrite with length_db.
+Tactic Notation "rew" "length" "in" hyp(H) := autorewrite with length_db in H.
+
+Infix "~p" := (@Permutation _) (at level 70).
+
+Section length.
+   
+  Variable X : Type.
+
+  Implicit Type l : list X.
+
+  Fact length_nil : length (@nil X) = 0.
+
+  Fact length_cons x l : length (x::l) = S (length l).
+
+End length.
+
+Hint Rewrite length_nil length_cons app_length map_length rev_length : length_db.
+
+Section list_an.
+
+  Fixpoint list_an a n :=
+    match n with 
+      | 0   => nil
+      | S n => a::list_an (S a) n
+    end.
+
+  Fact list_an_S a n : list_an a (S n) = a::list_an (S a) n.
+
+  Fact list_an_plus a n m : list_an a (n+m) = list_an a n ++ list_an (n+a) m.
+
+  Fact list_an_length a n : length (list_an a n) = n.
+  
+  Fact list_an_spec a n m : In m (list_an a n) <-> a <= m < a+n.
+
+  Fact map_S_list_an a n : map S (list_an a n) = list_an (S a) n.
+
+  Fact list_an_app_inv a n l r : list_an a n = l++r -> l = list_an a (length l) /\ r = list_an (a+length l) (length r).
+
+End list_an.
+
+Hint Rewrite list_an_length : length_db.
+
+Definition list_fun_inv X (l : list X) (x : X) : { f : nat -> X | l = map f (list_an 0 (length l)) }.
+
+Fact list_upper_bound (l : list nat) : { m | forall x, In x l -> x < m }.
+
+Section list_injective.
+
+  Variable X : Type.
+   
+  Definition list_injective (ll : list X) :=  forall l a m b r, ll = l ++ a :: m ++ b :: r -> a <> b.
+  
+  Fact in_list_injective_0 : list_injective nil.
+  
+  Fact in_list_injective_1 x ll : ~ In x ll -> list_injective ll -> list_injective (x::ll).
+  
+  Fact list_injective_inv x ll : list_injective (x::ll) -> ~ In x ll /\ list_injective ll.
+  
+  Variable P : list X -> Type.
+  
+  Hypothesis (HP0 : P nil).
+  Hypothesis (HP1 : forall x l, ~ In x l -> P l -> P (x::l)).
+  
+  Theorem list_injective_rect l : list_injective l -> P l.
+
+End list_injective.
+
+Fact list_injective_map X Y (f : X -> Y) ll :
+       (forall x y, f x = f y -> x = y) -> list_injective ll -> list_injective (map f ll).
+
+Section iter.
+  
+  Variable (X : Type) (f : X -> X).
+
+  Fixpoint iter x n :=
+    match n with
+      | 0   => x
+      | S n => iter (f x) n
+    end.
+
+  Fact iter_plus x a b : iter x (a+b) = iter (iter x a) b.
+
+  Fact iter_swap x n : iter (f x) n = f (iter x n).
+
+End iter.
+
+Fixpoint list_repeat X (x : X) n :=
+  match n with
+    | 0   => nil
+    | S n => x::list_repeat x n
+  end.
+  
+Fact list_repeat_plus X x a b : @list_repeat X x (a+b) = list_repeat x a ++ list_repeat x b.
+  
+Fact list_repeat_length X x n : length (@list_repeat X x n) = n.
+
+Fact In_list_repeat X (x y : X) n : In y (list_repeat x n) -> x = y /\ 0 < n.
+
+Fact map_list_repeat X Y f x n : @map X Y f (list_repeat x n) = list_repeat (f x) n.
+
+Fact map_cst_repeat X Y (y : Y) ll : map (fun _ : X => y) ll = list_repeat y (length ll).
+  
+Fact map_cst_snoc X Y (y : Y) ll mm : y :: map (fun _ : X => y) ll++mm = map (fun _ => y) ll ++ y::mm.
+
+Fact map_cst_rev  X Y (y : Y) ll : map (fun _ : X => y) (rev ll) = map (fun _ => y) ll.
+
+Fact In_perm X (x : X) l : In x l -> exists m, x::m ~p l.
+
+Fact list_app_eq_inv X (l1 l2 r1 r2 : list X) :
+       l1++r1 = l2++r2 -> { m | l1++m = l2 /\ r1 = m++r2 } 
+                        + { m | l2++m = l1 /\ r2 = m++r1 }.
+
+Fact list_app_cons_eq_inv X (l1 l2 r1 r2 : list X) x :
+       l1++r1 = l2++x::r2 -> { m | l1++m = l2 /\ r1 = m++x::r2 } 
+                           + { m | l2++x::m = l1 /\ r2 = m++r1 }.
+
+Fact list_cons_app_cons_eq_inv X (l2 r1 r2 : list X) x y :
+       x::r1 = l2++y::r2 -> (l2 = nil /\ x = y /\ r1 = r2) 
+                          + { m | l2 = x::m /\ r1 = m++y::r2 }.
+ 
+Fact list_app_inj X (l1 l2 r1 r2 : list X) : length l1 = length l2 -> l1++r1 = l2++r2 -> l1 = l2 /\ r1 = r2.
+
+Fact list_split_length X (ll : list X) k : k <= length ll -> { l : _ & { r | ll = l++r /\ length l = k } }.
+
+Fact list_pick X (ll : list X) k : k < length ll -> { x : _ & { l : _ & { r | ll = l++x::r /\ length l = k } } }.
+
+Fact list_split_middle X l1 (x1 : X) r1 l2 x2 r2 : 
+       ~ In x1 l2 -> ~ In x2 l1 -> l1++x1::r1 = l2++x2::r2 -> l1 = l2 /\ x1 = x2 /\ r1 = r2.
+
+Section flat_map.
+
+  Variable (X Y : Type) (f : X -> list Y).
+
+  Fact flat_map_app l1 l2 : flat_map f (l1++l2) = flat_map f l1 ++ flat_map f l2.
+
+  Fact flat_map_app_inv l r1 y r2 : flat_map f l = r1++y::r2 -> exists l1 m1 x m2 l2, l = l1++x::l2 /\ f x = m1++y::m2 
+                                                                  /\ r1 = flat_map f l1++m1 /\ r2 = m2++flat_map f l2. 
+
+End flat_map.
+
+Definition prefix X (l ll : list X) := exists r, ll = l++r.
+  
+Infix "<p" := (@prefix _) (at level 70, no associativity).
+  
+Section prefix. 
+   
+  Variable X : Type.
+  
+  Implicit Types (l ll : list X).
+  
+  Fact in_prefix_0 ll : nil <p ll.
+  
+  Fact in_prefix_1 x l ll : l <p ll -> x::l <p x::ll.
+
+  Fact prefix_length l m : l <p m -> length l <= length m.
+  
+  Fact prefix_app_lft l r1 r2 : r1 <p r2 -> l++r1 <p l++r2.
+  
+  Fact prefix_inv x y l ll : x::l <p y::ll -> x = y /\ l <p ll.
+  
+  Fact prefix_list_inv l r rr : l++r <p l++rr -> r <p rr.
+
+  Fact prefix_refl l : l <p l.
+
+  Fact prefix_trans l1 l2 l3 : l1 <p l2 -> l2 <p l3 -> l1 <p l3.
+
+  Section prefix_rect.
+
+    Variables (P : list X -> list X -> Type)
+              (HP0 : forall ll, P nil ll)
+              (HP1 : forall x l ll, l <p ll -> P l ll -> P (x::l) (x::ll)).
+              
+    Definition prefix_rect l ll : prefix l ll -> P l ll.
+   
+  End prefix_rect.
+
+  Fact prefix_app_inv l1 l2 r1 r2 : l1++l2 <p r1++r2 -> { l1 <p r1 } + { r1 <p l1 }.
+  
+End prefix.
+
+Definition prefix_spec X (l ll : list X) : l <p ll -> { r | ll = l ++ r }.
+
+Fact prefix_app_lft_inv X (l1 l2 m : list X) : l1++l2 <p m -> { m2 | m = l1++m2 /\ l2 <p m2 }.
+
+Section list_assoc.
+
+  Variables (X Y : Type) (eq_X_dec : eqdec X).
+
+  Fixpoint list_assoc x l : option Y :=
+    match l with 
+      | nil  => None
+      | (y,a)::l => if eq_X_dec x y then Some a else list_assoc x l
+    end.
+
+  Fact list_assoc_eq x y l x' : x = x' -> list_assoc x' ((x,y)::l) = Some y.
+
+  Fact list_assoc_neq x y l x' : x <> x' -> list_assoc x' ((x,y)::l) = list_assoc x' l.
+
+  Fact list_assoc_In x l : 
+    match list_assoc x l with 
+      | None   => ~ In x (map fst l)
+      | Some y => In (x,y) l
+    end.
+
+  Fact In_list_assoc x l : In x (map fst l) -> { y | list_assoc x l = Some y /\ In (x,y) l }.
+  
+  Fact not_In_list_assoc x l : ~ In x (map fst l) -> list_assoc x l = None.
+
+  Fact list_assoc_app x ll mm : list_assoc x (ll++mm) 
+                              = match list_assoc x ll with
+                                  | None   => list_assoc x mm
+                                  | Some y => Some y
+                                end.
+
+End list_assoc.
+
+Section list_first_dec.
+
+  Variable (X : Type) (P : X -> Prop) (Pdec : forall x, { P x } + { ~ P x }).
+  
+  Theorem list_choose_dec ll : { l : _ & { x : _ & { r | ll = l++x::r /\ P x /\ forall y, In y l -> ~ P y } } }
+                             + { forall x, In x ll -> ~ P x }.
+  
+  Theorem list_first_dec a ll : P a -> In a ll -> { l : _ & { x : _ & { r | ll = l++x::r /\ P x /\ forall y, In y l -> ~ P y } } }.
+  
+End list_first_dec.
+
+Section map.
+
+  Variable (X Y : Type) (f : X -> Y).
+  
+  Fact map_cons_inv ll y m : map f ll = y::m -> { x : _ & { l | ll = x::l /\ f x = y /\ map f l = m } }.
+
+  Fact map_app_inv ll m n : map f ll = m++n -> { l : _  & { r | ll = l++r /\ m = map f l /\ n = map f r } }.
+  
+  Fact map_middle_inv ll m y n : map f ll = m++y::n -> { l : _ & { x : _ & { r | ll = l++x::r /\ map f l = m /\ f x = y /\ map f r = n } } }.
+  
+End map.
+
+Fact Forall2_mono X Y (R S : X -> Y -> Prop) :
+         (forall x y, R x y -> S x y) -> forall l m, Forall2 R l m -> Forall2 S l m.
+
+Fact Forall2_nil_inv_l X Y R m : @Forall2 X Y R nil m -> m = nil.
+
+Fact Forall2_nil_inv_r X Y R m : @Forall2 X Y R m nil -> m = nil.
+
+Fact Forall2_cons_inv X Y R x l y m : @Forall2 X Y R (x::l) (y::m) <-> R x y /\ Forall2 R l m.
+
+Fact Forall2_app_inv_l X Y R l1 l2 m : 
+    @Forall2 X Y R (l1++l2) m -> { m1 : _ & { m2 | Forall2 R l1 m1 /\ Forall2 R l2 m2 /\ m = m1++m2 } }.
+
+Fact Forall2_app_inv_r X Y R l m1 m2 : 
+    @Forall2 X Y R l (m1++m2) -> { l1 : _ & { l2 | Forall2 R l1 m1 /\ Forall2 R l2 m2 /\ l = l1++l2 } }.
+
+Fact Forall2_cons_inv_l X Y R a ll mm : 
+      @Forall2 X Y R (a::ll) mm 
+   -> { b : _ & { mm' | R a b /\ mm = b::mm' /\ Forall2 R ll mm' } }.
+
+Fact Forall2_cons_inv_r X Y R b ll mm : 
+      @Forall2 X Y R ll (b::mm) 
+   -> { a : _ & { ll' | R a b /\ ll = a::ll' /\ Forall2 R ll' mm } }.
+
+Fact Forall2_map_left X Y Z (R : Y -> X -> Prop) (f : Z -> Y) ll mm : Forall2 R (map f ll) mm <-> Forall2 (fun x y => R (f x) y) ll mm.
+
+Fact Forall2_map_right X Y Z (R : Y -> X -> Prop) (f : Z -> X) mm ll : Forall2 R mm (map f ll) <-> Forall2 (fun y x => R y (f x)) mm ll.
+
+Fact Forall2_map_both X Y X' Y' (R : X -> Y -> Prop) (f : X' -> X) (g : Y' -> Y) ll mm : Forall2 R (map f ll) (map g mm) <-> Forall2 (fun x y => R (f x) (g y)) ll mm.
+
+Fact Forall2_Forall X (R : X -> X -> Prop) ll : Forall2 R ll ll <-> Forall (fun x => R x x) ll.
+
+Fact Forall_app X (P : X -> Prop) ll mm : Forall P (ll++mm) <-> Forall P ll /\ Forall P mm.
+
+Fact Forall_cons_inv X (P : X -> Prop) x ll : Forall P (x::ll) <-> P x /\ Forall P ll.
+
+Fact Forall_rev X (P : X -> Prop) ll : Forall P ll -> Forall P (rev ll).
+
+Fact Forall_map X Y (f : X -> Y) (P : Y -> Prop) ll : Forall P (map f ll) <-> Forall (fun x => P (f x)) ll.
+
+Fact Forall_forall_map X (f : nat -> X) n l (P : X -> Prop) :
+           l = map f (list_an 0 n) -> (forall i, i < n -> P (f i)) <-> Forall P l.
+
+Fact Forall_impl X (P Q : X -> Prop) ll : (forall x, In x ll -> P x -> Q x) -> Forall P ll -> Forall Q ll.
+
+Fact Forall_filter X (P : X -> Prop) (f : X -> bool) ll : Forall P ll -> Forall P (filter f ll). *)
+(* utils_nat:
+Require Import List Arith Max Omega Wellfounded Bool.
+
+Require Import list_focus utils_tac utils_list.
+
+Set Implicit Arguments.
+
+Section fin_reif.
+
+  Variable (X : Type) (R : nat -> X -> Prop).
+
+  Fact fin_reif n : (forall i, i < n -> exists x, R i x)
+                 -> exists s, forall i (Hi : i < n), R i (s i Hi).
+
+End fin_reif.
+
+Fact fin_reif_nat (R : nat -> nat -> Prop) n :
+         (forall i, i < n -> ex (R i)) -> exists s, forall i, i < n -> R i (s i).
+
+Section bounded_search.
+
+  Theorem bounded_search m (P : nat -> Type) :
+        (forall n, n < m -> P n + (P n -> False))
+     -> { n : nat & (n < m) * P n }%type + { forall n, n < m -> P n -> False }.
+
+  Lemma bounded_min (P : nat -> Prop) : 
+        (forall x, P x \/ ~ P x) 
+     -> forall n, (exists k, k < n /\ P k /\ forall i, i < k -> ~ P i) \/ forall k, k < n -> ~ P k.
+
+  Lemma minimize (P : nat -> Prop) : (forall x, P x \/ ~ P x) -> (exists n, P n) -> exists n, P n /\ forall i, i < n -> ~ P i.
+   
+  Lemma first_non_zero (f : nat -> nat) n : f 0 = 0 -> f n <> 0 -> exists i, i < n /\ (forall k, k <= i -> f k = 0) /\ f (i+1) <> 0.
+
+End bounded_search.
+
+Fact interval_dec a b i : { a <= i < b } + { i < a \/ b <= i }.
+
+Definition lsum := fold_right plus 0.
+Definition lmax := fold_right max 0.
+
+Fact lmax_spec l x : lmax l <= x <-> Forall (fun y => y <= x) l.
+
+Fact lsum_app l r : lsum (l++r) = lsum l+lsum r.
+
+Section new.
+
+  Definition nat_new l := S (lmax l).
+
+  Fact nat_new_spec l : ~ In (nat_new l) l.
+
+End new.
+
+Local Notation Zero := false.
+Local Notation One  := true.
+
+Fixpoint div2 n : nat * bool :=
+  match n with
+    | 0 => (0,Zero)
+    | 1 => (0,One)
+    | S (S n) => let (p,b) := div2 n in (S p,b)
+  end.
+
+Fact div2_spec n : match div2 n with 
+                     | (p,One)  => n = 2*p+1 
+                     | (p,Zero) => n = 2*p
+                   end.
+
+Fixpoint div2_2p1 p : div2 (2*p+1) = (p,One).
+
+Fixpoint div2_2p0 p : div2 (2*p) = (p,Zero).
+
+Fixpoint pow2 p := 
+  match p with 
+    | 0   => 1
+    | S p => 2*pow2 p
+  end.
+
+Section pow2_bound.
+
+  Let loop := fix loop x n :=
+    match n with 
+      | 0 => 0
+      | S n => match div2 x with 
+                 | (0,_) => 0
+                 | (p,_) => S (loop p n)
+               end
+    end.
+
+  Let loop_prop n : forall x, x < n -> x < pow2 (S (loop x n)).
+
+  Definition find_pow2 x := S (loop (pred x) x).
+
+  Fact find_pow2_geq x : 1 <= find_pow2 x.
+
+  Fact find_pow2_prop x : x <= pow2 (find_pow2 x).
+
+End pow2_bound.
+
+Section nat_sorted.
+   
+  Definition nat_sorted ll := forall l a m b r, ll = l ++ a :: m ++ b :: r -> a < b.
+  
+  Fact in_nat_sorted_0 : nat_sorted nil.
+  
+  Fact in_nat_sorted_1 x : nat_sorted (x::nil).
+  
+  Fact in_nat_sorted_2 x y ll : x < y -> nat_sorted (y::ll) -> nat_sorted (x::y::ll).
+  
+  Fact in_nat_sorted_3 x ll : Forall (lt x) ll -> nat_sorted ll -> nat_sorted (x::ll).
+  
+  Fact nat_sorted_cons_inv x ll : nat_sorted (x::ll) -> nat_sorted ll.
+  
+  Fact nat_sorted_Forall x ll : nat_sorted (x::ll) -> Forall (lt x) ll.
+  
+  Fact nat_sorted_head_inv x y ll : nat_sorted (x::y::ll) -> x < y.
+
+  Variable P : list nat -> Type.
+  
+  Hypothesis (HP0 : P nil).
+  Hypothesis (HP1 : forall x, P (x::nil)).
+  Hypothesis (HP2 : forall x y l, x < y -> P (y::l) -> P (x::y::l)).
+  
+  Theorem nat_sorted_rect l : nat_sorted l -> P l.
+  
+End nat_sorted.
+
+Fact nat_sorted_injective ll : nat_sorted ll -> list_injective ll.
+
+Fixpoint nat_list_insert x l :=
+  match l with
+    | nil  => x::nil
+    | y::l => if x <? y then x::y::l else
+              if y <? x then y::nat_list_insert x l else y::l
+  end.
+
+Fact nat_list_insert_length x l : length (nat_list_insert x l) <= S (length l).
+  
+Fact nat_list_insert_incl x l : incl (nat_list_insert x l) (x::l)
+                             /\ incl (x::l) (nat_list_insert x l).
+  
+Fact nat_list_insert_Forall (P : nat -> Prop) x l : 
+      P x -> Forall P l -> Forall P (nat_list_insert x l).
+  
+Fact nat_list_insert_sorted x l : nat_sorted l -> nat_sorted (nat_list_insert x l).
+
+Definition nat_sort := fold_right (nat_list_insert) nil.
+
+Fact nat_sort_length l : length (nat_sort l) <= length l.
+
+Fact nat_sort_eq l : incl (nat_sort l) l /\ incl l (nat_sort l).
+
+Fact nat_sort_sorted l : nat_sorted (nat_sort l).
+
+Fact nat_sinc (f : nat -> nat) a b : 
+      (forall x, a <= x < b -> f x < f (S x)) 
+   -> (forall x y, a <= x < y /\ y <= b -> f x < f y).
+
+Fact nat_sinc_inj f a b : 
+      (forall x y,  a <= x < y /\ y <= b -> f x < f y) 
+   -> (forall x y,  a <= x <= b -> a <= y <= b -> f x = f y -> x = y).
+
+Theorem nat_rev_ind (P : nat -> Prop) (HP : forall n, P (S n) -> P n) x y : x <= y -> P y -> P x.
+
+Section nat_rev_bounded_ind.
+
+  Variables (k : nat) (P : nat -> Prop) (HP : forall n, S n <= k -> P (S n) -> P n).
+  
+  Fact nat_rev_bounded_ind x y : x <= y <= k -> P y -> P x.
+
+End nat_rev_bounded_ind.
+
+Section nat_minimize.
+
+  Variable P : nat -> Prop.
+  Hypothesis HP : forall n, { P n } + { ~ P n }.
+
+  Local Inductive bar_min (n : nat) : Prop :=
+    | in_bar_min_0 : P n -> bar_min n
+    | in_bar_min_1 : bar_min (S n) -> bar_min n.
+
+  Section nat_min.
+
+    Let min_rec : forall n, bar_min n -> { m | P m /\ forall x, P x -> x < n \/ m <= x }.
+
+    Definition min_dec : (exists n, P n) -> { m | P m /\ forall x, P x -> m <= x }.
+
+  End nat_min.
+
+  Fact first_which : (exists x, P x) -> { m | P m /\ forall x, x < m -> ~ P x }.
+
+End nat_minimize.
+
+Section first_which_ni.
+
+  Variable P : nat -> Prop.
+
+  Fact bounded_search_ni n : (forall i, i < n -> P i \/ ~ P i) -> (forall i, i < n -> ~ P i) \/ exists i, i < n /\ P i /\ forall j, j < i -> ~ P j.
+  
+  Hypothesis HP : forall n, P n \/ ~ P n.
+
+  Fact first_which_ni : (exists x, P x) -> exists m, P m /\ forall x, x < m -> ~ P x.
+
+End first_which_ni. *)
+(* gcd:
+Require Import List Arith Omega Permutation.
+
+Require Import utils_tac utils_list.
+
+Set Implicit Arguments.
+
+Section Euclid.
+
+  Definition euclid n d : d <> 0 -> { q : nat & { r | n = q*d+r /\ r < d } }.
+
+End Euclid.
+
+Definition arem n d q j := j <= d /\ (n = 2*q*d+j \/ q <> 0 /\ n = 2*q*d-j).
+
+Fact division_by_even n d : d <> 0 -> { q : nat & { j | arem n d q j } }.
+
+Fact own_multiple x p : x = p*x -> x = 0 \/ p = 1.
+
+Fact mult_is_one p q : p*q = 1 -> p = 1 /\ q = 1.
+
+Definition divides n k := exists p, k = p*n.
+
+Section divides.
+
+  Infix "div" := divides (at level 70, no associativity).
+
+  Fact divides_refl x : x div x.
+
+  Fact divides_anti x y : x div y -> y div x -> x = y.
+
+  Fact divides_trans x y z : x div y -> y div z -> x div z.
+
+  Fact divides_0 p : p div 0.
+
+  Fact divides_0_inv p : 0 div p -> p = 0.
+
+  Fact divides_1 p : 1 div p.
+
+  Fact divides_1_inv p : p div 1 -> p = 1.
+
+  Fact divides_2_inv p : p div 2 -> p = 1 \/ p = 2.
+
+  Fact divides_mult p q k : p div q -> p div k*q.
+
+  Fact divides_mult_r p q k : p div q -> p div q*k.
+
+  Fact divides_mult_compat a b c d : a div b -> c div d -> a*c div b*d.
+
+  Fact divides_minus p q1 q2 : p div q1 -> p div q2 -> p div q1 - q2.
+
+  Fact divides_plus p q1 q2 : p div q1 -> p div q2 -> p div q1+q2.
+
+  Fact divides_plus_inv p q1 q2 : p div q1 -> p div q1+q2 -> p div q2.
+
+  Fact divides_le p q : q <> 0 -> p div q -> p <= q.
+
+  Fact divides_mult_inv k p q : k <> 0 -> k*p div k*q -> p div q.
+
+  Lemma divides_fact m p : 1 < p <= m -> p div fact m.
+
+  Lemma divides_mult_inv_l p q r : p * q div r -> p div r /\ q div r.
+
+End divides.
+
+Section gcd_lcm.
+
+  Infix "div" := divides (at level 70, no associativity).
+
+  Hint Resolve divides_0 divides_refl divides_mult divides_1.
+
+  Definition is_gcd p q r := r div p /\ r div q /\ forall k, k div p -> k div q -> k div r.
+  Definition is_lcm p q r := p div r /\ q div r /\ forall k, p div k -> q div k -> r div k.
+
+  Fact is_gcd_sym p q r : is_gcd p q r -> is_gcd q p r.
+
+  Fact is_gcd_0l p : is_gcd 0 p p.
+
+  Fact is_gcd_0r p : is_gcd p 0 p.
+
+  Fact is_gcd_1l p : is_gcd 1 p 1.
+
+  Fact is_gcd_1r p : is_gcd p 1 1.
+
+  Fact is_gcd_modulus p q k r : p div k -> k <= q -> is_gcd p q r -> is_gcd p (q-k) r.
+
+  Fact is_gcd_minus p q r : p <= q -> is_gcd p q r -> is_gcd p (q-p) r.
+
+  Hint Resolve divides_plus.
+
+  Fact is_gcd_moduplus p q k r : p div k -> is_gcd p q r -> is_gcd p (q+k) r.
+
+  Fact is_gcd_plus p q r : is_gcd p q r -> is_gcd p (q+p) r.
+
+  Fact is_gcd_mult p q r n : is_gcd p (n*p+q) r <-> is_gcd p q r.
+
+  Fact is_gcd_div p q : p div q -> is_gcd p q p.
+
+  Fact is_gcd_refl p : is_gcd p p p.
+
+  Fact is_gcd_fun p q r1 r2 : is_gcd p q r1 -> is_gcd p q r2 -> r1 = r2.
+
+  Fact is_lcm_0l p : is_lcm 0 p 0.
+
+  Fact is_lcm_0r p : is_lcm p 0 0.
+
+  Fact is_lcm_sym p q r : is_lcm p q r -> is_lcm q p r.
+
+  Fact is_lcm_fun p q r1 r2 : is_lcm p q r1 -> is_lcm p q r2 -> r1 = r2.
+
+End gcd_lcm.
+
+Section bezout.
+
+  Infix "div" := divides (at level 70, no associativity).
+
+  Hint Resolve is_gcd_0l is_gcd_0r is_lcm_0l is_lcm_0r divides_refl divides_mult divides_0 is_gcd_minus.
+
+  Section bezout_rel_prime.
+
+    Let bezout_rec p q : 0 < p < q -> is_gcd p q 1 -> exists a b, a*p+b*q = 1+p*q /\ a <= q /\ b <= p.
+
+    Lemma bezout_nc p q : is_gcd p q 1 -> exists a b, a*p+b*q = 1+p*q.
+
+    Hint Resolve divides_1.
+
+    Lemma bezout_sc p q a b m : a*p+b*q = 1 + m -> p div m \/ q div m -> is_gcd p q 1.
+
+  End bezout_rel_prime.
+
+  Fact is_rel_prime_div p q k : is_gcd p q 1 -> p div q*k -> p div k.
+
+  Fact is_rel_prime_div_r p q k : is_gcd p q 1 -> p div k*q -> p div k.
+
+  Fact is_rel_prime_lcm p q : is_gcd p q 1 -> is_lcm p q (p*q).
+
+  Hint Resolve divides_1 divides_mult_compat is_gcd_refl.
+
+  Fact is_gcd_0 p q : is_gcd p q 0 -> p = 0 /\ q = 0.
+
+  Fact is_gcd_rel_prime p q g : is_gcd p q g -> exists a b, p = a*g /\ q = b*g /\ is_gcd a b 1.
+
+  Fact is_lcm_mult p q l k : is_lcm p q l -> is_lcm (k*p) (k*q) (k*l).
+
+  Theorem is_gcd_lcm_mult p q g l : is_gcd p q g -> is_lcm p q l -> p*q = g*l.
+
+  Theorem is_gcd_mult_lcm p q g l : g <> 0 -> is_gcd p q g -> g*l = p*q -> is_lcm p q l.
+
+  Lemma is_lcm_minus p q g l u : p <= q -> p = u*g -> is_gcd p q g -> is_lcm p q l -> is_lcm p (q-p) (l-u*p).
+
+  Lemma is_lcm_modulus k p q g l u : k*p <= q -> p = u*g -> is_gcd p q g -> is_lcm p q l -> is_lcm p (q-k*p) (l-k*u*p).
+
+  Lemma is_lcm_plus p q g l u : p = u*g -> is_gcd p q g -> is_lcm p q l -> is_lcm p (q+p) (l+u*p).
+
+  Lemma is_lcm_moduplus k p q g l u : p = u*g -> is_gcd p q g -> is_lcm p q l -> is_lcm p (q+k*p) (l+k*u*p).
+
+  Section bezout_generalized.
+
+    Let bezout_rec p q : 0 < p < q 
+                      -> { a : nat 
+                       & { b : nat 
+                       & { g : nat
+                       & { l : nat 
+                       & { u : nat
+                       & { v : nat
+                         | a*p+b*q = g + l
+                        /\ is_gcd p q g
+                        /\ is_lcm p q l
+                        /\ p = u*g
+                        /\ q = v*g
+                        /\ a <= v
+                        /\ b <= u } } } } } }.
+  
+    Hint Resolve is_gcd_sym is_lcm_sym.
+
+    Definition bezout_generalized p q : { a : nat 
+                                      & { b : nat 
+                                      & { g : nat
+                                      & { l : nat 
+                                        | a*p+b*q = g + l
+                                       /\ is_gcd p q g
+                                       /\ is_lcm p q l } } } }.
+
+  End bezout_generalized.
+
+  Section gcd_lcm.
+
+    Let gcd_full p q : sig (is_gcd p q).
+
+    Definition gcd p q := proj1_sig (gcd_full p q).
+    Fact gcd_spec p q : is_gcd p q (gcd p q).
+
+    Let lcm_full p q : sig (is_lcm p q).
+
+    Definition lcm p q := proj1_sig (lcm_full p q).
+    Fact lcm_spec p q : is_lcm p q (lcm p q).
+
+  End gcd_lcm.
+     
+End bezout.
+
+Require Import Extraction.
+Extraction Inline measure_rect.
+
+Check bezout_generalized.
+Print Assumptions bezout_generalized.
+
+Section division.
+
+  Fact div_full q p : { n : nat & { r | q = n*p+r /\ (p <> 0 -> r < p) } }.
+
+  Definition div q p := projT1 (div_full q p).
+  Definition rem q p := proj1_sig (projT2 (div_full q p)).
+
+  Fact div_rem_spec1 q p : q = div q p * p + rem q p.
+
+  Fact div_rem_spec2 q p : p <> 0 -> rem q p < p.
+
+  Fact rem_0 q : rem q 0 = q.
+
+  Fact div_rem_uniq p n1 r1 n2 r2 : 
+        p <> 0 -> n1*p + r1 = n2*p + r2 -> r1 < p -> r2 < p -> n1 = n2 /\ r1 = r2.
+
+  Fact div_prop q p n r : q = n*p+r -> r < p -> div q p = n.
+
+  Fact rem_prop q p n r : q = n*p+r -> r < p -> rem q p = r.
+
+  Fact rem_idem q p : q < p -> rem q p = q.
+
+  Fact is_gcd_rem p n a : is_gcd p n a <-> is_gcd p (rem n p) a.
+
+  Fact rem_erase q n p r : q = n*p+r -> rem q p = rem r p.
+
+  Fact divides_div q p : divides p q -> q = div q p * p.
+
+  Fact divides_rem_eq q p : divides p q <-> rem q p = 0.
+
+  Fact rem_of_0 p : rem 0 p = 0.
+
+  Hint Resolve divides_0_inv.
+
+  Fact divides_dec q p : { k | q = k*p } + { ~ divides p q }.
+
+End division.
+
+Section rem.
+
+  Variable (p : nat) (Hp : p <> 0).
+
+  Fact rem_plus_rem a b : rem (a+rem b p) p = rem (a+b) p.
+
+  Fact rem_mult_rem a b : rem (a*rem b p) p = rem (a*b) p.
+
+  Fact rem_diag : rem p p = 0.
+
+  Fact rem_lt a : a < p -> rem a p = a.
+
+  Fact rem_plus a b : rem (a+b) p = rem (rem a p + rem b p) p.
+
+  Fact rem_scal k a : rem (k*a) p = rem (k*rem a p) p.
+
+  Fact rem_plus_div a b : divides p b -> rem a p = rem (a+b) p.
+
+  Fact div_eq_0 n : n < p -> div n p = 0.
+
+  Fact div_of_0 : div 0 p = 0.
+
+  Fact div_ge_1 n : p <= n -> 1 <= div n p.
+
+End rem.
+
+Fact div_by_p_lt p n : 2 <= p -> n <> 0 -> div n p < n.
+
+Section rem_2.
+
+  Fact rem_2_is_0_or_1 x : rem x 2 = 0 \/ rem x 2 = 1.
+
+  Fact rem_2_mult x y : rem (x*y) 2 = 1 <-> rem x 2 = 1 /\ rem y 2 = 1.
+
+  Fact rem_2_fix_0 : rem 0 2 = 0.
+
+  Fact rem_2_fix_1 n : rem (2*n) 2 = 0.
+
+  Fact rem_2_fix_2 n : rem (1+2*n) 2 = 1.
+
+  Fact rem_2_lt n : rem n 2 < 2.
+
+  Fact div_2_fix_0 : div 0 2 = 0.
+
+  Fact div_2_fix_1 n : div (2*n) 2 = n.
+
+  Fact div_2_fix_2 n : div (1+2*n) 2 = n.
+
+  Fact euclid_2_div n : n = rem n 2 + 2*div n 2 /\ (rem n 2 = 0 \/ rem n 2 = 1).
+
+  Fact euclid_2 n : exists q, n = 2*q \/ n = 1+2*q.
+
+End rem_2.
+
+Local Hint Resolve divides_mult divides_mult_r divides_refl.
+
+Theorem CRT u v a b : u <> 0 -> v <> 0 -> is_gcd u v 1 -> exists w, rem w u = rem a u /\ rem w v = rem b v /\ 2 < w. *)
+(* prime:
+Require Import List Arith Omega Permutation.
+
+Require Import utils_tac utils_list utils_nat gcd sums.
+
+Set Implicit Arguments.
+
+Section prime.
+
+  Hint Resolve divides_0 divides_mult divides_refl divides_0_inv.
+
+  Infix "<d" := divides (at level 70, no associativity).
+
+  Definition prime p := p <> 1 /\ forall q, q <d p -> q = 1 \/ q = p.
+
+  Fact prime_2 : prime 2.
+
+  Fact prime_ge_2 p : prime p -> 2 <= p.
+
+  Fact prime_gcd p q : prime p -> is_gcd p q 1 \/ p <d q.
+
+  Fact prime_div_mult p x y : prime p -> p <d x*y -> p <d x \/ p <d y. 
+
+  Definition prime_or_div p : 2 <= p -> { q | 2 <= q < p /\ q <d p } + { prime p }.
+
+  Theorem prime_factor n : 2 <= n -> { p | prime p /\ p <d n }.
+
+  Section prime_rect.
+
+    Variables (P : nat -> Type)
+              (HP0 : P 0)
+              (HP1 : P 1)
+              (HPp : forall p, prime p -> P p)
+              (HPm : forall x y, P x -> P y -> P (x*y)).
+
+    Theorem prime_rect n : P n.
+
+  End prime_rect.
+
+  Corollary no_common_prime_is_coprime x y : x <> 0 -> (forall p, prime p -> p <d x -> p <d y -> False) -> is_gcd x y 1.
+
+  Fact is_rel_prime_mult p q l : is_gcd p q 1 -> is_gcd p l 1 -> is_gcd p (q*l) 1.
+
+  Fact is_rel_prime_expo p q l : is_gcd p q 1 -> is_gcd p (mscal mult 1 l q) 1.
+
+  Notation lprod := (fold_right mult 1).
+
+  Fact lprod_ge_1 l : Forall prime l -> 1 <= lprod l.
+
+  Fact lprod_app l m : lprod (l++m) = lprod l * lprod m.
+
+  Theorem prime_decomp n : n <> 0 -> { l | n = lprod l /\ Forall prime l }.
+
+  Hint Resolve lprod_ge_1 prime_ge_2.
+
+  Fact prime_in_decomp p l : prime p -> Forall prime l -> p <d lprod l -> In p l.
+
+  Theorem prime_decomp_uniq l m : Forall prime l -> Forall prime m -> lprod l = lprod m -> l ~p m.
+
+End prime.
+
+Section base_decomp.
+
+  Fixpoint expand p l :=
+    match l with
+      | nil  => 0
+      | x::l => x+p*expand p l
+    end.
+
+  Notation power := (mscal mult 1).
+
+  Fact expand_app p l m : expand p (l++m) = expand p l + power (length l) p * expand p m.
+
+  Fact expand_0 p l : Forall (eq 0) l -> expand p l = 0.
+
+  Section base_p.
+
+    Variables (p : nat) (Hp : 2 <= p).
+
+    Let base_p_full n : { l | n = expand p l }.
+
+    Definition base_p n := proj1_sig (base_p_full n).
+    Fact base_p_spec n : n = expand p (base_p n).
+
+    Fact base_p_uniq l1 l2 : Forall2 (fun x y => x < p /\ y < p) l1 l2 -> expand p l1 = expand p l2 -> l1 = l2.
+
+  End base_p.
+
+End base_decomp. *)
+(* rel_iter:
+Require Import Arith Nat Omega.
+Require Import utils_tac gcd prime binomial sums.
+
+Set Implicit Arguments.
+
+Section rel_iter.
+
+  Variable (X : Type) (R : X -> X -> Prop).
+
+  Fixpoint rel_iter n :=
+    match n with
+      | 0   => eq
+      | S n => fun x z => exists y, R x y /\ rel_iter n y z
+    end.
+
+  Fact rel_iter_plus n m x y : rel_iter (n+m) x y <-> exists a, rel_iter n x a /\ rel_iter m a y.
+
+  Fact rel_iter_1 x y : rel_iter 1 x y <-> R x y.
+
+  Fact rel_iter_S n x y : rel_iter (S n) x y <-> exists a, rel_iter n x a /\ R a y.
+
+  Fact rel_iter_sequence n x y : rel_iter n x y <-> exists f, f 0 = x /\ f n = y /\ forall i, i < n -> R (f i) (f (S i)).
+
+End rel_iter.
+
+Local Notation power := (mscal mult 1).
+
+Definition is_digit c q i y := y < q /\ exists a b, c = (a*q+y)*power i q+b /\ b < power i q.
+
+Fact is_digit_fun c q i x y : is_digit c q i x -> is_digit c q i y -> x = y.
+
+Definition is_seq (R : nat -> nat -> Prop) c q n := forall i, i < n -> exists y y', is_digit c q i y /\ is_digit c q (1+i) y' /\ R y y'.
+
+Section rel_iter_bound.
+
+  Variable (R : nat -> nat -> Prop) (k : nat) (Hk1 : forall x y, R x y -> y <= k*x).
+
+  Let Hk' : forall x y, R x y -> y <= (S k)*x.
+
+  Definition rel_iter_bound n x y := exists q c, x*power n (S k) < q /\ is_seq R c q n /\ is_digit c q 0 x /\ is_digit c q n y.
+
+  Lemma rel_iter_bound_iter n x y : rel_iter_bound n x y -> rel_iter R n x y.
+
+  Notation power := (mscal mult 1).
+  Notation "∑" := (msum plus 0).
+
+  Lemma rel_iter_iter_bound n x y : rel_iter R n x y -> rel_iter_bound n x y.
+
+  Hint Resolve rel_iter_bound_iter rel_iter_iter_bound.
+
+  Theorem rel_iter_bound_equiv n x y : rel_iter R n x y <-> rel_iter_bound n x y.
+
+End rel_iter_bound.
+
+Section rel_iter_seq.
+
+  Variable (R : nat -> nat -> Prop).
+
+  Definition rel_iter_seq n x y := exists q c, is_seq R c q n /\ is_digit c q 0 x /\ is_digit c q n y.
+
+  Lemma rel_iter_seq_iter n x y : rel_iter_seq n x y -> rel_iter R n x y.
+
+  Notation power := (mscal mult 1).
+  Notation "∑" := (msum plus 0).
+
+  Lemma rel_iter_iter_seq n x y : rel_iter R n x y -> rel_iter_seq n x y.
+
+  Hint Resolve rel_iter_seq_iter rel_iter_iter_seq.
+
+  Theorem rel_iter_seq_equiv n x y : rel_iter R n x y <-> rel_iter_seq n x y.
+
+End rel_iter_seq. *)
+(* pos:
+Require Import List Arith Omega.
+
+Require Import utils.
+
+Set Implicit Arguments.
+
+Inductive pos : nat -> Set :=
+  | pos_fst : forall n, pos (S n)
+  | pos_nxt : forall n, pos n -> pos (S n).
+
+Arguments pos_fst {n}.
+Arguments pos_nxt {n}.
+
+Notation pos0  := (@pos_fst _).
+Notation pos1  := (pos_nxt pos0).
+Notation pos2  := (pos_nxt pos1).
+Notation pos3  := (pos_nxt pos2).
+Notation pos4  := (pos_nxt pos3).
+Notation pos5  := (pos_nxt pos4).
+Notation pos6  := (pos_nxt pos5).
+Notation pos7  := (pos_nxt pos6).
+Notation pos8  := (pos_nxt pos7).
+Notation pos9  := (pos_nxt pos8).
+Notation pos10 := (pos_nxt pos9).
+Notation pos11 := (pos_nxt pos10).
+Notation pos12 := (pos_nxt pos11).
+Notation pos13 := (pos_nxt pos12).
+Notation pos14 := (pos_nxt pos13).
+Notation pos15 := (pos_nxt pos14).
+Notation pos16 := (pos_nxt pos15).
+Notation pos17 := (pos_nxt pos16).
+Notation pos18 := (pos_nxt pos17).
+Notation pos19 := (pos_nxt pos18).
+Notation pos20 := (pos_nxt pos19).
+
+Definition pos_iso n m : n = m -> pos n -> pos m.
+
+Section pos_inv.
+
+  Let pos_inv_t n := 
+    match n as x return pos x -> Set with 
+      | 0   => fun _ => False 
+      | S n => fun i => (( i = pos_fst ) + { p | i = pos_nxt p })%type
+    end.
+
+  Let pos_inv : forall n p, @pos_inv_t n p.
+
+  Definition pos_O_inv : pos 0 -> False.
+
+  Definition pos_S_inv n (p : pos (S n)) : ( p = pos_fst ) + { q | p = pos_nxt q }.
+
+  Definition pos_nxt_inj n (p q : pos n) (H : pos_nxt p = pos_nxt q) : p = q :=
+    match H in _ = a return 
+       match a as a' in pos m return 
+           match m with 
+             | 0 => Prop 
+             | S n' => pos n' -> Prop 
+           end with
+         | pos_fst   => fun _  => True 
+         | pos_nxt y => fun x' => x' = y 
+       end p with 
+     | eq_refl => eq_refl
+   end.
+
+End pos_inv.
+
+Arguments pos_S_inv {n} p /.
+
+Section pos_invert.
+
+  Let pos_invert_t n : (pos n -> Type) -> Type :=
+    match n with
+        0   => fun P => True
+      | S n => fun P => (P (pos_fst) * forall p, P (pos_nxt p))%type
+    end.
+
+  Let pos_invert n : forall (P : pos n -> Type), pos_invert_t P -> forall p, P p.
+  
+  Theorem pos_O_invert X : pos 0 -> X.
+
+  Theorem pos_S_invert n P : P (@pos_fst n) -> (forall p, P (pos_nxt p)) -> forall p, P p.
+  
+End pos_invert.
+
+Arguments pos_S_invert [n] P _ _ p /.
+
+Ltac pos_O_inv p := exfalso; apply (pos_O_inv p).
+
+Ltac pos_S_inv p := 
+  let H := fresh in
+  let q := fresh
+  in  rename p into q; destruct (pos_S_inv q) as [ H | (p & H) ]; subst q.
+ 
+Ltac pos_inv p :=   
+  match goal with
+    | [ H: pos 0     |- _ ] => match H with p => pos_O_inv p end
+    | [ H: pos (S _) |- _ ] => match H with p => pos_S_inv p end
+  end.
+
+Tactic Notation "invert" "pos" hyp(H) := pos_inv H; simpl.
+
+Ltac analyse_pos p := 
+  match type of p with
+    | pos 0     => pos_inv p
+    | pos (S _) => pos_inv p; [ | try analyse_pos p ]
+  end. 
+
+Tactic Notation "analyse" "pos" hyp(p) := analyse_pos p.
+
+Definition pos_O_any X : pos 0 -> X.
+
+Fixpoint pos_left n m (p : pos n) : pos (n+m) :=
+  match p with
+    | pos_fst   => pos_fst
+    | pos_nxt p => pos_nxt (pos_left m p)
+  end.
+
+Fixpoint pos_right n m : pos m -> pos (n+m) :=
+  match n with 
+    | 0   => fun x => x
+    | S n => fun p => pos_nxt (pos_right n p)
+  end.
+
+Definition pos_both n m : pos (n+m) -> pos n + pos m.
+
+Definition pos_lr n m : pos n + pos m -> pos (n+m).
+
+Fact pos_both_left n m p : @pos_both n m (@pos_left n m p) = inl p.
+
+Fact pos_both_right n m p : @pos_both n m (@pos_right n m p) = inr p.
+
+Fact pos_both_lr n m p : @pos_both n m (pos_lr p) = p.
+
+Fact pos_lr_both n m p : pos_lr (@pos_both n m p) = p.
+
+Section pos_left_right_rect.
+
+  Variable (n m : nat) (P : pos (n+m) -> Type).
+
+  Hypothesis (HP1 : forall p, P (pos_left _ p))
+             (HP2 : forall p, P (pos_right _ p)).
+
+  Theorem pos_left_right_rect : forall p, P p.
+
+End pos_left_right_rect.
+
+Fixpoint pos_list n : list (pos n) :=
+  match n with
+    | 0   => nil
+    | S n => pos0::map pos_nxt (pos_list n) 
+  end.
+
+Fact pos_list_prop n p : In p (pos_list n).
+
+Fact pos_list_length n : length (pos_list n) = n.
+ 
+Fact pos_reification X n (R : pos n -> X -> Prop) : (forall p, exists x, R p x) -> exists f, forall p, R p (f p).
+
+Fact pos_reif_t X n (R : pos n -> X -> Prop) : (forall p, { x | R p x }) -> { f | forall p, R p (f p) }.
+
+Section pos_eq_dec.
+
+  Definition pos_eq_dec n (x y : pos n) : { x = y } + { x <> y }.
+
+End pos_eq_dec.
+
+Section pos_map.
+
+  Definition pos_map m n := pos m -> pos n.
+ 
+  Definition pm_ext_eq m n (r1 r2 : pos_map m n) := forall p, r1 p = r2 p.  
+
+  Definition pm_lift m n (r : pos_map m n) : pos_map (S m) (S n).
+  
+  Fact pm_lift_fst m n (r : pos_map m n) : pm_lift r pos0 = pos0.
+  
+  Fact pm_lift_nxt m n (r : pos_map m n) p : pm_lift r (pos_nxt p) = pos_nxt (r p).
+
+  Arguments pm_lift [ m n ] r p.
+
+  Fact pm_lift_ext m n r1 r2 : @pm_ext_eq m n r1 r2 -> pm_ext_eq (pm_lift r1) (pm_lift r2). 
+
+  Definition pm_comp l m n : pos_map l m -> pos_map m n -> pos_map l n.
+ 
+  Fact pm_comp_lift l m n r s : pm_ext_eq (pm_lift (@pm_comp l m n r s)) (pm_comp (pm_lift r) (pm_lift s)).
+
+  Definition pm_id n : pos_map n n := fun p => p.
+
+End pos_map.
+
+Arguments pm_lift { m n } _ _ /.
+Arguments pm_comp [ l m n ] _ _ _ /.
+Arguments pm_id : clear implicits.
+
+Section pos_nat.
+
+  Fixpoint pos_nat n (p : pos n) : { i | i < n }.
+
+  Definition pos2nat n p := proj1_sig (@pos_nat n p).
+  
+  Fact pos2nat_prop n p : @pos2nat n p < n.
+
+  Fixpoint nat2pos n : forall x, x < n -> pos n.
+
+  Definition nat_pos n : { i | i < n } -> pos n.
+
+  Arguments pos2nat n !p /.
+
+  Fact pos2nat_inj n (p q : pos n) : pos2nat p = pos2nat q -> p = q.
+
+  Fact pos2nat_nat2pos n i (H : i < n) : pos2nat (nat2pos H) = i.
+  
+  Fact nat2pos_pos2nat n p (H : pos2nat p < n) : nat2pos H = p.
+  
+  Fact pos2nat_fst n : pos2nat (@pos_fst n) = 0.
+  
+  Fact pos2nat_nxt n p : pos2nat (@pos_nxt n p) = S (pos2nat p).
+
+  Fact pos2nat_left n m p : pos2nat (@pos_left n m p) = pos2nat p.
+
+  Fact pos2nat_right n m p : pos2nat (@pos_right n m p) = n+pos2nat p.
+
+  Fixpoint pos_sub n (p : pos n) { struct p } : forall m, n < m -> pos m.
+  
+  Fact pos_sub2nat n p m Hm : pos2nat (@pos_sub n p m Hm) = pos2nat p.
+  
+End pos_nat.
+
+Global Opaque pos_nat.
+
+Fact pos_list2nat n : map (@pos2nat n) (pos_list n) = list_an 0 n.
+
+Section pos_prod.
+  
+  Variable n : nat.
+  
+  Let ll := flat_map (fun p => map (fun q => (p,q)) (pos_list n)) (pos_list n).
+  Let ll_prop p q : In (p,q) ll.
+  
+  Definition pos_not_diag := filter (fun c => if pos_eq_dec (fst c) (snd c) then false else true) ll.
+
+  Fact pos_not_diag_spec p q : In (p,q) pos_not_diag <-> p <> q.
+  
+End pos_prod. *)
+(* vec:
+Require Import Arith Omega List Permutation.
+Require Import utils pos.
+
+Set Implicit Arguments.
+
+Section vector.
+
+  Variable X : Type.
+
+  Inductive vec : nat -> Type :=
+    | vec_nil  : vec 0
+    | vec_cons : forall n, X -> vec n -> vec (S n).
+
+  Let vec_decomp_type n := 
+    match n with
+      | 0   => Prop
+      | S n => (X * vec n)%type
+    end.
+
+  Definition vec_decomp n (v : vec n) :=
+    match v in vec k return vec_decomp_type k with
+      | vec_nil  => False
+      | @vec_cons n x v => (x,v)
+    end.
+    
+  Definition vec_head n (v : vec (S n)) := match v with @vec_cons _ x _ => x end.
+  Definition vec_tail n (v : vec (S n)) := match v with @vec_cons _ _ w => w end.
+
+  Let vec_head_tail_type n : vec n -> Prop := 
+    match n with
+      | 0   => fun v => v = vec_nil
+      | S n => fun v => v = vec_cons (vec_head v) (vec_tail v)
+    end.
+
+  Let vec_head_tail_prop n v :  @vec_head_tail_type n v.
+
+  Fact vec_0_nil (v : vec 0) : v = vec_nil.
+
+  Fact vec_head_tail n (v : vec (S n)) : v = vec_cons (vec_head v) (vec_tail v).
+
+  Fixpoint vec_pos n (v : vec n) : pos n -> X.
+
+  Fact vec_pos0 n (v : vec (S n)) : vec_pos v pos0 = vec_head v.
+  
+  Fact vec_pos_tail n (v : vec (S n)) p : vec_pos (vec_tail v) p = vec_pos v (pos_nxt p).
+  
+  Fact vec_pos1 n (v : vec (S (S n))) : vec_pos v pos1 = vec_head (vec_tail v).
+
+  Fact vec_pos_ext n (v w : vec n) : (forall p, vec_pos v p = vec_pos w p) -> v = w.
+
+  Fixpoint vec_set_pos n : (pos n -> X) -> vec n :=
+    match n return (pos n -> X) -> vec n with 
+      | 0   => fun _ => vec_nil
+      | S n => fun g => vec_cons (g pos0) (vec_set_pos (fun p => g (pos_nxt p)))
+    end.
+
+  Fact vec_pos_set n (g : pos n -> X) p : vec_pos (vec_set_pos g) p = g p. 
+
+  Fixpoint vec_change n (v : vec n) : pos n -> X -> vec n.
+
+  Fact vec_change_eq n v p q x : p = q -> vec_pos (@vec_change n v p x) q = x.
+
+  Fact vec_change_neq n v p q x : p <> q -> vec_pos (@vec_change n v p x) q = vec_pos v q.
+
+  Fact vec_change_idem n v p x y : vec_change (@vec_change n v p x) p y = vec_change v p y.
+
+  Fact vec_change_same n v p : @vec_change n v p (vec_pos v p) = v.
+
+  Variable eq_X_dec : forall x y : X, { x = y } + { x <> y }.
+
+  Fixpoint vec_eq_dec n (u v : vec n) : { u = v } + { u <> v }.
+  
+  Fixpoint vec_list n (v : vec n) := 
+    match v with  
+      | vec_nil      => nil
+      | vec_cons x v => x::vec_list v
+    end.
+    
+  Fact vec_list_length n v : length (@vec_list n v) = n.
+
+  Fact vec_list_inv n v x : In x (@vec_list n v) -> exists p, x = vec_pos v p.
+
+End vector.
+
+Arguments vec_nil { X }.
+
+Infix "##" := vec_cons (at level 60, right associativity).
+
+Section vec_app_split.
+
+  Variable (X : Type) (n m : nat).
+
+  Definition vec_app (v : vec X n) (w : vec X m) : vec X (n+m).
+
+  Definition vec_split (v : vec X (n+m)) : vec X n * vec X m.
+
+  Fact vec_app_split u : let (v,w) := vec_split u in vec_app v w = u.
+
+  Fact vec_split_app v w : vec_split (vec_app v w) = (v,w).
+
+  Fact vec_pos_app_left v w i : vec_pos (vec_app v w) (pos_left _ i) = vec_pos v i.
+
+  Fact vec_pos_app_right v w i : vec_pos (vec_app v w) (pos_right _ i) = vec_pos w i.
+
+End vec_app_split.
+
+Fact vec_app_nil X n v : @vec_app X 0 n vec_nil v = v.
+
+Fact vec_app_cons X n m x v w : @vec_app X (S n) m (x##v) w = x##vec_app v w.
+
+Section vec_map.
+
+  Variable (X Y : Type) (f : X -> Y). 
+
+  Fixpoint vec_map n (v : vec X n) :=
+    match v with 
+      | vec_nil => vec_nil
+      | x ## v  => f x ## vec_map v 
+    end.
+
+End vec_map.
+
+Section vec_map2.
+
+  Definition case0 {A} (P:vec A 0 -> Type) (H:P (@vec_nil A)) v:P v :=
+    match v with
+    |vec_nil => H
+    |_ => fun devil => False_ind (@IDProp) devil 
+    end.
+
+  Definition caseS' {A} {n : nat} (v : vec A (S n)) : forall (P : vec A (S n) -> Type)
+                                                      (H : forall h t, P (h ## t)), P v :=
+    match v with
+    | h ## t => fun P H => H h t
+    | _ => fun devil => False_rect (@IDProp) devil
+    end.
+
+  Definition rect2 {A B} (P:forall {n}, vec A n -> vec B n -> Type)
+             (bas : P vec_nil vec_nil) (recvec : forall {n v1 v2}, P v1 v2 ->
+                                                              forall a b, P (a ## v1) (b ## v2)) :=
+    fix rect2_fix {n} (v1 : vec A n) : forall v2 : vec B n, P v1 v2 :=
+      match v1 with
+      | vec_nil => fun v2 => case0 _ bas v2
+      | @vec_cons _ n' h1 t1 => fun v2 =>
+                                 caseS' v2 (fun v2' => P (h1##t1) v2') (fun h2 t2 => recvec (rect2_fix t1 t2) h1 h2)
+      end.
+
+  Definition vec_map2 {A B C} (g:A -> B -> C) :
+    forall (n : nat), vec A n -> vec B n -> vec C n :=
+    @rect2 _ _ (fun n _ _ => vec C n) (@vec_nil C) (fun _ _ _ H a b => (g a b) ## H).
+  Global Arguments vec_map2 {A B C} g {n} v1 v2.
+
+End vec_map2.
+
+Fact vec_pos_map X Y (f : X -> Y) n (v : vec X n) p : vec_pos (vec_map f v) p = f (vec_pos v p).
+
+Section vec_plus.
+
+  Variable n : nat.
+
+  Definition vec_plus (v w : vec nat n) := vec_set_pos (fun p => vec_pos v p + vec_pos w p).
+  Definition vec_zero : vec nat n := vec_set_pos (fun _ => 0).
+  
+  Fact vec_pos_plus v w p : vec_pos (vec_plus v w) p = vec_pos v p + vec_pos w p.
+
+  Fact vec_zero_plus v : vec_plus vec_zero v = v.
+  
+  Fact vec_zero_spec p : vec_pos vec_zero p = 0.
+
+  Fact vec_plus_comm v w : vec_plus v w = vec_plus w v.
+
+  Fact vec_plus_assoc u v w : vec_plus u (vec_plus v w) = vec_plus (vec_plus u v) w.
+
+  Fact vec_plus_is_zero u v : vec_zero = vec_plus u v -> u = vec_zero /\ v = vec_zero.
+  
+  Definition vec_one p : vec _ n := vec_set_pos (fun q => if pos_eq_dec p q then 1 else 0).
+  
+  Fact vec_one_spec_eq p q : p = q -> vec_pos (vec_one p) q = 1.
+  
+  Fact vec_one_spec_neq p q : p <> q -> vec_pos (vec_one p) q = 0.
+  
+End vec_plus.
+
+Arguments vec_plus {n}.
+Arguments vec_zero {n}.
+Arguments vec_one {n}.
+
+Reserved Notation " e '#>' x " (at level 58).
+Reserved Notation " e [ v / x ] " (at level 57, v at level 0, x at level 0, left associativity).
+
+Local Notation " e '#>' x " := (vec_pos e x) (at level 58).
+Local Notation " e [ v / x ] " := (vec_change e x v) (at level 57, v at level 0, x at level 0, left associativity).
+
+Tactic Notation "rew" "vec" :=
+  repeat lazymatch goal with 
+    |              |- context[ _[_/?x]#>?x ] => rewrite vec_change_eq with (p := x) (1 := eq_refl)
+    | _ : ?x = ?y  |- context[ _[_/?x]#>?y ] => rewrite vec_change_eq with (p := x) (q := y)
+    | _ : ?y = ?x  |- context[ _[_/?x]#>?y ] => rewrite vec_change_eq with (p := x) (q := y)
+    | _ : ?x <> ?y |- context[ _[_/?x]#>?y ] => rewrite vec_change_neq with (p := x) (q := y)
+    | _ : ?y <> ?x |- context[ _[_/?x]#>?y ] => rewrite vec_change_neq with (p := x) (q := y)
+    |              |- context[ vec_pos vec_zero ?x ] => rewrite vec_zero_spec with (p := x)
+    |              |- context[ vec_pos (vec_one ?x) ?x ] => rewrite vec_one_spec_eq with (p := x) (1 := eq_refl)
+    | _ : ?x = ?y  |- context[ vec_pos (vec_one ?x) ?y ] => rewrite vec_one_spec_eq with (p := x) (q := y)
+    | _ : ?y = ?x  |- context[ vec_pos (vec_one ?x) ?y ] => rewrite vec_one_spec_eq with (p := x) (q := y)
+    | _ : ?x <> ?y |- context[ vec_pos (vec_one ?x) ?y ] => rewrite vec_one_spec_neq with (p := x) (q := y)
+    | _ : ?y <> ?x |- context[ vec_pos (vec_one ?x) ?y ] => rewrite vec_one_spec_neq with (p := x) (q := y)
+    | |- context[ _[_/?x][_/?x] ] => rewrite vec_change_idem with (p := x) 
+    | |- context[ ?v[(?v#>?x)/?x] ] => rewrite vec_change_same with (p := x)
+    | |- context[ _[_/?x]#>?y ] => rewrite vec_change_neq with (p := x) (q := y); [ | discriminate ]
+    | |- context[ vec_plus vec_zero ?x ] => rewrite vec_zero_plus with (v := x)
+    | |- context[ vec_plus ?x vec_zero ] => rewrite (vec_plus_comm x vec_zero); rewrite vec_zero_plus with (v := x)
+    | |- vec_plus ?x ?y = vec_plus ?y ?x => apply vec_plus_comm
+  end; auto.
+
+Tactic Notation "vec" "split" hyp(v) "with" ident(n) :=
+  rewrite (vec_head_tail v); generalize (vec_head v) (vec_tail v); clear v; intros n v.
+
+Tactic Notation "vec" "nil" hyp(v) := rewrite (vec_0_nil v).
+
+Fact vec_zero_S n : @vec_zero (S n) = 0##vec_zero.
+
+Fact vec_one_fst n : @vec_one (S n) pos0 = 1##vec_zero.
+
+Fact vec_one_nxt n p : @vec_one (S n) (pos_nxt p) = 0##vec_one p.
+
+Fact vec_plus_cons n x v y w : @vec_plus (S n) (x##v) (y##w) = x+y ## vec_plus v w.
+
+Fact vec_change_succ n v p : v[(S (v#>p))/p] = @vec_plus n (vec_one p) v.
+
+Fact vec_change_pred n v p u : v#>p = S u -> v = @vec_plus n (vec_one p) (v[u/p]).
+
+Fixpoint vec_sum n (v : vec nat n) := 
+  match v with 
+    | vec_nil       => 0
+    | vec_cons x w  => x + vec_sum w
+  end.
+  
+Fact vec_sum_plus n v w : @vec_sum n (vec_plus v w) = vec_sum v + vec_sum w.
+
+Fact vec_sum_zero n : @vec_sum n vec_zero = 0.
+
+Fact vec_sum_one n p : @vec_sum n (vec_one p) = 1.
+  
+Fact vec_sum_is_zero n v : @vec_sum n v = 0 -> v = vec_zero.
+
+Fact vec_sum_is_nzero n v : 0 < @vec_sum n v -> { p : _ & { w | v = vec_plus (vec_one p) w } }.
+
+Section vec_nat_induction.
+
+  Variable (n : nat) (P : vec nat n -> Type).
+  
+  Hypothesis HP0 : P vec_zero.
+  Hypothesis HP1 : forall p, P (vec_one p).
+  Hypothesis HP2 : forall v w, P v -> P w -> P (vec_plus v w).
+  
+  Theorem vec_nat_induction v : P v.
+  
+End vec_nat_induction.
+
+Section vec_map_list.
+
+  Variable X : Type.
+
+  Fixpoint vec_map_list X n v : (pos n -> X) -> list X :=
+    match v in vec _ m return (pos m -> _) -> _ with
+      | vec_nil => fun _ => nil
+      | a##v    => fun f => list_repeat (f pos0) a ++ vec_map_list v (fun p => f (pos_nxt p))
+    end.
+
+  Fact vec_map_list_zero n f : vec_map_list (@vec_zero n) f = @nil X.
+
+  Fact vec_map_list_one n p f : vec_map_list (@vec_one n p) f = f p :: @nil X.
+
+  Fact vec_map_list_plus n v w f : @vec_map_list X n (vec_plus v w) f ~p vec_map_list v f ++ vec_map_list w f.
+
+End vec_map_list.
+
+Fact map_vec_map_list X Y (f : X -> Y) n v g : map f (@vec_map_list _ n v g) = vec_map_list v (fun p => f (g p)).
+
+Definition list_vec X (l : list X) : { v : vec X (length l) | vec_list v = l }.
+
+Fact vec_reif X n (R : pos n -> X -> Prop) : (forall p, ex (R p)) -> exists v, forall p, R p (vec_pos v p).
+
+Fact vec_reif_t X n (R : pos n -> X -> Prop) : (forall p, sig (R p)) -> { v | forall p, R p (vec_pos v p) }.
+
+Section fun2vec.
+
+  Variable X : Type.
+
+  Fixpoint fun2vec i n f : vec X _ :=
+    match n with 
+      | 0   => vec_nil
+      | S n => f i##fun2vec (S i) n f
+    end.
+
+  Fact fun2vec_id i n f : fun2vec i n f = vec_set_pos (fun p => f (i+pos2nat p)).
+
+  Fact fun2vec_lift i n f : fun2vec i n (fun j => f (S j)) = fun2vec (S i) n f.
+
+  Fact vec_pos_fun2vec i n f p : vec_pos (fun2vec i n f) p = f (i+pos2nat p).
+
+  Definition vec2fun n (v : vec X n) x i := 
+    match le_lt_dec n i with
+      | left  _ => x
+      | right H => vec_pos v (nat2pos H)
+    end.
+
+  Fact fun2vec_vec2fun n v x : fun2vec 0 n (@vec2fun n v x) = v.
+
+  Fact vec2fun_fun2vec n f x i : i < n -> @vec2fun n (fun2vec 0 n f) x i = f i.
+
+End fun2vec. *)
+
+Require Import sss subcode mm_defs mm_no_self.
+(* sss:
+Require Import List Arith Omega.
+
+Require Import utils subcode.
+
+Set Implicit Arguments.
+
+Reserved Notation "i '//' r '-1>' s" (at level 70, no associativity).
+Reserved Notation "P '//' r ':1>' s" (at level 70, no associativity).
+Reserved Notation "P '//' r '-[' n ']->' s" (at level 70, no associativity).
+Reserved Notation "P '//' r '-+>' s" (at level 70, no associativity).
+Reserved Notation "P '//' r '->>' s" (at level 70, no associativity).
+Reserved Notation "P '//' r '-]]' s" (at level 70, no associativity).
+Reserved Notation "P '//' r '~~>' s" (at level 70, no associativity).
+Reserved Notation "P '//' r ↓" (at level 70, no associativity).
+
+Section Small_Step_Semantics.
+
+  Variable (instr : Set) (data : Type).
+
+  Notation state := (nat * data)%type.
+  
+  Variable one_step : instr -> state -> state -> Prop.
+  
+  Notation "i // s -1> t" := (one_step i s t) (at level 70, no associativity).
+  Notation "s ⟬ i ⦒  t" := (one_step i s t) (at level 70, no associativity).
+ 
+  Hypothesis (sss_fun : forall i s t1 t2, i // s -1> t1 -> i // s -1> t2 -> t1 = t2).
+  Hypothesis (sss_dec : forall i st1 st2, { i // st1 -1> st2 } + { ~ i // st1 -1> st2 }).
+  
+  Notation code := (nat * list instr)%type.
+  
+  Definition sss_step P st1 st2 := exists k l i r d, P = (k,l++i::r)
+                                                  /\ st1 = (k+length l,d)
+                                                  /\ i // st1 -1> st2.
+                                                        
+  Notation "P // r :1> s" := (sss_step P r s)  (at level 70, no associativity).
+  
+  Fact sss_step_fun P s t1 t2 : P // s :1> t1 -> P // s :1> t2 -> t1 = t2.
+ 
+  Fact in_sss_step k l i r st1 st2 : fst st1 = k+length l        
+                               ->       i     // st1  -1>  st2 
+                               -> (k,l++i::r) // st1  :1>  st2.
+
+  Fact sss_step_subcode_inv P ii st st' : 
+        (fst st, ii::nil) <sc P -> P // st :1> st' -> ii // st -1> st'.
+
+  Fact sss_step_supcode P Q st st' :
+       P <sc Q -> in_code (fst st) P -> Q // st :1> st' -> P // st :1> st'.
+  
+  Fact sss_step_dec P st1 st2 : { P // st1 :1> st2 } + { ~ P // st1 :1> st2 }.
+
+  Inductive sss_steps (P : code) : nat -> state -> state -> Prop :=
+    | in_sss_steps_0 : forall st,                  P // st   -[0]->    st
+    | in_sss_steps_S : forall n st1 st2 st3,       P // st1   :1>      st2
+                                              ->   P // st2  -[n]->    st3
+                                              ->   P // st1  -[S n]->  st3
+  where "P // r -[ n ]-> s" := (sss_steps P n r s).
+  
+  Fact sss_steps_0 P st1 st2 : st1 = st2 -> P // st1 -[0]-> st2.
+
+  Fact sss_steps_1 P st1 st2 : P // st1 :1> st2 -> P // st1 -[1]-> st2.
+  
+  Fact sss_steps_trans P n m st1 st2 st3 :
+         P // st1 -[n]-> st2 -> P // st2 -[m]-> st3 -> P // st1 -[n+m]-> st3 .
+  
+  Fact sss_steps_0_inv P st1 st2 : P // st1 -[0]-> st2 -> st1 = st2.
+  
+  Fact sss_steps_S_inv P st1 st3 k : 
+                        st1 <> st3 
+      ->                P // st1 -[k]-> st3 
+      -> exists k' st2, k = S k' 
+                     /\ P // st1 :1> st2
+                     /\ P // st2 -[k']-> st3.
+
+  Fact sss_steps_inv P k st1 st3 : 
+          P // st1 -[k]-> st3 
+       -> (k = 0 /\ st1 = st3)
+        + { k' | exists st2, k = S k' 
+                       /\ P // st1 :1> st2
+                       /\ P // st2 -[k']-> st3 }%type.
+  
+  Fact sss_steps_S_inv' P st1 st3 k :  
+                        P // st1 -[S k]-> st3 
+      -> exists st2,    P // st1 :1> st2
+                     /\ P // st2 -[k]-> st3.
+ 
+  Fact sss_steps_fun P k s t1 t2 :
+         P // s -[k]-> t1 
+      -> P // s -[k]-> t2 
+      -> t1 = t2.
+   
+  Fact sss_steps_plus_inv P n m st1 st3 : 
+         P // st1 -[n+m]-> st3 
+      -> exists st2, P // st1 -[n]-> st2 
+                  /\ P // st2 -[m]-> st3.
+  
+  Definition sss_progress P st1 st2 := exists k, 0 < k /\ P // st1 -[k]-> st2.
+  Definition sss_compute  P st1 st2 := exists k, P // st1 -[k]-> st2.
+  
+  Notation "P // r -+> s" := (sss_progress P r s).
+  Notation "P // r ->> s" := (sss_compute P r s).
+  
+  Fact sss_progress_compute P st1 st2 : P // st1 -+> st2 -> P // st1 ->> st2.
+  
+  Fact sss_compute_trans P st1 st2 st3 : P // st1 ->> st2 -> P // st2 ->> st3 -> P // st1 ->> st3.
+  
+  Fact sss_progress_compute_trans P st1 st2 st3 : P // st1 -+> st2 -> P // st2 ->> st3 -> P // st1 -+> st3.
+  
+  Fact sss_compute_progress_trans P st1 st2 st3 : P // st1 ->> st2 -> P // st2 -+> st3 -> P // st1 -+> st3.
+  
+  Fact sss_progress_trans P st1 st2 st3 : P // st1 -+> st2 -> P // st2 -+> st3 -> P // st1 -+> st3.
+
+  Fact sss_step_in_code P st1 st2 : P // st1 :1> st2 -> in_code (fst st1) P.
+
+  Fact sss_steps_compute P n st1 st2 : P // st1 -[n]-> st2 -> P // st1 ->> st2.
+  
+  Fact subcode_sss_step P Q st1 st2: P <sc Q -> P // st1 :1> st2 -> Q // st1 :1> st2.
+
+  Fact subcode_sss_steps P Q k st1 st2: P <sc Q -> P // st1 -[k]-> st2 -> Q // st1 -[k]-> st2.
+  
+  Fact subcode_sss_progress P Q st1 st2: P <sc Q -> P // st1 -+> st2 -> Q // st1 -+> st2.
+
+  Fact subcode_sss_compute P Q st1 st2: P <sc Q -> P // st1 ->> st2 -> Q // st1 ->> st2.
+
+  Fact subcode_sss_compute_trans P Q st1 st2 st3 :
+       P <sc Q -> P // st1 ->> st2 -> Q // st2 ->> st3 -> Q // st1 ->> st3.
+  
+  Fact subcode_sss_compute_linstr k li P st1 st2 st :
+            (fst st1,li) // st1 -[k]-> st2
+         -> (fst st1,li) <sc P
+         -> P // st2 ->> st
+         -> P // st1 ->> st.
+  
+  Fact subcode_sss_compute_instr P i st1 st2 st3 : 
+            i // st1 -1> st2
+        ->  (fst st1,i::nil) <sc P
+        ->  P // st2 ->> st3
+        ->  P // st1 ->> st3.
+  
+  Fact subcode_sss_step_inv P Q st1 st2 : 
+         P <sc Q 
+      -> in_code (fst st1) P
+      -> Q // st1 :1> st2
+      -> P // st1 :1> st2.
+
+  Definition sss_output P st st' := P // st ->> st' /\ out_code (fst st') P.
+
+  Notation "P // x ~~> y" := (sss_output P x y).
+
+  Definition sss_terminates P st := exists st', P // st ~~> st'.
+
+  Notation "P // x ↓" := (sss_terminates P x).
+
+  Fact subcode_sss_terminates_instr P i st1 st2 : 
+            i // st1 -1> st2
+        ->  (fst st1,i::nil) <sc P
+        ->  P // st2 ↓
+        ->  P // st1 ↓.
+
+  Definition sss_stall ii st := forall st', ~ ii // st -1> st'.
+  Definition sss_step_stall P st := forall st', ~ P // st :1> st'.
+
+  Fact sss_steps_stall_inv P p s1 s2 : sss_step_stall P s1 -> P // s1 -[p]-> s2 -> p = 0 /\ s1 = s2.
+
+  Fact sss_steps_stall_fun P p q s1 s2 :
+         sss_step_stall P s2
+      -> P // s1 -[p]-> s2 
+      -> P // s1 -[q]-> s2
+      -> p = q.
+
+  Definition sss_compute_max P s1 s2 := (P // s1 ->> s2 /\ sss_step_stall P s2).
+
+  Notation " P // s1 -]] s2 " := (sss_compute_max P s1 s2).
+  
+  Fact sss_out_step_stall P st : out_code (fst st) P -> sss_step_stall P st.
+
+  Fact sss_stall_step_stall ii P st :
+          (fst st,ii::nil) <sc P
+       -> sss_stall ii st
+       -> sss_step_stall P st.
+  
+  Fact sss_stall_step_0 ii P q st st' :
+          (fst st,ii::nil) <sc P
+       -> sss_stall ii st
+       -> P // st -[q]-> st' -> q = 0 /\ st = st'.
+
+  Fact sss_step_stall_inv P st :
+          sss_step_stall P st
+       -> { ii | (fst st,ii::nil) <sc P /\ sss_stall ii st }
+        + { out_code (fst st) P }.
+
+  Fact sss_steps_stall k P st st' : 
+         out_code (fst st) P
+      -> P // st -[k]-> st' 
+      -> k = 0 /\ st = st'.
+  
+  Lemma subcode_sss_steps_inv P Q k st1 st3 :
+       P <sc Q
+    -> in_code  (fst st1) P
+    -> out_code (fst st3) P
+    -> Q // st1 -[k]-> st3
+    -> exists k1 k2 st2, 
+          P // st1 -[k1]-> st2
+       /\ Q // st2 -[k2]-> st3
+       /\ k = k1+k2 
+       /\ out_code (fst st2) P.
+
+  Lemma subcode_sss_compute_inv P Q st1 st3 :
+       P <sc Q
+    -> out_code (fst st3) P
+    -> Q // st1 ->> st3
+    -> exists st2, 
+          P // st1 ->> st2
+       /\ Q // st2 ->> st3
+       /\ out_code (fst st2) P.
+
+  Fact subcode_sss_step_inv_1 P i st1 st2 : (fst st1,i::nil) <sc P -> P // st1 :1> st2 -> i // st1 -1> st2.
+
+  Fact subcode_sss_subcode_inv P Q p k st1 st2 st3 :
+           out_code (fst st3) P 
+        -> P <sc Q
+        -> P // st1 -[p]-> st2
+        -> Q // st1 -[k]-> st3
+        -> exists q, k = p+q /\ Q // st2 -[q]-> st3.
+
+  Fact subcode_sss_terminates_inv P Q st st1 :
+           Q // st ↓
+        -> P <sc Q
+        -> P // st ~~> st1
+        -> Q // st1 ↓.
+
+  Fact subcode_sss_progress_inv P Q p st1 st2 st3 :
+           out_code (fst st3) P 
+        -> P <sc Q
+        -> P // st1 -+> st2
+        -> Q // st1 -[p]-> st3
+        -> exists q, q < p /\ Q // st2 -[q]-> st3.
+
+  Section sss_terminates_ind.
+
+    Variable (P : code) (R : state -> Prop).
+
+    Hypothesis (HR0 : forall st, out_code (fst st) P -> R st)
+               (HR1 : forall st1, (forall Q st2, Q <sc P -> Q // st1 -+> st2 -> P // st2 ↓ -> R st2) -> R st1).
+
+    Theorem sss_terminates_ind st : P // st ↓ -> R st.
+
+  End sss_terminates_ind. 
+ 
+  Section sss_compute_max_ind.
+
+    Variable (P : code) (R : state -> state -> Prop).
+
+    Hypothesis (HQ0 : forall st, sss_step_stall P st -> R st st)
+               (HQ1 : forall st1 st3, (forall Q st2, Q <sc P -> Q // st1 -+> st2 -> P // st2 -]] st3 -> R st2 st3) -> R st1 st3).
+
+    Theorem sss_compute_max_ind st1 st3 : P // st1 -]] st3 -> R st1 st3.
+
+  End sss_compute_max_ind. 
+ 
+  Fact sss_compute_inv P st1 st2 st3 :
+             out_code (fst st3) P
+          -> P // st1 ->> st2
+          -> P // st1 ->> st3
+          -> P // st2 ->> st3.
+
+  Fact sss_compute_step_out_inv P k st1 st2 st3 :
+           st1 <> st2
+        -> out_code (fst st3) P
+        -> P // st1 ->> st2
+        -> P // st1 -[k]-> st3
+        -> exists q, q < k /\ P // st2 -[q]-> st3.
+  
+  Fact subcode_sss_subcode_compute_inv P Q k st1 st2 st3 :
+           in_code (fst st1) P
+        -> out_code (fst st2) P
+        -> out_code (fst st3) P 
+        -> P <sc Q
+        -> P // st1 ->> st2
+        -> Q // st1 -[k]-> st3
+        -> exists q, q < k /\ Q // st2 -[q]-> st3.
+
+  Fact subcode_sss_steps_inv_1 P i k st1 st2 st3 :
+        st1 <> st3
+     -> i // st1 -1> st2
+     -> (fst st1,i::nil) <sc P
+     -> P // st1 -[k]-> st3
+     -> exists k', k = S k' /\ P // st2 -[k']-> st3.
+  
+  Fact subcode_sss_steps_stop P i k st1 st2 : 
+            (forall st, ~ i // st1 -1> st)
+        ->  (fst st1,i::nil) <sc P
+        ->  P // st1 -[k]-> st2 -> k = 0 /\ st1 = st2.
+  
+  Fact sss_steps_stop P k st1 st2 :
+             out_code (fst st1) P
+          -> P // st1 -[k]-> st2
+          -> st1 = st2.
+
+  Fact sss_compute_stop P st1 st2 :
+             out_code (fst st1) P
+          -> P // st1 ->> st2
+          -> st1 = st2.
+  
+  Fact sss_compute_fun P st1 st2 st3 :
+             out_code (fst st2) P
+          -> out_code (fst st3) P 
+          -> P // st1 ->> st2
+          -> P // st1 ->> st3 
+          -> st2 = st3.
+
+  Fact sss_output_fun P st st1 st2 : P // st ~~> st1 -> P // st ~~> st2 -> st1 = st2.
+
+  Fact subcode_sss_terminates P Q st : P <sc Q -> Q // st ↓ -> P // st ↓.
+
+  Section sss_loop.
+
+    Variable (P : code) (pre : data -> Prop) (spec : data -> data -> Prop)
+             (f : data -> data) (Hf : forall x, x <> f x)
+             (C1 C2 : data -> Prop) (HC : forall x, pre x -> { C1 x } + { C2 x }) 
+             (i : nat) (p : nat) (Hp : out_code p P)
+             (HP1 : forall x, pre x -> C1 x -> P // (i,x) ->> (i,f x) /\ pre (f x))
+             (HP2 : forall x, pre x -> C2 x -> exists y, P // (i,x) ->> (p,y) /\ spec x y).
+
+    Theorem sss_loop_sound x : pre x 
+                            -> (exists n, C2 (iter f x n)) 
+                            -> exists n y, P // (i,x) ->> (p,y) /\ spec (iter f x n) y.
+
+    Theorem sss_loop_complete x y q : pre x 
+                                   -> out_code q P 
+                                   -> P // (i,x) ->> (q,y) 
+                                   -> p = q /\ exists n, C2 (iter f x n) /\ spec (iter f x n) y.
+
+  End sss_loop.
+
+End Small_Step_Semantics. *)
+(* subcode:
+Require Import List Arith Omega.
+
+Require Import utils.
+
+Set Implicit Arguments.
+
+Section subcode.
+
+  Variable (X : Type).
+  
+  Definition code := (nat * list X)%type.
+
+  Implicit Type P : code.
+  
+  Definition code_start P := fst P.
+  Definition code_end P := fst P + length (snd P).
+  Definition code_length P := length (snd P).
+ 
+  Definition in_code i P := code_start P <= i < code_end P.
+  Definition out_code i P := i < code_start P \/ code_end P <= i.
+  
+  Fact in_out_code i P : in_code i P -> out_code i P -> False.
+
+  Definition subcode P Q := 
+    match P, Q with (i,li), (n,code) => exists l r, code = l ++ li ++ r /\ i = n+length l end.
+    
+  Arguments code_start P /.
+  Arguments code_end P /.
+  Arguments code_length P /.
+  Arguments in_code i P /.
+  Arguments out_code i P /.
+  Arguments subcode P Q /.
+ 
+  Fact in_out_code_dec i P : { in_code i P } + { out_code i P }.
+  
+  Infix "<sc" := subcode (at level 70, no associativity).
+
+  Fact subcode_cons_inj i ρ δ P : (i,ρ::nil) <sc P -> (i,δ::nil) <sc P -> ρ = δ.
+
+  Fact subcode_length P Q : P <sc Q -> code_start Q <= code_start P /\ code_end P <= code_end Q.
+
+  Fact subcode_length' P Q : P <sc Q -> length (snd P) <= length (snd Q).
+
+  Fact subcode_length_le : forall P Q, P <sc Q -> fst Q <= fst P 
+                                               /\ fst P + length (snd P) <= fst Q + length (snd Q).
+  
+  Fact subcode_start_in_code : forall P Q, 0 < code_length P -> P <sc Q -> in_code (code_start P) Q.
+
+  Fact subcode_refl P : P <sc P.
+
+  Fact subcode_trans P Q R : P <sc Q -> Q <sc R -> P <sc R.
+  
+  Fact subcode_in_code P Q i : P <sc Q -> in_code i P -> in_code i Q.
+  
+  Fact subcode_out_code P Q i : P <sc Q -> out_code i Q -> out_code i P.
+  
+  Fact subcode_left n m l r : n = m -> (n,l) <sc (m,l++r).
+  
+  Fact subcode_right n m l r : n = m+length l -> (n,r) <sc (m,l++r).
+
+  Fact subcode_app_end P n l r : P <sc (n,l) -> P <sc (n,l++r).
+
+  Fact subcode_cons P n x l : P <sc (1+n,l) -> P <sc (n,x::l).
+  
+  Fact in_code_subcode i P : in_code i P -> exists a, (i,a::nil) <sc P.
+
+  Fact subcode_app_invert_right j Q1 Q2 i I : 
+        (i,I::nil) <sc (j,Q1++Q2) -> (i,I::nil) <sc (j,Q1)
+                                  \/ (i,I::nil) <sc (length Q1+j,Q2).
+
+  Fact subcode_cons_invert_right j J Q i I : 
+        (i,I::nil) <sc (j,J::Q) -> i = j /\ I = J
+                                \/ (i,I::nil) <sc (S j,Q).
+
+  Variable Q : code.
+
+  Fact subcode_app_inv i j a l r : j = i+length l -> (i,l++a++r) <sc Q -> (j,a) <sc Q.
+  
+  Fact subcode_cons_inv i j a r : j = i -> (i,a++r) <sc Q -> (j,a) <sc Q.
+
+  Fact subcode_snoc_inv i j a l : j = i+length l -> (i,l++a) <sc Q -> (j,a) <sc Q.
+
+  Fact subcode_cons_invert_left i I l : (i,I::l) <sc Q -> (i,I::nil) <sc Q /\ (S i,l) <sc Q.
+
+End subcode.
+
+Arguments code_start {X} P /.
+Arguments code_end {X} P /.
+Arguments in_code {X} i P /.
+Arguments out_code {X} i P /.
+Arguments subcode {X} P Q /.
+
+Infix "<sc" := subcode (at level 70, no associativity).
+
+Ltac subcode_tac := 
+       unfold fst, snd;
+       try match goal with | H: subcode (_,?l) ?c |- subcode (_,?i) ?c 
+            => (match i with ?j::nil => match type of H with context[j] => apply subcode_trans with (2 := H) end end ||
+                match type of H with context[i] => apply subcode_trans with (2 := H) end)
+       end;
+       match goal with
+         | |- subcode (_,?i) (_,?c) => focus_goal i c 
+       end;
+       match goal with 
+         | |- subcode (_,?i::nil) (_,?l++?i::?r) => exists l, r 
+         | |- subcode _ (_,?l++_++?r)            => exists l, r 
+         | |- subcode (_,?i) (_,?l++?i)          => exists l, nil 
+       end;
+       split; auto; rew length; try omega.
+
+Hint Extern 4 (subcode _ _) => subcode_tac. *)
+(* mm_defs:
+Require Import List Arith Omega.
+
+Require Import utils pos vec. 
+Require Import subcode sss.
+
+Set Implicit Arguments.
+
+Tactic Notation "rew" "length" := autorewrite with length_db.
+
+Local Notation "e #> x" := (vec_pos e x).
+Local Notation "e [ v / x ]" := (vec_change e x v).
+
+Inductive mm_instr n : Set :=
+  | mm_inc : pos n -> mm_instr n
+  | mm_dec : pos n -> nat -> mm_instr n
+  .
+
+Notation INC := mm_inc.
+Notation DEC := mm_dec.
+
+Section Minsky_Machine.
+
+  Variable (n : nat).
+
+  Definition mm_state := (nat*vec nat n)%type.
+
+  Inductive mm_sss : mm_instr n -> mm_state -> mm_state -> Prop :=
+    | in_mm_sss_inc   : forall i x v,                   INC x   // (i,v) -1> (1+i,v[(S (v#>x))/x])
+    | in_mm_sss_dec_0 : forall i x k v,   v#>x = O   -> DEC x k // (i,v) -1> (k,v)
+    | in_mm_sss_dec_1 : forall i x k v u, v#>x = S u -> DEC x k // (i,v) -1> (1+i,v[u/x])
+  where "i // s -1> t" := (mm_sss i s t).
+
+  Fact mm_sss_fun i s t1 t2 : i // s -1> t1 -> i // s -1> t2 -> t1 = t2.
+  
+  Fact mm_sss_total ii s : { t | ii // s -1> t }.
+  
+  Fact mm_sss_INC_inv x i v j w : INC x // (i,v) -1> (j,w) -> j=1+i /\ w = v[(S (v#>x))/x].
+  
+  Fact mm_sss_DEC0_inv x k i v j w : v#>x = O -> DEC x k // (i,v) -1> (j,w) -> j = k /\ w = v.
+  
+  Fact mm_sss_DEC1_inv x k u i v j w : v#>x = S u -> DEC x k // (i,v) -1> (j,w) -> j=1+i /\ w = v[u/x].
+
+  Notation "P // s -[ k ]-> t" := (sss_steps mm_sss P k s t).
+  Notation "P // s -+> t" := (sss_progress mm_sss P s t).
+  Notation "P // s ->> t" := (sss_compute mm_sss P s t).
+  
+  Fact mm_progress_INC P i x v st :
+         (i,INC x::nil) <sc P
+      -> P // (1+i,v[(S (v#>x))/x]) ->> st
+      -> P // (i,v) -+> st.
+  
+  Corollary mm_compute_INC P i x v st : (i,INC x::nil) <sc P -> P // (1+i,v[(S (v#>x))/x]) ->> st -> P // (i,v) ->> st.
+  
+  Fact mm_progress_DEC_0 P i x k v st :
+         (i,DEC x k::nil) <sc P
+      -> v#>x = O 
+      -> P // (k,v) ->> st
+      -> P // (i,v) -+> st.
+  
+  Corollary mm_compute_DEC_0 P i x k v st : (i,DEC x k::nil) <sc P -> v#>x = O -> P // (k,v) ->> st -> P // (i,v) ->> st.
+  
+  Fact mm_progress_DEC_S P i x k v u st :
+         (i,DEC x k::nil) <sc P
+      -> v#>x = S u 
+      -> P // (1+i,v[u/x]) ->> st
+      -> P // (i,v) -+> st.
+  
+  Corollary mm_compute_DEC_S P i x k v u st : (i,DEC x k::nil) <sc P -> v#>x = S u -> P // (1+i,v[u/x]) ->> st -> P // (i,v) ->> st.
+  
+  Fact mm_steps_INC_inv k P i x v st :
+         (i,INC x::nil) <sc P
+      -> k <> 0
+      -> P // (i,v) -[k]-> st
+      -> exists k', k' < k /\ P // (1+i,v[(S (v#>x))/x]) -[k']-> st.
+  
+  Fact mm_steps_DEC_0_inv k P i x p v st :
+         (i,DEC x p::nil) <sc P
+      -> k <> 0
+      -> v#>x = 0
+      -> P // (i,v) -[k]-> st
+      -> exists k', k' < k /\ P // (p,v) -[k']-> st.
+  
+  Fact mm_steps_DEC_1_inv k P i x p v u st :
+         (i,DEC x p::nil) <sc P
+      -> k <> 0
+      -> v#>x = S u
+      -> P // (i,v) -[k]-> st
+      -> exists k', k' < k /\ P // (1+i,v[u/x]) -[k']-> st.
+  
+End Minsky_Machine.
+
+Local Notation "P // s -[ k ]-> t" := (sss_steps (@mm_sss _) P k s t).
+Local Notation "P // s -+> t" := (sss_progress (@mm_sss _) P s t).
+Local Notation "P // s ->> t" := (sss_compute (@mm_sss _) P s t).
+
+Tactic Notation "mm" "sss" "INC" "with" uconstr(a) := 
+  match goal with
+    | |- _ // _ -+> _ => apply mm_progress_INC with (x := a)
+    | |- _ // _ ->> _ => apply mm_compute_INC with (x := a)
+  end; auto.
+
+Tactic Notation "mm" "sss" "DEC" "0" "with" uconstr(a) uconstr(b) := 
+  match goal with
+    | |- _ // _ -+> _ => apply mm_progress_DEC_0 with (x := a) (k := b)
+    | |- _ // _ ->> _ => apply mm_compute_DEC_0 with (x := a) (k := b)
+  end; auto.
+
+Tactic Notation "mm" "sss" "DEC" "S" "with" uconstr(a) uconstr(b) uconstr(c) := 
+  match goal with
+    | |- _ // _ -+> _ => apply mm_progress_DEC_S with (x := a) (k := b) (u := c)
+    | |- _ // _ ->> _ => apply mm_compute_DEC_S with (x := a) (k := b) (u := c)
+  end; auto.
+    
+Tactic Notation "mm" "sss" "stop" := exists 0; apply sss_steps_0; auto.
+
+Definition MM_PROBLEM := { n : nat & { P : list (mm_instr n) & vec nat n } }.
+
+Local Notation "i // s -1> t" := (@mm_sss _ i s t).
+Local Notation "P // s ~~> t" := (sss_output (@mm_sss _) P s t).
+Local Notation "P // s ↓" := (sss_terminates (@mm_sss _) P s). 
+
+Definition MM_HALTS_ON_ZERO (P : MM_PROBLEM) := 
+  match P with existT _ n (existT _ P v) => (1,P) // (1,v) ~~> (0,vec_zero) end.
+
+Definition MM_HALTING (P : MM_PROBLEM) :=
+  match P with existT _ n (existT _ P v) => (1, P) // (1, v) ↓ end.
+
+Section mm_special_ind.
+
+  Variables (n : nat) (P : nat*list (mm_instr n)) (se : nat * vec nat n)
+            (Q : nat * vec nat n -> Prop).
+
+  Hypothesis (HQ0 : Q se)
+             (HQ1 : forall i ρ v j w,   (i,ρ::nil) <sc P
+                                     -> ρ // (i,v) -1> (j,w)
+                                     -> P // (j,w) ->> se
+                                     -> Q (j,w)
+                                     -> Q (i,v)).
+
+  Theorem mm_special_ind s : P // s ->> se -> Q s.
+
+End mm_special_ind.
+
+Section mm_term_ind.
+
+  Variables (n : nat) (P : nat*list (mm_instr n)) (se : nat * vec nat n)
+            (Q : nat * vec nat n -> Prop).
+
+  Hypothesis (HQ0 : out_code (fst se) P -> Q se)
+             (HQ1 : forall i ρ v j w,    (i,ρ::nil) <sc P
+                                     -> ρ // (i,v) -1> (j,w)
+                                     -> P // (j,w) ~~> se
+                                     -> Q (j,w)
+                                     -> Q (i,v)).
+
+  Theorem mm_term_ind s : P // s ~~> se -> Q s.
+
+End mm_term_ind. *)
+(* mm_no_self:
+Require Import List Arith Omega.
+
+Require Import utils pos vec. 
+Require Import subcode sss mm_defs.
+
+Set Implicit Arguments.
+
+Tactic Notation "rew" "length" := autorewrite with length_db.
+
+Local Notation "e #> x" := (vec_pos e x).
+Local Notation "e [ v / x ]" := (vec_change e x v).
+
+Local Notation "I // s -1> t" := (mm_sss I s t).
+Local Notation "P // s -[ k ]-> t" := (sss_steps (@mm_sss _) P k s t).
+Local Notation "P // s -+> t" := (sss_progress (@mm_sss _) P s t).
+Local Notation "P // s ->> t" := (sss_compute (@mm_sss _) P s t).
+Local Notation "P // s '~~>' t" := (sss_output (@mm_sss _) P s t).
+Local Notation "P // s ↓" := (sss_terminates (@mm_sss _) P s). 
+
+Section self_loops.
+
+  Variables (n : nat) (P : list (mm_instr n)).
+
+  Lemma mm_self_loop_no_term_1 i x s v : 
+              (i,DEC x i::nil) <sc (1,P) 
+           -> s = (i,v)
+           -> v#>x = 0  
+           -> ~ (1,P) // s ↓.
+
+  Lemma mm_self_loop_no_term_2 i x s v : 
+              (i,DEC x (1+i)::DEC x i::nil) <sc (1,P) 
+           -> s = (i,v) \/ s = (1+i,v)
+           -> v#>x = 0  
+           -> ~ (1,P) // s ↓.
+
+End self_loops.
+
+Section no_self_loops.
+
+  Variables (n : nat).
+
+  Definition mm_no_self_loops (Q : nat * list (mm_instr n)) := forall i x, ~ (i,DEC x i::nil) <sc Q.
+
+  Implicit Types (P Q : list (mm_instr n)).
+
+  Fact mm_no_self_loops_app i P Q : mm_no_self_loops (i,P) 
+                                 -> mm_no_self_loops (length P +i,Q)
+                                 -> mm_no_self_loops (i,P++Q).
+
+End no_self_loops.
+
+Section remove_self_loops.
+
+  Variables (n : nat).
+
+  Implicit Types (P Q : list (mm_instr n)).
+
+  Let f k i (ρ : mm_instr n) := 
+    match ρ with
+      | INC x   => INC (pos_nxt x)
+      | DEC x j => DEC (pos_nxt x) (if eq_nat_dec i j     then 1+k 
+                                    else if le_lt_dec k j then 0
+                                                          else j)
+    end.
+
+  Let Fixpoint g k i P := 
+    match P with
+      | nil  => nil
+      | ρ::P => f k i ρ :: g k (S i) P
+    end.
+
+  Let g_app k i P Q : g k i (P++Q) = g k i P ++ g k (length P + i) Q.
+
+  Let g_app_inv k i P l r : g k i P = l ++ r -> exists L R, P = L++R /\ l = g k i L /\ r = g k (length l+i) R.
+ 
+  Let length_g l i P : length (g l i P) = length P.
+
+  Let g_subcode k i P j ρ : (j,ρ::nil) <sc (i,P) -> (j, f k j ρ::nil) <sc (i,g k i P).
+
+  Let subcode_g k i P j ρ : (j,ρ::nil) <sc (i,g k i P) -> exists ρ', (j,ρ'::nil) <sc (i,P) /\ ρ = f k j ρ'.
+
+  Let g_loops k i P : 1 <= i -> i+length P <= k -> mm_no_self_loops (i,g k i P).
+
+  Variable P : list (mm_instr n).
+
+  Notation lP := (length P).
+
+  Let R : list (mm_instr (S n)) := DEC pos0 0 
+                                :: DEC pos0 (3+lP)
+                                :: DEC pos0 (2+lP)
+                                :: nil.
+
+  Let sc_R_1 : (1+lP, DEC pos0 0 :: nil) <sc (1+lP, R).
+
+  Let sc_R_2 : (2+lP, DEC pos0 (1+(2+lP)) :: DEC pos0 (2+lP) :: nil) <sc (1+lP, R).
+
+  Let R_sc i rho : (i,rho::nil) <sc (1+lP,R) -> i = 1+lP /\ rho = DEC pos0 0
+                                             \/ i = 2+lP /\ rho = DEC pos0 (3+lP)
+                                             \/ i = 3+lP /\ rho = DEC pos0 (2+lP).
+
+  Let R_no_self_loops : mm_no_self_loops (1+lP,R).
+ 
+  Let Q := g (1+lP) 1 P ++ R.
+
+  Let Q_no_self_loops : mm_no_self_loops (1,Q).
+
+  Let sc_Q_1 j ρ : (j,ρ::nil) <sc (1,P) -> (j, f (1+lP) j ρ::nil) <sc (1,Q).
+
+  Let sc_Q_2 : (1+lP, DEC pos0 0 :: DEC pos0 (3+lP) :: DEC pos0 (2+lP) :: nil) <sc (1,Q).
+
+  Let sc_Q_3 : (2+lP, DEC pos0 (3+lP) :: DEC pos0 (2+lP) :: nil) <sc (1,Q).
+ 
+  Let Q_sc j ρ : (j,ρ::nil) <sc (1,Q) 
+              -> (exists ρ', (j,ρ'::nil) <sc (1,P) /\ ρ = f (1+lP) j ρ')
+              \/ j = 1+lP /\ ρ = DEC pos0 0
+              \/ j = 2+lP /\ ρ = DEC pos0 (3+lP)
+              \/ j = 3+lP /\ ρ = DEC pos0 (2+lP).
+
+  Let Q_length : length Q = length P + 3.
+
+  Let Q_bound i x j : (i,DEC x j::nil) <sc (1,Q) -> j < 1+length Q.
+
+  Let P_imp_Q s s0 : in_code (fst s) (1,P) -> (1,P) // s ~~> s0 -> (1,Q) // (fst s, 0##snd s) ↓.
+
+  Let Q_imp_P s s0 : in_code (fst s) (1,P) -> (snd s)#>pos0 = 0 -> (1,Q) // s ~~> s0 -> (1,P) // (fst s, vec_tail (snd s)) ↓.
+
+  Theorem mm_remove_self_loops : { Q |  mm_no_self_loops (1,Q)
+                                     /\ (forall i x j, (i,DEC x j::nil) <sc (1,Q) -> j < 1+length Q)
+                                     /\ forall v, (1,P) // (1,v) ↓ <-> (1,Q) // (1,0##v) ↓ }.
+
+End remove_self_loops. *)
+
+Require Import fractran_defs prime_seq.
+(* fractran_defs:
+Require Import List Arith Omega.
+
+Require Import utils_tac utils_list utils_nat gcd rel_iter pos vec.
+
+Set Implicit Arguments.
+
+Section fractran.
+
+  Implicit Type (l : list (nat*nat)).
+
+  Reserved Notation "l '//' x → y" (at level 70, no associativity).
+
+  Inductive fractran_step : list (nat*nat) -> nat -> nat -> Prop :=
+    | in_ft_0 : forall p q l x y, q*y = p*x -> (p,q)::l // x → y
+    | in_ft_1 : forall p q l x y, ~ divides q (p*x) -> l // x → y -> (p,q)::l // x → y
+  where "l // x → y" := (fractran_step l x y).
+
+  Definition fractran_regular l := Forall (fun c => snd c <> 0) l.
+
+  Fact fractran_step_nil_inv x y : nil // x → y <-> False.
+
+  Fact fractran_step_cons_inv p q l x y : (p,q)::l // x → y <-> q*y = p*x \/ ~ divides q (p*x) /\ l // x → y.
+
+  Fact mul_pos_inj_l q x y : q <> 0 -> q*x = q*y -> x = y.
+
+  Lemma fractran_step_inv P x y : 
+            P // x → y 
+         -> exists l p q r, P = l++(p,q)::r 
+                         /\ (forall u v, In (u,v) l -> ~ divides v (u*x))
+                         /\ q*y=p*x.
+
+  Lemma fractran_step_fun l x y1 y2 : fractran_regular l -> l // x → y1 -> l // x → y2 -> y1 = y2.
+
+  Lemma fractran_step_bound l : fractran_regular l -> { k | forall x y, l // x → y -> y <= k*x }.
+
+  Definition fractran_stop l x := forall z, ~ l // x → z.
+
+  Fact fractan_stop_nil_inv x : fractran_stop nil x <-> True.
+
+  Fact fractan_stop_cons_inv p q l x : fractran_stop ((p,q)::l) x <-> ~ divides q (p*x) /\ fractran_stop l x.
+
+  Fact fractran_step_dec l x : { y | l // x → y } + { fractran_stop l x }.
+ 
+  Definition fractran_steps l := rel_iter (fractran_step l).
+  Definition fractran_compute l x y := exists n, fractran_steps l n x y.
+  Definition fractran_terminates l x := exists y, fractran_compute l x y /\ fractran_stop l y.
+
+  Definition FRACTRAN_PROBLEM := (list (nat*nat) * nat)%type.
+  Definition FRACTRAN_HALTING (P : FRACTRAN_PROBLEM) := let (l,x) := P in fractran_terminates l x.
+ 
+  Let remove_zero_den l := filter (fun c => if eq_nat_dec (snd c) 0 then false else true) l.
+
+  Let remove_zero_den_Forall l : fractran_regular (remove_zero_den l).
+
+  Section zero_cases.
+
+    Fact fractran_step_head_not_zero p q l y : q <> 0 -> (p,q)::l // 0 → y -> y = 0.
+
+    Fact fractran_rt_head_not_zero p q l n y : q <> 0 -> fractran_steps ((p,q)::l) n 0 y -> y = 0.
+
+    Lemma FRACTRAN_HALTING_on_zero_first_no_zero_den p q l : q <> 0 -> FRACTRAN_HALTING ((p,q)::l,0) <-> False. 
+
+    Fact fractran_step_no_zero_den l x y : fractran_regular l -> l // x → y -> x = 0 -> y = 0.
+
+    Fact fractran_step_no_zero_num l : Forall (fun c => fst c <> 0) l -> forall x y, l // x → y -> y = 0 -> x = 0.
+
+    Fact fractran_rt_no_zero_den l n y : fractran_regular l -> fractran_steps l n 0 y -> y = 0.
+
+    Fact fractran_rt_no_zero_num l : Forall (fun c => fst c <> 0) l -> forall n x, fractran_steps l n x 0 -> x = 0.
+
+    Fact fractran_zero_num l x : Exists (fun c => fst c = 0) l -> exists y, l // x → y.
+
+    Corollary FRACTRAN_HALTING_0_num l x : Exists (fun c => fst c = 0) l -> FRACTRAN_HALTING (l,x) <-> False.
+
+    Lemma fractran_step_zero l : Forall (fun c => fst c <> 0) l -> forall x y, x <> 0 -> l // x → y <-> remove_zero_den l // x → y.
+
+    Lemma fractran_rt_no_zero_den_0_0 l : 
+           l <> nil -> fractran_regular l -> fractran_step l 0 0.
+
+    Corollary FRACTRAN_HALTING_l_0_no_zero_den l : 
+            l <> nil -> fractran_regular l -> FRACTRAN_HALTING (l,0) <-> False.
+
+    Lemma FRACTRAN_HALTING_nil_x x : FRACTRAN_HALTING (nil,x) <-> True.
+
+    Lemma FRACTRAN_HALTING_l_1_no_zero_den l x : 
+           l <> nil 
+        -> x <> 0 
+        -> Forall (fun c => fst c <> 0) l 
+        -> FRACTRAN_HALTING (l,x) <-> FRACTRAN_HALTING (remove_zero_den l,x).
+   
+    Lemma FRACTRAN_HALTING_hard p l : 
+           p <> 0 
+        -> FRACTRAN_HALTING ((p,0)::l,0) 
+       <-> exists x, x <> 0 /\ FRACTRAN_HALTING ((p,0)::l,x).
+
+  End zero_cases.
+
+  Fact FRACTAN_cases ll :  { Exists (fun c => fst c = 0) ll }
+                         + { Forall (fun c => snd c <> 0) ll }
+                         + { p : nat & { mm | Forall (fun c => fst c <> 0) ll /\ Exists (fun c => snd c = 0) ll 
+                                           /\ ll = (p,0):: mm /\ p <> 0 } }
+                         + { p : nat & { q : nat & { mm | Forall (fun c => fst c <> 0) ll /\ Exists (fun c => snd c = 0) ll 
+                                          /\ ll = (p,q):: mm /\ q <> 0 /\ p <> 0 } } }.
+
+End fractran.
+
+Notation "l '/F/' x ↓ " := (fractran_terminates l x) (at level 70, no associativity). *)
+(* prime_seq:
+Require Import List Arith Omega Permutation.
+
+Require Import utils_tac utils_list utils_nat gcd prime rel_iter pos vec.
+
+Set Implicit Arguments.
+
+Local Notation "e #> x" := (vec_pos e x).
+Local Notation "e [ v / x ]" := (vec_change e x v).
+
+Set Implicit Arguments.
+
+Lemma prime_neq_0 p : prime p -> p <> 0.
+
+Hint Resolve prime_neq_0.
+
+Lemma power_factor_lt_neq p i j x y : 
+         p <> 0 
+      -> i < j 
+      -> ~ divides p x 
+      -> p^i * x <> p^j * y.
+
+Lemma power_factor_uniq p i j x y : 
+         p <> 0  
+      -> ~ divides p x
+      -> ~ divides p y 
+      -> p^i * x = p^j * y
+      -> i = j /\ x = y.
+
+Lemma prime_above m : { p | m < p /\ prime p }.
+
+Lemma prime_divides p q :
+  prime p -> prime q -> divides p q -> p = q.
+
+Definition nxtprime n := proj1_sig (prime_above n).
+
+Fact nxtprime_spec1 n : n < nxtprime n.
+
+Fact nxtprime_spec2 n : prime (nxtprime n).
+
+Hint Resolve nxtprime_spec1 nxtprime_spec2 prime_2.
+
+Definition nthprime (n : nat) := iter nxtprime 2 n.
+
+Lemma nthprime_prime n : prime (nthprime n).
+
+Hint Resolve nthprime_prime.
+
+Lemma nthprime_ge n m : n < m -> nthprime n < nthprime m.
+
+Lemma nthprime_inj n m : nthprime n = nthprime m -> n = m.
+
+Record primestream :=
+  {
+    str :> nat -> nat;
+    str_inj : forall n m, str n = str m -> n = m;
+    str_prime : forall n, prime (str n);
+  }.
+
+Hint Immediate str_prime.
+Hint Resolve str_inj.
+
+Lemma primestream_divides (ps : primestream) n m :  divides (ps n) (ps m) -> n = m.
+
+Definition ps : primestream.
+
+Definition qs : primestream.
+
+Lemma ps_qs : forall n m, ps n = qs m -> False.
+
+Hint Resolve ps_qs.
+
+Lemma ps_qs_div n m : ~ divides (ps n) (qs m).
+
+Lemma qs_ps_div n m : ~ divides (qs n) (ps m).
+
+Fixpoint exp {n} (i : nat) (v : vec nat n) : nat :=
+  match v with
+    | vec_nil => 1
+    | x##v    => qs i ^ x * exp (S i) v
+  end.
+
+Fact exp_nil i : exp i vec_nil = 1.
+
+Fact exp_cons n i x v : @exp (S n) i (x##v) = qs i^x*exp (S i) v.
+
+Fact exp_zero n i : @exp n i vec_zero = 1.
+
+Fact exp_app n m i v w : @exp (n+m) i (vec_app v w) = exp i v * exp (n+i) w.
+
+Local Notation divides_mult_inv := prime_div_mult.
+
+Lemma not_prime_1 : ~ prime 1.
+
+Lemma not_ps_1 n : ~ ps n = 1.
+
+Lemma not_qs_1 n : ~ qs n = 1.
+
+Hint Resolve not_prime_1 not_qs_1.
+
+Lemma divides_pow p n k : prime p -> divides p (n ^ k) -> divides p n.
+
+Opaque ps qs.
+
+Lemma ps_exp n m (v : vec nat m) i : ~ divides (ps n) (exp i v).
+
+Coercion tonat {n} := @pos2nat n.
+
+Lemma vec_prod_div m (v : vec nat m) (u0 : nat) (p : pos m) i :
+    vec_pos v p = S u0 -> qs (p + i) * exp i (vec_change v p u0) = exp i v.
+
+Lemma qs_exp_div i j n v : i < j -> ~ divides (qs i) (@exp n j v).
+
+Lemma qs_shift n m j k (v : vec nat k) :
+  divides (qs n) (exp j v) <-> divides (qs (m + n)) (exp (m + j) v).
+
+Lemma vec_prod_mult m v (u : pos m) i : @exp m i (vec_change v u (1 + vec_pos v u)) = qs (u + i) * exp i v.
+
+Lemma inv_exp q p1 p2 x y : 
+         q <> 0 
+      -> ~ divides q p1 
+      -> ~ divides q p2 
+      -> q ^ x * p1 = q ^ y * p2 
+      -> x = y.
+
+Lemma exp_inj n i v1 v2 :
+  @exp n i v1 = exp i v2 -> v1 = v2.
+
+Lemma exp_inv_inc n u v1 :
+  @exp n 0 (vec_change v1 u (S (vec_pos v1 u))) = qs u * exp 0 v1. *)
+
+
+
+Set Implicit Arguments.
+
+
+
+Tactic Notation "rew" "length" := autorewrite with length_db. 
+
+
+
+Local Notation "e #> x" := (vec_pos e x).
+
+Local Notation "e [ v / x ]" := (vec_change e x v).
+
+
+
+Local Notation "I // s -1> t" := (mm_sss I s t).
+
+Local Notation "P /MM/ s → t" := (sss_step (@mm_sss _) P s t) (at level 70, no associativity). 
+
+Local Notation "P /MM/ s -[ k ]-> t" := (sss_steps (@mm_sss _) P k s t) (at level 70, no associativity).
+
+Local Notation "P /MM/ s ↓" := (sss_terminates (@mm_sss _) P s) (at level 70, no associativity).
+
+
+
+Local Notation "l /F/ x → y" := (fractran_step l x y) (at level 70, no associativity).
+
+Local Notation "l /F/ x -[ k ]-> y" := (fractran_steps l k x y) (at level 70, no associativity).
+
+
+
+Set Implicit Arguments.
+
+
+
+Definition encode_state {n} (c : nat * vec nat n) := ps (fst c) * @exp n 0 (snd c).
+
+
+
+Definition encode_inc n  i (u : pos n) := (ps (i + 1) * qs u, ps i).
+
+Definition encode_dec n  i (u : pos n) (_ : nat) := (ps (i + 1), ps i * qs u).
+
+Definition encode_dec2 n i (u : pos n) j := (ps j, ps i).
+
+
+
+Definition encode_one_instr m i (rho : mm_instr m) :=
+
+  match rho with
+
+    | INC u   => encode_inc i u :: nil
+
+    | DEC u j => encode_dec i u j :: encode_dec2 i u j :: nil
+
+  end.
+
+
+
+Fixpoint encode_mm_instr m i (l : list (mm_instr m)) : list (nat * nat) :=
+
+  match l with
+
+    | nil          => nil
+
+    | rho :: l => encode_one_instr i rho ++ encode_mm_instr (S i) l
+
+  end.
+
+
+
+Fact encode_mm_instr_app m i l r : @encode_mm_instr m i (l++r) = encode_mm_instr i l++encode_mm_instr (length l+i) r.
+
+Proof.
+
+  revert i; induction l as [ | rho l IHl ]; intros i; simpl; auto; rewrite IHl, app_ass.
+
+  do 3 f_equal; omega.
+
+Qed.
+
+
+
+Fact encode_mm_instr_regular n i l : Forall (fun c => fst c <> 0 /\ snd c <> 0) (@encode_mm_instr n i l).
+
+Proof.
+
+  revert i; induction l as [ | [ u | u j ] l IHl ]; intros i; simpl.
+
+  + constructor.
+
+  + constructor; auto; unfold encode_inc; simpl; split;
+
+      [ apply Nat.neq_mul_0; split | ]; apply prime_neq_0; apply nthprime_prime.
+
+  + constructor; [ | constructor ]; auto; split; unfold encode_dec, encode_dec2; simpl.
+
+    2: apply Nat.neq_mul_0; split.
+
+    all: apply prime_neq_0; apply nthprime_prime.
+
+Qed.
+
+
+
+Fact encode_mm_instr_regular' n i l : fractran_regular (@encode_mm_instr n i l).
+
+Proof.
+
+  generalize (@encode_mm_instr_regular n i l); apply Forall_impl; tauto.
+
+Qed.
+
+
+
+Fact encode_mm_instr_in_inv n i P el c er : 
+
+          @encode_mm_instr n i P = el++c::er
+
+       -> exists l rho r, P = l++rho::r /\ In c (encode_one_instr (length l+i) rho).
+
+Proof.
+
+  revert i el c er; induction P as [ | rho P IHP ]; simpl; intros i el c er H.
+
+  + destruct el; discriminate.
+
+  + destruct list_app_cons_eq_inv with (1 := H)
+
+      as [ (m & H1 & H2) | (m & H1 & H2) ].
+
+    * destruct IHP with (1 := H2) as (l & rho' & r & G1 & G2).
+
+      exists (rho::l), rho', r; subst; split; auto.
+
+      eq goal G2; do 2 f_equal; simpl; omega.
+
+    * exists nil, rho, P; split; simpl; auto.
+
+      rewrite <- H1; apply in_or_app; simpl; auto.
+
+Qed.
+
+
+
+Local Notation divides_mult_inv := prime_div_mult.
+
+
+
+Local Ltac inv H := inversion H; subst; clear H.
+
+
+
+Opaque ps qs.
+
+
+
+Lemma divides_encode_state i k n v : divides (ps i) (@encode_state n (k,v)) -> i = k.
+
+Proof.
+
+  unfold encode_state. intros. induction v.
+
+  - cbn in H. replace (ps k * 1) with (ps k) in H by omega.
+
+    now eapply primestream_divides in H.
+
+  - cbn in H. eapply divides_mult_inv in H as [ | [ | ] % divides_mult_inv ]; eauto.
+
+    + now eapply primestream_divides in H.
+
+    + eapply divides_pow in H; eauto.
+
+      now eapply ps_qs_div in H.
+
+    + now eapply ps_exp in H.
+
+Qed.
+
+
+
+Lemma skip_steps m k l r k' (v v' : vec _ m) :
+
+      @mm_no_self_loops m (k, l ++ r) 
+
+   -> encode_mm_instr (k + length l) r /F/ encode_state (k + length l,v) → encode_state (k',v') 
+
+   -> encode_mm_instr k (l ++ r)       /F/ encode_state (k + length l,v) → encode_state (k',v').
+
+Proof with eauto; try omega.
+
+  revert k. induction l; cbn - [subcode] in *; intros.
+
+  - revert H0. ring_simplify (k + 0). eauto.
+
+  - revert H0. ring_simplify (k + S (length l)). intros H1. destruct a.
+
+    + econstructor 2. intros [[|] % divides_mult_inv | ] % divides_mult_inv; eauto.
+
+      * eapply primestream_divides in H0; omega.
+
+      * now eapply ps_qs_div in H0. 
+
+      * eapply divides_encode_state in H0; omega.
+
+      * specialize IHl with (k := S k). revert IHl.
+
+        cbn - [subcode]. ring_simplify (S (k + length l)).
+
+        intros IHl. eapply IHl. 2:exact H1.
+
+        intros ? ? ?. eapply H. eapply subcode_cons. eassumption.
+
+    + repeat econstructor 2. 2:unfold encode_dec2.
+
+      2,3: cbn- [subcode]. 1: intros [] % divides_mult_inv_l.
+
+      2: intros [ | ] % divides_mult_inv...
+
+      * eapply divides_mult_inv in H0 as [? | ?]...
+
+        eapply primestream_divides in H0...
+
+        eapply divides_encode_state in H0... 
+
+      * eapply primestream_divides in H0... subst.
+
+        eapply (H n p). eauto.
+
+      * eapply divides_encode_state in H0...
+
+      * specialize (IHl (S k)). revert IHl.
+
+        cbn - [subcode]. ring_simplify (S (k + length l)).
+
+        intros IHl. eapply IHl. 2:exact H1.
+
+        intros ? ? ?. eapply H. eapply subcode_cons. eassumption.
+
+Qed.
+
+
+
+Lemma qs_exp i n u (v : vec nat n) :
+
+  divides (qs u) (encode_state (i,v)) <-> divides (qs u) (exp 0 v).
+
+Proof.
+
+  split.
+
+  - intros [ | ] % divides_mult_inv; eauto.
+
+    now eapply qs_ps_div in H.
+
+  - intros. unfold encode_state. now eapply divides_mult.
+
+Qed.
+
+
+
+Lemma qs_encode_state i n (u : pos n) (v : vec nat n) :
+
+  divides (qs u) (encode_state (i,v)) <-> v #> u > 0.
+
+Proof.
+
+  rewrite qs_exp.
+
+  enough (forall i, divides (qs (i + u)) (exp i v) <-> v #> u > 0). eapply H. intros j.
+
+  induction v.
+
+  - inversion u.
+
+  - revert u. eapply pos.pos_S_invert.
+
+    + cbn; rewrite pos2nat_fst, Nat.add_0_r. 
+
+      split.
+
+      * intros [ | ] % divides_mult_inv; eauto.
+
+        -- destruct x; try omega. cbn in H. 
+
+           apply divides_1_inv in H.
+
+           generalize (str_prime qs j); rewrite H.
+
+           intros [ [] _ ]; auto.
+
+        -- eapply qs_exp_div in H; now eauto.
+
+      * intros. destruct x. inv H.
+
+        exists (qs j ^ x * exp (S j) v). cbn. ring.
+
+    + cbn. intros. rewrite <- IHv, pos2nat_nxt.
+
+      rewrite qs_shift with (m := 1).
+
+      simpl.
+
+      replace (j+S (pos2nat p)) with (S (j+p)); try tauto.
+
+      2: rewrite (plus_comm _ (S _)); simpl; rewrite plus_comm; auto.
+
+      split; intros H.
+
+      * eapply divides_mult_inv in H as [ | ]; eauto.
+
+        eapply divides_pow in H; auto. 
+
+        eapply primestream_divides in H.
+
+        omega.
+
+      * eapply divides_mult. 
+
+        revert H; cbn; rewrite plus_n_Sm; eauto.
+
+Qed.
+
+
+
+Lemma one_step_forward m i P i1 v1 i2 v2 :
+
+     @mm_no_self_loops m (i,P) 
+
+  -> (i, P)              /MM/ (i1, v1)           → (i2,v2) 
+
+  -> encode_mm_instr i P /F/  encode_state (i1,v1) → encode_state (i2,v2).
+
+Proof with eauto; try omega.
+
+  intros HP (k & l & [ u | u j ] & r & v & ? & ? & ?); inversion H; subst; clear H.
+
+  - inversion H0; inversion H1; subst; clear H0 H1. 
+
+    eapply skip_steps...
+
+    econstructor. cbn. ring_simplify.
+
+    replace (1 + (k + length l)) with (k + length l + 1) by omega. unfold encode_state, fst, snd. 
+
+    rewrite vec_prod_mult.
+
+    rewrite Nat.add_0_r; ring.
+
+  - inversion H0; inversion H1; subst; clear H0 H1.
+
+    all:eapply skip_steps...
+
+    + cbn. econstructor 2.
+
+      intros [] % divides_mult_inv_l...
+
+      eapply divides_mult_inv in H0 as [ | ]...
+
+      * now eapply qs_ps_div in H0.          
+
+      * eapply qs_encode_state in H0. omega.
+
+      * unfold encode_dec2. econstructor. unfold encode_state, fst, snd. ring.
+
+    + econstructor. cbn. unfold encode_state, fst, snd. ring_simplify.
+
+      replace (1 + (k + length l)) with (k + length l + 1) by omega.
+
+      erewrite <- (vec_prod_div _ _ _ H4).
+
+      rewrite Nat.add_0_r; ring.
+
+Qed.
+
+
+
+Lemma steps_forward m i P i1 v1 i2 v2 k :
+
+    @mm_no_self_loops m (i, P) 
+
+ -> (i, P) /MM/ (i1, v1) -[k]-> (i2,v2)
+
+ -> encode_mm_instr i P /F/ encode_state (i1,v1) -[k]-> encode_state (i2,v2).
+
+Proof.
+
+  intros HP H. revert v1 i1 i2 H. induction k; intros v1 i1 i2 H; inversion H; subst; clear H; cbn.
+
+  - reflexivity.
+
+  - destruct st2. eapply one_step_forward in H1; eauto.
+
+Qed.
+
+
+
+Local Fact divides_from_eq x y t : x*y = t -> divides x t.
+
+Proof. exists y; subst; ring. Qed.
+
+
+
+Local Fact prime_div_mult3 p x y z : prime p -> divides p (x*y*z) -> divides p x \/ divides p y \/ divides p z.
+
+Proof.
+
+  intros H1 H2.
+
+  apply prime_div_mult in H2; auto.
+
+  destruct H2 as [ H2 | ]; auto.
+
+  apply prime_div_mult in H2; tauto.
+
+Qed.
+
+
+
+Local Fact prime_div_mult4 p w x y z : prime p -> divides p (w*x*y*z) -> divides p w \/ divides p x \/ divides p y \/ divides p z.
+
+Proof.
+
+  intros H1 H2.
+
+  apply prime_div_mult3 in H2; auto.
+
+  destruct H2 as [ H2 | H2 ]; try tauto.
+
+  apply prime_div_mult in H2; tauto.
+
+Qed.
+
+
+
+Local Hint Resolve encode_mm_instr_regular'.
+
+
+
+Lemma one_step_backward m i P i1 v1 st :
+
+     @mm_no_self_loops m (i, P)
+
+  -> encode_mm_instr i P /F/ @encode_state m (i1,v1) → st 
+
+  -> exists i2 v2, st = @encode_state m (i2,v2)
+
+                /\ (i, P) /MM/ (i1, v1) → (i2,v2).
+
+Proof.
+
+  intros H1 H2.
+
+  destruct fractran_step_inv with (1 := H2)
+
+    as (el & p & q & er & H3 & H4 & H5).
+
+  unfold encode_state in H5; simpl in H5.
+
+  destruct encode_mm_instr_in_inv with (1 := H3)
+
+    as (l & rho & r & -> & G2).
+
+  assert (i1 = length l+i) as E.
+
+  { unfold encode_one_instr in G2.
+
+    destruct rho as [ u | u j ]; unfold encode_inc, encode_dec, encode_dec2 in G2;
+
+      [ destruct G2 as [ G2 | [] ] | destruct G2 as [ G2 | [ G2 | [] ] ] ]; 
+
+      inversion G2; subst p q; clear G2;
+
+      repeat rewrite mult_assoc in H5.
+
+    * apply divides_from_eq, prime_div_mult4 in H5; auto.
+
+      destruct H5 as [ H5 | [ H5 | [ H5 | H5 ] ] ].
+
+      + apply primestream_divides in H5; omega.
+
+      + apply ps_qs_div in H5; tauto.
+
+      + apply primestream_divides in H5; omega.
+
+      + apply ps_exp in H5; tauto.
+
+    * rewrite <- mult_assoc in H5.
+
+      apply divides_from_eq, prime_div_mult3 in H5; auto.
+
+      destruct H5 as [ H5 | [ H5 | H5 ] ].
+
+      + apply primestream_divides in H5; omega.
+
+      + apply primestream_divides in H5; omega.
+
+      + apply ps_exp in H5; tauto.
+
+    * apply divides_from_eq, prime_div_mult3 in H5; auto.
+
+      destruct H5 as [ H5 | [ H5 | H5 ] ].
+
+      + apply primestream_divides in H5.
+
+        exfalso; apply (H1 j u); auto.
+
+      + apply primestream_divides in H5; omega.
+
+      + apply ps_exp in H5; tauto. }
+
+  destruct mm_sss_total with (ii := rho) (s := (i1,v1))
+
+    as ((i2 & v2) & H7).
+
+  exists i2, v2.
+
+  assert ((i, l++rho::r) /MM/ (i1,v1) → (i2,v2)) as H8.
+
+  { apply in_sss_step; auto; simpl; omega. }
+
+  split; auto.
+
+  apply one_step_forward in H8; auto.
+
+  revert H2 H8; apply fractran_step_fun; auto.
+
+Qed.
+
+
+
+Lemma steps_backward m i P i1 v1 k st :
+
+     @mm_no_self_loops m (i, P)
+
+  ->               encode_mm_instr i P /F/ encode_state (i1,v1) -[k]-> st 
+
+  -> exists i2 v2, (i, P) /MM/ (i1, v1) -[k]-> (i2,v2)
+
+                /\ st = encode_state (i2,v2). 
+
+Proof.
+
+  intros H1.
+
+  revert i1 v1 st; induction k as [ | k IHk ]; intros i1 v1 st H; simpl in H.
+
+  - subst; exists i1, v1; split; auto; constructor.
+
+  - destruct H as (st1 & H2 & H3).
+
+    destruct one_step_backward with (2 := H2)
+
+      as (i2 & v2 & -> & H5); auto.
+
+    destruct IHk with (1 := H3) as (i3 & v3 & ? & ->).
+
+    exists i3, v3; split; auto.
+
+    constructor 2 with (i2,v2); auto.
+
+Qed.
+
+
+
+Theorem mm_fractran_simulation n P v :
+
+     @mm_no_self_loops n (1, P) 
+
+  -> (1,P) /MM/ (1,v) ↓ <-> encode_mm_instr 1 P /F/ ps 1 * exp 0 v ↓.
+
+Proof.
+
+  intros HP.
+
+  change (ps 1* exp 0 v) with (encode_state (1,v)).
+
+  split.
+
+  + intros ((j,w) & (k & H1) & H2); simpl fst in *.
+
+    exists (encode_state (j,w)); split.
+
+    * exists k; apply steps_forward in H1; auto.
+
+    * intros x Hx.
+
+      destruct one_step_backward with (2 := Hx)
+
+        as (i2 & v2 & -> & ?); auto.
+
+      revert H; apply sss_out_step_stall; auto.
+
+  + intros (st & (k & H1) & H2).
+
+    destruct steps_backward with (2 := H1)
+
+      as (i2 & v2 & H3 & ->); auto.
+
+    exists (i2,v2); split.
+
+    * exists k; auto.
+
+    * simpl fst.
+
+      destruct (in_out_code_dec i2 (1,P)) as [ H4 | H4 ]; auto; exfalso.
+
+      destruct in_code_subcode with (1 := H4) as (rho & l & r & G1 & G2).
+
+      destruct (mm_sss_total rho (i2,v2)) as ((i3,v3) & G3).
+
+      apply H2 with (encode_state (i3,v3)).
+
+      apply one_step_forward; auto.
+
+      subst P; apply in_sss_step; auto.
+
+Qed.
+
+
+
+Theorem mm_fractran_n n (P : list (mm_instr n)) : 
+
+        { l |  Forall (fun c => snd c <> 0) l
+
+            /\ forall v, (1,P) /MM/ (1,v) ↓ <-> l /F/ ps 1 * exp 1 v ↓ }.
+
+Proof.
+
+   destruct mm_remove_self_loops with (P := P) as (Q & H1 & _ & H2).
+
+   exists (encode_mm_instr 1 Q); split. 
+
+   + generalize (encode_mm_instr_regular 1 Q); apply Forall_impl; intros; tauto.
+
+   + intros x.
+
+     rewrite H2, mm_fractran_simulation; auto.
+
+     simpl exp; rewrite Nat.add_0_r; tauto.
+
+Qed.
+
+
+
+Theorem mm_fractran n (P : list (mm_instr (S n))) : 
+
+     { l | forall x, (1,P) /MM/ (1,x##vec_zero) ↓ <-> l /F/ ps 1 * qs 1^x ↓ }.
+
+Proof.
+
+   destruct mm_fractran_n with (P := P) as (l & _ & Hl).
+
+   exists l; intros x; rewrite Hl; simpl.
+
+   rewrite exp_zero, Nat.mul_1_r; tauto.
+
+Qed.
+

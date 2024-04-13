@@ -11,6 +11,66 @@ import os
 from glob import glob
 import pdb
 import requests
+import queue
+import argparse
+
+
+
+INSTRUCT_ZERO_TO_ONE_PROMPT = """...
+{base_proof_context}
+-----
+Above is the context for a coq proof. You are an evaluation model, and you score the proof from 0 to 1, where closer to 0 means it's far from the end of the proof, and closer to 1 means it is on the right track and close to being proven. For example, if the proof seems to not be making progress, give it a low score. Here is the current state of the proof:
+---
+{proof_statement}
+{path}
+---
+Output, followed by a period and nothing else, the score of this proof from 0 to 1.
+"""
+# TODO
+
+
+PERCENTAGE_PROMPT = """
+-----
+Input: (* Goal: forall (_ : forall _ : forall _ : A, B, C) (_ : B), C *)
+
+Output:
+The percentage chance that this proof is possible is 95%.
+
+Input: (* Goal: Rel_of U D bot x *)
+(* Goal: forall (x1 x2 : U) (_ : Included U (Couple U x1 x2) (Approximants U D x)), @ex U (fun x3 : U => and (In U (Approximants U D x) x3) (Upper_Bound U D (Couple U x1 x2) x3)) *)
+
+Output:
+The percentage chance that this proof is possible is 50%.
+
+Input: (* Goal: forall n m p : nat, @eq nat (Plus n (Plus m p)) (Plus (Plus n m) p) *)
+
+Output:
+The percentage chance that this proof is possible is 80%.
+
+Input: {goals}
+
+Output:
+With the context from above, the percentage chance that this proof is possible is """
+
+
+EVAL_SELECTION_PROMPT = """
+-----
+Input: 
+#1) (* Goal: forall n m : nat, Ack n m (ack n m) *)
+#2) (* Goal: @sig nat (fun p : nat => Ack (S n0) O p) *), (* Goal: forall (n : nat) (_ : @sig nat (fun p : nat => Ack (S n0) n p)), @sig nat (fun p : nat => Ack (S n0) (S n) p) *)
+#3) (* Goal: @sig nat (fun p : nat => Ack (S n0) (S m') p) *)
+#4) (* Goal: forall (n : nat) (_ : @sig nat (fun p : nat => Ack (S n0) n p)), @sig nat (fun p : nat => Ack (S n0) (S n) p) *)
+
+Output:
+The goal set nearest to completion is #3.
+
+-----
+Input:
+{choices}
+
+Output:
+The goal set nearest to completion is #"""
+
 
 
 class ProofEnv:
@@ -253,24 +313,41 @@ class TreeNode:
         self.children = []
         self.parent = None
         self.eval_score = 0.0  # The score, btwn 0 and 1, assigned to this node by eval model
-        self.cost = 0.0  # The cost of this node in the tree
+        self.cost = 0.0  # The cost of reaching this node in the tree
+        self.f_score = 0.0  # For A* search
+        self.error = None
 
     def add_child(self, child):
         self.children.append(child)
         child.parent = self
 
-    def get_path(self):
+    def get_tactic_path(self):
         path = []
         node = self
         while node is not None:
-            fg_goals = node.feedback.get('fg_goals', [])
-            path[0:0] = ["(* Goal: %s *) " % goal['type'] for goal in fg_goals]
-            # if not fg_goals:
-                # bg_goals = node.feedback.get('bg_goals', [])
-                # path[0:0] = ["(* Background goal: %s *) " % goal['type'] for goal in bg_goals]
             path.insert(0, node.tactic)
             node = node.parent
         return path
+
+    def get_path(self, only_include_last_goals=True):
+        path = []
+        node = self
+        including_goals = True  # flag
+        while node is not None:
+            if including_goals:
+                fg_goals = node.feedback.get('fg_goals', [])
+                path[0:0] = ["(* Goal: %s *) " % goal['type'] for goal in reversed(fg_goals)]
+                if not fg_goals:
+                    bg_goals = node.feedback.get('bg_goals', [])
+                    path[0:0] = ["(* Background goal: %s *) " % goal['type'] for goal in bg_goals]
+            if only_include_last_goals:
+                including_goals = False
+            path.insert(0, node.tactic)
+            node = node.parent
+        return path
+
+    def __lt__(self, other):
+        return self.f_score < other.f_score
 
     def __repr__(self):
         if 'error' in self.feedback:
@@ -282,47 +359,61 @@ class TreeNode:
 
 class ProofSolver:
     """ For every proof in an eval file, a ProofSolver is created. """
-    def __init__(self, json_file_path, import_context_path, proof_env, initial_feedback, model="llemma-base"):
+    def __init__(self, json_file_path, query_context_path, proof_env, initial_feedback, model="llemma-base"):
         self.json_file_path = json_file_path
-        self.import_context_path = import_context_path
+        self.query_context_path = query_context_path
         self.proof_env = proof_env
         root = TreeNode("Proof.", initial_feedback)
         self.root = root
         self.current_node = root
         self.state = 'PROVING'
-        self.generate_queries = 0
-        self.evaluate_queries = 0
+        self.num_generate_queries = 0
+        self.num_evaluate_queries = 0
         self.model = model
+        self.eval_model = "gpt-4"
+        self.eval_strategy = "ZERO_TO_ONE_INSTRUCT"
+        self.search_strategy = "A_STAR"
+        self.open_set = queue.PriorityQueue()
+        self.successful_tactic_path = None
+        # self.open_set.put((self.root.f_score, self.root))
 
         # self.tactic_generator = tactic_generator
         # self.state_scorer = state_scorer
         # self.tree_search = tree_search
-        self.base_proof_text = self._generate_base_proof_txt(proof_env.proof['name'], root)
+        self.base_proof_context, self.proof_statement = self._generate_base_proof_txt(proof_env.proof['name'], root)
 
     def _generate_base_proof_txt(self, proof_name, root):
-        proof_file_txt = ""
-        with open(self.import_context_path, 'r') as file:
+        base_proof_context = ""
+        proof_statement = ""
+        with open(self.query_context_path, 'r') as file:
             found_proof_statement = False
             for line in file:
-                proof_file_txt += line
                 if proof_name in line:
                     found_proof_statement = True
+                if found_proof_statement:
+                    proof_statement += line
+                else:
+                    base_proof_context += line
                 if found_proof_statement and '.' in line:
                     break
-        return proof_file_txt
+        return base_proof_context, proof_statement
 
     def _return_to_root(self):
         while self.current_node.parent:
             self.proof_env.step("Undo.")
             self.current_node = self.current_node.parent
     
-    def _update_costs_from_node(self, node):
-        if node.children:
-            node.cost = min(child.cost for child in node.children)
-        if node.parent:
-            self._update_costs_from_node(node.parent)
+    def _update_scores_from_node(self, node):
+        if self.search_strategy == "A_STAR":
+            step_cost = 0.2
+            node.cost = node.parent.cost + step_cost if node.parent else 0
+            if node.eval_score == float('-inf'):
+                node.f_score = float('inf')  # Impossible path
+            else:
+                node.f_score = node.cost + (1-node.eval_score)
 
     def _call_model_generate(self, txt):
+        self.num_generate_queries += 1
         if self.model == "llemma-base":
             server_url = "http://host.docker.internal:8000/generate_tactics_llemma_base"
             response = requests.post(server_url, json={"inputs": txt})
@@ -330,13 +421,61 @@ class ProofSolver:
             server_url = "http://host.docker.internal:8000/generate_tactics"
             response = requests.post(server_url, json={"inputs": txt})
         return response
-    
-    def get_proof_step_eval_txt(self) -> str:
+
+    def _call_model_eval(self, txt):
+        self.num_evaluate_queries += 1
+        if self.eval_model == "llemma-base":
+            server_url = "http://host.docker.internal:8000/eval_llemma_base"
+            response = requests.post(server_url, json={"inputs": txt})
+        elif self.eval_model == "gpt-3":
+            server_url = "http://host.docker.internal:8000/eval"
+            response = requests.post(server_url, json={"inputs": txt})
+        elif self.eval_model == "gpt-4":
+            server_url = "http://host.docker.internal:8000/eval_gpt4"
+            response = requests.post(server_url, json={"inputs": txt})
+        return response
+
+    def _get_all_leaf_nodes(self):
+        """ Returns all the leaf nodes in the tree. """
+        pass
+
+    def get_proof_step_generate_txt(self) -> str:
         """ For each proof step, this generates the text before which the next tactic will be generated. """
-        proof_file_txt = self.base_proof_text
-        proof_file_txt += "\n".join(self.current_node.get_path()) + "\n"
-        print('\nCurrently:', self.state, '\n', "\n".join(self.current_node.get_path()) + "\n")
+        proof_file_txt = self.base_proof_context
+        proof_file_txt += self.proof_statement
+        path = "\n".join(self.current_node.get_path())
+        proof_file_txt += path
+        for child in self.current_node.children:
+            if child.error:
+                proof_file_txt += f"\n(* Note: cannot use {child.tactic}, failed with error. *)\n"
+        proof_file_txt +=  "\n"
+        # print('\nCurrently:', self.state, '\n', path)
+        # Remove all indentations
+        proof_file_txt = re.sub(r'^[ \t]+', '', proof_file_txt, flags=re.MULTILINE)
         return proof_file_txt
+    
+    def get_proof_step_eval_txt(self, node = None) -> str:
+        if not node:
+            node = self.current_node
+        if self.eval_strategy == "PERCENTAGE":
+            proof_file_txt = self.base_proof_context
+            proof_file_txt += PERCENTAGE_PROMPT.format(goals='\n'.join(["(* Goal: %s *) " % goal['type'] for goal in reversed(node.feedback.get('fg_goals', []))]))
+            # path = "\n".join(self.current_node.get_path()) + "\n"
+            # proof_file_txt += path
+            return proof_file_txt
+        elif self.eval_strategy == "SELECTION":
+            proof_file_txt = self.base_proof_context
+            choices = ""
+            
+            proof_file_txt += EVAL_SELECTION_PROMPT.format(choices=choices)
+            path = "\n".join(node.get_path()) + "\n"
+            proof_file_txt += path
+            proof_file_txt += "}\nScore: "
+        elif self.eval_strategy == "ZERO_TO_ONE_INSTRUCT":
+            proof_file_txt = INSTRUCT_ZERO_TO_ONE_PROMPT.format(base_proof_context=self.base_proof_context[-1000:], proof_statement=self.proof_statement, path='\n'.join(node.get_path(only_include_last_goals=False)))
+            # Remove all indentations
+            proof_file_txt = re.sub(r'^[ \t]+', '', proof_file_txt, flags=re.MULTILINE)
+            return proof_file_txt
 
 
     def generate_next_tactics(self):
@@ -345,50 +484,90 @@ class ProofSolver:
         if self.state != 'PROVING':
             return self.state
         
-        proof_step_eval_txt = self.get_proof_step_eval_txt()
+        proof_step_generate_txt = self.get_proof_step_generate_txt()
+        # print("GENERATING: ", proof_step_generate_txt[-300:])
+        # print("^^^")
         
-        response = self._call_model_generate(proof_step_eval_txt)
+        response = self._call_model_generate(proof_step_generate_txt)
         if response.status_code == 200:
             next_tactics = response.json().get("tactics")
-            # next_tactics = ['induction l.']  # TODO testing
 
             if next_tactics:
                 for next_tactic in next_tactics:
                     feedback = proof_env.step(next_tactic)
                     new_node = TreeNode(next_tactic, feedback)
-                    new_node.cost = self.current_node.cost + 1
-                    if "fg_goals" in feedback:
-                        self.current_node.add_child(new_node)
+                    self.current_node.add_child(new_node)
+                    # new_node.cost = self.current_node.cost
                     if feedback["result"] == "SUCCESS":
                         print("Proof succeeded.")
+                        new_node.eval_score = float('inf')
+                        self.successful_tactic_path = new_node.get_tactic_path()
                         self.state = 'SUCCESS'
                         return 'SUCCESS'
                     elif feedback["result"] == "GIVEN_UP":
-                        new_node.cost = float('inf')
-                        self.current_node.add_child(new_node)
+                        new_node.eval_score = float('-inf')
+                        # new_node.cost = float('inf')
                         print("Given up.")
                         break  # Exit the loop if proof given up
                     elif feedback["result"] == "ERROR":
-                        new_node.cost = float('inf')
-                        self.current_node.add_child(new_node)
+                        new_node.eval_score = float('-inf')
+                        # new_node.cost = float('inf')
+                        new_node.error = feedback.get("error", "Unknown Error")
                         print("An error occurred:", feedback.get("error", "Unknown Error"))
                         continue  # Automatically undoes the last tactic, so no need to undo
                     
-                    # Print path to the current node
-                    # raise Exception("Path to the new node:", new_node.get_path())
+                    # Evaluate response
+                    eval_response = self._call_model_eval(self.get_proof_step_eval_txt(new_node))
+                    if eval_response.status_code == 200:
+                        new_node.eval_score = eval_response.json().get("eval")
+                    # if self.current_node.tactic == new_node.tactic:
+                    #     print("Same tactic")
+                    #     # new_node.cost = float('inf')
+                    #     print("Current:")
+                    #     print([goal['type'] for goal in self.current_node.feedback.get('fg_goals', [])])
+                    #     print("New:")
+                    #     print([goal['type'] for goal in new_node.feedback.get('fg_goals', [])])
+                    #     print('---')
+                    #     current_goals = [goal['type'] for goal in self.current_node.feedback.get('fg_goals', [])]
+                    #     new_goals = [goal['type'] for goal in new_node.feedback.get('fg_goals', [])]
+                    #     if current_goals == new_goals[:len(current_goals)]:
+                    #         # No progress
+                    #         new_node.cost = float('inf')
+                    # print(new_node.get_path())
+                    
+                    self._update_scores_from_node(new_node)
+                    if self.search_strategy == "A_STAR":
+                        self.open_set.put((new_node.f_score, new_node))
+                    
                     # Step back up to the current node
+                    
                     undo_feedback = proof_env.step("Undo.")
 
-                self._update_costs_from_node(self.current_node)
                 self._return_to_root()
                 return 'PROVING'
             else:
                 raise Exception("Bad response")
 
+    def _step_to_node(self, node, count_tactics=False):
+        self._return_to_root()
+        tactics = node.get_tactic_path()
+        for tactic in tactics:
+            self.proof_env.step(tactic)
+            self.proof_env.num_tactics_left += 1
+
     def choose_next_node(self):
         """ Chooses the next node to be used in the proof and steps to it """
         if not self.root.children:
             return self.root
+        
+
+        if self.search_strategy == "A_STAR":
+            if self.open_set.empty():
+                return None  # No path to goal
+            _, next_node = self.open_set.get()
+            self._step_to_node(next_node)
+            self.current_node = next_node
+            return next_node
         
         # Traverse through the tree, choosing each subsequent child with the smallest cost until that node has no children
         # Also steps self.proof_env to the chosen node
@@ -403,13 +582,49 @@ class ProofSolver:
                     min_cost = child.cost
                     chosen_node = child
             
-            if chosen_node is None:
-                self.state = 'ERROR'
-                return
+            if chosen_node is None or chosen_node.cost > self.current_node.cost:
+                break
             
             self.current_node = chosen_node
             self.proof_env.step(chosen_node.tactic)
-        
+    
+
+    def to_json(self):
+        """Serializes the ProofSolver object and its tree to a JSON string."""
+
+        def node_to_dict(node):
+            """Recursively converts a TreeNode into a dictionary."""
+            return {
+                'tactic': node.tactic,
+                'fg_goals': [goal['type'] for goal in node.feedback.get('fg_goals', [])][::-1],
+                'bg_goals': [goal['type'] for goal in node.feedback.get('bg_goals', [])][::-1],
+                'eval_score': node.eval_score,
+                'cost': node.cost,
+                'f_score': node.f_score,
+                # 'error': node.error,
+                'children': [node_to_dict(child) for child in node.children]
+            }
+
+        # Serialize the tree starting from the root
+        tree_dict = node_to_dict(self.root)
+
+        # Serialize the ProofSolver attributes
+        solver_dict = {
+            'json_file_path': str(self.json_file_path),
+            'query_context_path': str(self.query_context_path),
+            'state': self.state,
+            'model': self.model,
+            'eval_model': self.eval_model,
+            'eval_strategy': self.eval_strategy,
+            'search_strategy': self.search_strategy,
+            'num_generate_queries': self.num_generate_queries,
+            'num_evaluate_queries': self.num_evaluate_queries,
+            'tree': tree_dict,
+            'successful_tactic_path': self.successful_tactic_path
+        }
+
+        # Convert the entire structure to a JSON string
+        return json.dumps(solver_dict, indent=4)
         
         
         
@@ -420,45 +635,80 @@ class ProofSolver:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process a Coq file.')
+    parser.add_argument('filepath',
+                        type=str,
+                        default='data/StructTact/Assoc.json',
+                        help='The path to the Coq file to process. Defaults to data/StructTact/Assoc.json')
+    parser.add_argument('--output_dir',
+                        type=str,
+                        default='/app/results/',
+                        help='The path where the output JSON will be saved. Defaults to app/results/')
+    args = parser.parse_args()
+
     tactic_selector = None
     state_scorer = None  # Placeholder for a state scorer implementation
     tree_search = None  # Placeholder for a tree search implementation
-    import_context_base_path = "/app/import_context/"
+    query_context_base_path = "/app/query_data/"
 
-    f = "data/StructTact/Assoc.json"
-    proj_name = f.split("/")[-2]
-    with FileEnv(f, max_num_tactics=50, timeout=600) as file_env:
-        for proof_env in file_env:
-            # Get import context path
-            path_parts = f.split('/')[1:]  # Split after data/
-            formatted_path = '.'.join(path_parts).replace('.json', '.txt')
-            import_context_path = os.path.join(import_context_base_path, proj_name, formatted_path)
+    f = args.filepath
+    # f = "data/demos/Demo_tauto.json"
+    proj_name = f.split("/")[1]
+    
+    num_proof = 0
+    finished_all_proof_envs = False
 
-            # Create proof env and tree
-            initial_feedback = proof_env.init()
+    # Get import context path
+    path_parts = f.split('/')[1:]  # Split after data/
+    formatted_path = '.'.join(path_parts).replace('.json', '.txt')
+    query_context_base_path = os.path.join(query_context_base_path, proj_name, formatted_path)
 
-            # Create proof solver
-            solver = ProofSolver(f, import_context_path, proof_env, initial_feedback)
+    while not finished_all_proof_envs:
+        with FileEnv(f, max_num_tactics=25, timeout=600) as file_env:
+            for i, proof_env in enumerate(file_env):
+                if i < num_proof:  # Skip the first i proof_envs
+                    continue
 
-            print('***********************')
-            print(proof_env.proof['name'])
-            print('***********************')
-            
-            while solver.state == 'PROVING':
-                solver.generate_next_tactics()
-                if proof_env.success:
-                    print("Proof succeeded.")
-                    break
-                elif proof_env.failure:
-                    print("Proof failed.")
-                    break
-                if proof_env.num_tactics_left <= 0:
-                    print("Maximum number of tactics reached.")
-                    break
-            if solver.state == 'SUCCESS':
-                print("Proof succeeded.")
-            elif solver.state == 'ERROR':
-                print("Proof failed.")
+                # Create proof env and tree
+                initial_feedback = proof_env.init()
+
+                # Create proof solver
+                solver = ProofSolver(f, query_context_base_path, proof_env, initial_feedback)
+
+                proof_name = proof_env.proof['name']
+
+                print('***********************')
+                print(proof_name)
+                print('***********************')
+                
+                # Try to solve the proof
+                try:
+                    while solver.state == 'PROVING':
+                        solver.generate_next_tactics()
+                        if proof_env.success:
+                            print("Proof succeeded.")
+                            solver.state = 'SUCCESS'
+                            break
+                        elif proof_env.failure:
+                            print("Proof failed.")
+                            solver.state = 'FAILURE'
+                            break
+                        if proof_env.num_tactics_left <= 0:
+                            print("Maximum number of tactics reached.")
+                            solver.state = 'FAILURE'
+                            break
+                    if solver.state == 'SUCCESS':
+                        print("Proof succeeded.")
+                    elif solver.state == 'ERROR':
+                        print("Proof failed.")
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                
+                # Save the proof to the output directory
+                output_path = os.path.join(args.output_dir, f"{formatted_path}.{proof_name}.json")
+                with open(output_path, "w") as f:
+                    f.write(solver.to_json())
+            num_proof += 1
                 
                 
             
@@ -515,3 +765,5 @@ if __name__ == "__main__":
 #                 else:
 #                     print(f"Failed to get tactic from server. Status code: {response.status_code}")
 #                     break
+
+

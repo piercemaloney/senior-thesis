@@ -1,0 +1,494 @@
+Require Import Arith.
+
+Require Import Relations.
+(* Relations:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import Coq.ZArith.BinInt. 
+Require Import Coq.ZArith.Zcomplements. 
+Require Import compcert.lib.Integers.          
+Require Import Coq.Numbers.Natural.Peano.NPeano.
+
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Program.Tactics.
+Require Import sha.XorCorrespondence. 
+Require Import sha.Bruteforce.
+Require Import sha.general_lemmas.
+Require Import sha.hmac_pure_lemmas.
+
+Definition Blist := list bool.
+Open Scope Z_scope.
+
+Inductive InBlocks {A : Type} (n : nat) : list A -> Prop :=
+  | InBlocks_nil : InBlocks n []
+  | InBlocks_block : forall (front back full : list A),
+                   length front = n ->
+                   full = front ++ back ->
+                   InBlocks n back ->
+                   InBlocks n full.
+
+Lemma InBlocks_len : forall {A : Type} (l : list A) (n : nat),
+                       PeanoNat.Nat.divide (n) (length l) -> InBlocks n l.
+
+Inductive bytes_bits_lists : Blist -> list byte -> Prop :=
+  | eq_empty : bytes_bits_lists nil nil
+  | eq_cons : forall (bits : Blist) (bytes : list byte)
+                     (b0 b1 b2 b3 b4 b5 b6 b7 : bool) (b : byte),
+                bytes_bits_lists bits bytes ->
+                convertByteBits [b0; b1; b2; b3; b4; b5; b6; b7] b ->
+                bytes_bits_lists (b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: bits)
+                                 (b :: bytes).
+
+Definition div_mod (num : Z) (denom : Z) : bool * Z :=
+  (Z.gtb (num / denom) 0, num mod denom).
+
+Definition byteToBits (byte : byte) : Blist :=
+  let (b7, rem7) := div_mod (Byte.unsigned byte) 128 in
+  let (b6, rem6) := div_mod rem7 64 in
+  let (b5, rem5) := div_mod rem6 32 in
+  let (b4, rem4) := div_mod rem5 16 in
+  let (b3, rem3) := div_mod rem4 8 in
+  let (b2, rem2) := div_mod rem3 4 in
+  let (b1, rem1) := div_mod rem2 2 in
+  let (b0, rem0) := div_mod rem1 1 in
+  [b0; b1; b2; b3; b4; b5; b6; b7].
+
+Fixpoint bytesToBits (bytes : list byte) : Blist :=
+  match bytes with
+    | [] => []
+    | byte :: xs => byteToBits byte ++ bytesToBits xs
+  end.
+
+Definition bitsToByte (bits : Blist) : byte :=
+  Byte.repr 
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: nil =>
+      (1 * (asZ b0) + 2 * (asZ b1) + 4 * (asZ b2) + 8 * (asZ b3)
+      + 16 * (asZ b4) + 32 * (asZ b5) + 64 * (asZ b6) + 128 * (asZ b7))
+    | _ => -1                  
+  end.
+
+Fixpoint bitsToBytes (bits : Blist) : list byte :=
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs =>
+      bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] :: bitsToBytes xs
+    | _ => []
+  end.
+
+Lemma byteToBits_length bt: length (byteToBits bt) = 8%nat.
+
+Lemma bytes_bits_length : forall (bits : Blist) (bytes : list byte),
+  bytes_bits_lists bits bytes -> length bits = (length bytes * 8)%nat.
+
+Lemma bytesToBits_app : forall (l1 l2 : list byte),
+                          bytesToBits (l1 ++ l2) = bytesToBits l1 ++ bytesToBits l2.
+
+Lemma bytesToBits_len : forall (l : list byte),
+                          length (bytesToBits l) = (length l * 8)%nat.
+
+Theorem byte_bit_byte_id : forall (b : byte),
+                                bitsToByte (byteToBits b) = b.
+
+Theorem bits_byte_bits_id : forall (b0 b1 b2 b3 b4 b5 b6 b7 : bool),
+                              [b0; b1; b2; b3; b4; b5; b6; b7] =
+                              byteToBits (bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7]).
+
+Theorem bytes_bits_bytes_id : forall (bytes : list byte),
+                                bitsToBytes (bytesToBits bytes) = bytes.
+
+Theorem bytes_bits_def_eq : forall (bytes : list byte),
+                              bytes_bits_lists (bytesToBits bytes) bytes.
+
+Theorem bytes_bits_comp_ind : forall (bits : Blist) (bytes : list byte),
+                               bits = bytesToBits bytes ->
+                               bytes_bits_lists bits bytes.
+
+Theorem bytes_bits_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bytes = bitsToBytes bits.
+
+Theorem bits_bytes_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bits = bytesToBits bytes.
+
+Lemma bitsToBytes_app : forall (l m : Blist),
+                          InBlocks 8 l ->
+                          bitsToBytes (l ++ m) = bitsToBytes l ++ bitsToBytes m.
+
+Lemma bitsToBytes_len_gen : forall (l : Blist) (n : nat),
+                          length l = (n * 8)%nat ->
+                          length (bitsToBytes l) = n.
+
+Lemma bitsToBytes_len : forall (l : Blist),
+                          length l = 512%nat ->
+                          Zlength (bitsToBytes l) = 64%Z.
+
+Lemma bits_bytes_bits_id : forall (l : Blist),
+                             InBlocks 8 l ->
+                             bytesToBits (bitsToBytes l) = l.
+
+Lemma bytes_bits_lists_append:
+  forall (l1 : Blist) (l2 : list byte) (m1 : Blist) (m2 : list byte),
+    bytes_bits_lists l1 l2
+    -> bytes_bits_lists m1 m2
+    -> bytes_bits_lists (l1 ++ m1) (l2 ++ m2).
+
+Lemma bytesToBits_nil_inv l: nil = bytesToBits l -> l = nil.
+
+Lemma bytesToBits_cons b l:
+      bytesToBits (b::l) = byteToBits b ++ bytesToBits l.
+
+Lemma byteToBits_injective: forall a b,
+      byteToBits a = byteToBits b ->
+      a = b.
+
+Lemma bytesToBits_injective: forall b1 b2, bytesToBits b1 = bytesToBits b2 ->
+       b1=b2.
+
+Lemma bitsToBytes_injective8 b1 b2 (B: bitsToBytes b1 = bitsToBytes b2)
+       (L1: PeanoNat.Nat.divide 8 (length b1))
+
+Lemma bitsToByte_cons: forall bits h t, (h::t) = bitsToBytes bits ->
+      exists b0, exists b1, exists b2, exists b3,
+      exists b4, exists b5, exists b6, exists b7, exists xs,
+      bits = b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs /\
+      h = bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] /\
+      t = bitsToBytes xs.
+
+Definition intsToBits (l : list Int.int) : list bool :=
+  bytesToBits (intlist_to_bytelist l).
+
+Definition bitsToInts (l : Blist) : list Int.int :=
+  bytelist_to_intlist (bitsToBytes l). *)
+
+Require Import Lexicographic_Product.
+
+
+
+Section LT_WF_REL.
+
+ 
+  Variable A : Type.
+
+  Variable R : A -> A -> Prop.
+
+
+
+  Variable F : A -> nat -> Prop.
+
+  Definition inv_lt_rel x y := exists2 n, F x n & (forall m, F y m -> n < m).
+
+
+
+  Hypothesis F_compat : forall x y:A, R x y -> inv_lt_rel x y.
+
+  Remark acc_lt_rel : forall x:A, (exists n, F x n) -> Acc R x.
+
+  Proof.
+
+    intros x [n fxn]; generalize dependent x.
+
+Require Import Image.
+
+    pattern n in |- *; apply lt_wf_ind; intros.
+
+    constructor; intros.
+
+    destruct (F_compat y x) as (x0,H1,H2); trivial.
+
+    apply (H x0); auto.
+
+  Qed.
+
+
+
+  Theorem well_founded_inv_lt_rel_compat : well_founded R.
+
+  Proof.
+
+    constructor; intros.
+
+    case (F_compat y a); trivial; intros.
+
+    apply acc_lt_rel; trivial.
+
+    exists x; trivial.
+
+  Qed.
+
+
+
+End LT_WF_REL.
+
+
+
+Definition lex_pair {A B} (Ra: A -> A -> Prop) (Rb: B -> B -> Prop)
+
+            (x: A*B) (y: A*B) : Prop :=
+
+ Ra (fst x) (fst y) \/ (fst x = fst y /\ Rb (snd x) (snd y)).
+
+
+
+Lemma well_founded_incl:
+
+  forall A (Rs Rt: A -> A -> Prop),
+
+   inclusion _ Rt Rs -> well_founded Rs -> well_founded Rt.
+
+Proof.
+
+  unfold well_founded; intros.
+
+  specialize (H0 a).
+
+  induction H0; constructor; intros; auto.
+
+Qed.
+
+
+
+Lemma well_founded_image:
+
+  forall A B (f: A -> B) (Rb: B -> B -> Prop),
+
+    well_founded Rb ->
+
+    well_founded (fun x y => Rb (f x) (f y)).
+
+Proof.
+
+  intros.
+
+ intro a.
+
+ specialize (H (f a)).
+
+ remember (f a) as fa.
+
+ revert a Heqfa; induction H; intros; constructor;  intros; auto.
+
+ subst.
+
+ eapply H0; eauto.
+
+Qed.
+
+
+
+Lemma well_founded_lex_pair:
+
+  forall A B (Ra: A -> A -> Prop) (Rb: B -> B -> Prop),
+
+  well_founded Ra -> well_founded Rb -> well_founded (lex_pair Ra Rb).
+
+Proof.
+
+ intros.
+
+ apply well_founded_incl with (Rs :=  (fun x y =>
+
+   lexprod A (fun _ => B) Ra (fun _ => Rb)
+
+     (existT (fun _:A => B) (fst x) (snd x))
+
+     (existT (fun _:A => B) (fst y) (snd y)))).
+
+ intros [a b] [a' b'] ?.
+
+ inversion H1; clear H1; subst; simpl in *.
+
+ left; auto. destruct H2; subst; right; auto.
+
+ apply well_founded_image.
+
+ apply wf_lexprod; auto.
+
+Qed.
+
+
+
+Lemma well_founded_trans:
+
+  forall A (Ra: A -> A -> Prop),
+
+    well_founded Ra <-> well_founded (clos_trans _ Ra).
+
+Proof.
+
+intros; split; intros.
+
+unfold well_founded in *.
+
+intros.
+
+specialize (H a).
+
+induction H.
+
+constructor; intros.
+
+apply clos_trans_t1n in H1.
+
+induction H1; auto.
+
+assert (Acc (clos_trans A Ra) y).
+
+2: destruct H3; apply H3; apply clos_t1n_trans; econstructor; eauto.
+
+clear - H0 H2.
+
+revert H0; induction H2; intros.
+
+auto.
+
+apply IHclos_trans_1n; auto.
+
+constructor 1; auto.
+
+unfold well_founded in *.
+
+intros.
+
+specialize (H a).
+
+induction H.
+
+constructor; intros; auto.
+
+apply H0.
+
+constructor 1 ;auto.
+
+Qed.
+
+
+
+Definition lexprodx {B A : Type} (f: A -> B) (R1: B -> B -> Prop)
+
+  (R2: B -> A -> A -> Prop)
+
+  (x y : A) : Prop :=
+
+     R1 (f x) (f y) \/ f x = f y /\ R2 (f x) x y.
+
+
+
+Lemma lexprodx_eq: forall B A f R1 R2 x y,
+
+    lexprodx f R1 R2 x y <->
+
+    lexprod B (fun _ => A) R1 R2 (existT (fun _:B => A) (f x) x)
+
+               (existT (fun _:B => A) (f y) y).
+
+Proof.
+
+ intros.
+
+ unfold lexprodx.
+
+ intuition.
+
+ left; auto.
+
+ rewrite <- H. right. auto.
+
+ inversion H; clear H; subst.
+
+ left; auto.
+
+ right; split; auto.
+
+Qed.
+
+
+
+Lemma well_founded_lexprodx: forall B A (f: A -> B) R1 R2,
+
+  well_founded R1 -> (forall n, well_founded (R2 n)) ->
+
+  well_founded (lexprodx f R1 R2).
+
+Proof.
+
+intros.
+
+ apply well_founded_incl with (fun x y => lexprod B (fun _ => A) R1 R2 (existT (fun _:B => A) (f x) x)
+
+               (existT (fun _:B => A) (f y) y)).
+
+ intros ? ? ?. rewrite <- lexprodx_eq.  auto.
+
+ apply well_founded_image with (f:= fun x => (existT (fun _ : B => A) (f x) x)).
+
+ apply wf_lexprod; auto.
+
+Qed.
+
+
+
+Definition simple_lexprod {A: Type} (R1: A -> A -> Prop) (R2: A -> A -> Prop)
+
+            (x y: A) : Prop :=
+
+  R1 x y \/ x=y /\ R2 x y.
+
+
+
+Lemma simple_lexprod_eq:
+
+  forall A R1 R2 x y,
+
+     @simple_lexprod A R1 R2 x y <->
+
+    lexprod A (fun _ => A) R1 (fun _ => R2)
+
+       (existT (fun _:A => A) x x) (existT (fun _:A => A) y y).
+
+Proof.
+
+intros.
+
+unfold simple_lexprod.
+
+intuition.
+
+left; auto.
+
+subst; right; auto.
+
+inversion H; clear H; subst; auto.
+
+Qed.
+
+
+
+Lemma wellfounded_simple_lexprod:
+
+  forall A (R1: A -> A -> Prop) (R2: A -> A -> Prop),
+
+    well_founded R1 ->
+
+    well_founded R2 ->
+
+    well_founded (simple_lexprod R1 R2).
+
+Proof.
+
+ intros.
+
+ apply well_founded_incl with
+
+   (fun x y => lexprod A (fun _ => A) R1 (fun _ => R2) (existT (fun _:A => A) x x)  (existT (fun _:A => A) y y)).
+
+ intros ? ? ?. rewrite <- simple_lexprod_eq. auto.
+
+ apply well_founded_image with (f:= fun x => existT (fun _:A => A) x x).
+
+ apply wf_lexprod; auto.
+
+Qed.
+
+
+

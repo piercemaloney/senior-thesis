@@ -1,0 +1,2173 @@
+
+
+Require Import Coqlib.
+
+Require Import Maps.
+
+Require Import AST.
+
+Require Import Integers.
+
+Require Import Floats.
+
+Require Import Values.
+
+Require Import Memory.
+
+Require Import Events.
+
+Require Import Globalenvs.
+
+Require Import Smallstep.
+
+Require Import Locations.
+
+Require Import Stacklayout.
+
+Require Import Conventions.
+
+
+
+Inductive ireg: Type :=
+
+  | GPR0: ireg  | GPR1: ireg  | GPR2: ireg  | GPR3: ireg
+
+  | GPR4: ireg  | GPR5: ireg  | GPR6: ireg  | GPR7: ireg
+
+  | GPR8: ireg  | GPR9: ireg  | GPR10: ireg | GPR11: ireg
+
+  | GPR12: ireg | GPR13: ireg | GPR14: ireg | GPR15: ireg
+
+  | GPR16: ireg | GPR17: ireg | GPR18: ireg | GPR19: ireg
+
+  | GPR20: ireg | GPR21: ireg | GPR22: ireg | GPR23: ireg
+
+  | GPR24: ireg | GPR25: ireg | GPR26: ireg | GPR27: ireg
+
+  | GPR28: ireg | GPR29: ireg | GPR30: ireg | GPR31: ireg.
+
+
+
+Inductive freg: Type :=
+
+  | FPR0: freg  | FPR1: freg  | FPR2: freg  | FPR3: freg
+
+  | FPR4: freg  | FPR5: freg  | FPR6: freg  | FPR7: freg
+
+  | FPR8: freg  | FPR9: freg  | FPR10: freg | FPR11: freg
+
+  | FPR12: freg | FPR13: freg | FPR14: freg | FPR15: freg
+
+  | FPR16: freg | FPR17: freg | FPR18: freg | FPR19: freg
+
+  | FPR20: freg | FPR21: freg | FPR22: freg | FPR23: freg
+
+  | FPR24: freg | FPR25: freg | FPR26: freg | FPR27: freg
+
+  | FPR28: freg | FPR29: freg | FPR30: freg | FPR31: freg.
+
+
+
+Lemma ireg_eq: forall (x y: ireg), {x=y} + {x<>y}.
+
+Proof. decide equality. Defined.
+
+
+
+Lemma freg_eq: forall (x y: freg), {x=y} + {x<>y}.
+
+Proof. decide equality. Defined.
+
+
+
+Inductive preg: Type :=
+
+  | IR: ireg -> preg                    
+
+  | FR: freg -> preg                    
+
+  | PC: preg                            
+
+  | LR: preg                            
+
+  | CTR: preg                           
+
+  | CARRY: preg                         
+
+  | CR0_0: preg                         
+
+  | CR0_1: preg                         
+
+  | CR0_2: preg                         
+
+  | CR0_3: preg                         
+
+  | CR1_2: preg.                        
+
+
+
+Coercion IR: ireg >-> preg.
+
+Coercion FR: freg >-> preg.
+
+
+
+Lemma preg_eq: forall (x y: preg), {x=y} + {x<>y}.
+
+Proof. decide equality. apply ireg_eq. apply freg_eq. Defined.
+
+
+
+Module PregEq.
+
+  Definition t := preg.
+
+  Definition eq := preg_eq.
+
+End PregEq.
+
+
+
+Module Pregmap := EMap(PregEq).
+
+
+
+Notation "'SP'" := GPR1 (only parsing) : asm.
+
+Notation "'RA'" := LR (only parsing) : asm.
+
+
+
+Inductive constant: Type :=
+
+  | Cint: int -> constant
+
+  | Csymbol_low: ident -> ptrofs -> constant
+
+  | Csymbol_high: ident -> ptrofs -> constant
+
+  | Csymbol_sda: ident -> ptrofs -> constant
+
+  | Csymbol_rel_low: ident -> ptrofs -> constant
+
+  | Csymbol_rel_high: ident -> ptrofs -> constant.
+
+
+
+Inductive crbit: Type :=
+
+  | CRbit_0: crbit
+
+  | CRbit_1: crbit
+
+  | CRbit_2: crbit
+
+  | CRbit_3: crbit
+
+  | CRbit_6: crbit.
+
+
+
+Definition label := positive.
+
+
+
+Inductive instruction : Type :=
+
+  | Padd: ireg -> ireg -> ireg -> instruction                 
+
+  | Padd64: ireg -> ireg -> ireg -> instruction               
+
+  | Paddc: ireg -> ireg -> ireg -> instruction                
+
+  | Padde: ireg -> ireg -> ireg -> instruction                
+
+  | Paddi: ireg -> ireg -> constant -> instruction            
+
+  | Paddi64: ireg -> ireg -> int64 -> instruction             
+
+  | Paddic: ireg -> ireg -> constant -> instruction           
+
+  | Paddis: ireg -> ireg -> constant -> instruction           
+
+  | Paddis64: ireg -> ireg -> int64 -> instruction            
+
+  | Paddze: ireg -> ireg -> instruction                       
+
+  | Paddze64: ireg -> ireg -> instruction                     
+
+  | Pallocframe: Z -> ptrofs -> ptrofs -> instruction         
+
+  | Pand_: ireg -> ireg -> ireg -> instruction                
+
+  | Pand_64: ireg -> ireg -> ireg -> instruction              
+
+  | Pandc: ireg -> ireg -> ireg -> instruction                
+
+  | Pandi_: ireg -> ireg -> constant -> instruction           
+
+  | Pandi_64: ireg -> ireg -> int64 -> instruction            
+
+  | Pandis_: ireg -> ireg -> constant -> instruction          
+
+  | Pandis_64: ireg -> ireg -> int64 -> instruction           
+
+  | Pb: label -> instruction                                  
+
+  | Pbctr: signature -> instruction                           
+
+  | Pbctrl: signature -> instruction                          
+
+  | Pbdnz: label -> instruction                               
+
+  | Pbf: crbit -> label -> instruction                        
+
+  | Pbl: ident -> signature -> instruction                    
+
+  | Pbs: ident -> signature -> instruction                    
+
+  | Pblr: instruction                                         
+
+  | Pbt: crbit -> label -> instruction                        
+
+  | Pbtbl: ireg -> list label -> instruction                  
+
+  | Pcmpb: ireg -> ireg -> ireg -> instruction                
+
+  | Pcmpld: ireg -> ireg -> instruction                       
+
+  | Pcmpldi: ireg -> int64 -> instruction                     
+
+  | Pcmplw: ireg -> ireg -> instruction                       
+
+  | Pcmplwi: ireg -> constant -> instruction                  
+
+  | Pcmpd: ireg -> ireg -> instruction                        
+
+  | Pcmpdi: ireg -> int64 -> instruction                      
+
+  | Pcmpw: ireg -> ireg -> instruction                        
+
+  | Pcmpwi: ireg -> constant -> instruction                   
+
+  | Pcntlzd: ireg -> ireg -> instruction                      
+
+  | Pcntlzw: ireg -> ireg -> instruction                      
+
+  | Pcreqv: crbit -> crbit -> crbit -> instruction            
+
+  | Pcror: crbit -> crbit -> crbit -> instruction             
+
+  | Pcrxor: crbit -> crbit -> crbit -> instruction            
+
+  | Pdcbf: ireg -> ireg -> instruction                        
+
+  | Pdcbi: ireg -> ireg -> instruction                        
+
+  | Pdcbt: int -> ireg -> ireg -> instruction                 
+
+  | Pdcbtst: int -> ireg -> ireg -> instruction               
+
+  | Pdcbtls: int -> ireg -> ireg -> instruction               
+
+  | Pdcbz: ireg -> ireg -> instruction                        
+
+  | Pdivw: ireg -> ireg -> ireg -> instruction                
+
+  | Pdivd: ireg -> ireg -> ireg -> instruction                
+
+  | Pdivwu: ireg -> ireg -> ireg -> instruction               
+
+  | Pdivdu: ireg -> ireg -> ireg -> instruction               
+
+  | Peieio: instruction                                       
+
+  | Peqv: ireg -> ireg -> ireg -> instruction                 
+
+  | Pextsb: ireg -> ireg -> instruction                       
+
+  | Pextsh: ireg -> ireg -> instruction                       
+
+  | Pextsw: ireg -> ireg -> instruction                       
+
+  | Pextzw: ireg -> ireg -> instruction                       
+
+  | Pfreeframe: Z -> ptrofs -> instruction                    
+
+  | Pfabs: freg -> freg -> instruction                        
+
+  | Pfabss: freg -> freg -> instruction                       
+
+  | Pfadd: freg -> freg -> freg -> instruction                
+
+  | Pfadds: freg -> freg -> freg -> instruction               
+
+  | Pfcmpu: freg -> freg -> instruction                       
+
+  | Pfcfi: freg -> ireg -> instruction                        
+
+  | Pfcfl: freg -> ireg -> instruction                        
+
+  | Pfcfiu: freg -> ireg -> instruction                       
+
+  | Pfcfid: freg -> freg -> instruction                       
+
+  | Pfcti: ireg -> freg -> instruction                        
+
+  | Pfctiu: ireg -> freg -> instruction                       
+
+  | Pfctid: ireg -> freg -> instruction                       
+
+  | Pfctidz: freg -> freg -> instruction                      
+
+  | Pfctiw: freg -> freg -> instruction                       
+
+  | Pfctiwz: freg -> freg -> instruction                      
+
+  | Pfdiv: freg -> freg -> freg -> instruction                
+
+  | Pfdivs: freg -> freg -> freg -> instruction               
+
+  | Pfmake: freg -> ireg -> ireg -> instruction               
+
+  | Pfmr: freg -> freg -> instruction                         
+
+  | Pfmul: freg -> freg -> freg -> instruction                
+
+  | Pfmuls: freg -> freg -> freg -> instruction               
+
+  | Pfneg: freg -> freg -> instruction                        
+
+  | Pfnegs: freg -> freg -> instruction                       
+
+  | Pfrsp: freg -> freg -> instruction                        
+
+  | Pfxdp: freg -> freg -> instruction                        
+
+  | Pfsub: freg -> freg -> freg -> instruction                
+
+  | Pfsubs: freg -> freg -> freg -> instruction               
+
+  | Pfmadd: freg -> freg -> freg -> freg -> instruction       
+
+  | Pfmsub: freg -> freg -> freg -> freg -> instruction       
+
+  | Pfnmadd: freg -> freg -> freg -> freg -> instruction      
+
+  | Pfnmsub: freg -> freg -> freg -> freg -> instruction      
+
+  | Pfsqrt: freg -> freg -> instruction                       
+
+  | Pfrsqrte: freg -> freg -> instruction                     
+
+  | Pfres: freg -> freg -> instruction                        
+
+  | Pfsel: freg -> freg -> freg -> freg -> instruction        
+
+  | Pisel: ireg -> ireg -> ireg -> crbit -> instruction       
+
+  | Pisync: instruction                                       
+
+  | Picbi: ireg -> ireg -> instruction                        
+
+  | Picbtls: int -> ireg -> ireg -> instruction               
+
+  | Plbz: ireg -> constant -> ireg -> instruction             
+
+  | Plbzx: ireg -> ireg -> ireg -> instruction                
+
+  | Pld: ireg -> constant -> ireg -> instruction              
+
+  | Pldx: ireg -> ireg -> ireg -> instruction                 
+
+  | Pld_a: ireg -> constant -> ireg -> instruction            
+
+  | Pldbrx: ireg -> ireg -> ireg -> instruction               
+
+  | Pldx_a: ireg -> ireg -> ireg -> instruction               
+
+  | Plfd: freg -> constant -> ireg -> instruction             
+
+  | Plfdx: freg -> ireg -> ireg -> instruction                
+
+  | Plfd_a: freg -> constant -> ireg -> instruction           
+
+  | Plfdx_a: freg -> ireg -> ireg -> instruction              
+
+  | Plfs: freg -> constant -> ireg -> instruction             
+
+  | Plfsx: freg -> ireg -> ireg -> instruction                
+
+  | Plha: ireg -> constant -> ireg -> instruction             
+
+  | Plhax: ireg -> ireg -> ireg -> instruction                
+
+  | Plhbrx: ireg -> ireg -> ireg -> instruction               
+
+  | Plhz: ireg -> constant -> ireg -> instruction             
+
+  | Plhzx: ireg -> ireg -> ireg -> instruction                
+
+  | Pldi: ireg -> int64 -> instruction                        
+
+  | Plmake: ireg -> ireg -> ireg -> instruction               
+
+  | Pllo: ireg -> instruction                                 
+
+  | Plhi: ireg -> ireg -> instruction                         
+
+  | Plfi: freg -> float -> instruction                        
+
+  | Plfis: freg -> float32 -> instruction                     
+
+  | Plwz: ireg -> constant -> ireg -> instruction             
+
+  | Plwzu: ireg -> constant -> ireg -> instruction            
+
+  | Plwzx: ireg -> ireg -> ireg -> instruction                
+
+  | Plwz_a: ireg -> constant -> ireg -> instruction           
+
+  | Plwzx_a: ireg -> ireg -> ireg -> instruction              
+
+  | Plwarx: ireg -> ireg -> ireg -> instruction               
+
+  | Plwbrx: ireg -> ireg -> ireg -> instruction               
+
+  | Pmbar: int -> instruction                                 
+
+  | Pmfcr: ireg -> instruction                                
+
+  | Pmfcrbit: ireg -> crbit -> instruction                    
+
+  | Pmflr: ireg -> instruction                                
+
+  | Pmr: ireg -> ireg -> instruction                          
+
+  | Pmtctr: ireg -> instruction                               
+
+  | Pmtlr: ireg -> instruction                                
+
+  | Pmfspr: ireg -> int -> instruction                        
+
+  | Pmtspr: int -> ireg -> instruction                        
+
+  | Pmulli: ireg -> ireg -> constant -> instruction           
+
+  | Pmullw: ireg -> ireg -> ireg -> instruction               
+
+  | Pmulld: ireg -> ireg -> ireg -> instruction               
+
+  | Pmulhw: ireg -> ireg -> ireg -> instruction               
+
+  | Pmulhwu: ireg -> ireg -> ireg -> instruction              
+
+  | Pmulhd: ireg -> ireg -> ireg -> instruction               
+
+  | Pmulhdu: ireg -> ireg -> ireg -> instruction              
+
+  | Pnand: ireg -> ireg -> ireg -> instruction                
+
+  | Pnor: ireg -> ireg -> ireg -> instruction                 
+
+  | Pnor64: ireg -> ireg -> ireg -> instruction               
+
+  | Por: ireg -> ireg -> ireg -> instruction                  
+
+  | Por64: ireg -> ireg -> ireg -> instruction                
+
+  | Porc: ireg -> ireg -> ireg -> instruction                 
+
+  | Pori: ireg -> ireg -> constant -> instruction             
+
+  | Pori64: ireg -> ireg -> int64 -> instruction              
+
+  | Poris: ireg -> ireg -> constant -> instruction            
+
+  | Poris64: ireg -> ireg -> int64 -> instruction             
+
+  | Prldicl: ireg -> ireg -> int -> int -> instruction        
+
+  | Prldinm: ireg -> ireg -> int -> int64 -> instruction      
+
+  | Prldimi: ireg -> ireg -> int -> int64 -> instruction      
+
+  | Prlwinm: ireg -> ireg -> int -> int -> instruction        
+
+  | Prlwimi: ireg -> ireg -> int -> int -> instruction        
+
+  | Psld: ireg -> ireg -> ireg -> instruction                 
+
+  | Pslw: ireg -> ireg -> ireg -> instruction                 
+
+  | Psrad: ireg -> ireg -> ireg -> instruction                
+
+  | Psradi: ireg -> ireg -> int -> instruction                
+
+  | Psraw: ireg -> ireg -> ireg -> instruction                
+
+  | Psrawi: ireg -> ireg -> int -> instruction                
+
+  | Psrd: ireg -> ireg -> ireg -> instruction                 
+
+  | Psrw: ireg -> ireg -> ireg -> instruction                 
+
+  | Pstb: ireg -> constant -> ireg -> instruction             
+
+  | Pstbx: ireg -> ireg -> ireg -> instruction                
+
+  | Pstd: ireg -> constant -> ireg -> instruction             
+
+  | Pstdx: ireg -> ireg -> ireg -> instruction                
+
+  | Pstdbrx: ireg -> ireg -> ireg -> instruction              
+
+  | Pstdu: ireg -> constant -> ireg -> instruction            
+
+  | Pstd_a: ireg -> constant -> ireg -> instruction           
+
+  | Pstdx_a: ireg -> ireg -> ireg -> instruction              
+
+  | Pstfd: freg -> constant -> ireg -> instruction            
+
+  | Pstfdu: freg -> constant -> ireg -> instruction           
+
+  | Pstfdx: freg -> ireg -> ireg -> instruction               
+
+  | Pstfd_a: freg -> constant -> ireg -> instruction          
+
+  | Pstfdx_a: freg -> ireg -> ireg -> instruction             
+
+  | Pstfs: freg -> constant -> ireg -> instruction            
+
+  | Pstfsx: freg -> ireg -> ireg -> instruction               
+
+  | Psth: ireg -> constant -> ireg -> instruction             
+
+  | Psthx: ireg -> ireg -> ireg -> instruction                
+
+  | Psthbrx: ireg -> ireg -> ireg -> instruction              
+
+  | Pstw: ireg -> constant -> ireg -> instruction             
+
+  | Pstwu: ireg -> constant -> ireg -> instruction            
+
+  | Pstwx: ireg -> ireg -> ireg -> instruction                
+
+  | Pstwux: ireg -> ireg -> ireg -> instruction               
+
+  | Pstw_a: ireg -> constant -> ireg -> instruction           
+
+  | Pstwx_a: ireg -> ireg -> ireg -> instruction              
+
+  | Pstwbrx: ireg -> ireg -> ireg -> instruction              
+
+  | Pstwcx_: ireg -> ireg -> ireg -> instruction              
+
+  | Psubfc: ireg -> ireg -> ireg -> instruction               
+
+  | Psubfc64: ireg -> ireg -> ireg -> instruction             
+
+  | Psubfe: ireg -> ireg -> ireg -> instruction               
+
+  | Psubfze: ireg -> ireg -> instruction                      
+
+  | Psubfic: ireg -> ireg -> constant -> instruction          
+
+  | Psubfic64: ireg -> ireg -> int64 -> instruction           
+
+  | Psync: instruction                                        
+
+  | Plwsync: instruction                                      
+
+  | Ptrap: instruction                                        
+
+  | Pxor: ireg -> ireg -> ireg -> instruction                 
+
+  | Pxor64: ireg -> ireg -> ireg -> instruction               
+
+  | Pxori: ireg -> ireg -> constant -> instruction            
+
+  | Pxori64: ireg -> ireg -> int64 -> instruction             
+
+  | Pxoris: ireg -> ireg -> constant -> instruction           
+
+  | Pxoris64: ireg -> ireg -> int64 -> instruction            
+
+  | Plabel: label -> instruction                              
+
+  | Pbuiltin: external_function -> list (builtin_arg preg) -> builtin_res preg -> instruction 
+
+  | Pcfi_adjust: int -> instruction                           
+
+  | Pcfi_rel_offset: int -> instruction.                      
+
+
+
+Definition code := list instruction.
+
+Record function : Type := mkfunction { fn_sig: signature; fn_code: code }.
+
+Definition fundef := AST.fundef function.
+
+Definition program := AST.program fundef unit.
+
+
+
+Definition regset := Pregmap.t val.
+
+Definition genv := Genv.t fundef unit.
+
+
+
+Notation "a # b" := (a b) (at level 1, only parsing) : asm.
+
+Notation "a # b <- c" := (Pregmap.set b c a) (at level 1, b at next level) : asm.
+
+
+
+Open Scope asm.
+
+
+
+Fixpoint undef_regs (l: list preg) (rs: regset) : regset :=
+
+  match l with
+
+  | nil => rs
+
+  | r :: l' => undef_regs l' (rs#r <- Vundef)
+
+  end.
+
+
+
+Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
+
+  match p with
+
+  | One r => rs#r <- v
+
+  | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
+
+  end.
+
+
+
+Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
+
+  match res with
+
+  | BR r => rs#r <- v
+
+  | BR_none => rs
+
+  | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
+
+  end.
+
+
+
+Section RELSEM.
+
+
+
+Fixpoint find_instr (pos: Z) (c: code) {struct c} : option instruction :=
+
+  match c with
+
+  | nil => None
+
+  | i :: il => if zeq pos 0 then Some i else find_instr (pos - 1) il
+
+  end.
+
+
+
+Definition is_label (lbl: label) (instr: instruction) : bool :=
+
+  match instr with
+
+  | Plabel lbl' => if peq lbl lbl' then true else false
+
+  | _ => false
+
+  end.
+
+
+
+Lemma is_label_correct:
+
+  forall lbl instr,
+
+  if is_label lbl instr then instr = Plabel lbl else instr <> Plabel lbl.
+
+Proof.
+
+  intros.  destruct instr; simpl; try discriminate.
+
+  case (peq lbl l); intro; congruence.
+
+Qed.
+
+
+
+Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
+
+  match c with
+
+  | nil => None
+
+  | instr :: c' =>
+
+      if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
+
+  end.
+
+
+
+Definition gpr_or_zero (rs: regset) (r: ireg) :=
+
+  if ireg_eq r GPR0 then Vint Int.zero else rs#r.
+
+
+
+Definition gpr_or_zero_l (rs: regset) (r: ireg) :=
+
+  if ireg_eq r GPR0 then Vlong Int64.zero else rs#r.
+
+
+
+Variable ge: genv.
+
+
+
+Parameter low_half: genv -> ident -> ptrofs -> val.
+
+Parameter high_half: genv -> ident -> ptrofs -> val.
+
+
+
+Axiom low_high_half:
+
+  forall id ofs,
+
+  Val.add (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs.
+
+
+
+Parameter symbol_is_small_data: ident -> ptrofs -> bool.
+
+Parameter small_data_area_offset: genv -> ident -> ptrofs -> val.
+
+
+
+Axiom small_data_area_addressing:
+
+  forall id ofs,
+
+  symbol_is_small_data id ofs = true ->
+
+  small_data_area_offset ge id ofs = Genv.symbol_address ge id ofs.
+
+
+
+Parameter symbol_is_rel_data: ident -> ptrofs -> bool.
+
+
+
+Definition const_low (c: constant) :=
+
+  match c with
+
+  | Cint n => Vint n
+
+  | Csymbol_low id ofs => low_half ge id ofs
+
+  | Csymbol_high id ofs => Vundef
+
+  | Csymbol_sda id ofs => small_data_area_offset ge id ofs
+
+  | Csymbol_rel_low id ofs => low_half ge id ofs
+
+  | Csymbol_rel_high id ofs => Vundef
+
+  end.
+
+
+
+Definition const_high (c: constant) :=
+
+  match c with
+
+  | Cint n => Vint (Int.shl n (Int.repr 16))
+
+  | Csymbol_low id ofs => Vundef
+
+  | Csymbol_high id ofs => high_half ge id ofs
+
+  | Csymbol_sda id ofs => Vundef
+
+  | Csymbol_rel_low id ofs => Vundef
+
+  | Csymbol_rel_high id ofs => high_half ge id ofs
+
+  end.
+
+
+
+Inductive outcome: Type :=
+
+  | Next: regset -> mem -> outcome
+
+  | Stuck: outcome.
+
+
+
+Definition nextinstr (rs: regset) :=
+
+  rs#PC <- (Val.offset_ptr rs#PC Ptrofs.one).
+
+
+
+Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
+
+  match label_pos lbl 0 (fn_code f) with
+
+  | None => Stuck
+
+  | Some pos =>
+
+      match rs#PC with
+
+      | Vptr b ofs => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+
+      | _ => Stuck
+
+    end
+
+  end.
+
+
+
+Definition load1 (chunk: memory_chunk) (rd: preg)
+
+                 (cst: constant) (r1: ireg) (rs: regset) (m: mem) :=
+
+  match Mem.loadv chunk m (Val.add (gpr_or_zero rs r1) (const_low cst)) with
+
+  | None => Stuck
+
+  | Some v => Next (nextinstr (rs#rd <- v)) m
+
+  end.
+
+
+
+Definition load2 (chunk: memory_chunk) (rd: preg) (r1 r2: ireg)
+
+                 (rs: regset) (m: mem) :=
+
+  match Mem.loadv chunk m (Val.add (gpr_or_zero rs r1) rs#r2) with
+
+  | None => Stuck
+
+  | Some v => Next (nextinstr (rs#rd <- v)) m
+
+  end.
+
+
+
+Definition store1 (chunk: memory_chunk) (r: preg)
+
+                  (cst: constant) (r1: ireg) (rs: regset) (m: mem) :=
+
+  match Mem.storev chunk m (Val.add (gpr_or_zero rs r1) (const_low cst)) (rs#r) with
+
+  | None => Stuck
+
+  | Some m' => Next (nextinstr rs) m'
+
+  end.
+
+
+
+Definition store2 (chunk: memory_chunk) (r: preg) (r1 r2: ireg)
+
+                  (rs: regset) (m: mem) :=
+
+  match Mem.storev chunk m (Val.add (gpr_or_zero rs r1) rs#r2) (rs#r) with
+
+  | None => Stuck
+
+  | Some m' => Next (nextinstr rs) m'
+
+  end.
+
+
+
+Definition reg_of_crbit (bit: crbit) :=
+
+  match bit with
+
+  | CRbit_0 => CR0_0
+
+  | CRbit_1 => CR0_1
+
+  | CRbit_2 => CR0_2
+
+  | CRbit_3 => CR0_3
+
+  | CRbit_6 => CR1_2
+
+  end.
+
+
+
+Definition compare_sint (rs: regset) (v1 v2: val) :=
+
+  rs#CR0_0 <- (Val.cmp Clt v1 v2)
+
+    #CR0_1 <- (Val.cmp Cgt v1 v2)
+
+    #CR0_2 <- (Val.cmp Ceq v1 v2)
+
+    #CR0_3 <- Vundef.
+
+
+
+Definition compare_uint (rs: regset) (m: mem) (v1 v2: val) :=
+
+  rs#CR0_0 <- (Val.cmpu (Mem.valid_pointer m) Clt v1 v2)
+
+    #CR0_1 <- (Val.cmpu (Mem.valid_pointer m) Cgt v1 v2)
+
+    #CR0_2 <- (Val.cmpu (Mem.valid_pointer m) Ceq v1 v2)
+
+    #CR0_3 <- Vundef.
+
+
+
+Definition compare_slong (rs: regset) (v1 v2: val) :=
+
+  rs#CR0_0 <- (Val.of_optbool (Val.cmpl_bool Clt v1 v2))
+
+    #CR0_1 <- (Val.of_optbool (Val.cmpl_bool Cgt v1 v2))
+
+    #CR0_2 <- (Val.of_optbool (Val.cmpl_bool Ceq v1 v2))
+
+    #CR0_3 <- Vundef.
+
+
+
+Definition compare_ulong (rs: regset) (m: mem) (v1 v2: val) :=
+
+  rs#CR0_0 <- (Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Clt v1 v2))
+
+    #CR0_1 <- (Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Cgt v1 v2))
+
+    #CR0_2 <- (Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Ceq v1 v2))
+
+    #CR0_3 <- Vundef.
+
+
+
+Definition compare_float (rs: regset) (v1 v2: val) :=
+
+  rs#CR0_0 <- (Val.cmpf Clt v1 v2)
+
+    #CR0_1 <- (Val.cmpf Cgt v1 v2)
+
+    #CR0_2 <- (Val.cmpf Ceq v1 v2)
+
+    #CR0_3 <- Vundef.
+
+
+
+Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+
+  match i with
+
+  | Padd rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.add rs#r1 rs#r2))) m
+
+  | Padd64 rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.addl rs#r1 rs#r2))) m
+
+  | Paddc rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.add rs#r1 rs#r2)
+
+                        #CARRY <- (Val.add_carry rs#r1 rs#r2 Vzero))) m
+
+  | Padde rd r1 r2 =>
+
+      Next (nextinstr (rs #rd <- (Val.add (Val.add rs#r1 rs#r2) rs#CARRY)
+
+                        #CARRY <- (Val.add_carry rs#r1 rs#r2 rs#CARRY))) m
+
+  | Paddi rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.add (gpr_or_zero rs r1) (const_low cst)))) m
+
+  | Paddi64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.addl (gpr_or_zero_l rs r1) (Vlong cst)))) m
+
+  | Paddic rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.add (gpr_or_zero rs r1) (const_low cst))
+
+                       #CARRY <- (Val.add_carry (gpr_or_zero rs r1) (const_low cst) Vzero))) m
+
+  | Paddis rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.add (gpr_or_zero rs r1) (const_high cst)))) m
+
+  | Paddis64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.addl (gpr_or_zero_l rs r1) (Vlong (Int64.shl cst (Int64.repr 16)))))) m
+
+  | Paddze rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.add rs#r1 rs#CARRY)
+
+                       #CARRY <- (Val.add_carry rs#r1 Vzero rs#CARRY))) m
+
+  | Paddze64 rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.addl rs#r1 rs#CARRY)
+
+                       #CARRY <- (Val.addl_carry rs#r1 (Vlong Int64.zero) rs#CARRY))) m
+
+  | Pallocframe sz ofs _ =>
+
+      let (m1, stk) := Mem.alloc m 0 sz in
+
+      let sp := Vptr stk Ptrofs.zero in
+
+      match Mem.storev Mint32 m1 (Val.offset_ptr sp ofs) rs#GPR1 with
+
+      | None => Stuck
+
+      | Some m2 => Next (nextinstr (rs#GPR1 <- sp #GPR0 <- Vundef)) m2
+
+      end
+
+  | Pand_ rd r1 r2 =>
+
+      let v := Val.and rs#r1 rs#r2 in
+
+      Next (nextinstr (compare_sint (rs#rd <- v) v Vzero)) m
+
+  | Pand_64 rd r1 r2 =>
+
+      let v := Val.andl rs#r1 rs#r2 in
+
+      Next (nextinstr (compare_slong (rs#rd <- v) v (Vlong Int64.zero))) m
+
+  | Pandc rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.and rs#r1 (Val.notint rs#r2)))) m
+
+  | Pandi_ rd r1 cst =>
+
+      let v := Val.and rs#r1 (const_low cst) in
+
+      Next (nextinstr (compare_sint (rs#rd <- v) v Vzero)) m
+
+  | Pandi_64 rd r1 cst =>
+
+      let v := Val.andl rs#r1 (Vlong cst) in
+
+      Next (nextinstr (compare_slong (rs#rd <- v) v (Vlong Int64.zero))) m
+
+  | Pandis_ rd r1 cst =>
+
+      let v := Val.and rs#r1 (const_high cst) in
+
+      Next (nextinstr (compare_sint (rs#rd <- v) v Vzero)) m
+
+  | Pandis_64 rd r1 cst =>
+
+      let v := Val.andl rs#r1 (Vlong (Int64.shl cst (Int64.repr 16))) in
+
+      Next (nextinstr (compare_slong (rs#rd <- v) v (Vlong Int64.zero))) m
+
+  | Pb lbl =>
+
+      goto_label f lbl rs m
+
+  | Pbctr sg =>
+
+      Next (rs#PC <- (rs#CTR)) m
+
+  | Pbctrl sg =>
+
+      Next (rs#LR <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (rs#CTR)) m
+
+  | Pbf bit lbl =>
+
+      match rs#(reg_of_crbit bit) with
+
+      | Vint n => if Int.eq n Int.zero then goto_label f lbl rs m else Next (nextinstr rs) m
+
+      | _ => Stuck
+
+      end
+
+  | Pbl ident sg =>
+
+      Next (rs#LR <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (Genv.symbol_address ge ident Ptrofs.zero)) m
+
+  | Pbs ident sg =>
+
+      Next (rs#PC <- (Genv.symbol_address ge ident Ptrofs.zero)) m
+
+  | Pblr =>
+
+      Next (rs#PC <- (rs#LR)) m
+
+  | Pbt bit lbl =>
+
+      match rs#(reg_of_crbit bit) with
+
+      | Vint n => if Int.eq n Int.zero then Next (nextinstr rs) m else goto_label f lbl rs m
+
+      | _ => Stuck
+
+      end
+
+  | Pbtbl r tbl =>
+
+      match rs r with
+
+      | Vint n =>
+
+          match list_nth_z tbl (Int.unsigned n) with
+
+          | None => Stuck
+
+          | Some lbl => goto_label f lbl (rs #GPR12 <- Vundef #CTR <- Vundef) m
+
+          end
+
+      | _ => Stuck
+
+      end
+
+  | Pcmpld r1 r2 =>
+
+      Next (nextinstr (compare_ulong rs m rs#r1 rs#r2)) m
+
+  | Pcmpldi r1 cst =>
+
+      Next (nextinstr (compare_ulong rs m rs#r1 (Vlong cst))) m
+
+  | Pcmplw r1 r2 =>
+
+      Next (nextinstr (compare_uint rs m rs#r1 rs#r2)) m
+
+  | Pcmplwi r1 cst =>
+
+      Next (nextinstr (compare_uint rs m rs#r1 (const_low cst))) m
+
+  | Pcmpd r1 r2 =>
+
+      Next (nextinstr (compare_slong rs rs#r1 rs#r2)) m
+
+  | Pcmpdi r1 cst =>
+
+      Next (nextinstr (compare_slong rs rs#r1 (Vlong cst))) m
+
+  | Pcmpw r1 r2 =>
+
+      Next (nextinstr (compare_sint rs rs#r1 rs#r2)) m
+
+  | Pcmpwi r1 cst =>
+
+      Next (nextinstr (compare_sint rs rs#r1 (const_low cst))) m
+
+  | Pcror bd b1 b2 =>
+
+      Next (nextinstr (rs#(reg_of_crbit bd) <- (Val.or rs#(reg_of_crbit b1) rs#(reg_of_crbit b2)))) m
+
+  | Pdivw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.divs rs#r1 rs#r2)))) m
+
+  | Pdivd rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.divls rs#r1 rs#r2)))) m
+
+  | Pdivwu rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.divu rs#r1 rs#r2)))) m
+
+  | Pdivdu rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.divlu rs#r1 rs#r2)))) m
+
+  | Peqv rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.notint (Val.xor rs#r1 rs#r2)))) m
+
+  | Pextsb rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.sign_ext 8 rs#r1))) m
+
+  | Pextsh rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.sign_ext 16 rs#r1))) m
+
+  | Pextsw rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.longofint rs#r1))) m
+
+  | Pextzw rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.longofintu rs#r1))) m
+
+  | Pfreeframe sz ofs =>
+
+      match Mem.loadv Mint32 m (Val.offset_ptr rs#GPR1 ofs) with
+
+      | None => Stuck
+
+      | Some v =>
+
+          match rs#GPR1 with
+
+          | Vptr stk ofs =>
+
+              match Mem.free m stk 0 sz with
+
+              | None => Stuck
+
+              | Some m' => Next (nextinstr (rs#GPR1 <- v)) m'
+
+              end
+
+          | _ => Stuck
+
+          end
+
+      end
+
+  | Pfabs rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.absf rs#r1))) m
+
+  | Pfabss rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.absfs rs#r1))) m
+
+  | Pfadd rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.addf rs#r1 rs#r2))) m
+
+  | Pfadds rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.addfs rs#r1 rs#r2))) m
+
+  | Pfcmpu r1 r2 =>
+
+      Next (nextinstr (compare_float rs rs#r1 rs#r2)) m
+
+  | Pfcfi rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatofint rs#r1)))) m
+
+  | Pfcfl rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatoflong rs#r1)))) m
+
+  | Pfcfiu rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatofintu rs#r1)))) m
+
+  | Pfcti rd r1 =>
+
+      Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.intoffloat rs#r1)))) m
+
+  | Pfctiu rd r1 =>
+
+      Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.intuoffloat rs#r1)))) m
+
+  | Pfctid rd r1 =>
+
+      Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.longoffloat rs#r1)))) m
+
+  | Pfdiv rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.divf rs#r1 rs#r2))) m
+
+  | Pfdivs rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.divfs rs#r1 rs#r2))) m
+
+  | Pfmake rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.floatofwords rs#r1 rs#r2))) m
+
+  | Pfmr rd r1 =>
+
+      Next (nextinstr (rs#rd <- (rs#r1))) m
+
+  | Pfmul rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mulf rs#r1 rs#r2))) m
+
+  | Pfmuls rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mulfs rs#r1 rs#r2))) m
+
+  | Pfneg rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.negf rs#r1))) m
+
+  | Pfnegs rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.negfs rs#r1))) m
+
+  | Pfrsp rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.singleoffloat rs#r1))) m
+
+  | Pfxdp rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.floatofsingle rs#r1))) m
+
+  | Pfsub rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.subf rs#r1 rs#r2))) m
+
+  | Pfsubs rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.subfs rs#r1 rs#r2))) m
+
+  | Plbz rd cst r1 =>
+
+      load1 Mint8unsigned rd cst r1 rs m
+
+  | Plbzx rd r1 r2 =>
+
+      load2 Mint8unsigned rd r1 r2 rs m
+
+  | Pld rd cst r1 =>
+
+      load1 Mint64 rd cst r1 rs m
+
+  | Pldx rd r1 r2 =>
+
+      load2 Mint64 rd r1 r2 rs m
+
+  | Pld_a rd cst r1 =>
+
+      load1 Many64 rd cst r1 rs m
+
+  | Pldx_a rd r1 r2 =>
+
+      load2 Many64 rd r1 r2 rs m
+
+  | Plfd rd cst r1 =>
+
+      load1 Mfloat64 rd cst r1 rs m
+
+  | Plfd_a rd cst r1 =>
+
+      load1 Many64 rd cst r1 rs m
+
+  | Plfdx rd r1 r2 =>
+
+      load2 Mfloat64 rd r1 r2 rs m
+
+  | Plfdx_a rd r1 r2 =>
+
+      load2 Many64 rd r1 r2 rs m
+
+  | Plfs rd cst r1 =>
+
+      load1 Mfloat32 rd cst r1 rs m
+
+  | Plfsx rd r1 r2 =>
+
+      load2 Mfloat32 rd r1 r2 rs m
+
+  | Plha rd cst r1 =>
+
+      load1 Mint16signed rd cst r1 rs m
+
+  | Plhax rd r1 r2 =>
+
+      load2 Mint16signed rd r1 r2 rs m
+
+  | Plhz rd cst r1 =>
+
+      load1 Mint16unsigned rd cst r1 rs m
+
+  | Plhzx rd r1 r2 =>
+
+      load2 Mint16unsigned rd r1 r2 rs m
+
+  | Pldi rd i =>
+
+       Next (nextinstr (rs #GPR12 <- Vundef #rd <- (Vlong i))) m
+
+  | Plmake rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.longofwords rs#r1 rs#r2))) m
+
+  | Pllo rd =>
+
+      Next (nextinstr (rs#rd <- (Val.loword rs#rd))) m
+
+  | Plhi rd r1 =>
+
+      Next (nextinstr (rs#rd <- (Val.hiword rs#r1))) m
+
+  | Plfi rd f =>
+
+      Next (nextinstr (rs #GPR12 <- Vundef #rd <- (Vfloat f))) m
+
+  | Plfis rd f =>
+
+      Next (nextinstr (rs #GPR12 <- Vundef #rd <- (Vsingle f))) m
+
+  | Plwz rd cst r1 =>
+
+      load1 Mint32 rd cst r1 rs m
+
+  | Plwzx rd r1 r2 =>
+
+      load2 Mint32 rd r1 r2 rs m
+
+  | Plwz_a rd cst r1 =>
+
+      load1 Many32 rd cst r1 rs m
+
+  | Plwzx_a rd r1 r2 =>
+
+      load2 Many32 rd r1 r2 rs m
+
+  | Pmfcrbit rd bit =>
+
+      Next (nextinstr (rs#rd <- (rs#(reg_of_crbit bit)))) m
+
+  | Pmflr rd =>
+
+      Next (nextinstr (rs#rd <- (rs#LR))) m
+
+  | Pmr rd r1 =>
+
+      Next (nextinstr (rs#rd <- (rs#r1))) m
+
+  | Pmtctr r1 =>
+
+      Next (nextinstr (rs#CTR <- (rs#r1))) m
+
+  | Pmtlr r1 =>
+
+      Next (nextinstr (rs#LR <- (rs#r1))) m
+
+  | Pmulli rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.mul rs#r1 (const_low cst)))) m
+
+  | Pmullw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mul rs#r1 rs#r2))) m
+
+  | Pmulld rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mull rs#r1 rs#r2))) m
+
+  | Pmulhw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mulhs rs#r1 rs#r2))) m
+
+  | Pmulhwu rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mulhu rs#r1 rs#r2))) m
+
+  | Pmulhd rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mullhs rs#r1 rs#r2))) m
+
+  | Pmulhdu rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.mullhu rs#r1 rs#r2))) m
+
+  | Pnand rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.notint (Val.and rs#r1 rs#r2)))) m
+
+  | Pnor rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.notint (Val.or rs#r1 rs#r2)))) m
+
+  | Pnor64 rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.notl (Val.orl rs#r1 rs#r2)))) m
+
+  | Por rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.or rs#r1 rs#r2))) m
+
+  | Por64 rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.orl rs#r1 rs#r2))) m
+
+  | Porc rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.or rs#r1 (Val.notint rs#r2)))) m
+
+  | Pori rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.or rs#r1 (const_low cst)))) m
+
+  | Pori64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.orl rs#r1 (Vlong cst)))) m
+
+  | Poris rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.or rs#r1 (const_high cst)))) m
+
+  | Poris64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.orl rs#r1 (Vlong (Int64.shl cst (Int64.repr 16)))))) m
+
+  | Prldinm rd r1 amount mask =>
+
+      Next (nextinstr (rs#rd <- (Val.rolml rs#r1 amount mask))) m
+
+  | Prlwinm rd r1 amount mask =>
+
+      Next (nextinstr (rs#rd <- (Val.rolm rs#r1 amount mask))) m
+
+  | Prlwimi rd r1 amount mask =>
+
+      Next (nextinstr (rs#rd <- (Val.or (Val.and rs#rd (Vint (Int.not mask)))
+
+                                     (Val.rolm rs#r1 amount mask)))) m
+
+  | Psld rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shll rs#r1 rs#r2))) m
+
+  | Pslw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shl rs#r1 rs#r2))) m
+
+  | Psrad rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shrl rs#r1 rs#r2) #CARRY <- (Val.shrl_carry rs#r1 rs#r2))) m
+
+  | Psradi rd r1 n =>
+
+      Next (nextinstr (rs#rd <- (Val.shrl rs#r1 (Vint n)) #CARRY <- (Val.shrl_carry rs#r1 (Vint n)))) m
+
+  | Psraw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shr rs#r1 rs#r2) #CARRY <- (Val.shr_carry rs#r1 rs#r2))) m
+
+  | Psrawi rd r1 n =>
+
+      Next (nextinstr (rs#rd <- (Val.shr rs#r1 (Vint n)) #CARRY <- (Val.shr_carry rs#r1 (Vint n)))) m
+
+  | Psrd rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shrlu rs#r1 rs#r2))) m
+
+  | Psrw rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.shru rs#r1 rs#r2))) m
+
+  | Pstb rd cst r1 =>
+
+      store1 Mint8unsigned rd cst r1 rs m
+
+  | Pstbx rd r1 r2 =>
+
+      store2 Mint8unsigned rd r1 r2 rs m
+
+  | Pstd rd cst r1 =>
+
+      store1 Mint64 rd cst r1 rs m
+
+  | Pstdx rd r1 r2 =>
+
+      store2 Mint64 rd r1 r2 rs m
+
+  | Pstd_a rd cst r1 =>
+
+      store1 Many64 rd cst r1 rs m
+
+  | Pstdx_a rd r1 r2 =>
+
+      store2 Many64 rd r1 r2 rs m
+
+  | Pstfd rd cst r1 =>
+
+      store1 Mfloat64 rd cst r1 rs m
+
+  | Pstfdx rd r1 r2 =>
+
+      store2 Mfloat64 rd r1 r2 rs m
+
+  | Pstfd_a rd cst r1 =>
+
+      store1 Many64 rd cst r1 rs m
+
+  | Pstfdx_a rd r1 r2 =>
+
+      store2 Many64 rd r1 r2 rs m
+
+  | Pstfs rd cst r1 =>
+
+      store1 Mfloat32 rd cst r1 rs m
+
+  | Pstfsx rd r1 r2 =>
+
+      store2 Mfloat32 rd r1 r2 rs m
+
+  | Psth rd cst r1 =>
+
+      store1 Mint16unsigned rd cst r1 rs m
+
+  | Psthx rd r1 r2 =>
+
+      store2 Mint16unsigned rd r1 r2 rs m
+
+  | Pstw rd cst r1 =>
+
+      store1 Mint32 rd cst r1 rs m
+
+  | Pstwx rd r1 r2 =>
+
+      store2 Mint32 rd r1 r2 rs m
+
+  | Pstw_a rd cst r1 =>
+
+      store1 Many32 rd cst r1 rs m
+
+  | Pstwx_a rd r1 r2 =>
+
+      store2 Many32 rd r1 r2 rs m
+
+  | Psubfc rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.sub rs#r2 rs#r1)
+
+                       #CARRY <- (Val.add_carry rs#r2 (Val.notint rs#r1) Vone))) m
+
+  | Psubfc64 rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.subl rs#r2 rs#r1) #CARRY <- Vundef)) m
+
+  | Psubfe rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.add (Val.add rs#r2 (Val.notint rs#r1)) rs#CARRY)
+
+                       #CARRY <- (Val.add_carry rs#r2 (Val.notint rs#r1) rs#CARRY))) m
+
+  | Psubfic rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.sub (const_low cst) rs#r1)
+
+                       #CARRY <- (Val.add_carry (const_low cst) (Val.notint rs#r1) Vone))) m
+
+  | Psubfic64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.subl (Vlong cst) rs#r1) #CARRY <- Vundef)) m
+
+  | Pxor rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.xor rs#r1 rs#r2))) m
+
+  | Pxor64 rd r1 r2 =>
+
+      Next (nextinstr (rs#rd <- (Val.xorl rs#r1 rs#r2))) m
+
+  | Pxori rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.xor rs#r1 (const_low cst)))) m
+
+  | Pxori64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.xorl rs#r1 (Vlong cst)))) m
+
+  | Pxoris rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.xor rs#r1 (const_high cst)))) m
+
+  | Pxoris64 rd r1 cst =>
+
+      Next (nextinstr (rs#rd <- (Val.xorl rs#r1 (Vlong (Int64.shl cst (Int64.repr 16)))))) m
+
+  | Plabel lbl =>
+
+      Next (nextinstr rs) m
+
+  | Pcfi_rel_offset ofs =>
+
+      Next (nextinstr rs) m
+
+  | Pbuiltin ef args res =>
+
+      Stuck    
+
+  
+  | Pbdnz _
+
+  | Pcmpb _ _ _
+
+  | Pcntlzd _ _
+
+  | Pcntlzw _ _
+
+  | Pcreqv _ _ _
+
+  | Pcrxor _ _ _
+
+  | Pdcbf _ _
+
+  | Pdcbi _ _
+
+  | Pdcbt _ _ _
+
+  | Pdcbtst _ _ _
+
+  | Pdcbtls _ _ _
+
+  | Pdcbz _ _
+
+  | Peieio
+
+  | Pfcfid _ _
+
+  | Pfctidz _ _
+
+  | Pfctiw _ _
+
+  | Pfctiwz _ _
+
+  | Pfmadd _ _ _ _
+
+  | Pfmsub _ _ _ _
+
+  | Pfnmadd _ _ _ _
+
+  | Pfnmsub _ _ _ _
+
+  | Pfsqrt _ _
+
+  | Pfrsqrte _ _
+
+  | Pfres _ _
+
+  | Pfsel _ _ _ _
+
+  | Pisel _ _ _ _
+
+  | Plwarx _ _ _
+
+  | Plwbrx _ _ _
+
+  | Picbi _ _
+
+  | Picbtls _ _ _
+
+  | Pisync
+
+  | Pldbrx _ _ _
+
+  | Plwsync
+
+  | Plhbrx _ _ _
+
+  | Plwzu _ _ _
+
+  | Pmbar _
+
+  | Pmfcr _
+
+  | Pmfspr _ _
+
+  | Pmtspr _ _
+
+  | Prldicl _ _ _ _
+
+  | Prldimi _ _ _ _
+
+  | Pstdbrx _ _ _
+
+  | Pstdu _ _ _
+
+  | Pstwbrx _ _ _
+
+  | Pstwcx_ _ _ _
+
+  | Pstfdu _ _ _
+
+  | Psthbrx _ _ _
+
+  | Pstwu _ _ _
+
+  | Pstwux _ _ _
+
+  | Psubfze _ _
+
+  | Psync
+
+  | Ptrap
+
+  | Pcfi_adjust _ =>
+
+      Stuck
+
+  end.
+
+
+
+Definition preg_of (r: mreg) : preg :=
+
+  match r with
+
+  | R3 => GPR3  | R4 => GPR4  | R5 => GPR5  | R6 => GPR6
+
+  | R7 => GPR7  | R8 => GPR8  | R9 => GPR9  | R10 => GPR10
+
+  | R11 => GPR11 | R12 => GPR12
+
+  | R14 => GPR14 | R15 => GPR15 | R16 => GPR16
+
+  | R17 => GPR17 | R18 => GPR18 | R19 => GPR19 | R20 => GPR20
+
+  | R21 => GPR21 | R22 => GPR22 | R23 => GPR23 | R24 => GPR24
+
+  | R25 => GPR25 | R26 => GPR26 | R27 => GPR27 | R28 => GPR28
+
+  | R29 => GPR29 | R30 => GPR30 | R31 => GPR31
+
+  | F0 => FPR0
+
+  | F1 => FPR1  | F2 => FPR2  | F3 => FPR3  | F4 => FPR4
+
+  | F5 => FPR5  | F6 => FPR6  | F7 => FPR7  | F8 => FPR8
+
+  | F9 => FPR9  | F10 => FPR10 | F11 => FPR11 | F12 => FPR12
+
+  | F13 => FPR13 | F14 => FPR14 | F15 => FPR15
+
+  | F16 => FPR16 | F17 => FPR17 | F18 => FPR18 | F19 => FPR19
+
+  | F20 => FPR20 | F21 => FPR21 | F22 => FPR22 | F23 => FPR23
+
+  | F24 => FPR24 | F25 => FPR25 | F26 => FPR26 | F27 => FPR27
+
+  | F28 => FPR28 | F29 => FPR29 | F30 => FPR30 | F31 => FPR31
+
+  end.
+
+
+
+Definition undef_caller_save_regs (rs: regset) : regset :=
+
+  fun r =>
+
+    if preg_eq r SP
+
+    || In_dec preg_eq r (List.map preg_of (List.filter is_callee_save all_mregs))
+
+    then rs r
+
+    else Vundef.
+
+
+
+Inductive extcall_arg (rs: regset) (m: mem): loc -> val -> Prop :=
+
+  | extcall_arg_reg: forall r,
+
+      extcall_arg rs m (R r) (rs (preg_of r))
+
+  | extcall_arg_stack: forall ofs ty bofs v,
+
+      bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
+
+      Mem.loadv (chunk_of_type ty) m
+
+                (Val.offset_ptr (rs (IR GPR1)) (Ptrofs.repr bofs)) = Some v ->
+
+      extcall_arg rs m (S Outgoing ofs ty) v.
+
+
+
+Inductive extcall_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
+
+  | extcall_arg_one: forall l v,
+
+      extcall_arg rs m l v ->
+
+      extcall_arg_pair rs m (One l) v
+
+  | extcall_arg_twolong: forall hi lo vhi vlo,
+
+      extcall_arg rs m hi vhi ->
+
+      extcall_arg rs m lo vlo ->
+
+      extcall_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+
+
+
+Definition extcall_arguments
+
+    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
+
+  list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
+
+
+
+Definition loc_external_result (sg: signature) : rpair preg :=
+
+  map_rpair preg_of (loc_result sg).
+
+
+
+Inductive state: Type :=
+
+  | State: regset -> mem -> state.
+
+
+
+Inductive step: state -> trace -> state -> Prop :=
+
+  | exec_step_internal:
+
+      forall b ofs f i rs m rs' m',
+
+      rs PC = Vptr b ofs ->
+
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+
+      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
+
+      exec_instr f i rs m = Next rs' m' ->
+
+      step (State rs m) E0 (State rs' m')
+
+  | exec_step_builtin:
+
+      forall b ofs f ef args res rs m vargs t vres rs' m',
+
+      rs PC = Vptr b ofs ->
+
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+
+      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
+
+      eval_builtin_args ge rs (rs GPR1) m args vargs ->
+
+      external_call ef ge vargs m t vres m' ->
+
+      rs' = nextinstr
+
+              (set_res res vres
+
+                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+
+      step (State rs m) t (State rs' m')
+
+  | exec_step_external:
+
+      forall b ef args res rs m t rs' m',
+
+      rs PC = Vptr b Ptrofs.zero ->
+
+      Genv.find_funct_ptr ge b = Some (External ef) ->
+
+      external_call ef ge args m t res m' ->
+
+      extcall_arguments rs m (ef_sig ef) args ->
+
+      rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) #PC <- (rs RA) ->
+
+      step (State rs m) t (State rs' m').
+
+
+
+End RELSEM.
+
+
+
+Inductive initial_state (p: program): state -> Prop :=
+
+  | initial_state_intro: forall m0,
+
+      Genv.init_mem p = Some m0 ->
+
+      let ge := Genv.globalenv p in
+
+      let rs0 :=
+
+        (Pregmap.init Vundef)
+
+        # PC <- (Genv.symbol_address ge p.(prog_main) Ptrofs.zero)
+
+        # LR <- Vnullptr
+
+        # GPR1 <- Vnullptr in
+
+      initial_state p (State rs0 m0).
+
+
+
+Inductive final_state: state -> int -> Prop :=
+
+  | final_state_intro: forall rs m r,
+
+      rs#PC = Vnullptr ->
+
+      rs#GPR3 = Vint r ->
+
+      final_state (State rs m) r.
+
+
+
+Definition semantics (p: program) :=
+
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+
+
+Remark extcall_arguments_determ:
+
+  forall rs m sg args1 args2,
+
+  extcall_arguments rs m sg args1 -> extcall_arguments rs m sg args2 -> args1 = args2.
+
+Proof.
+
+  intros until m.
+
+  assert (A: forall l v1 v2,
+
+             extcall_arg rs m l v1 -> extcall_arg rs m l v2 -> v1 = v2).
+
+  { intros. inv H; inv H0; congruence. }
+
+  assert (B: forall p v1 v2,
+
+             extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
+
+  { intros. inv H; inv H0.
+
+    eapply A; eauto.
+
+    f_equal; eapply A; eauto. }
+
+  assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->
+
+             forall vl2, list_forall2 (extcall_arg_pair rs m) ll vl2 -> vl1 = vl2).
+
+  {
+
+    induction 1; intros vl2 EA; inv EA.
+
+    auto.
+
+    f_equal; eauto. }
+
+  intros. eapply C; eauto.
+
+Qed.
+
+
+
+Lemma semantics_determinate: forall p, determinate (semantics p).
+
+Proof.
+
+Ltac Equalities :=
+
+  match goal with
+
+  | [ H1: ?a = ?b, H2: ?a = ?c |- _ ] =>
+
+      rewrite H1 in H2; inv H2; Equalities
+
+  | _ => idtac
+
+  end.
+
+  intros; constructor; simpl; intros.
+
+
+
+  inv H; inv H0; Equalities.
+
+  split. constructor. auto.
+
+  discriminate.
+
+  discriminate.
+
+  assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+
+  exploit external_call_determ. eexact H5. eexact H11. intros [A B].
+
+  split. auto. intros. destruct B; auto. subst. auto.
+
+  assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
+
+  exploit external_call_determ. eexact H3. eexact H8. intros [A B].
+
+  split. auto. intros. destruct B; auto. subst. auto.
+
+
+
+  red; intros. inv H; simpl.
+
+  omega.
+
+  eapply external_call_trace_length; eauto.
+
+  eapply external_call_trace_length; eauto.
+
+
+
+  inv H; inv H0. f_equal. congruence.
+
+
+
+  inv H. red; intros; red; intros. inv H; rewrite H0 in *; discriminate.
+
+
+
+  inv H; inv H0. congruence.
+
+Qed.
+
+
+
+Definition data_preg (r: preg) : bool :=
+
+  match r with
+
+  | IR GPR0 => false
+
+  | PC => false    | LR => false    | CTR => false
+
+  | CR0_0 => false | CR0_1 => false | CR0_2 => false | CR0_3 => false
+
+  | CARRY => false
+
+  | _ => true
+
+  end.
+

@@ -1,0 +1,2588 @@
+Require Import VST.msl.msl_standard.
+(* VST.msl.msl_standard:
+Require Export VST.msl.Extensionality.
+Require Export VST.msl.ageable.
+Require Export VST.msl.age_sepalg.
+Require Export VST.msl.base.
+Require Export VST.msl.boolean_alg.
+Require Export VST.msl.knot_full_variant.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.knot_full_sa.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.predicates_hered.
+Require Export VST.msl.predicates_sl.
+Require Export VST.msl.corable.
+Require Export VST.msl.subtypes.
+Require Export VST.msl.subtypes_sl.
+Require Export VST.msl.predicates_rec.
+Require Export VST.msl.contractive.
+Require Export VST.msl.sepalg.
+Require Export VST.msl.functors.
+Require Export VST.msl.sepalg_functors.
+Require Export VST.msl.sepalg_generators.
+Require Export VST.msl.combiner_sa.
+Require Export VST.msl.shares.
+Require Export VST.msl.cross_split.
+Require Export VST.msl.psepalg.
+Require Export VST.msl.pshares.
+Require Export VST.msl.eq_dec.
+
+Export MixVariantFunctor.
+Export MixVariantFunctorLemmas.
+Export MixVariantFunctorGenerator. *)
+
+Require Import VST.veric.Clight_base.
+(* VST.veric.Clight_base:
+Require Export compcert.exportclight.Clightdefs.
+
+Require Export VST.veric.base.
+Require Export compcert.cfrontend.Ctypes.
+Require Export compcert.cfrontend.Cop. 
+Require Export compcert.cfrontend.Clight. 
+
+Require Export EqNat.  
+
+Require Export VST.veric.Memory. *)
+
+Require Import VST.veric.rmaps.
+(* VST.veric.rmaps:
+Require Import VST.msl.msl_standard.
+Require Import VST.msl.ghost.
+Require Import VST.msl.Coqlib2.
+Require Import VST.veric.shares.
+
+Module Type ADR_VAL.
+Parameter address : Type.
+Parameter some_address:address.
+
+Parameter kind: Type.
+End ADR_VAL.
+
+Inductive TypeTree: Type :=
+  | ConstType: Type -> TypeTree
+  | Mpred: TypeTree
+  | DependentType: nat -> TypeTree
+  | ProdType: TypeTree -> TypeTree -> TypeTree
+  | ArrowType: TypeTree -> TypeTree -> TypeTree
+  | PiType: forall (I : Type), (I -> TypeTree) -> TypeTree
+  | ListType: TypeTree -> TypeTree.
+
+Definition dependent_type_functor_rec (ts: list Type): TypeTree -> functor :=
+  fix dtfr (T: TypeTree): functor :=
+  match T with
+  | ConstType A => fconst A
+  | Mpred => fidentity
+  | DependentType n => fconst (nth n ts unit)
+  | ProdType T1 T2 => fpair (dtfr T1) (dtfr T2)
+  | ArrowType T1 T2 => ffunc (dtfr T1) (dtfr T2)
+  | PiType _ f => fpi (fun i => dtfr (f i))
+  | ListType T => flist (dtfr T)
+  end.
+Opaque dependent_type_functor_rec.
+
+Definition dependent_type_function_rec (ts: list Type) (mpred': Type): TypeTree -> Type :=
+  fix dtfr (T: TypeTree): Type :=
+  match T with
+  | ConstType A => A
+  | Mpred => mpred'
+  | DependentType n => nth n ts unit
+  | ProdType T1 T2 => (dtfr T1 * dtfr T2)%type
+  | ArrowType T1 T2 => dtfr T1 -> dtfr T2
+  | PiType A f => forall a, dtfr (f a)
+  | ListType T => list (dtfr T)
+  end.
+
+Definition fpreds: functor :=
+  fsig (fun T: TypeTree =>
+    fpi (fun ts: list Type => dependent_type_functor_rec ts T)).
+
+Lemma realize_eq: forall {A} (a b: A) P, (exists H: a = b, P H) -> {H: a = b & P H}.
+
+Lemma lower_join_inv : forall {A} {J: Join A} a b c, lower_join J a b c <->
+  match a, b, c with
+  | Some a, Some b, Some c => join a b c
+  | Some a, None, Some c | None, Some a, Some c => a = c
+  | None, None, None => True
+  | _, _, _ => False
+  end.
+
+Module Type STRAT_MODEL.
+  Declare Module AV : ADR_VAL.
+  Import AV.
+
+  Inductive res (PRED : Type) : Type :=
+    | NO':  forall sh: Share.t, ~(readable_share sh) -> res PRED
+    | YES': forall sh: Share.t, readable_share sh -> kind -> fpreds PRED -> res PRED
+    | PURE': kind -> fpreds PRED -> res PRED.
+
+  Definition res_fmap (A B:Type) (f:A->B) (g:B->A)(x:res A) : res B :=
+    match x with
+      | NO' rsh nsh => NO' B rsh nsh
+      | YES' sh rsh k pds => YES' B sh rsh k (fmap fpreds f g pds)
+      | PURE' k pds => PURE' B k (fmap fpreds f g pds)
+    end.
+  Axiom ff_res : functorFacts res res_fmap.
+  Definition f_res : functor := Functor ff_res.
+
+  Axiom paf_res : @pafunctor f_res res_join.
+
+  Definition res_option (PRED : Type) (r: res PRED) : option (rshare * kind):=
+    match r with
+      | NO' _ _ => None
+      | YES' sh rsh k _ => Some (readable_part rsh,k)
+      | PURE' _ _ => None 
+    end.
+
+  Definition ghost (PRED : Type) : Type :=
+    list (option ({g: Ghost & {a: @G g | ghost.valid a}} * fpreds PRED)%type).
+
+  Definition ghost_fmap (A B:Type) (f:A->B) (g:B->A)(x:ghost A) : ghost B :=
+    fmap (flist (foption (fpair (fconst _) fpreds))) f g x.
+
+  Axiom ff_ghost : functorFacts ghost ghost_fmap.
+  Definition f_ghost : functor := Functor ff_ghost.
+  Axiom paf_ghost : @pafunctor f_ghost ghost_join.
+
+  Definition f_pre_rmap : functor :=
+    fpair (ffunc (fconst address) f_res) f_ghost.
+
+  Instance Join_pre_rmap (A: Type) : Join (f_pre_rmap A) :=
+            Join_prod _ (Join_fun address (res A) (res_join A)) _ (ghost_join A).
+
+  Declare Instance Perm_pre_rmap: forall (A: Type), Perm_alg (f_pre_rmap A).
+  Declare Instance Sep_pre_rmap: forall (A: Type), Sep_alg (f_pre_rmap A).
+  Parameter paf_pre_rmap : @pafunctor f_pre_rmap Join_pre_rmap.
+
+  Existing Instance ghost_join.
+  Instance Join_res A : Join (f_res A) := res_join A.
+
+Axiom pre_rmap_core:
+forall (A : Type) (m : f_pre_rmap A),
+  @core (f_pre_rmap A) (Join_pre_rmap A) (Sep_pre_rmap A) m =
+ (@core ((fpair (ffunc (fconst address) f_res) f_ghost) A)
+           (Join_prod ((ffunc (fconst address) f_res) A)
+              (Join_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A))
+              (f_ghost A) (ghost_join A))
+           (@Sep_prod ((ffunc (fconst address) f_res) A)
+              (Join_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A))
+              (f_ghost A) (ghost_join A)
+              (Sep_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A)
+                 (fun _ : (fconst address) A => sa_rj A)) 
+              (sa_gj A)) m).
+
+End STRAT_MODEL.
+
+Module StratModel (AV' : ADR_VAL) : STRAT_MODEL with Module AV:=AV'.
+  Module AV := AV'.
+  Import AV.
+
+  Definition preds: functor :=
+    fsig (fun T: TypeTree =>
+      fpi (fun ts: list Type => dependent_type_functor_rec ts T)).
+
+  Inductive res (PRED : Type) : Type :=
+    | NO':  forall sh: Share.t, ~(readable_share sh) -> res PRED
+    | YES': forall sh: Share.t, readable_share sh -> kind -> preds PRED -> res PRED
+    | PURE': kind -> preds PRED -> res PRED.
+
+  Definition res_fmap (A B:Type) (f:A->B) (g:B->A)(x:res A) : res B :=
+    match x with
+      | NO' rsh nsh => NO' B rsh nsh
+      | YES' sh rsh k pds => YES' B sh rsh k (fmap preds f g pds)
+      | PURE' k pds => PURE' B k (fmap preds f g pds)
+    end.
+
+  Lemma ff_res : functorFacts res res_fmap.
+
+  Definition f_res : functor := Functor ff_res.
+
+  Definition paf_res : @pafunctor f_res res_join.
+
+  Definition res_option (PRED : Type) (r: res PRED) : option (rshare * kind):=
+    match r with
+      | NO' _ _ => None
+      | YES' sh rsh k _ => Some (readable_part rsh,k)
+      | PURE' _ _ => None 
+    end.
+
+  Definition ghost (PRED : Type) : Type :=
+    list (option ({g: Ghost & {a: @G g | ghost.valid a}} * fpreds PRED)%type).
+
+  Definition ghost_fmap (A B:Type) (f:A->B) (g:B->A)(x:ghost A) : ghost B :=
+    fmap (flist (foption (fpair (fconst _) fpreds))) f g x.
+
+  Lemma ff_ghost : functorFacts ghost ghost_fmap.
+
+  Definition f_ghost : functor := Functor ff_ghost.
+
+  Instance preds_join PRED : Join _ := Join_equiv (fpreds PRED).
+
+  Inductive ghost_elem_join : Join {g: Ghost & {a: @G g | ghost.valid a}} :=
+  | elem_join_I g a b c va vb vc: join a b c ->
+    ghost_elem_join (existT _ g (exist _ a va)) (existT _ g (exist _ b vb))
+                    (existT _ g (exist _ c vc)).
+  Existing Instance ghost_elem_join.
+
+  Inductive ghost_join PRED : Join (ghost PRED) :=
+  | ghost_join_nil_l m: ghost_join PRED nil m m
+  | ghost_join_nil_r m: ghost_join PRED m nil m
+  | ghost_join_cons a1 a2 m1 m2 a3 m3: join a1 a2 a3 -> ghost_join PRED m1 m2 m3 ->
+      ghost_join PRED (a1 :: m1) (a2 :: m2) (a3 :: m3).
+  Hint Constructors ghost_join.
+  Existing Instance ghost_join.
+
+  Lemma elem_join_inv: forall a1 a2 a3, ghost_elem_join a1 a2 a3 ->
+  match a1, a2, a3 with
+  | existT g1 (exist x1 _), existT g2 (exist x2 _), existT g3 (exist x3 _) =>
+      exists H: g2 = g1, exists H': g3 = g1, join x1 (eq_rect _ _ x2 _ H) (eq_rect _ _ x3 _ H')
+  end.
+
+  Lemma ghost_join_inv: forall PRED m1 m2 m3, ghost_join PRED m1 m2 m3 ->
+  match m1, m2 with
+  | nil, _ => m3 = m2
+  | _, nil => m3 = m1
+  | a1 :: m1, a2 :: m2 => match m3 with nil => False
+                          | a3 :: m3 => join a1 a2 a3 /\ ghost_join PRED m1 m2 m3 end
+  end.
+
+  Opaque fpreds.
+
+  Definition paf_ghost : @pafunctor f_ghost ghost_join.
+
+  Definition pre_rmap (A:Type) := ((address -> res A) * ghost A)%type.
+  Definition f_pre_rmap : functor :=
+    fpair (ffunc (fconst address) f_res) f_ghost.
+
+  Notation Join_obj A := (Join_prod _ (Join_fun address (res A) (res_join A)) _ (ghost_join A)).
+
+  Instance Join_pre_rmap (A: Type) : Join (pre_rmap A) :=
+    Join_obj A.
+
+  Definition paf_pre_rmap : @pafunctor f_pre_rmap Join_pre_rmap :=
+    paf_pair (paf_fun address paf_res) paf_ghost.
+
+  Definition Perm_pre_rmap (A: Type): Perm_alg (pre_rmap A) :=
+    Perm_prod (Perm_fun address _ _ _) (pa_gj A).
+
+  Definition Sep_pre_rmap (A: Type): Sep_alg (pre_rmap A) :=
+    Sep_prod (Sep_fun address _ _ _) (sa_gj A).
+
+Lemma pre_rmap_core:
+forall (A : Type) (m : f_pre_rmap A),
+  @core (f_pre_rmap A) (Join_pre_rmap A) (Sep_pre_rmap A) m =
+ (@core ((fpair (ffunc (fconst address) f_res) f_ghost) A)
+           (Join_prod ((ffunc (fconst address) f_res) A)
+              (Join_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A))
+              (f_ghost A) (ghost_join A))
+           (@Sep_prod ((ffunc (fconst address) f_res) A)
+              (Join_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A))
+              (f_ghost A) (ghost_join A)
+              (Sep_pi ((fconst address) A)
+                 (fun _ : (fconst address) A => f_res A)
+                 (fun _ : (fconst address) A => Join_res A)
+                 (fun _ : (fconst address) A => sa_rj A)) 
+              (sa_gj A)) m).
+
+End StratModel.
+
+Local Open Scope nat_scope.
+
+Module Type RMAPS.
+  Declare Module AV:ADR_VAL.
+  Import AV.
+
+  Parameter rmap : Type.
+  Axiom Join_rmap: Join rmap. Existing Instance Join_rmap.
+  Axiom Perm_rmap: Perm_alg rmap. Existing Instance Perm_rmap.
+  Axiom Sep_rmap: Sep_alg rmap. Existing Instance Sep_rmap.
+  Axiom ag_rmap: ageable rmap.  Existing Instance ag_rmap.
+  Axiom Age_rmap: Age_alg rmap.  Existing Instance Age_rmap.
+
+  Inductive preds : Type :=
+    SomeP : forall A : TypeTree,
+      (forall ts: list Type, dependent_type_functor_rec ts A (pred rmap)) -> preds.
+
+  Definition NoneP := SomeP (ConstType unit) (fun _ => tt).
+
+  Inductive resource : Type :=
+    | NO: forall sh: Share.t, ~(readable_share sh) -> resource
+    | YES: forall sh: Share.t, readable_share sh -> kind -> preds -> resource
+    | PURE: kind -> preds -> resource.
+
+  Definition res_option (r:resource) : option (rshare * kind) :=
+    match r with
+      | NO _ _ => None
+      | YES sh rsh k _ => Some (readable_part rsh,k)
+      | PURE k _ => None
+    end.
+
+  Inductive res_join : resource -> resource -> resource -> Prop :=
+   | res_join_NO1 : forall sh1 nsh1 sh2 nsh2 sh3 nsh3
+                 (RJ: join sh1 sh2 sh3),
+                 res_join (NO sh1 nsh1) (NO sh2 nsh2) (NO sh3 nsh3)
+   | res_join_NO2 : forall sh1 rsh1 sh2 nsh2 sh3 rsh3 k p
+                 (RJ: join sh1 sh2 sh3), 
+                 res_join (YES sh1 rsh1 k p) (NO sh2 nsh2) (YES sh3 rsh3 k p) 
+   | res_join_NO3 : forall sh1 nsh1 sh2 rsh2 sh3 rsh3 k p
+                 (RJ: join sh1 sh2 sh3),
+                 res_join (NO sh1 nsh1) (YES sh2 rsh2 k p) (YES sh3 rsh3 k p) 
+   | res_join_YES : forall sh1 rsh1 sh2 rsh2 sh3 rsh3 k p
+                 (RJ: join sh1 sh2 sh3),
+        res_join (YES sh1 rsh1 k p) (YES sh2 rsh2 k p) (YES sh3 rsh3 k p)
+   | res_join_PURE : forall k p, res_join (PURE k p) (PURE k p) (PURE k p). 
+
+  Instance Join_resource: Join resource := res_join.
+  Axiom Perm_resource: Perm_alg resource. Existing Instance Perm_resource.
+  Axiom Sep_resource: Sep_alg resource. Existing Instance Sep_resource.
+
+  Definition preds_fmap (f g: pred rmap -> pred rmap) (x:preds) : preds :=
+    match x with SomeP A Q => SomeP A (fmap (fpi _) f g Q)
+    end.
+  
+  Axiom preds_fmap_id : preds_fmap (id _) (id _) = id preds.
+  Axiom preds_fmap_comp : forall f1 f2 g1 g2,
+    preds_fmap g1 g2 oo preds_fmap f1 f2 = preds_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition resource_fmap (f g:pred rmap -> pred rmap) (x:resource) : resource :=
+    match x with
+    | NO sh nsh => NO sh nsh
+    | YES sh rsh k p => YES sh rsh k (preds_fmap f g p)
+    | PURE k p => PURE k (preds_fmap f g p)
+    end.
+  Axiom resource_fmap_id : resource_fmap (id _) (id _) = id resource.
+  Axiom resource_fmap_comp : forall f1 f2 g1 g2,
+    resource_fmap g1 g2 oo resource_fmap f1 f2 = resource_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition ghost : Type := list (option ({g: Ghost & {a: @G g | ghost.valid a}} * preds)%type).
+
+  Instance preds_join : Join _ := Join_equiv preds.
+
+  Inductive ghost_elem_join : Join {g: Ghost & {a: @G g | ghost.valid a}} :=
+  | elem_join_I g a b c va vb vc: join a b c ->
+    ghost_elem_join (existT _ g (exist _ a va)) (existT _ g (exist _ b vb))
+                    (existT _ g (exist _ c vc)).
+  Existing Instance ghost_elem_join.
+
+  Inductive ghost_join : Join ghost :=
+  | ghost_join_nil_l m: ghost_join nil m m
+  | ghost_join_nil_r m: ghost_join m nil m
+  | ghost_join_cons a1 a2 m1 m2 a3 m3: join a1 a2 a3 -> ghost_join m1 m2 m3 ->
+      ghost_join (a1 :: m1) (a2 :: m2) (a3 :: m3).
+  Existing Instance ghost_join.
+
+  Axiom Perm_ghost: Perm_alg ghost. Existing Instance Perm_ghost.
+  Axiom Sep_ghost: Sep_alg ghost. Existing Instance Sep_ghost.
+  Axiom ghost_core: forall (g: ghost), core g = nil.
+
+  Definition ghost_fmap (f g:pred rmap -> pred rmap)(x:ghost) : ghost :=
+    map (option_map (fun '(a, b) => (a, preds_fmap f g b))) x.
+
+  Axiom ghost_fmap_id : ghost_fmap (id _) (id _) = id ghost.
+  Axiom ghost_fmap_comp : forall f1 f2 g1 g2,
+    ghost_fmap g1 g2 oo ghost_fmap f1 f2 = ghost_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition rmap' := ((address -> resource) * ghost)%type.
+
+  Definition rmap_fmap (f g: pred rmap -> pred rmap) (x:rmap') : rmap' :=
+    (resource_fmap f g oo fst x, ghost_fmap f g (snd x)).
+
+  Axiom rmap_fmap_id : rmap_fmap (id _) (id _) = id rmap'.
+  Axiom rmap_fmap_comp : forall f1 f2 g1 g2,
+   rmap_fmap g1 g2 oo rmap_fmap f1 f2 = rmap_fmap (g1 oo f1) (f2 oo g2).
+
+  Parameter squash : (nat * rmap') -> rmap.
+  Parameter unsquash : rmap -> (nat * rmap').
+
+  Axiom rmap_level_eq: @level rmap _ = fun x => fst (unsquash x).
+  Axiom rmap_age1_eq: @age1 _ _ =
+     fun k => match unsquash k with
+    | (O,_) => None
+    | (S n,x) => Some (squash (n,x))
+    end.
+
+  Definition resource_at (phi:rmap) : address -> resource := fst (snd (unsquash phi)).
+  Infix "@" := resource_at (at level 50, no associativity).
+  Definition ghost_of (phi:rmap) : ghost := snd (snd (unsquash phi)).
+
+  Instance Join_nat_rmap': Join (nat * rmap') := Join_prod _ (Join_equiv nat) _ _.
+
+  Axiom join_unsquash : forall phi1 phi2 phi3,
+    join phi1 phi2 phi3 <->
+    join (unsquash phi1) (unsquash phi2) (unsquash phi3).
+
+  Definition rmap_unage (k:rmap) : rmap :=
+    match unsquash k with
+    | (n,x) => squash (S n, x)
+    end.
+
+  Program Definition approx (n:nat) (p: pred rmap) : pred rmap :=
+    fun w => level w < n /\ p w.
+
+  Axiom squash_unsquash : forall phi, squash (unsquash phi) = phi.
+  Axiom unsquash_squash : forall n rm, unsquash (squash (n,rm)) = (n,rmap_fmap (approx n) (approx n) rm).
+  Axiom ghost_of_core : forall phi, ghost_of (core phi) = core (ghost_of phi).
+
+End RMAPS.
+
+Module Rmaps (AV':ADR_VAL): RMAPS with Module AV:=AV'.
+  Module AV:=AV'.
+  Import AV.
+
+  Module SM := StratModel(AV).
+  Import SM.
+
+  Module TyF. 
+    Definition F := f_pre_rmap.
+  End TyF.
+
+  Module TyFSA <: KNOT_FULL_SA_INPUT with Module KI:=TyF.
+    Module KI := TyF.
+    Import KI.
+
+    Instance Join_F: forall A, Join (F A) := _.
+    Definition Perm_F : forall A, Perm_alg (F A) := Perm_pre_rmap.
+    Definition Sep_F := Sep_pre_rmap.
+    Definition paf_F := paf_pre_rmap.
+  End TyFSA.
+
+  Module K := Knot_MixVariantHeredProp(TyF).
+  Module KL := KnotLemmas_MixVariantHeredProp(K).
+  Module KSa := KnotFullSa(TyFSA)(K)(KL).
+
+  Definition rmap := K.knot.
+  Instance Join_rmap: Join rmap := KSa.Join_knot.
+  Instance Perm_rmap : Perm_alg rmap:= KSa.Perm_knot.
+  Instance Sep_rmap : Sep_alg rmap:= KSa.Sep_knot.
+  Instance ag_rmap : ageable rmap := K.ageable_knot.
+  Instance Age_rmap: Age_alg rmap := KSa.asa_knot.
+
+  Inductive preds : Type :=
+    SomeP : forall A : TypeTree,
+    (forall ts: list Type, dependent_type_functor_rec ts A (pred rmap)) -> preds.
+
+  Definition NoneP := SomeP (ConstType unit) (fun _ => tt).
+
+  Inductive resource : Type :=
+    | NO: forall sh: Share.t, ~ readable_share sh -> resource
+    | YES: forall sh: Share.t, readable_share sh -> kind -> preds -> resource
+    | PURE: kind -> preds -> resource.
+
+  Definition resource2res (r: resource): res (pred rmap) :=
+    match r with
+      | NO sh nsh => NO' (pred rmap) sh nsh
+      | YES sh rsh k (SomeP A l) => YES' (pred rmap) sh rsh k (existT _ A l)
+      | PURE k (SomeP A l) => PURE' (pred rmap) k (existT _ A l)
+    end.
+
+  Definition res2resource (r: res (pred rmap)) : resource :=
+    match r with
+      | NO' sh nsh => NO sh nsh
+      | YES' sh rsh k (existT A l) => YES sh rsh k (SomeP A l)
+      | PURE' k (existT A l) => PURE k (SomeP A l)
+    end.
+
+  Lemma res2resource2res: forall x, resource2res (res2resource x) = x.
+
+  Lemma resource2res2resource: forall x, res2resource (resource2res x) = x.
+
+  Definition res_option (r:resource) : option (rshare * kind) :=
+    match r with
+      | NO _ _ => None
+      | YES sh rsh k _ => Some (readable_part rsh,k)
+      | PURE k _ => None
+    end.
+
+  Lemma res_option_rewrite: res_option = SM.res_option (pred rmap) oo resource2res.
+
+  Definition ghost : Type := list (option ({g: Ghost & {a: @G g | ghost.valid a}} * preds)%type).
+
+  Definition pred2p (p: preds) : fpreds (pred rmap) :=
+    match p with SomeP A P => existT _ A P end.
+
+  Definition p2pred (p: fpreds (pred rmap)) : preds :=
+    match p with existT A P => SomeP A P end.
+
+  Definition ghost2g (r: ghost): SM.ghost (pred rmap) :=
+    map (option_map (fun '(a, b) => (a, pred2p b))) r.
+
+  Definition g2ghost (r: SM.ghost (pred rmap)) : ghost :=
+    map (option_map (fun '(a, b) => (a, p2pred b))) r.
+
+  Lemma g2ghost2g: forall x, ghost2g (g2ghost x) = x.
+
+  Lemma ghost2g2ghost: forall x, g2ghost (ghost2g x) = x.
+
+  Instance preds_join : Join _ := Join_equiv preds.
+
+  Inductive ghost_elem_join : Join {g: Ghost & {a: @G g | ghost.valid a}} :=
+  | elem_join_I g a b c va vb vc: join a b c ->
+    ghost_elem_join (existT _ g (exist _ a va)) (existT _ g (exist _ b vb))
+                    (existT _ g (exist _ c vc)).
+  Existing Instance ghost_elem_join.
+
+  Inductive ghost_join : Join ghost :=
+  | ghost_join_nil_l m: ghost_join nil m m
+  | ghost_join_nil_r m: ghost_join m nil m
+  | ghost_join_cons a1 a2 m1 m2 a3 m3: join a1 a2 a3 -> ghost_join m1 m2 m3 ->
+      ghost_join (a1 :: m1) (a2 :: m2) (a3 :: m3).
+  Existing Instance ghost_join.
+
+  Lemma elem_join_inv: forall a1 a2 a3, ghost_elem_join a1 a2 a3 ->
+  match a1, a2, a3 with
+  | existT g1 (exist x1 _), existT g2 (exist x2 _), existT g3 (exist x3 _) =>
+      exists H: g2 = g1, exists H': g3 = g1, join x1 (eq_rect _ _ x2 _ H) (eq_rect _ _ x3 _ H')
+  end.
+
+  Lemma ghost_join_inv: forall m1 m2 m3, ghost_join m1 m2 m3 ->
+  match m1, m2 with
+  | nil, _ => m3 = m2
+  | _, nil => m3 = m1
+  | a1 :: m1, a2 :: m2 => match m3 with nil => False
+                          | a3 :: m3 => join a1 a2 a3 /\ ghost_join m1 m2 m3 end
+  end.
+
+  Lemma ghost_core : forall (g: ghost), core g = nil.
+
+  Definition rmap' := ((address->resource) * ghost)%type.
+  Definition preds_fmap (f g:(pred rmap)->(pred rmap)) (x:preds) : preds :=
+    match x with SomeP A ls => SomeP A (fmap (fpi _) f g ls) end.
+
+  Lemma preds_fmap_id : preds_fmap (id (pred rmap)) (id (pred rmap)) = id preds.
+
+  Lemma preds_fmap_comp : forall f1 f2 g1 g2,
+    preds_fmap g1 g2 oo preds_fmap f1 f2 = preds_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition resource_fmap (f g:pred rmap -> pred rmap) (x:resource) : resource :=
+    match x with
+    | NO sh nsh => NO sh nsh
+    | YES sh rsh k p => YES sh rsh k (preds_fmap f g p)
+    | PURE k p => PURE k (preds_fmap f g p)
+    end.
+
+  Definition ghost_fmap (f g:pred rmap -> pred rmap)(x:ghost) : ghost :=
+    map (option_map (fun '(a, b) => (a, preds_fmap f g b))) x.
+
+  Lemma resource_fmap_id :
+    resource_fmap (id (pred rmap)) (id (pred rmap)) = id resource.
+
+  Lemma ghost_fmap_id : ghost_fmap (id (pred rmap)) (id (pred rmap)) = id ghost.
+
+  Lemma resource_fmap_comp : forall f1 f2 g1 g2,
+    resource_fmap g1 g2 oo resource_fmap f1 f2 = resource_fmap (g1 oo f1) (f2 oo g2).
+
+  Lemma ghost_fmap_comp : forall f1 f2 g1 g2,
+    ghost_fmap g1 g2 oo ghost_fmap f1 f2 = ghost_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition rmap_fmap (f g:(pred rmap)->(pred rmap)) (x:rmap') : rmap' :=
+              (resource_fmap f g oo fst x, ghost_fmap f g (snd x)).
+
+  Lemma rmap_fmap_id : rmap_fmap (id (pred rmap)) (id (pred rmap)) = id rmap'.
+
+  Lemma rmap_fmap_comp : forall f1 f2 g1 g2,
+    rmap_fmap g1 g2 oo rmap_fmap f1 f2 = rmap_fmap (g1 oo f1) (f2 oo g2).
+
+  Definition rmap'2pre_rmap (f: rmap') : f_pre_rmap (pred rmap) :=
+      (fun x : address => resource2res (fst f x), ghost2g (snd f)).
+
+  Definition pre_rmap2rmap' (f: f_pre_rmap (pred rmap)) : rmap' :=
+      (fun l : address => res2resource (fst f l), g2ghost (snd f)).
+
+  Lemma rmap'2pre_rmap2rmap' :
+    forall x, rmap'2pre_rmap (pre_rmap2rmap' x) = x.
+
+  Lemma pre_rmap2rmap'2pre_rmap :
+    forall x,  pre_rmap2rmap' (rmap'2pre_rmap x) = x.
+
+  Definition squash (n_rm:nat * rmap') : rmap :=
+    match n_rm with (n,rm) => K.squash (n, rmap'2pre_rmap rm) end.
+
+  Definition unsquash (phi:rmap) : (nat * rmap') :=
+    match K.unsquash phi with (n,rm) => (n, pre_rmap2rmap' rm) end.
+
+  Definition rmap_level (phi:rmap) : nat := fst (unsquash phi).
+  Definition resource_at (phi:rmap) : address -> resource := fst (snd (unsquash phi)).
+  Infix "@" := resource_at (at level 50, no associativity).
+  Definition ghost_of (phi:rmap) : ghost := snd (snd (unsquash phi)).
+
+  Lemma pred_ext': forall {A} `{agA: ageable A} P Q,
+                (forall x, app_pred P x <-> app_pred Q x) -> P = Q.
+
+  Lemma squash_unsquash : forall phi, squash (unsquash phi) = phi.
+
+  Program Definition approx (n:nat) (p: (pred rmap)) : (pred rmap) :=
+    fun w => level w < n /\ p w.
+
+  Lemma approx_K_approx: approx = K.approx.
+
+  Lemma unsquash_squash : forall n rm, (unsquash (squash (n,rm))) = (n,rmap_fmap (approx n) (approx n) rm).
+
+  Instance Join_nat_rmap': Join (nat * rmap') := Join_prod _ (Join_equiv nat) _ _.
+
+  Lemma g2ghost_inv: forall g1 g2, g2ghost g1 = g2ghost g2 -> g1 = g2.
+
+  Lemma join_unsquash : forall phi1 phi2 phi3,
+    join phi1 phi2 phi3 <->
+    join (unsquash phi1) (unsquash phi2) (unsquash phi3).
+
+  Lemma ghost_of_core : forall phi, ghost_of (core phi) = core (ghost_of phi).
+
+  Definition rmap_age1 (k:rmap) : option rmap :=
+    match unsquash k with
+    | (O,_) => None
+    | (S n,x) => Some (squash (n,x))
+    end.
+
+  Definition rmap_unage (k:rmap) : rmap :=
+    match unsquash k with
+    | (n,x) => squash (S n, x)
+    end.
+
+  Lemma rmap_age1_knot_age1 :
+    rmap_age1 = @age1 _ K.ageable_knot.
+
+  Lemma rmap_age1_eq: @age1 _ ag_rmap = rmap_age1.
+
+  Lemma rmap_level_eq: @level rmap ag_rmap = fun x => fst (unsquash x).
+
+End Rmaps.
+Local Close Scope nat_scope. *)
+
+Require Import VST.veric.compcert_rmaps.
+(* VST.veric.compcert_rmaps:
+Require Export VST.msl.msl_standard.
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes.
+Require Import VST.veric.shares.
+Require Import VST.veric.rmaps.
+Require Import VST.veric.rmaps_lemmas.
+Require Export VST.veric.Memory. 
+
+Instance EqDec_type: EqDec type := type_eq.
+
+Definition funsig := (list (ident*type) * type)%type. 
+
+Inductive kind : Type := VAL : memval -> kind
+                                   | LK : forall n i : Z, kind
+                                   | FUN: funsig -> calling_convention -> kind.
+
+Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
+Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
+
+Lemma isVAL_i: forall v, isVAL (VAL v).
+Hint Resolve isVAL_i.
+
+Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
+
+Module CompCert_AV <: ADR_VAL.
+
+Definition address := address.
+Definition some_address : address := (xH,0).
+Definition kind := kind.
+
+End CompCert_AV.
+
+Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
+
+Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
+
+Module R := Rmaps (CompCert_AV).
+Module RML := Rmaps_Lemmas(R).
+
+Export RML.
+Export R.
+
+Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
+Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
+
+Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
+  mk_rshare (rshare_sh p) H = p.
+
+Definition fixup_splitting
+  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
+  fun l => 
+    match z l with
+    | Some (sh, k) =>
+       match dec_readable (a l) with
+       | left p => Some (readable_part p,  k)
+       | right _ => None
+       end
+    | None => None
+    end.
+
+Definition share_of (x: option (rshare * kind)) : Share.t :=
+  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
+
+Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
+
+Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
+
+Lemma join_sub_same_k:
+ forall {a a' : rshare} {k k': AV.kind},
+
+Lemma pure_readable_glb_Rsh:
+ forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
+
+Lemma join_glb_Rsh:  
+  forall a b c : Share.t,
+
+Lemma pure_readable_share_glb:
+  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
+
+Lemma glb_Rsh_bot_unreadable:
+  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
+
+Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
+
+Lemma join_share_of: forall a b c,
+     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
+
+Lemma pure_readable_share_i:
+  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
+
+Obligation Tactic := Tactics.program_simpl.
+
+Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
+
+Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
+
+Program Definition writable (l: address): pred rmap :=
+ fun phi =>
+  match phi @ l with
+    | YES sh _ k lp => writable0_share sh /\ isVAL k
+    | _ => False
+  end.
+
+Program Definition readable (loc: address) : pred rmap :=
+   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
+
+Lemma readable_join:
+  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
+            readable loc phi1 -> readable loc phi3.
+
+Lemma readable_writable_join:
+forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
+
+Lemma writable0_join_sub:
+  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
+
+Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
+            writable loc phi1 -> writable loc phi2.
+
+Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
+
+Lemma writable_e: forall loc m, 
+   writable loc m -> 
+   exists sh, exists rsh, exists v, exists p, 
+     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
+Arguments writable_e [loc] [m] _.
+
+Lemma readable_e: forall loc m, 
+   readable loc m -> 
+  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
+Arguments readable_e [loc] [m] _.
+
+Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
+
+Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
+
+Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
+
+Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
+
+Lemma bytes_writable_dec:
+   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
+
+Lemma bytes_readable_dec:
+   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
+
+Lemma bytes_writable_readable:
+  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
+
+Hint Resolve bytes_writable_readable : mem.
+
+Lemma rmap_age_i:
+ forall w w' : rmap,
+    level w = S (level w') ->
+   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
+    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
+    age w w'. *)
+
+
+
+Require Import VST.veric.Clight_lemmas. 
+(* VST.veric.Clight_lemmas:
+Require Import VST.veric.Clight_base.
+Require Import compcert.cfrontend.Clight.
+
+Definition var_name (V: Type) (bdec: ident * globvar V) : ident :=
+   fst bdec.
+
+Definition no_dups (F V: Type) (fdecs: list (ident * F)) (bdecs: list (ident * globvar V)) : Prop :=
+  list_norepet (map (@fst ident F) fdecs ++ map (@var_name V) bdecs).
+Arguments no_dups [F V] _ _.
+
+Lemma no_dups_inv:
+  forall  (A V: Type) id f fdecs bdecs,
+    no_dups ((id,f)::fdecs) bdecs ->
+    no_dups fdecs bdecs /\
+     ~ In id (map (@fst ident A) fdecs) /\
+     ~ In id (map (@var_name V) bdecs).
+Arguments no_dups_inv [A V] _ _ _ _ _.
+
+Lemma of_bool_Int_eq_e:
+  forall i j, Val.of_bool (Int.eq i j) = Vtrue -> i = j.
+
+Lemma eq_block_lem:
+    forall (A: Set) a (b: A) c, (if eq_block a a then b else c) = b.
+
+Lemma signed_zero: Int.signed Int.zero = 0.
+
+Lemma equiv_e1 : forall A B: Prop, A=B -> A -> B.
+Arguments equiv_e1 [A B] _ _.
+
+Lemma deref_loc_fun: forall {ty m b z v v'},
+   Clight.deref_loc ty m b z v -> Clight.deref_loc ty m b z v' -> v=v'.
+
+Lemma eval_expr_lvalue_fun:
+  forall ge e le m,
+    (forall a v v', Clight.eval_expr ge e le m a v -> Clight.eval_expr ge e le m a v' -> v=v') /\
+
+Lemma eval_expr_fun:   forall {ge e le m a v v'},
+    Clight.eval_expr ge e le m a v -> Clight.eval_expr ge e le m a v' -> v=v'.
+
+Lemma eval_exprlist_fun:   forall {ge e le m a ty v v'},
+    Clight.eval_exprlist ge e le m a ty v -> Clight.eval_exprlist ge e le m a ty v' -> v=v'.
+
+Lemma eval_lvalue_fun:   forall {ge e le m a b b' z z'},
+    Clight.eval_lvalue ge e le m a b z -> Clight.eval_lvalue ge e le m a b' z' -> (b,z)=(b',z').
+
+Lemma inv_find_symbol_fun:
+  forall {ge id id' b},
+    Senv.find_symbol ge id = Some b ->
+
+Lemma assign_loc_fun:
+  forall {cenv ty m b ofs v m1 m2},
+   assign_loc cenv ty m b ofs v m1 ->
+   assign_loc cenv ty m b ofs v m2 ->
+   m1=m2.
+
+Lemma alloc_variables_fun:
+  forall {ge e m vl e1 m1 e2 m2},
+     Clight.alloc_variables ge e m vl e1 m1 ->
+
+Lemma bind_parameters_fun:
+  forall {ge e m p v m1 m2},
+    Clight.bind_parameters ge e m p v m1 ->
+
+Lemma eventval_list_match_fun:
+  forall {se a a' t v},
+    Events.eventval_list_match se a t v ->
+
+Ltac fun_tac :=
+  match goal with
+  | H: ?A = Some _, H': ?A = Some _ |- _ => inversion2 H H'
+  | H: Clight.eval_expr ?ge ?e ?le ?m ?A _,
+    H': Clight.eval_expr ?ge ?e ?le ?m ?A _ |- _ =>
+        apply (eval_expr_fun H) in H'; subst
+  | H: Clight.eval_exprlist ?ge ?e ?le ?m ?A ?ty _,
+    H': Clight.eval_exprlist ?ge ?e ?le ?m ?A ?ty _ |- _ =>
+        apply (eval_exprlist_fun H) in H'; subst
+  | H: Clight.eval_lvalue ?ge ?e ?le ?m ?A _ _,
+    H': Clight.eval_lvalue ?ge ?e ?le ?m ?A _ _ |- _ =>
+        apply (eval_lvalue_fun H) in H'; inv H'
+  | H: Clight.assign_loc ?ge ?ty ?m ?b ?ofs ?v _,
+    H': Clight.assign_loc ?ge ?ty ?m ?b ?ofs ?v _ |- _ =>
+        apply (assign_loc_fun H) in H'; inv H'
+  | H: Clight.deref_loc ?ty ?m ?b ?ofs _,
+    H': Clight.deref_loc ?ty ?m ?b ?ofs _ |- _ =>
+        apply (deref_loc_fun H) in H'; inv H'
+  | H: Clight.alloc_variables ?ge ?e ?m ?vl _ _,
+    H': Clight.alloc_variables ?ge ?e ?m ?vl _ _ |- _ =>
+        apply (alloc_variables_fun H) in H'; inv H'
+  | H: Clight.bind_parameters ?ge ?e ?m ?p ?vl _,
+    H': Clight.bind_parameters ?ge ?e ?m ?p ?vl _ |- _ =>
+        apply (bind_parameters_fun H) in H'; inv H'
+  | H: Senv.find_symbol ?ge _ = Some ?b,
+    H': Senv.find_symbol ?ge _ = Some ?b |- _ =>
+       apply (inv_find_symbol_fun H) in H'; inv H'
+  | H: Events.eventval_list_match ?ge _ ?t ?v,
+    H': Events.eventval_list_match ?ge _ ?t ?v |- _ =>
+       apply (eventval_list_match_fun H) in H'; inv H'
+ end. *)
+
+Require Import VST.veric.align_mem.
+(* VST.veric.align_mem:
+Require Import Coq.Sorting.Permutation.
+Require Import Coq.Sorting.Sorting.
+Require Import Coq.Structures.Orders.
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes. 
+Require Import VST.veric.type_induction.
+Require Import VST.veric.composite_compute.
+
+Section align_compatible_rec.
+
+Context (cenv: composite_env).
+
+Inductive align_compatible_rec: type -> Z -> Prop :=
+| align_compatible_rec_by_value: forall t ch z, access_mode t = By_value ch -> (Memdata.align_chunk ch | z) -> align_compatible_rec t z
+| align_compatible_rec_Tarray: forall t n a z, (forall i, 0 <= i < n -> align_compatible_rec t (z + sizeof cenv t * i)) -> align_compatible_rec (Tarray t n a) z
+| align_compatible_rec_Tstruct: forall i a co z, cenv ! i = Some co -> (forall i0 t0 z0, field_type i0 (co_members co) = Errors.OK t0 -> field_offset cenv i0 (co_members co) = Errors.OK z0 -> align_compatible_rec t0 (z + z0)) -> align_compatible_rec (Tstruct i a) z
+| align_compatible_rec_Tunion: forall i a co z, cenv ! i = Some co -> (forall i0 t0, field_type i0 (co_members co) = Errors.OK t0 -> align_compatible_rec t0 z) -> align_compatible_rec (Tunion i a) z.
+
+Lemma align_compatible_rec_by_value_inv : forall t ch z,
+  access_mode t = By_value ch ->
+  align_compatible_rec t z -> (Memdata.align_chunk ch | z).
+
+Lemma align_compatible_rec_Tarray_inv: forall t n a z,
+  align_compatible_rec (Tarray t n a) z ->
+  (forall i : Z, 0 <= i < n -> align_compatible_rec t (z + sizeof cenv t * i)).
+
+Lemma align_compatible_rec_Tstruct_inv: forall i a co z,
+  cenv ! i = Some co ->
+  align_compatible_rec (Tstruct i a) z ->
+  (forall i0 t0 z0, field_type i0 (co_members co) = Errors.OK t0 -> field_offset cenv i0 (co_members co) = Errors.OK z0 -> align_compatible_rec t0 (z + z0)).
+  
+Lemma align_compatible_rec_Tunion_inv: forall i a co z,
+  cenv ! i = Some co ->
+  align_compatible_rec (Tunion i a) z ->
+  (forall i0 t0, field_type i0 (co_members co) = Errors.OK t0 -> align_compatible_rec t0 z).
+
+End align_compatible_rec.
+
+Lemma align_chunk_1248: forall ch, align_chunk ch = 1 \/ align_chunk ch = 2 \/ align_chunk ch = 4 \/ align_chunk ch = 8.
+
+Lemma align_chunk_two_p:
+  forall ch, exists n, align_chunk ch = two_power_nat n.
+
+Fixpoint hardware_alignof (ha_env: PTree.t Z) t: Z :=
+  match t with
+  | Tarray t' _ _ => hardware_alignof ha_env t'
+  | Tstruct id _ =>
+      match ha_env ! id with
+      | Some ha => ha
+      | None => 1
+      end
+  | Tunion id _ =>
+      match ha_env ! id with
+      | Some ha => ha
+      | None => 1
+      end
+  | _ => match access_mode t with
+         | By_value ch => Memdata.align_chunk ch
+         | _ => 1
+         end
+  end.
+
+Fixpoint hardware_alignof_composite (ha_env: PTree.t Z) (m: members): Z :=
+  match m with
+  | nil => 1
+  | (_, t) :: m' => Z.max (hardware_alignof ha_env t) (hardware_alignof_composite ha_env m')
+  end.
+
+Definition hardware_alignof_env (cenv: composite_env): PTree.t Z :=
+  let l := composite_reorder.rebuild_composite_elements cenv in
+  fold_right (fun (ic: positive * composite) (T0: PTree.t Z) => let (i, co) := ic in let T := T0 in PTree.set i (hardware_alignof_composite T (co_members co)) T) (PTree.empty _) l.
+
+Definition hardware_alignof_env_consistent (cenv: composite_env) (ha_env: PTree.t Z): Prop :=
+  forall i co ha,
+    cenv ! i = Some co ->
+    ha_env ! i = Some ha ->
+    ha = hardware_alignof_composite ha_env (co_members co).
+
+Definition hardware_alignof_env_complete (cenv: composite_env) (ha_env: PTree.t Z): Prop :=
+  forall i,
+    (exists co, cenv ! i = Some co) <->
+    (exists ha, ha_env ! i = Some ha).
+
+Module Type HARDWARE_ALIGNOF_FACTS.
+
+  Axiom hardware_alignof_consistency:
+    forall (cenv: composite_env) (ha_env: PTree.t Z),
+      composite_env_consistent cenv ->
+      ha_env = hardware_alignof_env cenv ->
+      hardware_alignof_env_consistent cenv ha_env.
+
+  Axiom hardware_alignof_completeness:
+    forall (cenv: composite_env) (ha_env: PTree.t Z),
+      ha_env = hardware_alignof_env cenv ->
+      hardware_alignof_env_complete cenv ha_env.
+
+End HARDWARE_ALIGNOF_FACTS.
+
+Module hardware_alignof_facts: HARDWARE_ALIGNOF_FACTS.
+
+Lemma aux1: forall T co,
+  (fix fm (l : list (ident * type * Z)) : Z :=
+     match l with
+     | nil => 1
+     | (_, _, ha) :: l' => Z.max ha (fm l')
+
+Lemma aux2: forall (cenv: composite_env),
+  type_func.Env
+
+Lemma hardware_alignof_consistency (cenv: composite_env) (ha_env: PTree.t Z):
+
+Lemma hardware_alignof_completeness (cenv: composite_env) (ha_env: PTree.t Z):
+
+End hardware_alignof_facts.
+
+Export hardware_alignof_facts.
+
+Lemma hardware_alignof_two_p: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Lemma hardware_alignof_pos: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Lemma hardware_alignof_composite_two_p: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Hint Resolve alignof_two_p: align.
+Hint Resolve align_chunk_two_p: align.
+Hint Extern 10 (exists n: nat, hardware_alignof _ _ = two_power_nat n) => (eapply hardware_alignof_two_p; eassumption): align.
+Hint Extern 10 (exists n: nat, hardware_alignof_composite _ _ = two_power_nat n) => (eapply hardware_alignof_composite_two_p; eassumption): align.
+
+Lemma hardware_alignof_by_value: forall ha_env t ch,
+  access_mode t = By_value ch ->
+  hardware_alignof ha_env t = align_chunk ch.
+
+Lemma align_compatible_rec_hardware_alignof_divide: forall cenv ha_env t z1 z2,
+  composite_env_consistent cenv ->
+  composite_env_complete_legal_cosu_type cenv ->
+  hardware_alignof_env_consistent cenv ha_env ->
+  hardware_alignof_env_complete cenv ha_env ->
+  complete_legal_cosu_type cenv t = true ->
+  (hardware_alignof ha_env t | z1 - z2) ->
+  (align_compatible_rec cenv t z1 <-> align_compatible_rec cenv t z2).
+
+Lemma align_compatible_rec_hardware_1: forall cenv ha_env t z,
+  composite_env_consistent cenv ->
+  composite_env_complete_legal_cosu_type cenv ->
+  hardware_alignof_env_consistent cenv ha_env ->
+  hardware_alignof_env_complete cenv ha_env ->
+  complete_legal_cosu_type cenv t = true ->
+  hardware_alignof ha_env t = 1 ->
+  align_compatible_rec cenv t z.
+
+Module Type LEGAL_ALIGNAS.
+
+  Parameter legal_alignas_obs: Type.
+  Parameter legal_alignas_type: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs -> type -> legal_alignas_obs.
+  Parameter legal_alignas_composite: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs -> composite -> legal_alignas_obs.
+  Parameter legal_alignas_env: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs.
+  Parameter is_aligned_aux: legal_alignas_obs -> Z -> Z -> bool.  
+
+End LEGAL_ALIGNAS.
+
+Module LegalAlignasDefsGen (LegalAlignas: LEGAL_ALIGNAS).
+
+  Import LegalAlignas.
+
+  Definition legal_alignas_env_consistent (cenv: composite_env) (ha_env: PTree.t Z) (la_env: PTree.t legal_alignas_obs): Prop :=
+    forall i co la,
+      cenv ! i = Some co ->
+      la_env ! i = Some la ->
+      la = legal_alignas_composite cenv ha_env la_env co.
+
+  Definition legal_alignas_env_complete (cenv: composite_env) (la_env: PTree.t legal_alignas_obs): Prop :=
+    forall i,
+      (exists co, cenv ! i = Some co) <->
+      (exists la, la_env ! i = Some la).
+
+  Definition is_aligned cenv ha_env la_env (t: type) (ofs: Z): bool := is_aligned_aux (legal_alignas_type cenv ha_env la_env t) (hardware_alignof ha_env t) ofs.
+
+  Definition legal_alignas_env_sound (cenv: composite_env) (ha_env: PTree.t Z) (la_env: PTree.t legal_alignas_obs): Prop :=
+    forall ofs t,
+      complete_legal_cosu_type cenv t = true ->
+      is_aligned cenv ha_env la_env t ofs = true ->
+      align_compatible_rec cenv t ofs.
+
+End LegalAlignasDefsGen.
+
+Module Type LEGAL_ALIGNAS_FACTS.
+
+  Declare Module LegalAlignas: LEGAL_ALIGNAS.
+  Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+  Export LegalAlignas LegalAlignasDefs.
+
+  Axiom legal_alignas_env_consistency: forall cenv ha_env,
+    composite_env_consistent cenv ->
+    legal_alignas_env_consistent cenv ha_env (legal_alignas_env cenv ha_env).
+
+  Axiom legal_alignas_env_completeness: forall cenv ha_env,
+    legal_alignas_env_complete cenv (legal_alignas_env cenv ha_env).
+
+  Axiom legal_alignas_soundness: forall cenv ha_env la_env,
+    composite_env_consistent cenv ->
+    composite_env_complete_legal_cosu_type cenv ->
+    hardware_alignof_env_consistent cenv ha_env ->
+    hardware_alignof_env_complete cenv ha_env ->
+    legal_alignas_env_consistent cenv ha_env la_env ->
+    legal_alignas_env_complete cenv la_env ->
+    legal_alignas_env_sound cenv ha_env la_env.
+
+End LEGAL_ALIGNAS_FACTS.
+
+Module LegalAlignasStrict <: LEGAL_ALIGNAS.
+
+Section legal_alignas.
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+Definition legal_alignas_obs: Type := bool.
+
+Fixpoint legal_alignas_type (la_env: PTree.t bool) t: bool :=
+  (hardware_alignof ha_env t <=? alignof cenv t) &&
+  match t with
+  | Tarray t' _ _ => (sizeof cenv t' mod alignof cenv t' =? 0) && legal_alignas_type la_env t'
+  | Tstruct id _ =>
+      match la_env ! id with
+      | Some la => la
+      | None => false
+      end
+  | Tunion id _ =>
+      match la_env ! id with
+      | Some la => la
+      | None => false
+      end
+  | _ => match access_mode t with
+         | By_value ch => true
+         | _ => false
+         end
+  end.
+
+Fixpoint legal_alignas_members (la_env: PTree.t bool) (m: members): bool :=
+  match m with
+  | nil => true
+  | (_, t) :: m' => (legal_alignas_type la_env t) && (legal_alignas_members la_env m')
+  end.
+
+Definition legal_alignas_composite (la_env: PTree.t bool) (co: composite): bool :=
+  legal_alignas_members la_env (co_members co).
+
+Definition legal_alignas_env: PTree.t bool :=
+  let l := composite_reorder.rebuild_composite_elements cenv in
+  fold_right (fun (ic: positive * composite) (T0: PTree.t bool) => let (i, co) := ic in let T := T0 in PTree.set i (legal_alignas_composite T co) T) (PTree.empty _) l.
+
+Definition is_aligned_aux (b: bool) (ha: Z) (ofs: Z) := b && ((ofs mod ha) =? 0).
+
+End legal_alignas.
+
+End LegalAlignasStrict.
+
+Module LegalAlignasStrictFacts: LEGAL_ALIGNAS_FACTS with Module LegalAlignas := LegalAlignasStrict.
+
+Module LegalAlignas := LegalAlignasStrict.
+Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+Export LegalAlignas LegalAlignasDefs.
+
+Section legal_alignas.
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+Lemma aux1: forall T co,
+      (fix fm (l : list (ident * type * bool)) : bool :=
+          match l with
+          | nil => true
+          | (_, _, la) :: l' => la && fm l'
+          end)
+         (map
+            (fun it0 : positive * type =>
+             let (i0, t0) := it0 in
+             (i0, t0,
+             type_func.F
+
+Lemma aux2:
+    (type_func.Env
+
+End legal_alignas.
+
+Theorem legal_alignas_env_consistency:
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Theorem legal_alignas_env_completeness:
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Section soundness.
+
+Context (cenv: composite_env)
+        (ha_env: PTree.t Z)
+        (la_env: PTree.t bool)
+        (CENV_CONSI: composite_env_consistent cenv)
+        (CENV_COSU: composite_env_complete_legal_cosu_type cenv)
+        (HA_ENV_CONSI: hardware_alignof_env_consistent cenv ha_env)
+        (HA_ENV_COMPL: hardware_alignof_env_complete cenv ha_env)
+        (LA_ENV_CONSI: legal_alignas_env_consistent cenv ha_env la_env)
+        (LA_ENV_COMPL: legal_alignas_env_complete cenv la_env).
+
+Lemma legal_alignas_type_divide: forall t,
+  legal_alignas_type cenv ha_env la_env t = true ->
+  (hardware_alignof ha_env t | alignof cenv t).
+
+Lemma by_value_sound:
+  forall t ofs,
+    is_aligned cenv ha_env la_env t ofs = true ->
+    (exists ch, access_mode t = By_value ch) ->
+    align_compatible_rec cenv t ofs.
+
+Theorem legal_alignas_soundness:
+  legal_alignas_env_sound cenv ha_env la_env.
+
+End soundness.
+
+End LegalAlignasStrictFacts.
+
+Module LegalAlignasStrong <: LEGAL_ALIGNAS.
+
+Section legal_alignas.
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+Definition legal_alignas_obs: Type := bool.
+
+Fixpoint legal_alignas_type (la_env: PTree.t bool) t: bool :=
+  match t with
+  | Tarray t' _ _ => (sizeof cenv t' mod hardware_alignof ha_env t' =? 0) && legal_alignas_type la_env t'
+  | Tstruct id _ =>
+      match la_env ! id with
+      | Some la => la
+      | None => false
+      end
+  | Tunion id _ =>
+      match la_env ! id with
+      | Some la => la
+      | None => false
+      end
+  | _ => match access_mode t with
+         | By_value ch => true
+         | _ => false
+         end
+  end.
+
+Fixpoint legal_alignas_struct_members_rec (la_env: PTree.t bool) (m: members) (pos: Z): bool :=
+  match m with
+  | nil => true
+  | (_, t) :: m' => (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) && (legal_alignas_type la_env t) && (legal_alignas_struct_members_rec la_env m' (align pos (alignof cenv t) + sizeof cenv t))
+  end.
+
+Fixpoint legal_alignas_union_members_rec (la_env: PTree.t bool) (m: members): bool :=
+  match m with
+  | nil => true
+  | (_, t) :: m' => (legal_alignas_type la_env t) && (legal_alignas_union_members_rec la_env m')
+  end.
+
+Definition legal_alignas_composite (la_env: PTree.t bool) (co: composite): bool :=
+  match co_su co with
+  | Struct => legal_alignas_struct_members_rec la_env (co_members co) 0
+  | Union => legal_alignas_union_members_rec la_env (co_members co)
+  end.
+
+Definition legal_alignas_env: PTree.t bool :=
+  let l := composite_reorder.rebuild_composite_elements cenv in
+  fold_right (fun (ic: positive * composite) (T0: PTree.t bool) => let (i, co) := ic in let T := T0 in PTree.set i (legal_alignas_composite T co) T) (PTree.empty _) l.
+
+Definition is_aligned_aux (b: bool) (ha: Z) (ofs: Z) := b && ((ofs mod ha) =? 0).
+
+End legal_alignas.
+
+End LegalAlignasStrong.
+
+Module LegalAlignasStrongFacts: LEGAL_ALIGNAS_FACTS with Module LegalAlignas := LegalAlignasStrong.
+
+Module LegalAlignas := LegalAlignasStrong.
+Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+Export LegalAlignas LegalAlignasDefs.
+
+Section legal_alignas.
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+Lemma aux1: forall T co,
+  match co_su co with
+  | Struct =>
+      (fix fm (pos : Z) (l : list (ident * type * bool)) {struct l} : bool :=
+         match l with
+         | nil => true
+         | (_, t, la) :: l' =>
+             (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) &&
+             la && fm (align pos (alignof cenv t) + sizeof cenv t) l'
+         end) 0
+  | Union =>
+      fix fm (l : list (ident * type * bool)) : bool :=
+        match l with
+        | nil => true
+        | (_, _, la) :: l' => la && fm l'
+        end
+  end
+    (map
+       (fun it0 : positive * type =>
+        let (i0, t0) := it0 in
+        (i0, t0,
+        type_func.F
+
+Lemma aux2:
+    (type_func.Env
+
+End legal_alignas.
+
+Theorem legal_alignas_env_consistency:
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Theorem legal_alignas_env_completeness:
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+Section soundness.
+
+Context (cenv: composite_env)
+        (ha_env: PTree.t Z)
+        (la_env: PTree.t bool)
+        (CENV_CONSI: composite_env_consistent cenv)
+        (CENV_COSU: composite_env_complete_legal_cosu_type cenv)
+        (HA_ENV_CONSI: hardware_alignof_env_consistent cenv ha_env)
+        (HA_ENV_COMPL: hardware_alignof_env_complete cenv ha_env)
+        (LA_ENV_CONSI: legal_alignas_env_consistent cenv ha_env la_env)
+        (LA_ENV_COMPL: legal_alignas_env_complete cenv la_env).
+
+Lemma by_value_sound:
+  forall t ofs,
+    is_aligned cenv ha_env la_env t ofs = true ->
+    (exists ch, access_mode t = By_value ch) ->
+    align_compatible_rec cenv t ofs.
+
+Theorem legal_alignas_soundness:
+  legal_alignas_env_sound cenv ha_env la_env.
+
+End soundness.
+
+End LegalAlignasStrongFacts.
+
+Module Export LegalAlignasFacts := LegalAlignasStrongFacts. *)
+
+
+
+Require Export VST.veric.lift.
+
+
+
+Require Export VST.veric.mpred.
+
+
+
+Fixpoint modifiedvars' (c: statement) (S: idset) : idset :=
+
+ match c with
+
+ | Sset id e => insert_idset id S
+
+ | Sifthenelse _ c1 c2 => modifiedvars' c1 (modifiedvars' c2 S)
+
+ | Scall (Some id) _ _ => insert_idset id S
+
+ | Sbuiltin (Some id) _ _ _ => insert_idset id S
+
+ | Ssequence c1 c2 =>  modifiedvars' c1 (modifiedvars' c2 S)
+
+ | Sloop c1 c2 => modifiedvars' c1 (modifiedvars' c2 S)
+
+ | Sswitch e cs => modifiedvars_ls cs S
+
+ | Slabel _ c => modifiedvars' c S
+
+ | _ => S
+
+ end
+
+ with
+
+ modifiedvars_ls (cs: labeled_statements) (S: idset) : idset :=
+
+ match cs with
+
+ | LSnil => S
+
+ | LScons _ c ls => modifiedvars' c (modifiedvars_ls ls S)
+
+ end.
+
+
+
+Definition isOK {A} (P: Errors.res A) := match P with Errors.OK _ => true | _ => false end.
+
+
+
+Lemma modifiedvars'_union:
+
+ forall id c S,
+
+  isSome ((modifiedvars' c S) ! id) <->
+
+  (isSome ((modifiedvars' c idset0) ! id ) \/ isSome (S ! id))
+
+with modifiedvars_ls_union:
+
+ forall id c S,
+
+  isSome ((modifiedvars_ls c S) ! id) <->
+
+  (isSome ((modifiedvars_ls c idset0) ! id ) \/ isSome (S ! id)).
+
+Proof.
+
+intro id.
+
+ assert (IS0: ~ isSome (idset0 ! id)). unfold idset0, isSome.
+
+ rewrite PTree.gempty; auto.
+
+ induction c; try destruct o; simpl; intros;
+
+ try solve [clear - IS0; intuition];
+
+ try solve [unfold insert_idset; destruct (eq_dec i id);
+
+  [subst; repeat rewrite PTree.gss; simpl; clear; intuition
+
+  |  repeat rewrite PTree.gso by auto; simpl; clear - IS0; intuition ]];
+
+ try solve [rewrite IHc1; rewrite IHc1 with (S := modifiedvars' c2 idset0);
+
+                rewrite IHc2; clear - IS0; intuition].
+
+ apply modifiedvars_ls_union.
+
+ apply IHc.
+
+
+
+intro id.
+
+ assert (IS0: ~ isSome (idset0 ! id)). unfold idset0, isSome.
+
+ rewrite PTree.gempty; auto.
+
+ induction c; simpl; intros.
+
+ clear - IS0; intuition.
+
+ rewrite modifiedvars'_union.
+
+ rewrite modifiedvars'_union with (S := modifiedvars_ls _ _).
+
+ rewrite IHc. clear; intuition.
+
+Qed.
+
+
+
+Definition modifiedvars (c: statement) (id: ident) :=
+
+   isSome ((modifiedvars' c idset0) ! id).
+
+
+
+Definition type_of_global (ge: Clight.genv) (b: block) : option type :=
+
+  match Genv.find_var_info ge b with
+
+  | Some gv => Some gv.(gvar_info)
+
+  | None =>
+
+      match Genv.find_funct_ptr ge b with
+
+      | Some fd => Some(type_of_fundef fd)
+
+      | None => None
+
+      end
+
+  end.
+
+
+
+Definition filter_genv (ge: Clight.genv) : genviron :=
+
+    Genv.find_symbol ge.
+
+
+
+Definition make_tenv (te : Clight.temp_env) : tenviron := fun id => PTree.get id te.
+
+
+
+Definition make_venv (te : Clight.env) : venviron := fun id => PTree.get id te.
+
+
+
+Definition construct_rho ge ve te:= mkEnviron ge (make_venv ve) (make_tenv te) .
+
+
+
+Definition empty_environ (ge: Clight.genv) := mkEnviron (filter_genv ge) (Map.empty _) (Map.empty _).
+
+
+
+Inductive exitkind : Type := EK_normal | EK_break | EK_continue | EK_return.
+
+
+
+Instance EqDec_exitkind: EqDec exitkind.
+
+Proof.
+
+hnf. intros.
+
+decide equality.
+
+Defined.
+
+
+
+Inductive Annotation :=
+
+  WeakAnnotation : (environ -> mpred) -> Annotation
+
+| StrongAnnotation : (environ -> mpred) -> Annotation.
+
+
+
+Inductive tycontext : Type :=
+
+  mk_tycontext : forall (tyc_temps: PTree.t type)
+
+                        (tyc_vars: PTree.t type)
+
+                        (tyc_ret: type)
+
+                        (tyc_globty: PTree.t type)
+
+                        (tyc_globsp: PTree.t funspec)
+
+                        (tyc_annot: PTree.t Annotation),
+
+                             tycontext.
+
+
+
+Definition empty_tycontext : tycontext :=
+
+  mk_tycontext (PTree.empty _) (PTree.empty _) Tvoid
+
+         (PTree.empty _)  (PTree.empty _) (PTree.empty _).
+
+
+
+Definition temp_types (Delta: tycontext): PTree.t type :=
+
+  match Delta with mk_tycontext a _ _ _ _ _ => a end.
+
+Definition var_types (Delta: tycontext) : PTree.t type :=
+
+  match Delta with mk_tycontext _ a _ _ _ _ => a end.
+
+Definition ret_type (Delta: tycontext) : type :=
+
+  match Delta with mk_tycontext _ _ a _ _ _ => a end.
+
+Definition glob_types (Delta: tycontext) : PTree.t type :=
+
+  match Delta with mk_tycontext _ _ _ a _ _ => a end.
+
+Definition glob_specs (Delta: tycontext) : PTree.t funspec :=
+
+  match Delta with mk_tycontext _ _ _ _ a _ => a end.
+
+Definition annotations (Delta: tycontext) : PTree.t Annotation :=
+
+  match Delta with mk_tycontext _ _ _ _ _ a => a end.
+
+
+
+Definition make_tycontext_t (params: list (ident*type)) (temps : list(ident*type)) :=
+
+fold_right (fun (param: ident*type) => PTree.set (fst param) (snd param))
+
+ (fold_right (fun (temp : ident *type) tenv => let (id,ty):= temp in PTree.set id ty tenv)
+
+  (PTree.empty type) temps) params.
+
+
+
+Definition make_tycontext_v (vars : list (ident * type)) :=
+
+ fold_right (fun (var : ident * type) venv => let (id, ty) := var in PTree.set id ty venv)
+
+   (PTree.empty type) vars.
+
+
+
+Definition make_tycontext_g (V: varspecs) (G: funspecs) :=
+
+ (fold_right (fun (var : ident * funspec) => PTree.set (fst var) (type_of_funspec (snd var)))
+
+      (fold_right (fun (v: ident * type) => PTree.set (fst v) (snd v))
+
+         (PTree.empty _) V)
+
+            G).
+
+
+
+Definition make_tycontext_a (anns : list (ident * Annotation)) :=
+
+ fold_right (fun (ia : ident * Annotation) aenv => let (id, a) := ia in PTree.set id a aenv)
+
+   (PTree.empty Annotation) anns.
+
+
+
+Definition make_tycontext (params: list (ident*type)) (temps: list (ident*type)) (vars: list (ident*type))
+
+                       (return_ty: type)
+
+                       (V: varspecs) (G: funspecs) (A: list (ident*Annotation)):  tycontext :=
+
+ mk_tycontext
+
+   (make_tycontext_t params temps)
+
+   (make_tycontext_v vars)
+
+   return_ty
+
+   (make_tycontext_g V G)
+
+   (make_tycontext_s G)
+
+   (make_tycontext_a A).
+
+
+
+Definition func_tycontext' (func: function) (Delta: tycontext) : tycontext :=
+
+ mk_tycontext
+
+   (make_tycontext_t (fn_params func) (fn_temps func))
+
+   (make_tycontext_v (fn_vars func))
+
+   (fn_return func)
+
+   (glob_types Delta)
+
+   (glob_specs Delta)
+
+   (annotations Delta).
+
+
+
+Definition func_tycontext (func: function) (V: varspecs) (G: funspecs) (A:list (ident * Annotation)): tycontext :=
+
+  make_tycontext (func.(fn_params)) (func.(fn_temps)) (func.(fn_vars)) (func.(fn_return)) V G A.
+
+
+
+Definition nofunc_tycontext (V: varspecs) (G: funspecs) : tycontext :=
+
+   make_tycontext nil nil nil Tvoid V G nil.
+
+
+
+Ltac try_false :=
+
+try  solve[exists false; rewrite orb_false_r; eauto].
+
+
+
+Lemma list_norepet_rev:
+
+  forall A (l: list A), list_norepet (rev l) = list_norepet l.
+
+Proof.
+
+induction l; simpl; auto.
+
+apply prop_ext; split; intros.
+
+apply list_norepet_app in H.
+
+destruct H as [? [? ?]].
+
+rewrite IHl in H.
+
+constructor; auto.
+
+eapply list_disjoint_notin with (a::nil).
+
+apply list_disjoint_sym; auto.
+
+intros x y ? ? ?; subst.
+
+contradiction (H1 y y); auto.
+
+rewrite <- In_rev; auto.
+
+simpl; auto.
+
+rewrite list_norepet_app.
+
+inv H.
+
+split3; auto.
+
+rewrite IHl; auto.
+
+repeat constructor.
+
+intro Hx. inv Hx.
+
+intros x y ? ? ?; subst.
+
+inv H0.
+
+rewrite <- In_rev in H; contradiction.
+
+auto.
+
+Qed.
+
+
+
+Definition sub_option {A} (x y: option A) :=
+
+ match x with Some x' => y = Some x' | None => True end.
+
+
+
+Lemma sub_option_eqv: forall {A} (x y: option A),
+
+  x = y <-> sub_option x y /\ sub_option y x.
+
+Proof.
+
+  intros.
+
+  destruct x, y; split; intros; try congruence.
+
+  + inversion H.
+
+    simpl.
+
+    split; reflexivity.
+
+  + simpl in H; destruct H.
+
+    inversion H.
+
+    reflexivity.
+
+  + simpl in H; destruct H.
+
+    inversion H.
+
+  + simpl in H; destruct H.
+
+    inversion H0.
+
+  + simpl.
+
+    tauto.
+
+Qed.
+
+
+
+Lemma sub_option_refl: forall {A} (x: option A), sub_option x x.
+
+Proof.
+
+  intros.
+
+  destruct x; simpl.
+
+  + reflexivity.
+
+  + exact I.
+
+Qed.
+
+
+
+Lemma sub_option_trans: forall {A} (x y z: option A), sub_option x y -> sub_option y z -> sub_option x z.
+
+Proof.
+
+  intros.
+
+  destruct x, y, z;
+
+  inversion H;
+
+  subst;
+
+  inversion H0;
+
+  subst.
+
+  + reflexivity.
+
+  + exact I.
+
+  + exact I.
+
+  + exact I.
+
+Qed.
+
+
+
+Lemma sub_option_spec: forall {A} (T1 T2: PTree.t A),
+
+  (forall id, sub_option (T1 ! id) (T2 ! id)) ->
+
+  forall id co, T1 ! id = Some co -> T2 ! id = Some co.
+
+Proof.
+
+  intros.
+
+  specialize (H id).
+
+  destruct (T1 ! id), (T2 ! id); inversion H; inversion H0.
+
+  reflexivity.
+
+Qed.
+
+
+
+Definition Annotation_sub (A1 A2: option Annotation):Prop := 
+
+  match A1, A2 with
+
+    _, None => True
+
+  | Some (StrongAnnotation _), Some (WeakAnnotation _) => True
+
+  | Some (StrongAnnotation X), Some (StrongAnnotation Y) => X=Y 
+
+  | X, Y => X=Y 
+
+  end.
+
+
+
+Lemma Annotation_sub_trans a1 a2 a3: Annotation_sub a1 a2 -> 
+
+      Annotation_sub a2 a3 -> Annotation_sub a1 a3.
+
+Proof. unfold Annotation_sub.
+
+  destruct a1; destruct a2.
+
++ destruct a; destruct a0; simpl; intros.
+
+  - inv H; trivial.
+
+  - inv H. 
+
+  - destruct a3; trivial. inv H0; trivial.
+
+  - subst. trivial.
+
++ destruct a; trivial; intros; destruct a3; trivial; discriminate.
+
++ discriminate.
+
++ trivial.
+
+Qed.
+
+
+
+Lemma Annotation_sub_refl a: Annotation_sub a a. 
+
+Proof. unfold Annotation_sub. destruct a; trivial. destruct a; trivial. Qed.
+
+
+
+Lemma Annotation_sub_antisymm a b: Annotation_sub a b -> Annotation_sub b a -> a=b.
+
+Proof. intros.
+
+destruct a; destruct b; simpl in *; trivial; try discriminate.
+
+destruct a; destruct a0; subst; trivial. inv H0; trivial. 
+
+Qed.
+
+
+
+Definition tycontext_sub (Delta Delta' : tycontext) : Prop :=
+
+ (forall id, match (temp_types Delta) ! id,  (temp_types Delta') ! id with
+
+                 | None, _ => True
+
+                 | Some t, None => False
+
+                 | Some t, Some t' => t=t'
+
+                end)
+
+ /\ (forall id, (var_types Delta) ! id = (var_types Delta') ! id)
+
+ /\ ret_type Delta = ret_type Delta'
+
+ /\ (forall id, sub_option ((glob_types Delta) ! id) ((glob_types Delta') ! id))
+
+ /\ (forall id, sub_option ((glob_specs Delta) ! id) ((glob_specs Delta') ! id))
+
+ /\ (forall id, Annotation_sub ((annotations Delta) ! id) ((annotations Delta') ! id)).
+
+
+
+Definition tycontext_eqv (Delta Delta' : tycontext) : Prop :=
+
+ (forall id, (temp_types Delta) ! id = (temp_types Delta') ! id)
+
+ /\ (forall id, (var_types Delta) ! id = (var_types Delta') ! id)
+
+ /\ ret_type Delta = ret_type Delta'
+
+ /\ (forall id, (glob_types Delta) ! id = (glob_types Delta') ! id)
+
+ /\ (forall id, (glob_specs Delta) ! id = (glob_specs Delta') ! id)
+
+ /\ (forall id, (annotations Delta) ! id = (annotations Delta') ! id).
+
+
+
+Lemma tycontext_eqv_spec: forall Delta Delta',
+
+  tycontext_eqv Delta Delta' <-> tycontext_sub Delta Delta' /\ tycontext_sub Delta' Delta.
+
+Proof.
+
+  intros.
+
+  unfold tycontext_sub, tycontext_eqv.
+
+  split; [intros [? [? [? [? [? ?]]]]] | intros [[? [? [? [? [? ?]]]]] [? [? [? [? [? ?]]]]]]];
+
+  repeat split; intros;
+
+  try assumption;
+
+  try (symmetry; assumption);
+
+  try
+
+  solve [
+
+    apply sub_option_eqv;
+
+    try split;
+
+    try rewrite H; try rewrite H0; try rewrite H1; try rewrite H2; try rewrite H3; try rewrite H4;
+
+    try apply sub_option_refl; try reflexivity;
+
+    auto
+
+    ].
+
+  + clear - H.
+
+    specialize (H id).
+
+    destruct ((temp_types Delta) ! id) as [? |], ((temp_types Delta') ! id) as [? |];
+
+    inversion H; auto.
+
+  + rewrite H4. apply Annotation_sub_refl.
+
+  + clear - H.
+
+    specialize (H id).
+
+    destruct ((temp_types Delta) ! id) as [? |], ((temp_types Delta') ! id) as [? |];
+
+    inversion H; auto.
+
+  + rewrite H4. apply Annotation_sub_refl.
+
+  + clear - H H5.
+
+    specialize (H id).
+
+    specialize (H5 id).
+
+    destruct ((temp_types Delta) ! id) as [? |], ((temp_types Delta') ! id) as [? |];
+
+    inversion H; inversion H5; auto.
+
+  + clear - H4 H10. apply Annotation_sub_antisymm; auto.
+
+Qed.
+
+
+
+Lemma tycontext_sub_refl:
+
+ forall Delta, tycontext_sub Delta Delta.
+
+Proof.
+
+  intros. destruct Delta as [T V r G S].
+
+  unfold tycontext_sub.
+
+  intuition.
+
+  + unfold sub_option. unfold temp_types. simpl.
+
+    destruct (T ! id) as [? |]; split; auto; destruct b; auto.
+
+  + apply sub_option_refl.
+
+  + apply sub_option_refl.
+
+  + apply Annotation_sub_refl.
+
+Qed.
+
+
+
+Lemma tycontext_sub_trans:
+
+ forall Delta1 Delta2 Delta3,
+
+  tycontext_sub Delta1 Delta2 -> tycontext_sub Delta2 Delta3 ->
+
+  tycontext_sub Delta1 Delta3.
+
+Proof.
+
+  intros ? ? ? [G1 [G2 [G3 [G4 [G5 G6]]]]] [H1 [H2 [H3 [H4 [H5 H6]]]]].
+
+  repeat split.
+
+  * intros. specialize (G1 id); specialize (H1 id).
+
+    destruct ((temp_types Delta1) ! id); auto.
+
+    destruct ((temp_types Delta2) ! id);
+
+      try contradiction.
+
+    destruct ((temp_types Delta3) ! id); try contradiction.
+
+    destruct G1, H1; split; subst; auto.
+
+  * intros. specialize (G2 id); specialize (H2 id); congruence.
+
+  * congruence.
+
+  * intros. eapply sub_option_trans; eauto.
+
+  * intros. eapply sub_option_trans; eauto.
+
+  * intros. eapply Annotation_sub_trans; eauto.
+
+Qed.
+
+
+
+Definition binop_stable cenv op a1 a2 : bool :=
+
+match op with
+
+  | Cop.Oadd => match Cop.classify_add (typeof a1) (typeof a2) with
+
+                    | Cop.add_case_pi t _ => complete_type cenv t
+
+                    | Cop.add_case_ip _ t => complete_type cenv t
+
+                    | Cop.add_case_pl t => complete_type cenv t
+
+                    | Cop.add_case_lp t => complete_type cenv t
+
+                    | Cop.add_default => true
+
+            end
+
+  | Cop.Osub => match Cop.classify_sub (typeof a1) (typeof a2) with
+
+                    | Cop.sub_case_pi t _ => complete_type cenv t
+
+                    | Cop.sub_case_pl t => complete_type cenv t
+
+                    | Cop.sub_case_pp t => complete_type cenv t
+
+                    | Cop.sub_default => true
+
+            end
+
+  | _ => true
+
+  end.
+
+
+
+Section STABILITY.
+
+
+
+Variables env env': composite_env.
+
+Hypothesis extends: forall id co, env!id = Some co -> env'!id = Some co.
+
+
+
+Lemma binop_stable_stable: forall b e1 e2,
+
+  binop_stable env b e1 e2 = true ->
+
+  binop_stable env' b e1 e2 = true.
+
+Proof.
+
+  intros.
+
+  destruct b; unfold binop_stable in H |- *; auto.
+
+  + destruct (Cop.classify_add (typeof e1) (typeof e2));
+
+    try (eapply (complete_type_stable env env'); eauto).
+
+     auto.
+
+  + destruct (Cop.classify_sub (typeof e1) (typeof e2));
+
+    try (eapply (complete_type_stable env env'); eauto).
+
+     auto.
+
+Qed.
+
+
+
+Lemma Cop_Sem_add_ptr_int_stable ty si u v (H:complete_type env ty = true):
+
+  Cop.sem_add_ptr_int env ty si u v =
+
+  Cop.sem_add_ptr_int env' ty si u v.
+
+Proof. unfold Cop.sem_add_ptr_int.
+
+  destruct u; destruct v; trivial; erewrite <- sizeof_stable; eauto.
+
+Qed.
+
+
+
+Lemma Cop_Sem_add_ptr_long_stable ty u v (H:complete_type env ty = true):
+
+  Cop.sem_add_ptr_long env ty u v =
+
+  Cop.sem_add_ptr_long env' ty u v.
+
+Proof. unfold Cop.sem_add_ptr_long.
+
+  destruct u; destruct v; trivial; erewrite <- sizeof_stable; eauto.
+
+Qed.
+
+
+
+Lemma Cop_sem_binary_operation_stable:
+
+  forall b v1 e1 v2 e2 m,
+
+  binop_stable env b e1 e2 = true ->
+
+  Cop.sem_binary_operation env b v1 (typeof e1) v2 (typeof e2) m =
+
+    Cop.sem_binary_operation env' b v1 (typeof e1) v2 (typeof e2) m.
+
+Proof.
+
+  intros.
+
+  unfold binop_stable in H.
+
+  destruct b; try auto.
+
+  + simpl.
+
+    unfold Cop.sem_add.
+
+    destruct (Cop.classify_add (typeof e1) (typeof e2)), v1, v2;
+
+    try (erewrite <- Cop_Sem_add_ptr_int_stable; eauto);
+
+    try (erewrite <- Cop_Sem_add_ptr_long_stable; eauto);
+
+
+
+    try erewrite <- sizeof_stable; eauto.
+
+  + simpl.
+
+    unfold Cop.sem_sub.
+
+    destruct (Cop.classify_sub (typeof e1) (typeof e2)), v1, v2;
+
+    try erewrite <- sizeof_stable; eauto.
+
+Qed.
+
+
+
+Lemma field_offset_stable: forall i id co ofs,
+
+  composite_env_consistent env ->
+
+  env ! i = Some co ->
+
+  field_offset env id (co_members co) = Errors.OK ofs ->
+
+  field_offset env' id (co_members co) = Errors.OK ofs.
+
+Proof.
+
+  unfold field_offset.
+
+  generalize 0.
+
+  intros.
+
+  destruct (H i co H0) as [HH _ _ _].
+
+  revert z H1.
+
+  clear H H0.
+
+  induction (co_members co); intros.
+
+  + simpl in H1 |- *.
+
+    inversion H1.
+
+  + simpl in H1 |- *.
+
+    destruct a.
+
+    simpl in HH.
+
+    rewrite andb_true_iff in HH.
+
+    if_tac.
+
+    - rewrite alignof_stable with (env := env) by tauto. assumption.
+
+    - rewrite alignof_stable with (env := env) by tauto.
+
+      rewrite sizeof_stable with (env := env) by tauto.
+
+      apply IHm; try tauto.
+
+Qed.
+
+
+
+End STABILITY.
+
+
+
+Section TYCON_SUB.
+
+Variables Delta Delta': tycontext.
+
+Hypothesis extends: tycontext_sub Delta Delta'.
+
+
+
+Lemma func_tycontext'_sub: forall f,
+
+  tycontext_sub (func_tycontext' f Delta) (func_tycontext' f Delta').
+
+Proof.
+
+  intros.
+
+  unfold func_tycontext'.
+
+  unfold tycontext_sub in *.
+
+  destruct extends as [? [? [? [? [? ?]]]]].
+
+  repeat split; simpl.
+
+  + intros.
+
+    destruct ((make_tycontext_t (fn_params f) (fn_temps f)) ! id) as [? |].
+
+    - auto.
+
+    - exact I.
+
+  + auto.
+
+  + auto.
+
+  + auto.
+
+Qed.
+
+
+
+End TYCON_SUB.
+
+
+
+Section TYCON_EQUIV.
+
+
+
+Variable Delta Delta': tycontext.
+
+Hypothesis equiv: tycontext_eqv Delta Delta'.
+
+
+
+Lemma func_tycontext'_eqv: forall f,
+
+  tycontext_eqv (func_tycontext' f Delta) (func_tycontext' f Delta').
+
+Proof.
+
+  intro.
+
+  rewrite tycontext_eqv_spec in *.
+
+  split; apply func_tycontext'_sub; tauto.
+
+Qed.
+
+
+
+End TYCON_EQUIV.
+
+
+
+Lemma tycontext_eqv_symm:
+
+  forall Delta Delta', tycontext_eqv Delta Delta' ->  tycontext_eqv Delta' Delta.
+
+Proof.
+
+intros.
+
+destruct H as [? [? [? [? [? ?]]]]]; repeat split; auto.
+
+Qed.
+
+
+
+Lemma tycontext_eqv_sub:
+
+  forall Delta Delta', tycontext_eqv Delta Delta' ->
+
+         tycontext_sub Delta Delta'.
+
+Proof.
+
+intros.
+
+destruct H as [? [? [? [? [? ?]]]]].
+
+repeat split; intros; auto.
+
+rewrite H; auto.
+
+destruct ((temp_types Delta') ! id); auto.
+
+rewrite H2. destruct ((glob_types Delta') ! id); simpl; auto.
+
+rewrite H3. destruct ((glob_specs Delta') ! id); simpl; auto.
+
+rewrite H4. apply Annotation_sub_refl.
+
+Qed.
+
+
+
+Record ret_assert : Type := {
+
+ RA_normal: environ->mpred;
+
+ RA_break: environ->mpred;
+
+ RA_continue: environ->mpred;
+
+ RA_return: option val -> environ->mpred
+
+}.
+
+
+
+Lemma modifiedvars_Slabel l c: modifiedvars (Slabel l c) = modifiedvars c.
+
+Proof. reflexivity. Qed.
+
+
+
+Lemma modifiedvars_computable: forall c (te1 te2: Map.t val), exists te,
+
+  (forall i, modifiedvars c i -> Map.get te1 i = Map.get te i) /\
+
+  (forall i, modifiedvars c i \/ Map.get te2 i = Map.get te i).
+
+Proof.
+
+  intros.
+
+  unfold modifiedvars.
+
+  exists (fun i => match (modifiedvars' c idset0) ! i with Some _ => Map.get te1 i | None => Map.get te2 i end).
+
+  split; intros.
+
+  + unfold Map.get.
+
+    destruct ((modifiedvars' c idset0) ! i); simpl; [auto | inv H].
+
+  + unfold Map.get.
+
+    destruct ((modifiedvars' c idset0) ! i); simpl; [left; apply I | auto].
+
+Qed.
+
+
+
+Lemma modifiedvars_Sifthenelse b c1 c2 id: modifiedvars (Sifthenelse b c1 c2) id <-> modifiedvars c1 id \/ modifiedvars c2 id.
+
+Proof.
+
+  unfold modifiedvars.
+
+  simpl.
+
+  rewrite modifiedvars'_union.
+
+  reflexivity.
+
+Qed.
+
+
+
+Lemma modifiedvars_Sloop c1 c2 id: modifiedvars (Sloop c1 c2) id <-> modifiedvars c1 id \/ modifiedvars c2 id.
+
+Proof.
+
+  unfold modifiedvars.
+
+  simpl.
+
+  rewrite modifiedvars'_union.
+
+  reflexivity.
+
+Qed.
+
+
+
+Lemma modifiedvars_Ssequence c1 c2 id: modifiedvars (Ssequence c1 c2) id <-> modifiedvars c1 id \/ modifiedvars c2 id.
+
+Proof.
+
+  unfold modifiedvars.
+
+  simpl.
+
+  rewrite modifiedvars'_union.
+
+  reflexivity.
+
+Qed.
+
+
+
+Lemma modifiedvars_ls_eq: forall sl, modifiedvars_ls sl = modifiedvars' (seq_of_labeled_statement sl).
+
+Proof.
+
+  intros.
+
+  induction sl; auto.
+
+  destruct o; simpl;
+
+  rewrite IHsl; auto.
+
+Qed.  
+
+
+
+Lemma modifiedvars_Sswitch e sl n id: modifiedvars (seq_of_labeled_statement (select_switch (Int.unsigned n) sl)) id -> modifiedvars (Sswitch e sl) id.
+
+Proof.
+
+  unfold modifiedvars.
+
+  simpl.
+
+  unfold select_switch.
+
+  destruct (select_switch_case (Int.unsigned n) sl) eqn:?H.
+
+  + revert l H; induction sl; simpl; intros.
+
+    - inv H.
+
+    - rewrite modifiedvars'_union.
+
+      destruct o; [| right; eapply IHsl; eauto].
+
+      if_tac in H; [| right; eapply IHsl; eauto].
+
+      inv H.
+
+      simpl in H0.
+
+      rewrite modifiedvars'_union in H0; auto.
+
+      rewrite modifiedvars_ls_eq; auto.
+
+  + revert H; induction sl; simpl; intros.
+
+    - auto.
+
+    - rewrite modifiedvars'_union.
+
+      destruct o; [if_tac in H |].
+
+      * inv H.
+
+      * right; apply IHsl; auto.
+
+      * simpl in H0.
+
+        rewrite modifiedvars'_union in H0; auto.
+
+        rewrite modifiedvars_ls_eq; auto.
+
+Qed.
+

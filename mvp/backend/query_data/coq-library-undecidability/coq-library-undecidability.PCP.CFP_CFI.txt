@@ -1,0 +1,470 @@
+Require Import PCP.Definitions Post_CFG.
+(* PCP.Definitions:
+Require Export Problems.PCP Shared.Prelim Problems.Reduction.
+
+Lemma list_prefix_inv X (a : X) x u y v :
+  ~ a el x -> ~ a el u -> x ++ a :: y = u ++ a :: v -> x = u /\ y = v.
+
+Lemma split_inv X (u z x y : list X) (s : X) :
+  u ++ z = x ++ s :: y -> ~ s el u -> exists x' : list X, x = u ++ x'.
+
+Lemma in_split X (a : X) (x : list X) :
+  a el x -> exists y z, x = y ++ [a] ++ z.
+
+Definition symbol := nat.
+Definition string := (string nat).
+Definition card : Type := (card nat).
+Definition stack := stack nat.
+Notation "x / y" := (x,y).
+
+Implicit Types a b : symbol.
+Implicit Types x y z : string.
+Implicit Types d e : card.
+Implicit Types A R P : stack.
+
+Coercion sing (n : nat) := [n].
+
+Lemma tau1_app A B : tau1 (A ++ B) = tau1 A ++ tau1 B.
+
+Lemma tau2_app A B : tau2 (A ++ B) = tau2 A ++ tau2 B.
+
+Definition cards x := map (fun a => [a] / [a]) x.
+
+Lemma tau1_cards x : tau1 (cards x) = x.
+
+Lemma tau2_cards x : tau2 (cards x) = x.
+
+Hint Rewrite tau1_app tau2_app tau1_cards tau2_cards : list.
+
+Inductive rew (R : SRS) : string -> string -> Prop :=
+  rewB x y u v : u / v el R -> rew R (x ++ u ++ y) (x ++ v ++ y).
+Inductive rewt (R : SRS) : string -> string -> Prop :=
+  rewR z : rewt R z z
+| rewS x y z :  rew R x y -> rewt R y z -> rewt R x z.
+
+Lemma rewt_induct :
+  forall (R : SRS) z (P : string -> Prop),
+    (P z) ->
+    (forall x y : string, rew R x y -> rewt R y z -> P y -> P x) -> forall s, rewt R s z -> P s.
+
+Lemma rewt_app_L R x x' y : rewt R x x' -> rewt R (y ++ x) (y ++ x').
+
+Lemma rewt_subset R P x y :
+  rewt R x y -> R <<= P -> rewt P x y.
+
+Lemma rewt_left R x y z :
+  rewt R x y -> rew R y z -> rewt R x z.
+
+Fixpoint sigma (a : symbol) A :=
+  match A with
+    nil => [a]
+  | x/y :: A => x ++ (sigma a A) ++ y
+  end.
+
+Fixpoint sym (R : SRS) :=
+  match R with
+    [] => []
+  | x / y :: R => x ++ y ++ sym R
+  end.
+
+Lemma sym_app P R :
+  sym (P ++ R) = sym P ++ sym R.
+
+Lemma sym_map X (f : X -> card) l Sigma :
+  (forall x : X, x el l -> sym [f x] <<= Sigma) -> sym (map f l) <<= Sigma.
+
+Lemma sym_word_l R u v  :
+  u / v el R -> u <<= sym R.
+
+Lemma sym_word_R R u v  :
+  u / v el R -> v <<= sym R.
+
+Hint Resolve sym_word_l sym_word_R.
+
+Lemma sym_mono A P :
+  A <<= P -> sym A <<= sym P.
+
+Lemma tau1_sym A : tau1 A <<= sym A.
+
+Lemma tau2_sym A : tau2 A <<= sym A.
+
+Lemma rewt_sym R x y Sigma:
+  sym R <<= Sigma -> x <<= Sigma -> rewt R x y -> y <<= Sigma.
+
+Fixpoint fresh (l : list nat) :=
+  match l with
+  | [] => 0
+  | x :: l => S x + fresh l
+  end.
+
+Lemma fresh_spec' l a : a el l -> a < fresh l.
+
+Lemma fresh_spec (a : symbol) (l : string) : a el l -> fresh l <> a.
+
+Definition SRH '(R, x, a) := exists y, rewt R x y /\ a el y.
+Definition SR '(R, x, y) := rewt R x y.
+
+Definition MPCP '((x,y), P) := exists A : SRS, A <<= x/y :: P /\ x ++ tau1 A = y ++ tau2 A.
+Definition CFP '(R, a) := exists A : SRS, A <<= R /\ A <> [] /\ sigma a A = rev (sigma a A).
+Definition CFI '(R1, R2, a) := exists A1 A2, A1 <<= R1 /\ A2 <<= R2 /\ A1 <> [] /\ A2 <> [] /\ sigma a A1 = sigma a A2. *)
+(* Post_CFG:
+Require Import PCP.Definitions Shared.Prelim.
+
+Hint Rewrite concat_app map_app map_map : list.
+Hint Rewrite <- map_rev  : list.
+
+Lemma nil_app_nil X (A : list X) :
+  A = [] ++ A ++ [].
+
+Definition gamma (A : SRS) := map (fun '(x,y) => (x, rev y)) A.
+
+Lemma sigma_eq  s A :
+  sigma s A = tau1 A ++ [s] ++ rev (tau2 (gamma A)).
+
+Lemma tau2_gamma s A :
+  s el rev (tau2 (gamma A)) <-> s el tau2 A.
+
+Lemma sigma_inv A s1 s x y :
+  sigma s1 A = x ++ [s] ++ y -> ~ s el x -> ~ s el y -> ~ s el sym A ->
+  s1 = s.
+
+Lemma sigma_snoc A x y u v s s' :
+  sigma s A = x ++ [s] ++ y -> ~ s el x -> ~ s el y ->
+  sigma s' (A ++ [u/v]) = x ++ u ++ s' ++ v ++ y.
+
+Section CFGs.
+
+  Notation sig := nat.
+  Definition rule : Type := sig * list sig.
+  Definition cfg : Type := sig * list rule.
+
+  Definition rules (G : cfg) := snd G.
+  Definition startsym (G : cfg) := fst G.
+
+  Inductive rew_cfg : cfg -> list sig -> list sig -> Prop:=
+  |rewR R x a y v : (a,v) el rules R -> rew_cfg R (x++[a]++y) (x++v++y).
+  Hint Constructors rew_cfg.
+
+  Lemma rewrite_sing R a x :
+    (a, x) el rules R -> rew_cfg R [a] x.
+  
+  Inductive rewt (S: cfg) (x: list sig) : list sig -> Prop :=
+  |rewtRefl : rewt S x x
+  |rewtRule y z : rewt S x y -> rew_cfg S y z -> rewt S x z.
+  Hint Constructors rewt.
+
+  Global Instance rewtTrans R :
+    PreOrder (rewt R).
+
+  Global Instance rewrite_proper R :
+    Proper (rewt R ==> rewt R ==> rewt R) (@app sig).
+
+  Global Instance subrel R :
+    subrelation (rew_cfg R) (rewt R).
+    
+  Definition terminal G x := ~ exists y, rew_cfg G x y.
+
+  Lemma terminal_iff G x :
+    terminal G x <-> forall s y, s el x -> ~ (s, y) el rules G.
+
+  Definition L (G : cfg) x := rewt G [startsym G] x /\ terminal G x.
+
+  Definition sym_G (G : cfg) :=
+    startsym G :: flat_map (fun '(a, x) => a :: x) (rules G).
+  
+  Lemma sym_G_rewt x G y :
+    x <<= sym_G G -> rewt G x y -> y <<= sym_G G.
+  
+End CFGs.
+
+Definition CFP' (G : cfg) := exists x, L G x /\ x = List.rev x.
+
+Definition CFI' '(G1, G2) :=
+  exists x, L G1 x /\ L G2 x.
+
+Section Post_CFG.
+
+  Variable R : SRS.
+  Variable a : symbol.
+
+  Definition Sigma := sym R ++ [a].
+  Definition S : symbol := fresh Sigma.
+
+  Definition G := (S, (S,[S]) :: map (fun '(u / v) => (S, u ++ [S] ++ v)) R ++ map (fun '(u / v) => (S, u ++ [a] ++ v)) R).
+
+  Lemma terminal_iff_G y :
+    terminal G y <-> ~ S el y.
+
+  Lemma rewt_count x :
+    rewt G [S] x -> count x S <= 1.
+  
+  Lemma Post_CFG_1' A :
+    A <<= R -> A = [] \/ rewt G [S] (sigma a A).
+
+  Lemma Post_CFG_2 x :
+    rewt G [S] x ->
+    exists A m, A <<= R /\ sigma m A = x /\ (m = S \/ m = a /\ A <> []).
+
+  Lemma reduction_full x :
+    (exists A, A <<= R /\ A <> [] /\ sigma a A = x) <->  L G x.
+  
+End Post_CFG.
+
+Definition Post_G '(R, a, x) := exists A, A <<= R /\ A <> [] /\ sigma a A = x.
+Definition CFG '(G, x) := L G x.
+
+Lemma reduce_grammars :
+  Post_G ⪯ CFG.
+
+Lemma reduce_CFP :
+  CFP ⪯ CFP'.
+
+Lemma reduce_CFI :
+  CFI ⪯ CFI'. *)
+
+
+
+Section Palindrome.
+
+
+
+  Variable Sigma : list symbol.
+
+
+
+  Notation StartG := (fresh Sigma).
+
+  
+
+  Definition palin_G : cfg :=
+
+    (StartG, (StartG, []) ::
+
+                          flat_map (fun g => [ (StartG, [g]);  (StartG, [g; StartG; g]) ]) Sigma).
+
+
+
+  Lemma notInZero  (x: nat) A :
+
+    not (x el A) <-> count A x = 0.
+
+  Proof.
+
+    split; induction A.
+
+    -  reflexivity.
+
+    - intros H. cbn in *. destruct (Nat.eqb_spec x a).
+
+      + exfalso. apply H. left. congruence.
+
+      + apply IHA. intros F. apply H. now right.
+
+    - tauto.
+
+    - cbn. destruct (Nat.eqb_spec x a).
+
+      + subst a. omega.
+
+      + intros H [E | E].
+
+        * now symmetry in E.
+
+        * tauto.
+
+  Qed.
+
+
+
+  Lemma G_left x : 
+
+    rewt palin_G [StartG] x -> rev x = x /\ count x StartG <= 1.
+
+  Proof.
+
+    induction 1.
+
+    - cbn. rewrite (Nat.eqb_refl StartG). intuition.
+
+    - destruct IHrewt as [IH Eq].
+
+      + inv H0. cbn in H1. destruct H1.
+
+        * inv H0. rewrite <- !countSplit in *. autorewrite with list in *. cbn in *. split; try omega.
+
+          rewrite Nat.eqb_refl in *.
+
+          assert (count x StartG = 0) as H1 % notInZero by omega.
+
+          assert (count y0 StartG = 0) as H2 % notInZero by omega.
+
+          eapply list_prefix_inv in IH as [<- _]; try rewrite <- in_rev; eauto.
+
+          now rewrite rev_involutive.
+
+        * eapply in_flat_map in H0 as (? & ? & [ | [ | [] ]]).
+
+          -- inv H1. rewrite <- !countSplit in *. autorewrite with list in *. cbn in *. 
+
+             rewrite Nat.eqb_refl in *. split; try omega.
+
+             assert (count x StartG = 0) as H1 % notInZero by omega.
+
+             assert (count y0 StartG = 0) as H2 % notInZero by omega.
+
+             eapply list_prefix_inv in IH as [ <- _]; try rewrite <- in_rev; eauto.
+
+             now rewrite rev_involutive.
+
+             destruct _; omega. 
+
+          -- inv H1. rewrite <- !countSplit in *. autorewrite with list in *. cbn in *.
+
+             rewrite Nat.eqb_refl in *. split; try omega.
+
+             assert (count x StartG = 0) as H1 % notInZero by omega.
+
+             assert (count y0 StartG = 0) as H2 % notInZero by omega.
+
+             eapply list_prefix_inv in IH as [<- _]; try rewrite <- in_rev; eauto.
+
+             now rewrite rev_involutive.
+
+             destruct (Nat.eqb_spec StartG x0). subst. edestruct fresh_spec; eauto.
+
+             omega.
+
+  Qed.
+
+
+
+  Lemma listI : forall (A : Type) (P : list A -> Prop), P [] -> (forall x, P [x]) -> (forall (x : A) (y : A) (l : list A), P l -> P (x :: l ++ [y])) -> forall l : list A, P l.
+
+  Proof.
+
+    intros. pattern l. revert l. apply size_induction with (f := @length _). intros.
+
+    destruct x.
+
+    - auto.
+
+    - revert H2. pattern x. revert x. apply rev_ind. auto.
+
+      intros. apply H1. apply H3. cbn. rewrite app_length. omega.
+
+  Qed.
+
+
+
+  Lemma rev_palin x : x <<= StartG :: Sigma ->
+
+    x = rev x -> count x StartG <= 1 -> rewt palin_G [StartG] x.
+
+  Proof.
+
+    pattern x. revert x. apply listI; intros.
+
+    - rewrite rewrite_sing. reflexivity. now left.
+
+    - destruct (Nat.eqb_spec x StartG).
+
+      subst. reflexivity. rewrite rewrite_sing. reflexivity. right. eapply in_flat_map.
+
+      exists x. split. assert (x el StartG :: Sigma) by firstorder. destruct H2; eauto. congruence.
+
+      now left.
+
+    - cbn in H1. autorewrite with  list in *. inv H1.
+
+      cbn in H2. rewrite <- countSplit in H2.
+
+      destruct (Nat.eqb_spec StartG y); subst.
+
+      + cbn in *. rewrite (Nat.eqb_refl) in *. omega.
+
+      + rewrite rewrite_sing with (x := [y] ++ [StartG] ++ [y]).
+
+        rewrite H.
+
+        * cbn. reflexivity.
+
+        * eauto.
+
+        * now eapply app_inv_tail in H5.
+
+        * cbn in *; omega.
+
+        * right. eapply in_flat_map. cbn. firstorder.
+
+  Qed.
+
+
+
+  Lemma Start_fresh x :
+
+    x <<= Sigma -> ~ StartG el x.
+
+  Proof.
+
+    intros ? ?. edestruct fresh_spec with (l := Sigma); eauto.
+
+  Qed.
+
+  
+
+  Lemma G_char x : x <<= Sigma ->
+
+    x = rev x <-> L palin_G x.
+
+  Proof.
+
+    intros Hx. split.
+
+    - intros H. split.
+
+      + eapply rev_palin in H; eauto.
+
+        enough (count x StartG = 0) by omega.
+
+        eapply notInZero. eauto using Start_fresh.
+
+      + intros [y Hy].
+
+        inv Hy. destruct H0. inv H0.
+
+        eapply Start_fresh. eauto. eauto. 
+
+        eapply in_flat_map in H0 as (? & ? & [ | [ | [] ]]).
+
+        * inv H1. eapply Start_fresh. eauto. rewrite H. simpl_list. cbn. eauto. 
+
+        * inv H1. eapply Start_fresh. eauto. rewrite H. simpl_list. cbn. eauto. 
+
+    - intros [[] % G_left Ht]. eauto.
+
+  Qed.
+
+  
+
+End Palindrome.
+
+
+
+Theorem CFP_CFI :
+
+  CFP' ⪯ CFI'.
+
+Proof.
+
+  exists (fun G => (palin_G (sym_G G), G)). intros G. split; intros (? & ? & ?).
+
+  - exists x. rewrite <- G_char. intuition. destruct H. eapply sym_G_rewt; try eassumption.
+
+    destruct G. unfold sym_G; cbn; eauto.
+
+  - destruct H. eapply G_left in H.
+
+    exists x. intuition.
+
+Qed.
+

@@ -1,0 +1,1026 @@
+
+
+Require Import ZArith.
+
+Require Import Fappli_IEEE.
+(* Fappli_IEEE:
+Require Import Fcore.
+Require Import Fcore_digits.
+Require Import Fcalc_digits.
+Require Import Fcalc_round.
+Require Import Fcalc_bracket.
+Require Import Fcalc_ops.
+Require Import Fcalc_div.
+Require Import Fcalc_sqrt.
+Require Import Fprop_relative.
+
+Section AnyRadix.
+
+Inductive full_float :=
+  | F754_zero : bool -> full_float
+  | F754_infinity : bool -> full_float
+  | F754_nan : bool -> positive -> full_float
+  | F754_finite : bool -> positive -> Z -> full_float.
+
+Definition FF2R beta x :=
+  match x with
+  | F754_finite s m e => F2R (Float beta (cond_Zopp s (Zpos m)) e)
+  | _ => 0%R
+  end.
+
+End AnyRadix.
+
+Section Binary.
+
+Arguments exist {A P} x _.
+
+Variable prec emax : Z.
+Context (prec_gt_0_ : Prec_gt_0 prec).
+Hypothesis Hmax : (prec < emax)%Z.
+
+Let emin := (3 - emax - prec)%Z.
+Let fexp := FLT_exp emin prec.
+Instance fexp_correct : Valid_exp fexp := FLT_exp_valid emin prec.
+Instance fexp_monotone : Monotone_exp fexp := FLT_exp_monotone emin prec.
+
+Definition canonic_mantissa m e :=
+  Zeq_bool (fexp (Zpos (digits2_pos m) + e)) e.
+
+Definition bounded m e :=
+  andb (canonic_mantissa m e) (Zle_bool e (emax - prec)).
+
+Definition valid_binary x :=
+  match x with
+  | F754_finite _ m e => bounded m e
+  | F754_nan _ pl => (Zpos (digits2_pos pl) <? prec)%Z
+  | _ => true
+  end.
+
+Definition nan_pl := {pl | (Zpos (digits2_pos pl) <? prec)%Z  = true}.
+
+Inductive binary_float :=
+  | B754_zero : bool -> binary_float
+  | B754_infinity : bool -> binary_float
+  | B754_nan : bool -> nan_pl -> binary_float
+  | B754_finite : bool ->
+    forall (m : positive) (e : Z), bounded m e = true -> binary_float.
+
+Definition FF2B x :=
+  match x as x return valid_binary x = true -> binary_float with
+  | F754_finite s m e => B754_finite s m e
+  | F754_infinity s => fun _ => B754_infinity s
+  | F754_zero s => fun _ => B754_zero s
+  | F754_nan b pl => fun H => B754_nan b (exist pl H)
+  end.
+
+Definition B2FF x :=
+  match x with
+  | B754_finite s m e _ => F754_finite s m e
+  | B754_infinity s => F754_infinity s
+  | B754_zero s => F754_zero s
+  | B754_nan b (exist pl _) => F754_nan b pl
+  end.
+
+Definition B2R f :=
+  match f with
+  | B754_finite s m e _ => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
+  | _ => 0%R
+  end.
+
+Theorem FF2R_B2FF :
+  forall x,
+  FF2R radix2 (B2FF x) = B2R x.
+
+Theorem B2FF_FF2B :
+  forall x Hx,
+  B2FF (FF2B x Hx) = x.
+
+Theorem valid_binary_B2FF :
+  forall x,
+  valid_binary (B2FF x) = true.
+
+Theorem FF2B_B2FF :
+  forall x H,
+  FF2B (B2FF x) H = x.
+
+Theorem FF2B_B2FF_valid :
+  forall x,
+  FF2B (B2FF x) (valid_binary_B2FF x) = x.
+
+Theorem B2R_FF2B :
+  forall x Hx,
+  B2R (FF2B x Hx) = FF2R radix2 x.
+
+Theorem match_FF2B :
+  forall {T} fz fi fn ff x Hx,
+  match FF2B x Hx return T with
+  | B754_zero sx => fz sx
+  | B754_infinity sx => fi sx
+  | B754_nan b (exist p _) => fn b p
+  | B754_finite sx mx ex _ => ff sx mx ex
+  end =
+  match x with
+  | F754_zero sx => fz sx
+  | F754_infinity sx => fi sx
+  | F754_nan b p => fn b p
+  | F754_finite sx mx ex => ff sx mx ex
+  end.
+
+Theorem canonic_canonic_mantissa :
+  forall (sx : bool) mx ex,
+  canonic_mantissa mx ex = true ->
+  canonic radix2 fexp (Float radix2 (cond_Zopp sx (Zpos mx)) ex).
+
+Theorem generic_format_B2R :
+  forall x,
+  generic_format radix2 fexp (B2R x).
+
+Theorem FLT_format_B2R :
+  forall x,
+  FLT_format radix2 emin prec (B2R x).
+
+Theorem B2FF_inj :
+  forall x y : binary_float,
+  B2FF x = B2FF y ->
+  x = y.
+
+Definition is_finite_strict f :=
+  match f with
+  | B754_finite _ _ _ _ => true
+  | _ => false
+  end.
+
+Theorem B2R_inj:
+  forall x y : binary_float,
+  is_finite_strict x = true ->
+  is_finite_strict y = true ->
+  B2R x = B2R y ->
+  x = y.
+
+Definition Bsign x :=
+  match x with
+  | B754_nan s _ => s
+  | B754_zero s => s
+  | B754_infinity s => s
+  | B754_finite s _ _ _ => s
+  end.
+
+Definition sign_FF x :=
+  match x with
+  | F754_nan s _ => s
+  | F754_zero s => s
+  | F754_infinity s => s
+  | F754_finite s _ _ => s
+  end.
+
+Theorem Bsign_FF2B :
+  forall x H,
+  Bsign (FF2B x H) = sign_FF x.
+
+Definition is_finite f :=
+  match f with
+  | B754_finite _ _ _ _ => true
+  | B754_zero _ => true
+  | _ => false
+  end.
+
+Definition is_finite_FF f :=
+  match f with
+  | F754_finite _ _ _ => true
+  | F754_zero _ => true
+  | _ => false
+  end.
+
+Theorem is_finite_FF2B :
+  forall x Hx,
+  is_finite (FF2B x Hx) = is_finite_FF x.
+
+Theorem is_finite_FF_B2FF :
+  forall x,
+  is_finite_FF (B2FF x) = is_finite x.
+
+Theorem B2R_Bsign_inj:
+  forall x y : binary_float,
+    is_finite x = true ->
+    is_finite y = true ->
+    B2R x = B2R y ->
+    Bsign x = Bsign y ->
+    x = y.
+
+Definition is_nan f :=
+  match f with
+  | B754_nan _ _ => true
+  | _ => false
+  end.
+
+Definition is_nan_FF f :=
+  match f with
+  | F754_nan _ _ => true
+  | _ => false
+  end.
+
+Theorem is_nan_FF2B :
+  forall x Hx,
+  is_nan (FF2B x Hx) = is_nan_FF x.
+
+Theorem is_nan_FF_B2FF :
+  forall x,
+  is_nan_FF (B2FF x) = is_nan x.
+
+Definition Bopp opp_nan x :=
+  match x with
+  | B754_nan sx plx =>
+    let '(sres, plres) := opp_nan sx plx in B754_nan sres plres
+  | B754_infinity sx => B754_infinity (negb sx)
+  | B754_finite sx mx ex Hx => B754_finite (negb sx) mx ex Hx
+  | B754_zero sx => B754_zero (negb sx)
+  end.
+
+Theorem Bopp_involutive :
+  forall opp_nan x,
+  is_nan x = false ->
+  Bopp opp_nan (Bopp opp_nan x) = x.
+
+Theorem B2R_Bopp :
+  forall opp_nan x,
+  B2R (Bopp opp_nan x) = (- B2R x)%R.
+
+Theorem is_finite_Bopp :
+  forall opp_nan x,
+  is_finite (Bopp opp_nan x) = is_finite x.
+
+Definition Babs abs_nan (x : binary_float) : binary_float :=
+  match x with
+  | B754_nan sx plx =>
+      let '(sres, plres) := abs_nan sx plx in B754_nan sres plres
+  | B754_infinity sx => B754_infinity false
+  | B754_finite sx mx ex Hx => B754_finite false mx ex Hx
+  | B754_zero sx => B754_zero false
+  end.
+
+Theorem B2R_Babs :
+  forall abs_nan x,
+  B2R (Babs abs_nan x) = Rabs (B2R x).
+
+Theorem is_finite_Babs :
+  forall abs_nan x,
+  is_finite (Babs abs_nan x) = is_finite x.
+
+Theorem Bsign_Babs :
+  forall abs_nan x,
+  is_nan x = false ->
+  Bsign (Babs abs_nan x) = false.
+
+Theorem Babs_idempotent :
+  forall abs_nan (x: binary_float),
+  is_nan x = false ->
+  Babs abs_nan (Babs abs_nan x) = Babs abs_nan x.
+
+Theorem Babs_Bopp :
+  forall abs_nan opp_nan x,
+  is_nan x = false ->
+  Babs abs_nan (Bopp opp_nan x) = Babs abs_nan x.
+
+Definition Bcompare (f1 f2 : binary_float) : option comparison :=
+  match f1, f2 with
+  | B754_nan _ _,_ | _,B754_nan _ _ => None
+  | B754_infinity true, B754_infinity true
+  | B754_infinity false, B754_infinity false => Some Eq
+  | B754_infinity true, _ => Some Lt
+  | B754_infinity false, _ => Some Gt
+  | _, B754_infinity true => Some Gt
+  | _, B754_infinity false => Some Lt
+  | B754_finite true _ _ _, B754_zero _ => Some Lt
+  | B754_finite false _ _ _, B754_zero _ => Some Gt
+  | B754_zero _, B754_finite true _ _ _ => Some Gt
+  | B754_zero _, B754_finite false _ _ _ => Some Lt
+  | B754_zero _, B754_zero _ => Some Eq
+  | B754_finite s1 m1 e1 _, B754_finite s2 m2 e2 _ =>
+    match s1, s2 with
+    | true, false => Some Lt
+    | false, true => Some Gt
+    | false, false =>
+      match Zcompare e1 e2 with
+      | Lt => Some Lt
+      | Gt => Some Gt
+      | Eq => Some (Pcompare m1 m2 Eq)
+      end
+    | true, true =>
+      match Zcompare e1 e2 with
+      | Lt => Some Gt
+      | Gt => Some Lt
+      | Eq => Some (CompOpp (Pcompare m1 m2 Eq))
+      end
+    end
+  end.
+
+Theorem Bcompare_correct :
+  forall f1 f2,
+  is_finite f1 = true -> is_finite f2 = true ->
+  Bcompare f1 f2 = Some (Rcompare (B2R f1) (B2R f2)).
+
+Theorem Bcompare_swap :
+  forall x y,
+  Bcompare y x = match Bcompare x y with Some c => Some (CompOpp c) | None => None end.
+
+Theorem bounded_lt_emax :
+  forall mx ex,
+  bounded mx ex = true ->
+  (F2R (Float radix2 (Zpos mx) ex) < bpow radix2 emax)%R.
+
+Theorem abs_B2R_lt_emax :
+  forall x,
+  (Rabs (B2R x) < bpow radix2 emax)%R.
+
+Theorem bounded_canonic_lt_emax :
+  forall mx ex,
+  canonic radix2 fexp (Float radix2 (Zpos mx) ex) ->
+  (F2R (Float radix2 (Zpos mx) ex) < bpow radix2 emax)%R ->
+  bounded mx ex = true.
+
+Record shr_record := { shr_m : Z ; shr_r : bool ; shr_s : bool }.
+
+Definition shr_1 mrs :=
+  let '(Build_shr_record m r s) := mrs in
+  let s := orb r s in
+  match m with
+  | Z0 => Build_shr_record Z0 false s
+  | Zpos xH => Build_shr_record Z0 true s
+  | Zpos (xO p) => Build_shr_record (Zpos p) false s
+  | Zpos (xI p) => Build_shr_record (Zpos p) true s
+  | Zneg xH => Build_shr_record Z0 true s
+  | Zneg (xO p) => Build_shr_record (Zneg p) false s
+  | Zneg (xI p) => Build_shr_record (Zneg p) true s
+  end.
+
+Definition loc_of_shr_record mrs :=
+  match mrs with
+  | Build_shr_record _ false false => loc_Exact
+  | Build_shr_record _ false true => loc_Inexact Lt
+  | Build_shr_record _ true false => loc_Inexact Eq
+  | Build_shr_record _ true true => loc_Inexact Gt
+  end.
+
+Definition shr_record_of_loc m l :=
+  match l with
+  | loc_Exact => Build_shr_record m false false
+  | loc_Inexact Lt => Build_shr_record m false true
+  | loc_Inexact Eq => Build_shr_record m true false
+  | loc_Inexact Gt => Build_shr_record m true true
+  end.
+
+Theorem shr_m_shr_record_of_loc :
+  forall m l,
+  shr_m (shr_record_of_loc m l) = m.
+
+Theorem loc_of_shr_record_of_loc :
+  forall m l,
+  loc_of_shr_record (shr_record_of_loc m l) = l.
+
+Definition shr mrs e n :=
+  match n with
+  | Zpos p => (iter_pos shr_1 p mrs, (e + n)%Z)
+  | _ => (mrs, e)
+  end.
+
+Lemma inbetween_shr_1 :
+  forall x mrs e,
+  (0 <= shr_m mrs)%Z ->
+  inbetween_float radix2 (shr_m mrs) e x (loc_of_shr_record mrs) ->
+  inbetween_float radix2 (shr_m (shr_1 mrs)) (e + 1) x (loc_of_shr_record (shr_1 mrs)).
+
+Theorem inbetween_shr :
+  forall x m e l n,
+  (0 <= m)%Z ->
+  inbetween_float radix2 m e x l ->
+  let '(mrs, e') := shr (shr_record_of_loc m l) e n in
+  inbetween_float radix2 (shr_m mrs) e' x (loc_of_shr_record mrs).
+
+Definition shr_fexp m e l :=
+  shr (shr_record_of_loc m l) e (fexp (Zdigits2 m + e) - e).
+
+Theorem shr_truncate :
+  forall m e l,
+  (0 <= m)%Z ->
+  shr_fexp m e l =
+  let '(m', e', l') := truncate radix2 fexp (m, e, l) in (shr_record_of_loc m' l', e').
+
+Inductive mode := mode_NE | mode_ZR | mode_DN | mode_UP | mode_NA.
+
+Definition round_mode m :=
+  match m with
+  | mode_NE => ZnearestE
+  | mode_ZR => Ztrunc
+  | mode_DN => Zfloor
+  | mode_UP => Zceil
+  | mode_NA => ZnearestA
+  end.
+
+Definition choice_mode m sx mx lx :=
+  match m with
+  | mode_NE => cond_incr (round_N (negb (Zeven mx)) lx) mx
+  | mode_ZR => mx
+  | mode_DN => cond_incr (round_sign_DN sx lx) mx
+  | mode_UP => cond_incr (round_sign_UP sx lx) mx
+  | mode_NA => cond_incr (round_N true lx) mx
+  end.
+
+Global Instance valid_rnd_round_mode : forall m, Valid_rnd (round_mode m).
+
+Definition overflow_to_inf m s :=
+  match m with
+  | mode_NE => true
+  | mode_NA => true
+  | mode_ZR => false
+  | mode_UP => negb s
+  | mode_DN => s
+  end.
+
+Definition binary_overflow m s :=
+  if overflow_to_inf m s then F754_infinity s
+  else F754_finite s (match (Zpower 2 prec - 1)%Z with Zpos p => p | _ => xH end) (emax - prec).
+
+Definition binary_round_aux mode sx mx ex lx :=
+  let '(mrs', e') := shr_fexp (Zpos mx) ex lx in
+  let '(mrs'', e'') := shr_fexp (choice_mode mode sx (shr_m mrs') (loc_of_shr_record mrs')) e' loc_Exact in
+  match shr_m mrs'' with
+  | Z0 => F754_zero sx
+  | Zpos m => if Zle_bool e'' (emax - prec) then F754_finite sx m e'' else binary_overflow mode sx
+  | _ => F754_nan false xH 
+  end.
+
+Theorem binary_round_aux_correct :
+  forall mode x mx ex lx,
+  inbetween_float radix2 (Zpos mx) ex (Rabs x) lx ->
+  (ex <= fexp (Zdigits radix2 (Zpos mx) + ex))%Z ->
+  let z := binary_round_aux mode (Rlt_bool x 0) mx ex lx in
+  valid_binary z = true /\
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode mode) x)) (bpow radix2 emax) then
+    FF2R radix2 z = round radix2 fexp (round_mode mode) x /\
+    is_finite_FF z = true /\ sign_FF z = Rlt_bool x 0
+  else
+    z = binary_overflow mode (Rlt_bool x 0).
+
+Lemma Bmult_correct_aux :
+  forall m sx mx ex (Hx : bounded mx ex = true) sy my ey (Hy : bounded my ey = true),
+  let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex) in
+  let y := F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey) in
+  let z := binary_round_aux m (xorb sx sy) (mx * my) (ex + ey) loc_Exact in
+  valid_binary z = true /\
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (x * y))) (bpow radix2 emax) then
+    FF2R radix2 z = round radix2 fexp (round_mode m) (x * y) /\
+    is_finite_FF z = true /\ sign_FF z = xorb sx sy
+  else
+    z = binary_overflow m (xorb sx sy).
+
+Definition Bmult mult_nan m x y :=
+  let f pl := B754_nan (fst pl) (snd pl) in
+  match x, y with
+  | B754_nan _ _, _ | _, B754_nan _ _ => f (mult_nan x y)
+  | B754_infinity sx, B754_infinity sy => B754_infinity (xorb sx sy)
+  | B754_infinity sx, B754_finite sy _ _ _ => B754_infinity (xorb sx sy)
+  | B754_finite sx _ _ _, B754_infinity sy => B754_infinity (xorb sx sy)
+  | B754_infinity _, B754_zero _ => f (mult_nan x y)
+  | B754_zero _, B754_infinity _ => f (mult_nan x y)
+  | B754_finite sx _ _ _, B754_zero sy => B754_zero (xorb sx sy)
+  | B754_zero sx, B754_finite sy _ _ _ => B754_zero (xorb sx sy)
+  | B754_zero sx, B754_zero sy => B754_zero (xorb sx sy)
+  | B754_finite sx mx ex Hx, B754_finite sy my ey Hy =>
+    FF2B _ (proj1 (Bmult_correct_aux m sx mx ex Hx sy my ey Hy))
+  end.
+
+Theorem Bmult_correct :
+  forall mult_nan m x y,
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (B2R x * B2R y))) (bpow radix2 emax) then
+    B2R (Bmult mult_nan m x y) = round radix2 fexp (round_mode m) (B2R x * B2R y) /\
+    is_finite (Bmult mult_nan m x y) = andb (is_finite x) (is_finite y) /\
+    (is_nan (Bmult mult_nan m x y) = false ->
+      Bsign (Bmult mult_nan m x y) = xorb (Bsign x) (Bsign y))
+  else
+    B2FF (Bmult mult_nan m x y) = binary_overflow m (xorb (Bsign x) (Bsign y)).
+
+Definition Bmult_FF mult_nan m x y :=
+  let f pl := F754_nan (fst pl) (snd pl) in
+  match x, y with
+  | F754_nan _ _, _ | _, F754_nan _ _ => f (mult_nan x y)
+  | F754_infinity sx, F754_infinity sy => F754_infinity (xorb sx sy)
+  | F754_infinity sx, F754_finite sy _ _ => F754_infinity (xorb sx sy)
+  | F754_finite sx _ _, F754_infinity sy => F754_infinity (xorb sx sy)
+  | F754_infinity _, F754_zero _ => f (mult_nan x y)
+  | F754_zero _, F754_infinity _ => f (mult_nan x y)
+  | F754_finite sx _ _, F754_zero sy => F754_zero (xorb sx sy)
+  | F754_zero sx, F754_finite sy _ _ => F754_zero (xorb sx sy)
+  | F754_zero sx, F754_zero sy => F754_zero (xorb sx sy)
+  | F754_finite sx mx ex, F754_finite sy my ey =>
+    binary_round_aux m (xorb sx sy) (mx * my) (ex + ey) loc_Exact
+  end.
+
+Theorem B2FF_Bmult :
+  forall mult_nan mult_nan_ff,
+  forall m x y,
+  mult_nan_ff (B2FF x) (B2FF y) = (let '(sr, exist plr _) := mult_nan x y in (sr, plr)) ->
+  B2FF (Bmult mult_nan m x y) = Bmult_FF mult_nan_ff m (B2FF x) (B2FF y).
+
+Definition shl_align mx ex ex' :=
+  match (ex' - ex)%Z with
+  | Zneg d => (shift_pos d mx, ex')
+  | _ => (mx, ex)
+  end.
+
+Theorem shl_align_correct :
+  forall mx ex ex',
+  let (mx', ex'') := shl_align mx ex ex' in
+  F2R (Float radix2 (Zpos mx) ex) = F2R (Float radix2 (Zpos mx') ex'') /\
+  (ex'' <= ex')%Z.
+
+Theorem snd_shl_align :
+  forall mx ex ex',
+  (ex' <= ex)%Z ->
+  snd (shl_align mx ex ex') = ex'.
+
+Definition shl_align_fexp mx ex :=
+  shl_align mx ex (fexp (Zpos (digits2_pos mx) + ex)).
+
+Theorem shl_align_fexp_correct :
+  forall mx ex,
+  let (mx', ex') := shl_align_fexp mx ex in
+  F2R (Float radix2 (Zpos mx) ex) = F2R (Float radix2 (Zpos mx') ex') /\
+  (ex' <= fexp (Zdigits radix2 (Zpos mx') + ex'))%Z.
+
+Definition binary_round m sx mx ex :=
+  let '(mz, ez) := shl_align_fexp mx ex in binary_round_aux m sx mz ez loc_Exact.
+
+Theorem binary_round_correct :
+  forall m sx mx ex,
+  let z := binary_round m sx mx ex in
+  valid_binary z = true /\
+  let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex) in
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) x)) (bpow radix2 emax) then
+    FF2R radix2 z = round radix2 fexp (round_mode m) x /\
+    is_finite_FF z = true /\
+    sign_FF z = sx
+  else
+    z = binary_overflow m sx.
+
+Definition binary_normalize mode m e szero :=
+  match m with
+  | Z0 => B754_zero szero
+  | Zpos m => FF2B _ (proj1 (binary_round_correct mode false m e))
+  | Zneg m => FF2B _ (proj1 (binary_round_correct mode true m e))
+  end.
+
+Theorem binary_normalize_correct :
+  forall m mx ex szero,
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (F2R (Float radix2 mx ex)))) (bpow radix2 emax) then
+    B2R (binary_normalize m mx ex szero) = round radix2 fexp (round_mode m) (F2R (Float radix2 mx ex)) /\
+    is_finite (binary_normalize m mx ex szero) = true /\
+    Bsign (binary_normalize m mx ex szero) =
+      match Rcompare (F2R (Float radix2 mx ex)) 0 with
+        | Eq => szero
+        | Lt => true
+        | Gt => false
+      end
+  else
+    B2FF (binary_normalize m mx ex szero) = binary_overflow m (Rlt_bool (F2R (Float radix2 mx ex)) 0).
+
+Definition Bplus plus_nan m x y :=
+  let f pl := B754_nan (fst pl) (snd pl) in
+  match x, y with
+  | B754_nan _ _, _ | _, B754_nan _ _ => f (plus_nan x y)
+  | B754_infinity sx, B754_infinity sy =>
+    if Bool.eqb sx sy then x else f (plus_nan x y)
+  | B754_infinity _, _ => x
+  | _, B754_infinity _ => y
+  | B754_zero sx, B754_zero sy =>
+    if Bool.eqb sx sy then x else
+    match m with mode_DN => B754_zero true | _ => B754_zero false end
+  | B754_zero _, _ => y
+  | _, B754_zero _ => x
+  | B754_finite sx mx ex Hx, B754_finite sy my ey Hy =>
+    let ez := Zmin ex ey in
+    binary_normalize m (Zplus (cond_Zopp sx (Zpos (fst (shl_align mx ex ez)))) (cond_Zopp sy (Zpos (fst (shl_align my ey ez)))))
+      ez (match m with mode_DN => true | _ => false end)
+  end.
+
+Theorem Bplus_correct :
+  forall plus_nan m x y,
+  is_finite x = true ->
+  is_finite y = true ->
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (B2R x + B2R y))) (bpow radix2 emax) then
+    B2R (Bplus plus_nan m x y) = round radix2 fexp (round_mode m) (B2R x + B2R y) /\
+    is_finite (Bplus plus_nan m x y) = true /\
+    Bsign (Bplus plus_nan m x y) =
+      match Rcompare (B2R x + B2R y) 0 with
+        | Eq => match m with mode_DN => orb (Bsign x) (Bsign y)
+                                 | _ => andb (Bsign x) (Bsign y) end
+        | Lt => true
+        | Gt => false
+      end
+  else
+    (B2FF (Bplus plus_nan m x y) = binary_overflow m (Bsign x) /\ Bsign x = Bsign y).
+
+Definition Bminus minus_nan m x y := Bplus minus_nan m x (Bopp pair y).
+
+Theorem Bminus_correct :
+  forall minus_nan m x y,
+  is_finite x = true ->
+  is_finite y = true ->
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (B2R x - B2R y))) (bpow radix2 emax) then
+    B2R (Bminus minus_nan m x y) = round radix2 fexp (round_mode m) (B2R x - B2R y) /\
+    is_finite (Bminus minus_nan m x y) = true /\
+    Bsign (Bminus minus_nan m x y) =
+      match Rcompare (B2R x - B2R y) 0 with
+        | Eq => match m with mode_DN => orb (Bsign x) (negb (Bsign y))
+                                 | _ => andb (Bsign x) (negb (Bsign y)) end
+        | Lt => true
+        | Gt => false
+      end
+  else
+    (B2FF (Bminus minus_nan m x y) = binary_overflow m (Bsign x) /\ Bsign x = negb (Bsign y)).
+
+Definition Fdiv_core_binary m1 e1 m2 e2 :=
+  let d1 := Zdigits2 m1 in
+  let d2 := Zdigits2 m2 in
+  let e := (e1 - e2)%Z in
+  let (m, e') :=
+    match (d2 + prec - d1)%Z with
+    | Zpos p => (Z.shiftl m1 (Zpos p), e + Zneg p)%Z
+    | _ => (m1, e)
+    end in
+  let '(q, r) :=  Zfast_div_eucl m m2 in
+  (q, e', new_location m2 r loc_Exact).
+
+Lemma Bdiv_correct_aux :
+  forall m sx mx ex sy my ey,
+  let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex) in
+  let y := F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey) in
+  let z :=
+    let '(mz, ez, lz) := Fdiv_core_binary (Zpos mx) ex (Zpos my) ey in
+    match mz with
+    | Zpos mz => binary_round_aux m (xorb sx sy) mz ez lz
+    | _ => F754_nan false xH 
+    end in
+  valid_binary z = true /\
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (x / y))) (bpow radix2 emax) then
+    FF2R radix2 z = round radix2 fexp (round_mode m) (x / y) /\
+    is_finite_FF z = true /\ sign_FF z = xorb sx sy
+  else
+    z = binary_overflow m (xorb sx sy).
+
+Definition Bdiv div_nan m x y :=
+  let f pl := B754_nan (fst pl) (snd pl) in
+  match x, y with
+  | B754_nan _ _, _ | _, B754_nan _ _ => f (div_nan x y)
+  | B754_infinity sx, B754_infinity sy => f (div_nan x y)
+  | B754_infinity sx, B754_finite sy _ _ _ => B754_infinity (xorb sx sy)
+  | B754_finite sx _ _ _, B754_infinity sy => B754_zero (xorb sx sy)
+  | B754_infinity sx, B754_zero sy => B754_infinity (xorb sx sy)
+  | B754_zero sx, B754_infinity sy => B754_zero (xorb sx sy)
+  | B754_finite sx _ _ _, B754_zero sy => B754_infinity (xorb sx sy)
+  | B754_zero sx, B754_finite sy _ _ _ => B754_zero (xorb sx sy)
+  | B754_zero sx, B754_zero sy => f (div_nan x y)
+  | B754_finite sx mx ex _, B754_finite sy my ey _ =>
+    FF2B _ (proj1 (Bdiv_correct_aux m sx mx ex sy my ey))
+  end.
+
+Theorem Bdiv_correct :
+  forall div_nan m x y,
+  B2R y <> 0%R ->
+  if Rlt_bool (Rabs (round radix2 fexp (round_mode m) (B2R x / B2R y))) (bpow radix2 emax) then
+    B2R (Bdiv div_nan m x y) = round radix2 fexp (round_mode m) (B2R x / B2R y) /\
+    is_finite (Bdiv div_nan m x y) = is_finite x /\
+    (is_nan (Bdiv div_nan m x y) = false ->
+      Bsign (Bdiv div_nan m x y) = xorb (Bsign x) (Bsign y))
+  else
+    B2FF (Bdiv div_nan m x y) = binary_overflow m (xorb (Bsign x) (Bsign y)).
+
+Definition Fsqrt_core_binary m e :=
+  let d := Zdigits2 m in
+  let s := Zmax (2 * prec - d) 0 in
+  let e' := (e - s)%Z in
+  let (s', e'') := if Zeven e' then (s, e') else (s + 1, e' - 1)%Z in
+  let m' :=
+    match s' with
+    | Zpos p => Z.shiftl m (Zpos p)
+    | _ => m
+    end in
+  let (q, r) := Z.sqrtrem m' in
+  let l :=
+    if Zeq_bool r 0 then loc_Exact
+    else loc_Inexact (if Zle_bool r q then Lt else Gt) in
+  (q, Zdiv2 e'', l).
+
+Lemma Bsqrt_correct_aux :
+  forall m mx ex (Hx : bounded mx ex = true),
+  let x := F2R (Float radix2 (Zpos mx) ex) in
+  let z :=
+    let '(mz, ez, lz) := Fsqrt_core_binary (Zpos mx) ex in
+    match mz with
+    | Zpos mz => binary_round_aux m false mz ez lz
+    | _ => F754_nan false xH 
+    end in
+  valid_binary z = true /\
+  FF2R radix2 z = round radix2 fexp (round_mode m) (sqrt x) /\
+  is_finite_FF z = true /\ sign_FF z = false.
+
+Definition Bsqrt sqrt_nan m x :=
+  let f pl := B754_nan (fst pl) (snd pl) in
+  match x with
+  | B754_nan sx plx => f (sqrt_nan x)
+  | B754_infinity false => x
+  | B754_infinity true => f (sqrt_nan x)
+  | B754_finite true _ _ _ => f (sqrt_nan x)
+  | B754_zero _ => x
+  | B754_finite sx mx ex Hx =>
+    FF2B _ (proj1 (Bsqrt_correct_aux m mx ex Hx))
+  end.
+
+Theorem Bsqrt_correct :
+  forall sqrt_nan m x,
+  B2R (Bsqrt sqrt_nan m x) = round radix2 fexp (round_mode m) (sqrt (B2R x)) /\
+  is_finite (Bsqrt sqrt_nan m x) = match x with B754_zero _ => true | B754_finite false _ _ _ => true | _ => false end /\
+  (is_nan (Bsqrt sqrt_nan m x) = false -> Bsign (Bsqrt sqrt_nan m x) = Bsign x).
+
+End Binary. *)
+
+Require Import Fappli_IEEE_bits.
+(* Fappli_IEEE_bits:
+Require Import Fcore.
+Require Import Fcore_digits.
+Require Import Fcalc_digits.
+Require Import Fappli_IEEE.
+
+Section Binary_Bits.
+
+Arguments exist {A P} x _.
+Arguments B754_zero {prec emax} _.
+Arguments B754_infinity {prec emax} _.
+Arguments B754_nan {prec emax} _ _.
+Arguments B754_finite {prec emax} _ m e _.
+
+Variable mw ew : Z.
+Hypothesis Hmw : (0 < mw)%Z.
+Hypothesis Hew : (0 < ew)%Z.
+
+Let emax := Zpower 2 (ew - 1).
+Let prec := (mw + 1)%Z.
+Let emin := (3 - emax - prec)%Z.
+Let binary_float := binary_float prec emax.
+
+Let Hprec : (0 < prec)%Z.
+
+Let Hm_gt_0 : (0 < 2^mw)%Z.
+
+Let He_gt_0 : (0 < 2^ew)%Z.
+
+Hypothesis Hmax : (prec < emax)%Z.
+
+Definition join_bits (s : bool) m e :=
+  (Z.shiftl ((if s then Zpower 2 ew else 0) + e) mw + m)%Z.
+
+Lemma join_bits_range :
+  forall s m e,
+  (0 <= m < 2^mw)%Z ->
+  (0 <= e < 2^ew)%Z ->
+  (0 <= join_bits s m e < 2 ^ (mw + ew + 1))%Z.
+
+Definition split_bits x :=
+  let mm := Zpower 2 mw in
+  let em := Zpower 2 ew in
+  (Zle_bool (mm * em) x, Zmod x mm, Zmod (Zdiv x mm) em)%Z.
+
+Theorem split_join_bits :
+  forall s m e,
+  (0 <= m < Zpower 2 mw)%Z ->
+  (0 <= e < Zpower 2 ew)%Z ->
+  split_bits (join_bits s m e) = (s, m, e).
+
+Theorem join_split_bits :
+  forall x,
+  (0 <= x < Zpower 2 (mw + ew + 1))%Z ->
+  let '(s, m, e) := split_bits x in
+  join_bits s m e = x.
+
+Theorem split_bits_inj :
+  forall x y,
+  (0 <= x < Zpower 2 (mw + ew + 1))%Z ->
+  (0 <= y < Zpower 2 (mw + ew + 1))%Z ->
+  split_bits x = split_bits y ->
+  x = y.
+
+Definition bits_of_binary_float (x : binary_float) :=
+  match x with
+  | B754_zero sx => join_bits sx 0 0
+  | B754_infinity sx => join_bits sx 0 (Zpower 2 ew - 1)
+  | B754_nan sx (exist plx _) => join_bits sx (Zpos plx) (Zpower 2 ew - 1)
+  | B754_finite sx mx ex _ =>
+    let m := (Zpos mx - Zpower 2 mw)%Z in
+    if Zle_bool 0 m then
+      join_bits sx m (ex - emin + 1)
+    else
+      join_bits sx (Zpos mx) 0
+  end.
+
+Definition split_bits_of_binary_float (x : binary_float) :=
+  match x with
+  | B754_zero sx => (sx, 0, 0)%Z
+  | B754_infinity sx => (sx, 0, Zpower 2 ew - 1)%Z
+  | B754_nan sx (exist plx _) => (sx, Zpos plx, Zpower 2 ew - 1)%Z
+  | B754_finite sx mx ex _ =>
+    let m := (Zpos mx - Zpower 2 mw)%Z in
+    if Zle_bool 0 m then
+      (sx, m, ex - emin + 1)%Z
+    else
+      (sx, Zpos mx, 0)%Z
+  end.
+
+Theorem split_bits_of_binary_float_correct :
+  forall x,
+  split_bits (bits_of_binary_float x) = split_bits_of_binary_float x.
+
+Theorem bits_of_binary_float_range:
+  forall x, (0 <= bits_of_binary_float x < 2^(mw+ew+1))%Z.
+
+Definition binary_float_of_bits_aux x :=
+  let '(sx, mx, ex) := split_bits x in
+  if Zeq_bool ex 0 then
+    match mx with
+    | Z0 => F754_zero sx
+    | Zpos px => F754_finite sx px emin
+    | Zneg _ => F754_nan false xH 
+    end
+  else if Zeq_bool ex (Zpower 2 ew - 1) then
+    match mx with
+      | Z0 => F754_infinity sx
+      | Zpos plx => F754_nan sx plx
+      | Zneg _ => F754_nan false xH 
+    end
+  else
+    match (mx + Zpower 2 mw)%Z with
+    | Zpos px => F754_finite sx px (ex + emin - 1)
+    | _ => F754_nan false xH 
+    end.
+
+Lemma binary_float_of_bits_aux_correct :
+  forall x,
+  valid_binary prec emax (binary_float_of_bits_aux x) = true.
+
+Definition binary_float_of_bits x :=
+  FF2B prec emax _ (binary_float_of_bits_aux_correct x).
+
+Theorem binary_float_of_bits_of_binary_float :
+  forall x,
+  binary_float_of_bits (bits_of_binary_float x) = x.
+
+Theorem bits_of_binary_float_of_bits :
+  forall x,
+  (0 <= x < 2^(mw+ew+1))%Z ->
+  bits_of_binary_float (binary_float_of_bits x) = x.
+
+End Binary_Bits.
+
+Section B32_Bits.
+
+Arguments B754_nan {prec emax} _ _.
+
+Definition binary32 := binary_float 24 128.
+
+Let Hprec : (0 < 24)%Z.
+
+Let Hprec_emax : (24 < 128)%Z.
+
+Definition default_nan_pl32 : bool * nan_pl 24 :=
+  (false, exist _ (iter_nat xO 22 xH) (refl_equal true)).
+
+Definition unop_nan_pl32 (f : binary32) : bool * nan_pl 24 :=
+  match f with
+  | B754_nan s pl => (s, pl)
+  | _ => default_nan_pl32
+  end.
+
+Definition binop_nan_pl32 (f1 f2 : binary32) : bool * nan_pl 24 :=
+  match f1, f2 with
+  | B754_nan s1 pl1, _ => (s1, pl1)
+  | _, B754_nan s2 pl2 => (s2, pl2)
+  | _, _ => default_nan_pl32
+  end.
+
+Definition b32_opp := Bopp 24 128 pair.
+Definition b32_plus := Bplus _ _ Hprec Hprec_emax binop_nan_pl32.
+Definition b32_minus := Bminus _ _ Hprec Hprec_emax binop_nan_pl32.
+Definition b32_mult := Bmult _ _ Hprec Hprec_emax binop_nan_pl32.
+Definition b32_div := Bdiv _ _ Hprec Hprec_emax binop_nan_pl32.
+Definition b32_sqrt := Bsqrt _ _ Hprec Hprec_emax unop_nan_pl32.
+
+Definition b32_of_bits : Z -> binary32 := binary_float_of_bits 23 8 (refl_equal _) (refl_equal _) (refl_equal _).
+Definition bits_of_b32 : binary32 -> Z := bits_of_binary_float 23 8.
+
+End B32_Bits.
+
+Section B64_Bits.
+
+Arguments B754_nan {prec emax} _ _.
+
+Definition binary64 := binary_float 53 1024.
+
+Let Hprec : (0 < 53)%Z.
+
+Let Hprec_emax : (53 < 1024)%Z.
+
+Definition default_nan_pl64 : bool * nan_pl 53 :=
+  (false, exist _ (iter_nat xO 51 xH) (refl_equal true)).
+
+Definition unop_nan_pl64 (f : binary64) : bool * nan_pl 53 :=
+  match f with
+  | B754_nan s pl => (s, pl)
+  | _ => default_nan_pl64
+  end.
+
+Definition binop_nan_pl64 (pl1 pl2 : binary64) : bool * nan_pl 53 :=
+  match pl1, pl2 with
+  | B754_nan s1 pl1, _ => (s1, pl1)
+  | _, B754_nan s2 pl2 => (s2, pl2)
+  | _, _ => default_nan_pl64
+  end.
+
+Definition b64_opp := Bopp 53 1024 pair.
+Definition b64_plus := Bplus _ _ Hprec Hprec_emax binop_nan_pl64.
+Definition b64_minus := Bminus _ _ Hprec Hprec_emax binop_nan_pl64.
+Definition b64_mult := Bmult _ _ Hprec Hprec_emax binop_nan_pl64.
+Definition b64_div := Bdiv _ _ Hprec Hprec_emax binop_nan_pl64.
+Definition b64_sqrt := Bsqrt _ _ Hprec Hprec_emax unop_nan_pl64.
+
+Definition b64_of_bits : Z -> binary64 := binary_float_of_bits 52 11 (refl_equal _) (refl_equal _) (refl_equal _).
+Definition bits_of_b64 : binary64 -> Z := bits_of_binary_float 52 11.
+
+End B64_Bits. *)
+
+
+
+Definition ptr64 := false.
+
+
+
+Definition big_endian := true.
+
+
+
+Definition align_int64 := 8%Z.
+
+Definition align_float64 := 8%Z.
+
+
+
+Parameter ppc64 : bool.
+
+
+
+Definition splitlong := negb ppc64.
+
+
+
+Lemma splitlong_ptr32: splitlong = true -> ptr64 = false.
+
+Proof.
+
+  reflexivity.
+
+Qed.
+
+
+
+Program Definition default_pl_64 : bool * nan_pl 53 :=
+
+  (false, iter_nat 51 _ xO xH).
+
+
+
+Definition choose_binop_pl_64 (s1: bool) (pl1: nan_pl 53) (s2: bool) (pl2: nan_pl 53) :=
+
+  false.                        
+
+
+
+Program Definition default_pl_32 : bool * nan_pl 24 :=
+
+  (false, iter_nat 22 _ xO xH).
+
+
+
+Definition choose_binop_pl_32 (s1: bool) (pl1: nan_pl 24) (s2: bool) (pl2: nan_pl 24) :=
+
+  false.                        
+
+
+
+Definition float_of_single_preserves_sNaN := true.
+
+
+
+Global Opaque ptr64 big_endian splitlong
+
+              default_pl_64 choose_binop_pl_64
+
+              default_pl_32 choose_binop_pl_32
+
+              float_of_single_preserves_sNaN.

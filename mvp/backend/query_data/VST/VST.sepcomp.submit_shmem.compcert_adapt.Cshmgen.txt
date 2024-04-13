@@ -1,0 +1,2107 @@
+
+
+Require Import Coqlib.
+
+Require Import Errors.
+
+Require Import Integers.
+
+Require Import Floats.
+
+Require Import AST.
+
+Require Import Ctypes.
+
+Require Import Cop.
+
+Require Import Clight.
+
+Require Import Cminor.
+(* Cminor:
+Require Import Coqlib.
+Require Import Maps.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+Require Import Events.
+Require Import Values.
+Require Import Memory.
+Require Import Globalenvs.
+Require Import Smallstep.
+Require Import Switch.
+
+Inductive constant : Type :=
+  | Ointconst: int -> constant     
+  | Ofloatconst: float -> constant 
+  | Olongconst: int64 -> constant  
+  | Oaddrsymbol: ident -> int -> constant 
+  | Oaddrstack: int -> constant.   
+
+Inductive unary_operation : Type :=
+  | Ocast8unsigned: unary_operation        
+  | Ocast8signed: unary_operation          
+  | Ocast16unsigned: unary_operation       
+  | Ocast16signed: unary_operation         
+  | Onegint: unary_operation               
+  | Onotint: unary_operation               
+  | Onegf: unary_operation                 
+  | Oabsf: unary_operation                 
+  | Osingleoffloat: unary_operation        
+  | Ointoffloat: unary_operation           
+  | Ointuoffloat: unary_operation          
+  | Ofloatofint: unary_operation           
+  | Ofloatofintu: unary_operation          
+  | Onegl: unary_operation                 
+  | Onotl: unary_operation                 
+  | Ointoflong: unary_operation            
+  | Olongofint: unary_operation            
+  | Olongofintu: unary_operation           
+  | Olongoffloat: unary_operation          
+  | Olonguoffloat: unary_operation         
+  | Ofloatoflong: unary_operation          
+  | Ofloatoflongu: unary_operation         
+  | Osingleoflong: unary_operation         
+  | Osingleoflongu: unary_operation.       
+
+Inductive binary_operation : Type :=
+  | Oadd: binary_operation                 
+  | Osub: binary_operation                 
+  | Omul: binary_operation                 
+  | Odiv: binary_operation                 
+  | Odivu: binary_operation                
+  | Omod: binary_operation                 
+  | Omodu: binary_operation                
+  | Oand: binary_operation                 
+  | Oor: binary_operation                  
+  | Oxor: binary_operation                 
+  | Oshl: binary_operation                 
+  | Oshr: binary_operation                 
+  | Oshru: binary_operation                
+  | Oaddf: binary_operation                
+  | Osubf: binary_operation                
+  | Omulf: binary_operation                
+  | Odivf: binary_operation                
+  | Oaddl: binary_operation                
+  | Osubl: binary_operation                
+  | Omull: binary_operation                
+  | Odivl: binary_operation                
+  | Odivlu: binary_operation               
+  | Omodl: binary_operation                
+  | Omodlu: binary_operation               
+  | Oandl: binary_operation                
+  | Oorl: binary_operation                 
+  | Oxorl: binary_operation                
+  | Oshll: binary_operation                
+  | Oshrl: binary_operation                
+  | Oshrlu: binary_operation               
+  | Ocmp: comparison -> binary_operation   
+  | Ocmpu: comparison -> binary_operation  
+  | Ocmpf: comparison -> binary_operation  
+  | Ocmpl: comparison -> binary_operation  
+  | Ocmplu: comparison -> binary_operation. 
+
+Inductive expr : Type :=
+  | Evar : ident -> expr
+  | Econst : constant -> expr
+  | Eunop : unary_operation -> expr -> expr
+  | Ebinop : binary_operation -> expr -> expr -> expr
+  | Eload : memory_chunk -> expr -> expr.
+
+Definition label := ident.
+
+Inductive stmt : Type :=
+  | Sskip: stmt
+  | Sassign : ident -> expr -> stmt
+  | Sstore : memory_chunk -> expr -> expr -> stmt
+  | Scall : option ident -> signature -> expr -> list expr -> stmt
+  | Stailcall: signature -> expr -> list expr -> stmt
+  | Sbuiltin : option ident -> external_function -> list expr -> stmt
+  | Sseq: stmt -> stmt -> stmt
+  | Sifthenelse: expr -> stmt -> stmt -> stmt
+  | Sloop: stmt -> stmt
+  | Sblock: stmt -> stmt
+  | Sexit: nat -> stmt
+  | Sswitch: expr -> list (int * nat) -> nat -> stmt
+  | Sreturn: option expr -> stmt
+  | Slabel: label -> stmt -> stmt
+  | Sgoto: label -> stmt.
+
+Record function : Type := mkfunction {
+  fn_sig: signature;
+  fn_params: list ident;
+  fn_vars: list ident;
+  fn_stackspace: Z;
+  fn_body: stmt
+}.
+
+Definition fundef := AST.fundef function.
+Definition program := AST.program fundef unit.
+
+Definition funsig (fd: fundef) :=
+  match fd with
+  | Internal f => fn_sig f
+  | External ef => ef_sig ef
+  end.
+
+Definition genv := Genv.t fundef unit.
+Definition env := PTree.t val.
+
+Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env :=
+  match il, vl with
+  | i1 :: is, v1 :: vs => PTree.set i1 v1 (set_params vs is)
+  | i1 :: is, nil => PTree.set i1 Vundef (set_params nil is)
+  | _, _ => PTree.empty val
+  end.
+
+Fixpoint set_locals (il: list ident) (e: env) {struct il} : env :=
+  match il with
+  | nil => e
+  | i1 :: is => PTree.set i1 Vundef (set_locals is e)
+  end.
+
+Definition set_optvar (optid: option ident) (v: val) (e: env) : env :=
+  match optid with
+  | None => e
+  | Some id => PTree.set id v e
+  end.
+
+Inductive cont: Type :=
+  | Kstop: cont                         
+  | Kseq: stmt -> cont -> cont          
+  | Kblock: cont -> cont                
+  | Kcall: option ident -> function -> val -> env -> cont -> cont.
+                                        
+Inductive state: Type :=
+  | State:                      
+      forall (f: function)              
+             (s: stmt)                  
+             (k: cont)                  
+             (sp: val)                  
+             (e: env)                   
+             (m: mem),                  
+      state
+  | Callstate:                  
+      forall (f: fundef)                
+             (args: list val)           
+             (k: cont)                  
+             (m: mem),                  
+      state
+  | Returnstate:                
+      forall (v: val)                   
+             (k: cont)                  
+             (m: mem),                  
+      state.
+
+Section RELSEM.
+
+Variable ge: genv.
+
+Definition eval_constant (sp: val) (cst: constant) : option val :=
+  match cst with
+  | Ointconst n => Some (Vint n)
+  | Ofloatconst n => Some (Vfloat n)
+  | Olongconst n => Some (Vlong n)
+  | Oaddrsymbol s ofs =>
+      Some(match Genv.find_symbol ge s with
+           | None => Vundef
+           | Some b => Vptr b ofs end)
+  | Oaddrstack ofs => Some (Val.add sp (Vint ofs))
+  end.
+
+Definition eval_unop (op: unary_operation) (arg: val) : option val :=
+  match op with
+  | Ocast8unsigned => Some (Val.zero_ext 8 arg)
+  | Ocast8signed => Some (Val.sign_ext 8 arg)
+  | Ocast16unsigned => Some (Val.zero_ext 16 arg)
+  | Ocast16signed => Some (Val.sign_ext 16 arg)
+  | Onegint => Some (Val.negint arg)
+  | Onotint => Some (Val.notint arg)
+  | Onegf => Some (Val.negf arg)
+  | Oabsf => Some (Val.absf arg)
+  | Osingleoffloat => Some (Val.singleoffloat arg)
+  | Ointoffloat => Val.intoffloat arg
+  | Ointuoffloat => Val.intuoffloat arg
+  | Ofloatofint => Val.floatofint arg
+  | Ofloatofintu => Val.floatofintu arg
+  | Onegl => Some (Val.negl arg)
+  | Onotl => Some (Val.notl arg)
+  | Ointoflong => Some (Val.loword arg)
+  | Olongofint => Some (Val.longofint arg)
+  | Olongofintu => Some (Val.longofintu arg)
+  | Olongoffloat => Val.longoffloat arg
+  | Olonguoffloat => Val.longuoffloat arg
+  | Ofloatoflong => Val.floatoflong arg
+  | Ofloatoflongu => Val.floatoflongu arg
+  | Osingleoflong => Val.singleoflong arg
+  | Osingleoflongu => Val.singleoflongu arg
+  end.
+
+Definition eval_binop
+            (op: binary_operation) (arg1 arg2: val) (m: mem): option val :=
+  match op with
+  | Oadd => Some (Val.add arg1 arg2)
+  | Osub => Some (Val.sub arg1 arg2)
+  | Omul => Some (Val.mul arg1 arg2)
+  | Odiv => Val.divs arg1 arg2
+  | Odivu => Val.divu arg1 arg2
+  | Omod => Val.mods arg1 arg2
+  | Omodu => Val.modu arg1 arg2
+  | Oand => Some (Val.and arg1 arg2)
+  | Oor => Some (Val.or arg1 arg2)
+  | Oxor => Some (Val.xor arg1 arg2)
+  | Oshl => Some (Val.shl arg1 arg2)
+  | Oshr => Some (Val.shr arg1 arg2)
+  | Oshru => Some (Val.shru arg1 arg2)
+  | Oaddf => Some (Val.addf arg1 arg2)
+  | Osubf => Some (Val.subf arg1 arg2)
+  | Omulf => Some (Val.mulf arg1 arg2)
+  | Odivf => Some (Val.divf arg1 arg2)
+  | Oaddl => Some (Val.addl arg1 arg2)
+  | Osubl => Some (Val.subl arg1 arg2)
+  | Omull => Some (Val.mull arg1 arg2)
+  | Odivl => Val.divls arg1 arg2
+  | Odivlu => Val.divlu arg1 arg2
+  | Omodl => Val.modls arg1 arg2
+  | Omodlu => Val.modlu arg1 arg2
+  | Oandl => Some (Val.andl arg1 arg2)
+  | Oorl => Some (Val.orl arg1 arg2)
+  | Oxorl => Some (Val.xorl arg1 arg2)
+  | Oshll => Some (Val.shll arg1 arg2)
+  | Oshrl => Some (Val.shrl arg1 arg2)
+  | Oshrlu => Some (Val.shrlu arg1 arg2)
+  | Ocmp c => Some (Val.cmp c arg1 arg2)
+  | Ocmpu c => Some (Val.cmpu (Mem.valid_pointer m) c arg1 arg2)
+  | Ocmpf c => Some (Val.cmpf c arg1 arg2)
+  | Ocmpl c => Val.cmpl c arg1 arg2
+  | Ocmplu c => Val.cmplu c arg1 arg2
+  end.
+
+Section EVAL_EXPR.
+
+Variable sp: val.
+Variable e: env.
+Variable m: mem.
+
+Inductive eval_expr: expr -> val -> Prop :=
+  | eval_Evar: forall id v,
+      PTree.get id e = Some v ->
+      eval_expr (Evar id) v
+  | eval_Econst: forall cst v,
+      eval_constant sp cst = Some v ->
+      eval_expr (Econst cst) v
+  | eval_Eunop: forall op a1 v1 v,
+      eval_expr a1 v1 ->
+      eval_unop op v1 = Some v ->
+      eval_expr (Eunop op a1) v
+  | eval_Ebinop: forall op a1 a2 v1 v2 v,
+      eval_expr a1 v1 ->
+      eval_expr a2 v2 ->
+      eval_binop op v1 v2 m = Some v ->
+      eval_expr (Ebinop op a1 a2) v
+  | eval_Eload: forall chunk addr vaddr v,
+      eval_expr addr vaddr ->
+      Mem.loadv chunk m vaddr = Some v ->
+      eval_expr (Eload chunk addr) v.
+
+Inductive eval_exprlist: list expr -> list val -> Prop :=
+  | eval_Enil:
+      eval_exprlist nil nil
+  | eval_Econs: forall a1 al v1 vl,
+      eval_expr a1 v1 -> eval_exprlist al vl ->
+      eval_exprlist (a1 :: al) (v1 :: vl).
+
+End EVAL_EXPR.
+
+Fixpoint call_cont (k: cont) : cont :=
+  match k with
+  | Kseq s k => call_cont k
+  | Kblock k => call_cont k
+  | _ => k
+  end.
+
+Definition is_call_cont (k: cont) : Prop :=
+  match k with
+  | Kstop => True
+  | Kcall _ _ _ _ _ => True
+  | _ => False
+  end.
+
+Fixpoint find_label (lbl: label) (s: stmt) (k: cont)
+                    {struct s}: option (stmt * cont) :=
+  match s with
+  | Sseq s1 s2 =>
+      match find_label lbl s1 (Kseq s2 k) with
+      | Some sk => Some sk
+      | None => find_label lbl s2 k
+      end
+  | Sifthenelse a s1 s2 =>
+      match find_label lbl s1 k with
+      | Some sk => Some sk
+      | None => find_label lbl s2 k
+      end
+  | Sloop s1 =>
+      find_label lbl s1 (Kseq (Sloop s1) k)
+  | Sblock s1 =>
+      find_label lbl s1 (Kblock k)
+  | Slabel lbl' s' =>
+      if ident_eq lbl lbl' then Some(s', k) else find_label lbl s' k
+  | _ => None
+  end.
+
+Inductive step: state -> trace -> state -> Prop :=
+
+  | step_skip_seq: forall f s k sp e m,
+      step (State f Sskip (Kseq s k) sp e m)
+        E0 (State f s k sp e m)
+  | step_skip_block: forall f k sp e m,
+      step (State f Sskip (Kblock k) sp e m)
+        E0 (State f Sskip k sp e m)
+  | step_skip_call: forall f k sp e m m',
+      is_call_cont k ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      step (State f Sskip k (Vptr sp Int.zero) e m)
+        E0 (Returnstate Vundef k m')
+
+  | step_assign: forall f id a k sp e m v,
+      eval_expr sp e m a v ->
+      step (State f (Sassign id a) k sp e m)
+        E0 (State f Sskip k sp (PTree.set id v e) m)
+
+  | step_store: forall f chunk addr a k sp e m vaddr v m',
+      eval_expr sp e m addr vaddr ->
+      eval_expr sp e m a v ->
+      Mem.storev chunk m vaddr v = Some m' ->
+      step (State f (Sstore chunk addr a) k sp e m)
+        E0 (State f Sskip k sp e m')
+
+  | step_call: forall f optid sig a bl k sp e m vf vargs fd,
+      eval_expr sp e m a vf ->
+      eval_exprlist sp e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      step (State f (Scall optid sig a bl) k sp e m)
+        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
+
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+      eval_expr (Vptr sp Int.zero) e m a vf ->
+      eval_exprlist (Vptr sp Int.zero) e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      step (State f (Stailcall sig a bl) k (Vptr sp Int.zero) e m)
+        E0 (Callstate fd vargs (call_cont k) m')
+
+  | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
+      eval_exprlist sp e m bl vargs ->
+      external_call ef ge vargs m t vres m' ->
+      step (State f (Sbuiltin optid ef bl) k sp e m)
+         t (State f Sskip k sp (set_optvar optid vres e) m')
+
+  | step_seq: forall f s1 s2 k sp e m,
+      step (State f (Sseq s1 s2) k sp e m)
+        E0 (State f s1 (Kseq s2 k) sp e m)
+
+  | step_ifthenelse: forall f a s1 s2 k sp e m v b,
+      eval_expr sp e m a v ->
+      Val.bool_of_val v b ->
+      step (State f (Sifthenelse a s1 s2) k sp e m)
+        E0 (State f (if b then s1 else s2) k sp e m)
+
+  | step_loop: forall f s k sp e m,
+      step (State f (Sloop s) k sp e m)
+        E0 (State f s (Kseq (Sloop s) k) sp e m)
+
+  | step_block: forall f s k sp e m,
+      step (State f (Sblock s) k sp e m)
+        E0 (State f s (Kblock k) sp e m)
+
+  | step_exit_seq: forall f n s k sp e m,
+      step (State f (Sexit n) (Kseq s k) sp e m)
+        E0 (State f (Sexit n) k sp e m)
+  | step_exit_block_0: forall f k sp e m,
+      step (State f (Sexit O) (Kblock k) sp e m)
+        E0 (State f Sskip k sp e m)
+  | step_exit_block_S: forall f n k sp e m,
+      step (State f (Sexit (S n)) (Kblock k) sp e m)
+        E0 (State f (Sexit n) k sp e m)
+
+  | step_switch: forall f a cases default k sp e m n,
+      eval_expr sp e m a (Vint n) ->
+      step (State f (Sswitch a cases default) k sp e m)
+        E0 (State f (Sexit (switch_target n default cases)) k sp e m)
+
+  | step_return_0: forall f k sp e m m',
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      step (State f (Sreturn None) k (Vptr sp Int.zero) e m)
+        E0 (Returnstate Vundef (call_cont k) m')
+  | step_return_1: forall f a k sp e m v m',
+      eval_expr (Vptr sp Int.zero) e m a v ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      step (State f (Sreturn (Some a)) k (Vptr sp Int.zero) e m)
+        E0 (Returnstate v (call_cont k) m')
+
+  | step_label: forall f lbl s k sp e m,
+      step (State f (Slabel lbl s) k sp e m)
+        E0 (State f s k sp e m)
+
+  | step_goto: forall f lbl k sp e m s' k',
+      find_label lbl f.(fn_body) (call_cont k) = Some(s', k') ->
+      step (State f (Sgoto lbl) k sp e m)
+        E0 (State f s' k' sp e m)
+
+  | step_internal_function: forall f vargs k m m' sp e,
+      Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
+      set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
+      step (Callstate (Internal f) vargs k m)
+        E0 (State f f.(fn_body) k (Vptr sp Int.zero) e m')
+  | step_external_function: forall ef vargs k m t vres m',
+      external_call ef ge vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m)
+         t (Returnstate vres k m')
+
+  | step_return: forall v optid f sp e k m,
+      step (Returnstate v (Kcall optid f sp e k) m)
+        E0 (State f Sskip k sp (set_optvar optid v e) m).
+
+End RELSEM.
+
+Inductive initial_state (p: program): state -> Prop :=
+  | initial_state_intro: forall b f m0,
+      let ge := Genv.globalenv p in
+      Genv.init_mem p = Some m0 ->
+      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Genv.find_funct_ptr ge b = Some f ->
+      funsig f = mksignature nil (Some Tint) ->
+      initial_state p (Callstate f nil Kstop m0).
+
+Inductive final_state: state -> int -> Prop :=
+  | final_state_intro: forall r m,
+      final_state (Returnstate (Vint r) Kstop m) r.
+
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+Lemma semantics_receptive:
+  forall (p: program), receptive (semantics p).
+
+Inductive outcome: Type :=
+  | Out_normal: outcome                
+  | Out_exit: nat -> outcome           
+  | Out_return: option val -> outcome  
+  | Out_tailcall_return: val -> outcome. 
+
+Definition outcome_block (out: outcome) : outcome :=
+  match out with
+  | Out_exit O => Out_normal
+  | Out_exit (S n) => Out_exit n
+  | out => out
+  end.
+
+Definition outcome_result_value
+    (out: outcome) (retsig: option typ) (vres: val) : Prop :=
+  match out with
+  | Out_normal => vres = Vundef
+  | Out_return None => vres = Vundef
+  | Out_return (Some v) => retsig <> None /\ vres = v
+  | Out_tailcall_return v => vres = v
+  | _ => False
+  end.
+
+Definition outcome_free_mem
+    (out: outcome) (m: mem) (sp: block) (sz: Z) (m': mem) :=
+  match out with
+  | Out_tailcall_return _ => m' = m
+  | _ => Mem.free m sp 0 sz = Some m'
+  end.
+
+Section NATURALSEM.
+
+Variable ge: genv.
+
+Inductive eval_funcall:
+        mem -> fundef -> list val -> trace ->
+        mem -> val -> Prop :=
+  | eval_funcall_internal:
+      forall m f vargs m1 sp e t e2 m2 out vres m3,
+      Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
+      set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
+      exec_stmt f (Vptr sp Int.zero) e m1 f.(fn_body) t e2 m2 out ->
+      outcome_result_value out f.(fn_sig).(sig_res) vres ->
+      outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
+      eval_funcall m (Internal f) vargs t m3 vres
+  | eval_funcall_external:
+      forall ef m args t res m',
+      external_call ef ge args m t res m' ->
+      eval_funcall m (External ef) args t m' res
+
+with exec_stmt:
+         function -> val ->
+         env -> mem -> stmt -> trace ->
+         env -> mem -> outcome -> Prop :=
+  | exec_Sskip:
+      forall f sp e m,
+      exec_stmt f sp e m Sskip E0 e m Out_normal
+  | exec_Sassign:
+      forall f sp e m id a v,
+      eval_expr ge sp e m a v ->
+      exec_stmt f sp e m (Sassign id a) E0 (PTree.set id v e) m Out_normal
+  | exec_Sstore:
+      forall f sp e m chunk addr a vaddr v m',
+      eval_expr ge sp e m addr vaddr ->
+      eval_expr ge sp e m a v ->
+      Mem.storev chunk m vaddr v = Some m' ->
+      exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
+  | exec_Scall:
+      forall f sp e m optid sig a bl vf vargs fd t m' vres e',
+      eval_expr ge sp e m a vf ->
+      eval_exprlist ge sp e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      eval_funcall m fd vargs t m' vres ->
+      e' = set_optvar optid vres e ->
+      exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
+  | exec_Sbuiltin:
+      forall f sp e m optid ef bl t m' vargs vres e',
+      eval_exprlist ge sp e m bl vargs ->
+      external_call ef ge vargs m t vres m' ->
+      e' = set_optvar optid vres e ->
+      exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
+  | exec_Sifthenelse:
+      forall f sp e m a s1 s2 v b t e' m' out,
+      eval_expr ge sp e m a v ->
+      Val.bool_of_val v b ->
+      exec_stmt f sp e m (if b then s1 else s2) t e' m' out ->
+      exec_stmt f sp e m (Sifthenelse a s1 s2) t e' m' out
+  | exec_Sseq_continue:
+      forall f sp e m t s1 t1 e1 m1 s2 t2 e2 m2 out,
+      exec_stmt f sp e m s1 t1 e1 m1 Out_normal ->
+      exec_stmt f sp e1 m1 s2 t2 e2 m2 out ->
+      t = t1 ** t2 ->
+      exec_stmt f sp e m (Sseq s1 s2) t e2 m2 out
+  | exec_Sseq_stop:
+      forall f sp e m t s1 s2 e1 m1 out,
+      exec_stmt f sp e m s1 t e1 m1 out ->
+      out <> Out_normal ->
+      exec_stmt f sp e m (Sseq s1 s2) t e1 m1 out
+  | exec_Sloop_loop:
+      forall f sp e m s t t1 e1 m1 t2 e2 m2 out,
+      exec_stmt f sp e m s t1 e1 m1 Out_normal ->
+      exec_stmt f sp e1 m1 (Sloop s) t2 e2 m2 out ->
+      t = t1 ** t2 ->
+      exec_stmt f sp e m (Sloop s) t e2 m2 out
+  | exec_Sloop_stop:
+      forall f sp e m t s e1 m1 out,
+      exec_stmt f sp e m s t e1 m1 out ->
+      out <> Out_normal ->
+      exec_stmt f sp e m (Sloop s) t e1 m1 out
+  | exec_Sblock:
+      forall f sp e m s t e1 m1 out,
+      exec_stmt f sp e m s t e1 m1 out ->
+      exec_stmt f sp e m (Sblock s) t e1 m1 (outcome_block out)
+  | exec_Sexit:
+      forall f sp e m n,
+      exec_stmt f sp e m (Sexit n) E0 e m (Out_exit n)
+  | exec_Sswitch:
+      forall f sp e m a cases default n,
+      eval_expr ge sp e m a (Vint n) ->
+      exec_stmt f sp e m (Sswitch a cases default)
+                E0 e m (Out_exit (switch_target n default cases))
+  | exec_Sreturn_none:
+      forall f sp e m,
+      exec_stmt f sp e m (Sreturn None) E0 e m (Out_return None)
+  | exec_Sreturn_some:
+      forall f sp e m a v,
+      eval_expr ge sp e m a v ->
+      exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
+  | exec_Stailcall:
+      forall f sp e m sig a bl vf vargs fd t m' m'' vres,
+      eval_expr ge (Vptr sp Int.zero) e m a vf ->
+      eval_exprlist ge (Vptr sp Int.zero) e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      eval_funcall m' fd vargs t m'' vres ->
+      exec_stmt f (Vptr sp Int.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
+
+Scheme eval_funcall_ind2 := Minimality for eval_funcall Sort Prop
+  with exec_stmt_ind2 := Minimality for exec_stmt Sort Prop.
+Combined Scheme eval_funcall_exec_stmt_ind2
+  from eval_funcall_ind2, exec_stmt_ind2.
+
+CoInductive evalinf_funcall:
+        mem -> fundef -> list val -> traceinf -> Prop :=
+  | evalinf_funcall_internal:
+      forall m f vargs m1 sp e t,
+      Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
+      set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
+      execinf_stmt f (Vptr sp Int.zero) e m1 f.(fn_body) t ->
+      evalinf_funcall m (Internal f) vargs t
+
+with execinf_stmt:
+         function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
+  | execinf_Scall:
+      forall f sp e m optid sig a bl vf vargs fd t,
+      eval_expr ge sp e m a vf ->
+      eval_exprlist ge sp e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      evalinf_funcall m fd vargs t ->
+      execinf_stmt f sp e m (Scall optid sig a bl) t
+  | execinf_Sifthenelse:
+      forall f sp e m a s1 s2 v b t,
+      eval_expr ge sp e m a v ->
+      Val.bool_of_val v b ->
+      execinf_stmt f sp e m (if b then s1 else s2) t ->
+      execinf_stmt f sp e m (Sifthenelse a s1 s2) t
+  | execinf_Sseq_1:
+      forall f sp e m t s1 s2,
+      execinf_stmt f sp e m s1 t ->
+      execinf_stmt f sp e m (Sseq s1 s2) t
+  | execinf_Sseq_2:
+      forall f sp e m t s1 t1 e1 m1 s2 t2,
+      exec_stmt f sp e m s1 t1 e1 m1 Out_normal ->
+      execinf_stmt f sp e1 m1 s2 t2 ->
+      t = t1 *** t2 ->
+      execinf_stmt f sp e m (Sseq s1 s2) t
+  | execinf_Sloop_body:
+      forall f sp e m s t,
+      execinf_stmt f sp e m s t ->
+      execinf_stmt f sp e m (Sloop s) t
+  | execinf_Sloop_loop:
+      forall f sp e m s t t1 e1 m1 t2,
+      exec_stmt f sp e m s t1 e1 m1 Out_normal ->
+      execinf_stmt f sp e1 m1 (Sloop s) t2 ->
+      t = t1 *** t2 ->
+      execinf_stmt f sp e m (Sloop s) t
+  | execinf_Sblock:
+      forall f sp e m s t,
+      execinf_stmt f sp e m s t ->
+      execinf_stmt f sp e m (Sblock s) t
+  | execinf_Stailcall:
+      forall f sp e m sig a bl vf vargs fd m' t,
+      eval_expr ge (Vptr sp Int.zero) e m a vf ->
+      eval_exprlist ge (Vptr sp Int.zero) e m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      evalinf_funcall m' fd vargs t ->
+      execinf_stmt f (Vptr sp Int.zero) e m (Stailcall sig a bl) t.
+
+End NATURALSEM.
+
+Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
+  | bigstep_program_terminates_intro:
+      forall b f m0 t m r,
+      let ge := Genv.globalenv p in
+      Genv.init_mem p = Some m0 ->
+      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Genv.find_funct_ptr ge b = Some f ->
+      funsig f = mksignature nil (Some Tint) ->
+      eval_funcall ge m0 f nil t m (Vint r) ->
+      bigstep_program_terminates p t r.
+
+Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
+  | bigstep_program_diverges_intro:
+      forall b f m0 t,
+      let ge := Genv.globalenv p in
+      Genv.init_mem p = Some m0 ->
+      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Genv.find_funct_ptr ge b = Some f ->
+      funsig f = mksignature nil (Some Tint) ->
+      evalinf_funcall ge m0 f nil t ->
+      bigstep_program_diverges p t.
+
+Definition bigstep_semantics (p: program) :=
+  Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
+
+Section BIGSTEP_TO_TRANSITION.
+
+Variable prog: program.
+Let ge := Genv.globalenv prog.
+
+Inductive outcome_state_match
+        (sp: val) (e: env) (m: mem) (f: function) (k: cont):
+        outcome -> state -> Prop :=
+  | osm_normal:
+      outcome_state_match sp e m f k
+                          Out_normal
+                          (State f Sskip k sp e m)
+  | osm_exit: forall n,
+      outcome_state_match sp e m f k
+                          (Out_exit n)
+                          (State f (Sexit n) k sp e m)
+  | osm_return_none: forall k',
+      call_cont k' = call_cont k ->
+      outcome_state_match sp e m f k
+                          (Out_return None)
+                          (State f (Sreturn None) k' sp e m)
+  | osm_return_some: forall k' a v,
+      call_cont k' = call_cont k ->
+      eval_expr ge sp e m a v ->
+      outcome_state_match sp e m f k
+                          (Out_return (Some v))
+                          (State f (Sreturn (Some a)) k' sp e m)
+  | osm_tail: forall v,
+      outcome_state_match sp e m f k
+                          (Out_tailcall_return v)
+                          (Returnstate v (call_cont k) m).
+
+Remark is_call_cont_call_cont:
+  forall k, is_call_cont (call_cont k).
+
+Remark call_cont_is_call_cont:
+  forall k, is_call_cont k -> call_cont k = k.
+
+Lemma eval_funcall_exec_stmt_steps:
+  (forall m fd args t m' res,
+   eval_funcall ge m fd args t m' res ->
+   forall k,
+   is_call_cont k ->
+   star step ge (Callstate fd args k m)
+              t (Returnstate res k m'))
+/\(forall f sp e m s t e' m' out,
+   exec_stmt ge f sp e m s t e' m' out ->
+   forall k,
+   exists S,
+   star step ge (State f s k sp e m) t S
+   /\ outcome_state_match sp e' m' f k out S).
+
+Lemma eval_funcall_steps:
+   forall m fd args t m' res,
+   eval_funcall ge m fd args t m' res ->
+   forall k,
+   is_call_cont k ->
+   star step ge (Callstate fd args k m)
+              t (Returnstate res k m').
+Proof (proj1 eval_funcall_exec_stmt_steps).
+
+Lemma exec_stmt_steps:
+   forall f sp e m s t e' m' out,
+   exec_stmt ge f sp e m s t e' m' out ->
+   forall k,
+   exists S,
+   star step ge (State f s k sp e m) t S
+   /\ outcome_state_match sp e' m' f k out S.
+Proof (proj2 eval_funcall_exec_stmt_steps).
+
+Lemma evalinf_funcall_forever:
+  forall m fd args T k,
+  evalinf_funcall ge m fd args T ->
+  forever_plus step ge (Callstate fd args k m) T.
+
+Theorem bigstep_semantics_sound:
+  bigstep_sound (bigstep_semantics prog) (semantics prog).
+
+End BIGSTEP_TO_TRANSITION. *)
+
+Require Import Csharpminor.
+(* Csharpminor:
+Require Import Coqlib.
+Require Import Maps.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+Require Import Values.
+Require Import Memory.
+Require Import Events.
+Require Import Globalenvs.
+Require Cminor.
+Require Import Smallstep.
+
+Inductive constant : Type :=
+  | Ointconst: int -> constant          
+  | Ofloatconst: float -> constant      
+  | Olongconst: int64 -> constant.      
+
+Definition unary_operation : Type := Cminor.unary_operation.
+Definition binary_operation : Type := Cminor.binary_operation.
+
+Inductive expr : Type :=
+  | Evar : ident -> expr                
+  | Eaddrof : ident -> expr             
+  | Econst : constant -> expr           
+  | Eunop : unary_operation -> expr -> expr  
+  | Ebinop : binary_operation -> expr -> expr -> expr 
+  | Eload : memory_chunk -> expr -> expr. 
+
+Definition label := ident.
+
+Inductive stmt : Type :=
+  | Sskip: stmt
+  | Sset : ident -> expr -> stmt
+  | Sstore : memory_chunk -> expr -> expr -> stmt
+  | Scall : option ident -> signature -> expr -> list expr -> stmt
+  | Sbuiltin : option ident -> external_function -> list expr -> stmt
+  | Sseq: stmt -> stmt -> stmt
+  | Sifthenelse: expr -> stmt -> stmt -> stmt
+  | Sloop: stmt -> stmt
+  | Sblock: stmt -> stmt
+  | Sexit: nat -> stmt
+  | Sswitch: expr -> lbl_stmt -> stmt
+  | Sreturn: option expr -> stmt
+  | Slabel: label -> stmt -> stmt
+  | Sgoto: label -> stmt
+
+with lbl_stmt : Type :=
+  | LSdefault: stmt -> lbl_stmt
+  | LScase: int -> stmt -> lbl_stmt -> lbl_stmt.
+
+Record function : Type := mkfunction {
+  fn_sig: signature;
+  fn_params: list ident;
+  fn_vars: list (ident * Z);
+  fn_temps: list ident;
+  fn_body: stmt
+}.
+
+Definition fundef := AST.fundef function.
+
+Definition program : Type := AST.program fundef unit.
+
+Definition funsig (fd: fundef) :=
+  match fd with
+  | Internal f => fn_sig f
+  | External ef => ef_sig ef
+  end.
+
+Definition genv := Genv.t fundef unit.
+Definition env := PTree.t (block * Z).
+Definition temp_env := PTree.t val.
+
+Definition empty_env : env := PTree.empty (block * Z).
+Definition empty_temp_env : temp_env := PTree.empty val.
+
+Fixpoint create_undef_temps (temps: list ident) : temp_env :=
+  match temps with
+  | nil => PTree.empty val
+  | id :: temps' => PTree.set id Vundef (create_undef_temps temps')
+ end.
+
+Fixpoint bind_parameters (formals: list ident) (args: list val)
+                         (le: temp_env) : option temp_env :=
+ match formals, args with
+ | nil, nil => Some le
+ | id :: xl, v :: vl => bind_parameters xl vl (PTree.set id v le)
+ | _, _ => None
+ end.
+
+Inductive cont: Type :=
+  | Kstop: cont                         
+  | Kseq: stmt -> cont -> cont          
+  | Kblock: cont -> cont                
+  | Kcall: option ident -> function -> env -> temp_env -> cont -> cont.
+                                        
+Inductive state: Type :=
+  | State:                      
+      forall (f: function)              
+             (s: stmt)                  
+             (k: cont)                  
+             (e: env)                   
+             (le: temp_env)             
+             (m: mem),                  
+      state
+  | Callstate:                  
+      forall (f: fundef)                
+             (args: list val)           
+             (k: cont)                  
+             (m: mem),                  
+      state
+  | Returnstate:                
+      forall (v: val)                   
+             (k: cont)                  
+             (m: mem),                  
+      state.
+
+Fixpoint call_cont (k: cont) : cont :=
+  match k with
+  | Kseq s k => call_cont k
+  | Kblock k => call_cont k
+  | _ => k
+  end.
+
+Definition is_call_cont (k: cont) : Prop :=
+  match k with
+  | Kstop => True
+  | Kcall _ _ _ _ _ => True
+  | _ => False
+  end.
+
+Fixpoint select_switch (n: int) (sl: lbl_stmt) {struct sl} : lbl_stmt :=
+  match sl with
+  | LSdefault _ => sl
+  | LScase c s sl' => if Int.eq c n then sl else select_switch n sl'
+  end.
+
+Fixpoint seq_of_lbl_stmt (sl: lbl_stmt) : stmt :=
+  match sl with
+  | LSdefault s => s
+  | LScase c s sl' => Sseq s (seq_of_lbl_stmt sl')
+  end.
+
+Fixpoint find_label (lbl: label) (s: stmt) (k: cont)
+                    {struct s}: option (stmt * cont) :=
+  match s with
+  | Sseq s1 s2 =>
+      match find_label lbl s1 (Kseq s2 k) with
+      | Some sk => Some sk
+      | None => find_label lbl s2 k
+      end
+  | Sifthenelse a s1 s2 =>
+      match find_label lbl s1 k with
+      | Some sk => Some sk
+      | None => find_label lbl s2 k
+      end
+  | Sloop s1 =>
+      find_label lbl s1 (Kseq (Sloop s1) k)
+  | Sblock s1 =>
+      find_label lbl s1 (Kblock k)
+  | Sswitch a sl =>
+      find_label_ls lbl sl k
+  | Slabel lbl' s' =>
+      if ident_eq lbl lbl' then Some(s', k) else find_label lbl s' k
+  | _ => None
+  end
+
+with find_label_ls (lbl: label) (sl: lbl_stmt) (k: cont)
+                   {struct sl}: option (stmt * cont) :=
+  match sl with
+  | LSdefault s => find_label lbl s k
+  | LScase _ s sl' =>
+      match find_label lbl s (Kseq (seq_of_lbl_stmt sl') k) with
+      | Some sk => Some sk
+      | None => find_label_ls lbl sl' k
+      end
+  end.
+
+Definition eval_constant (cst: constant) : option val :=
+  match cst with
+  | Ointconst n => Some (Vint n)
+  | Ofloatconst n => Some (Vfloat n)
+  | Olongconst n => Some (Vlong n)
+  end.
+
+Definition eval_unop := Cminor.eval_unop.
+
+Definition eval_binop := Cminor.eval_binop.
+
+Inductive alloc_variables: env -> mem ->
+                           list (ident * Z) ->
+                           env -> mem -> Prop :=
+  | alloc_variables_nil:
+      forall e m,
+      alloc_variables e m nil e m
+  | alloc_variables_cons:
+      forall e m id sz vars m1 b1 m2 e2,
+      Mem.alloc m 0 sz = (m1, b1) ->
+      alloc_variables (PTree.set id (b1, sz) e) m1 vars e2 m2 ->
+      alloc_variables e m ((id, sz) :: vars) e2 m2.
+
+Definition block_of_binding (id_b_sz: ident * (block * Z)) :=
+  match id_b_sz with (id, (b, sz)) => (b, 0, sz) end.
+
+Definition blocks_of_env (e: env) : list (block * Z * Z) :=
+  List.map block_of_binding (PTree.elements e).
+
+Section RELSEM.
+
+Variable ge: genv.
+
+Inductive eval_var_addr: env -> ident -> block -> Prop :=
+  | eval_var_addr_local:
+      forall e id b sz,
+      PTree.get id e = Some (b, sz) ->
+      eval_var_addr e id b
+  | eval_var_addr_global:
+      forall e id b,
+      PTree.get id e = None ->
+      Genv.find_symbol ge id = Some b ->
+      eval_var_addr e id b.
+
+Section EVAL_EXPR.
+
+Variable e: env.
+Variable le: temp_env.
+Variable m: mem.
+
+Inductive eval_expr: expr -> val -> Prop :=
+  | eval_Evar: forall id v,
+      le!id = Some v ->
+      eval_expr (Evar id) v
+  | eval_Eaddrof: forall id b,
+      eval_var_addr e id b ->
+      eval_expr (Eaddrof id) (Vptr b Int.zero)
+  | eval_Econst: forall cst v,
+      eval_constant cst = Some v ->
+      eval_expr (Econst cst) v
+  | eval_Eunop: forall op a1 v1 v,
+      eval_expr a1 v1 ->
+      eval_unop op v1 = Some v ->
+      eval_expr (Eunop op a1) v
+  | eval_Ebinop: forall op a1 a2 v1 v2 v,
+      eval_expr a1 v1 ->
+      eval_expr a2 v2 ->
+      eval_binop op v1 v2 m = Some v ->
+      eval_expr (Ebinop op a1 a2) v
+  | eval_Eload: forall chunk a v1 v,
+      eval_expr a v1 ->
+      Mem.loadv chunk m v1 = Some v ->
+      eval_expr (Eload chunk a) v.
+
+Inductive eval_exprlist: list expr -> list val -> Prop :=
+  | eval_Enil:
+      eval_exprlist nil nil
+  | eval_Econs: forall a1 al v1 vl,
+      eval_expr a1 v1 -> eval_exprlist al vl ->
+      eval_exprlist (a1 :: al) (v1 :: vl).
+
+End EVAL_EXPR.
+
+Inductive step: state -> trace -> state -> Prop :=
+
+  | step_skip_seq: forall f s k e le m,
+      step (State f Sskip (Kseq s k) e le m)
+        E0 (State f s k e le m)
+  | step_skip_block: forall f k e le m,
+      step (State f Sskip (Kblock k) e le m)
+        E0 (State f Sskip k e le m)
+  | step_skip_call: forall f k e le m m',
+      is_call_cont k ->
+      Mem.free_list m (blocks_of_env e) = Some m' ->
+      step (State f Sskip k e le m)
+        E0 (Returnstate Vundef k m')
+
+  | step_set: forall f id a k e le m v,
+      eval_expr e le m a v ->
+      step (State f (Sset id a) k e le m)
+        E0 (State f Sskip k e (PTree.set id v le) m)
+
+  | step_store: forall f chunk addr a k e le m vaddr v m',
+      eval_expr e le m addr vaddr ->
+      eval_expr e le m a v ->
+      Mem.storev chunk m vaddr v = Some m' ->
+      step (State f (Sstore chunk addr a) k e le m)
+        E0 (State f Sskip k e le m')
+
+  | step_call: forall f optid sig a bl k e le m vf vargs fd,
+      eval_expr e le m a vf ->
+      eval_exprlist e le m bl vargs ->
+      Genv.find_funct ge vf = Some fd ->
+      funsig fd = sig ->
+      step (State f (Scall optid sig a bl) k e le m)
+        E0 (Callstate fd vargs (Kcall optid f e le k) m)
+
+  | step_builtin: forall f optid ef bl k e le m vargs t vres m',
+      eval_exprlist e le m bl vargs ->
+      external_call ef ge vargs m t vres m' ->
+      step (State f (Sbuiltin optid ef bl) k e le m)
+         t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
+
+  | step_seq: forall f s1 s2 k e le m,
+      step (State f (Sseq s1 s2) k e le m)
+        E0 (State f s1 (Kseq s2 k) e le m)
+
+  | step_ifthenelse: forall f a s1 s2 k e le m v b,
+      eval_expr e le m a v ->
+      Val.bool_of_val v b ->
+      step (State f (Sifthenelse a s1 s2) k e le m)
+        E0 (State f (if b then s1 else s2) k e le m)
+
+  | step_loop: forall f s k e le m,
+      step (State f (Sloop s) k e le m)
+        E0 (State f s (Kseq (Sloop s) k) e le m)
+
+  | step_block: forall f s k e le m,
+      step (State f (Sblock s) k e le m)
+        E0 (State f s (Kblock k) e le m)
+
+  | step_exit_seq: forall f n s k e le m,
+      step (State f (Sexit n) (Kseq s k) e le m)
+        E0 (State f (Sexit n) k e le m)
+  | step_exit_block_0: forall f k e le m,
+      step (State f (Sexit O) (Kblock k) e le m)
+        E0 (State f Sskip k e le m)
+  | step_exit_block_S: forall f n k e le m,
+      step (State f (Sexit (S n)) (Kblock k) e le m)
+        E0 (State f (Sexit n) k e le m)
+
+  | step_switch: forall f a cases k e le m n,
+      eval_expr e le m a (Vint n) ->
+      step (State f (Sswitch a cases) k e le m)
+        E0 (State f (seq_of_lbl_stmt (select_switch n cases)) k e le m)
+
+  | step_return_0: forall f k e le m m',
+      Mem.free_list m (blocks_of_env e) = Some m' ->
+      step (State f (Sreturn None) k e le m)
+        E0 (Returnstate Vundef (call_cont k) m')
+  | step_return_1: forall f a k e le m v m',
+      eval_expr e le m a v ->
+      Mem.free_list m (blocks_of_env e) = Some m' ->
+      step (State f (Sreturn (Some a)) k e le m)
+        E0 (Returnstate v (call_cont k) m')
+  | step_label: forall f lbl s k e le m,
+      step (State f (Slabel lbl s) k e le m)
+        E0 (State f s k e le m)
+
+  | step_goto: forall f lbl k e le m s' k',
+      find_label lbl f.(fn_body) (call_cont k) = Some(s', k') ->
+      step (State f (Sgoto lbl) k e le m)
+        E0 (State f s' k' e le m)
+
+  | step_internal_function: forall f vargs k m m1 e le,
+      list_norepet (map fst f.(fn_vars)) ->
+      list_norepet f.(fn_params) ->
+      list_disjoint f.(fn_params) f.(fn_temps) ->
+      alloc_variables empty_env m (fn_vars f) e m1 ->
+      bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
+      step (Callstate (Internal f) vargs k m)
+        E0 (State f f.(fn_body) k e le m1)
+
+  | step_external_function: forall ef vargs k m t vres m',
+      external_call ef ge vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m)
+         t (Returnstate vres k m')
+
+  | step_return: forall v optid f e le k m,
+      step (Returnstate v (Kcall optid f e le k) m)
+        E0 (State f Sskip k e (Cminor.set_optvar optid v le) m).
+
+End RELSEM.
+
+Inductive initial_state (p: program): state -> Prop :=
+  | initial_state_intro: forall b f m0,
+      let ge := Genv.globalenv p in
+      Genv.init_mem p = Some m0 ->
+      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Genv.find_funct_ptr ge b = Some f ->
+      funsig f = mksignature nil (Some Tint) ->
+      initial_state p (Callstate f nil Kstop m0).
+
+Inductive final_state: state -> int -> Prop :=
+  | final_state_intro: forall r m,
+      final_state (Returnstate (Vint r) Kstop m) r.
+
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p). *)
+
+
+
+Open Local Scope string_scope.
+
+Open Local Scope error_monad_scope.
+
+
+
+Definition make_intconst (n: int) :=  Econst (Ointconst n).
+
+
+
+Definition make_floatconst (f: float) :=  Econst (Ofloatconst f).
+
+
+
+Definition make_longconst (f: int64) :=  Econst (Olongconst f).
+
+
+
+Definition make_floatofint (e: expr) (sg: signedness) (sz: floatsize) :=
+
+  match sg, sz with
+
+  | Signed, F64 => Eunop Ofloatofint e
+
+  | Unsigned, F64 => Eunop Ofloatofintu e
+
+  | Signed, F32 => Eunop Osingleoffloat (Eunop Ofloatofint e)
+
+  | Unsigned, F32 => Eunop Osingleoffloat (Eunop Ofloatofintu e)
+
+  end.
+
+
+
+Definition make_intoffloat (e: expr) (sg: signedness) :=
+
+  match sg with
+
+  | Signed => Eunop Ointoffloat e
+
+  | Unsigned => Eunop Ointuoffloat e
+
+  end.
+
+
+
+Definition make_longofint (e: expr) (sg: signedness) :=
+
+  match sg with
+
+  | Signed => Eunop Olongofint e
+
+  | Unsigned => Eunop Olongofintu e
+
+  end.
+
+
+
+Definition make_floatoflong (e: expr) (sg: signedness) (sz: floatsize) :=
+
+  match sg, sz with
+
+  | Signed, F64 => Eunop Ofloatoflong e
+
+  | Unsigned, F64 => Eunop Ofloatoflongu e
+
+  | Signed, F32 => Eunop Osingleoflong e
+
+  | Unsigned, F32 => Eunop Osingleoflongu e
+
+  end.
+
+
+
+Definition make_longoffloat (e: expr) (sg: signedness) :=
+
+  match sg with
+
+  | Signed => Eunop Olongoffloat e
+
+  | Unsigned => Eunop Olonguoffloat e
+
+  end.
+
+
+
+Definition make_cmp_ne_zero (e: expr) :=
+
+  match e with
+
+  | Ebinop (Ocmp c) e1 e2 => e
+
+  | Ebinop (Ocmpu c) e1 e2 => e
+
+  | Ebinop (Ocmpf c) e1 e2 => e
+
+  | Ebinop (Ocmpl c) e1 e2 => e
+
+  | Ebinop (Ocmplu c) e1 e2 => e
+
+  | _ => Ebinop (Ocmp Cne) e (make_intconst Int.zero)
+
+  end.
+
+
+
+Definition make_cast_int (e: expr) (sz: intsize) (si: signedness) :=
+
+  match sz, si with
+
+  | I8, Signed => Eunop Ocast8signed e
+
+  | I8, Unsigned => Eunop Ocast8unsigned e
+
+  | I16, Signed => Eunop Ocast16signed e
+
+  | I16, Unsigned => Eunop Ocast16unsigned e
+
+  | I32, _ => e
+
+  | IBool, _ => make_cmp_ne_zero e
+
+  end.
+
+
+
+Definition make_cast_float (e: expr) (sz: floatsize) :=
+
+  match sz with
+
+  | F32 => Eunop Osingleoffloat e
+
+  | F64 => e
+
+  end.
+
+
+
+Definition make_cast (from to: type) (e: expr) :=
+
+  match classify_cast from to with
+
+  | cast_case_neutral => OK e
+
+  | cast_case_i2i sz2 si2 => OK (make_cast_int e sz2 si2)
+
+  | cast_case_f2f sz2 => OK (make_cast_float e sz2)
+
+  | cast_case_i2f si1 sz2 => OK (make_floatofint e si1 sz2)
+
+  | cast_case_f2i sz2 si2 => OK (make_cast_int (make_intoffloat e si2) sz2 si2)
+
+  | cast_case_l2l => OK e
+
+  | cast_case_i2l si1 => OK (make_longofint e si1)
+
+  | cast_case_l2i sz2 si2 => OK (make_cast_int (Eunop Ointoflong e) sz2 si2)
+
+  | cast_case_l2f si1 sz2 => OK (make_floatoflong e si1 sz2)
+
+  | cast_case_f2l si2 => OK (make_longoffloat e si2)
+
+  | cast_case_f2bool => OK (Ebinop (Ocmpf Cne) e (make_floatconst Float.zero))
+
+  | cast_case_l2bool => OK (Ebinop (Ocmpl Cne) e (make_longconst Int64.zero))
+
+  | cast_case_p2bool => OK (Ebinop (Ocmpu Cne) e (make_intconst Int.zero))
+
+  | cast_case_struct id1 fld1 id2 fld2 => OK e
+
+  | cast_case_union id1 fld1 id2 fld2 => OK e
+
+  | cast_case_void => OK e
+
+  | cast_case_default => Error (msg "Cshmgen.make_cast")
+
+  end.
+
+
+
+Definition make_boolean (e: expr) (ty: type) :=
+
+  match classify_bool ty with
+
+  | bool_case_i => make_cmp_ne_zero e
+
+  | bool_case_f => Ebinop (Ocmpf Cne) e (make_floatconst Float.zero)
+
+  | bool_case_p => Ebinop (Ocmpu Cne) e (make_intconst Int.zero)
+
+  | bool_case_l => Ebinop (Ocmpl Cne) e (make_longconst Int64.zero)
+
+  | bool_default => e   
+
+  end.
+
+
+
+Definition make_notbool (e: expr) (ty: type) :=
+
+  match classify_bool ty with
+
+  | bool_case_i => OK (Ebinop (Ocmp Ceq) e (make_intconst Int.zero))
+
+  | bool_case_f => OK (Ebinop (Ocmpf Ceq) e (make_floatconst Float.zero))
+
+  | bool_case_p => OK (Ebinop (Ocmpu Ceq) e (make_intconst Int.zero))
+
+  | bool_case_l => OK (Ebinop (Ocmpl Ceq) e (make_longconst Int64.zero))
+
+  | _ => Error (msg "Cshmgen.make_notbool")
+
+  end.
+
+
+
+Definition make_neg (e: expr) (ty: type) :=
+
+  match classify_neg ty with
+
+  | neg_case_i _ => OK (Eunop Onegint e)
+
+  | neg_case_f => OK (Eunop Onegf e)
+
+  | neg_case_l _ => OK (Eunop Onegl e)
+
+  | _ => Error (msg "Cshmgen.make_neg")
+
+  end.
+
+
+
+Definition make_notint (e: expr) (ty: type) :=
+
+  match classify_notint ty with
+
+  | notint_case_i _ => OK (Eunop Onotint e)
+
+  | notint_case_l _ => OK (Eunop Onotl e)
+
+  | _ => Error (msg "Cshmgen.make_notint")
+
+  end.
+
+
+
+Definition make_binarith (iop iopu fop lop lopu: binary_operation)
+
+                         (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  let c := classify_binarith ty1 ty2 in
+
+  let ty := binarith_type c in
+
+  do e1' <- make_cast ty1 ty e1;
+
+  do e2' <- make_cast ty2 ty e2;
+
+  match c with
+
+  | bin_case_i Signed => OK (Ebinop iop e1' e2')
+
+  | bin_case_i Unsigned => OK (Ebinop iopu e1' e2')
+
+  | bin_case_f => OK (Ebinop fop e1' e2')
+
+  | bin_case_l Signed => OK (Ebinop lop e1' e2')
+
+  | bin_case_l Unsigned => OK (Ebinop lopu e1' e2')
+
+  | bin_default => Error (msg "Cshmgen.make_binarith")
+
+  end.
+
+
+
+Definition make_add (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  match classify_add ty1 ty2 with
+
+  | add_case_pi ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Oadd e1 (Ebinop Omul n e2))
+
+  | add_case_ip ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Oadd e2 (Ebinop Omul n e1))
+
+  | add_case_pl ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Oadd e1 (Ebinop Omul n (Eunop Ointoflong e2)))
+
+  | add_case_lp ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Oadd e2 (Ebinop Omul n (Eunop Ointoflong e1)))
+
+  | add_default =>
+
+      make_binarith Oadd Oadd Oaddf Oaddl Oaddl e1 ty1 e2 ty2
+
+  end.
+
+
+
+Definition make_sub (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  match classify_sub ty1 ty2 with
+
+  | sub_case_pi ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Osub e1 (Ebinop Omul n e2))
+
+  | sub_case_pp ty =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Odivu (Ebinop Osub e1 e2) n)
+
+  | sub_case_pl ty _ =>
+
+      let n := make_intconst (Int.repr (Ctypes.sizeof ty)) in
+
+      OK (Ebinop Osub e1 (Ebinop Omul n (Eunop Ointoflong e2)))
+
+  | sub_default =>
+
+      make_binarith Osub Osub Osubf Osubl Osubl e1 ty1 e2 ty2
+
+  end.
+
+
+
+Definition make_mul (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith Omul Omul Omulf Omull Omull e1 ty1 e2 ty2.
+
+
+
+Definition make_div (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith Odiv Odivu Odivf Odivl Odivlu e1 ty1 e2 ty2.
+
+
+
+Definition make_binarith_int (iop iopu lop lopu: binary_operation)
+
+                             (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  let c := classify_binarith ty1 ty2 in
+
+  let ty := binarith_type c in
+
+  do e1' <- make_cast ty1 ty e1;
+
+  do e2' <- make_cast ty2 ty e2;
+
+  match c with
+
+  | bin_case_i Signed => OK (Ebinop iop e1' e2')
+
+  | bin_case_i Unsigned => OK (Ebinop iopu e1' e2')
+
+  | bin_case_l Signed => OK (Ebinop lop e1' e2')
+
+  | bin_case_l Unsigned => OK (Ebinop lopu e1' e2')
+
+  | bin_case_f | bin_default => Error (msg "Cshmgen.make_binarith_int")
+
+  end.
+
+
+
+Definition make_mod (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith_int Omod Omodu Omodl Omodlu e1 ty1 e2 ty2.
+
+
+
+Definition make_and (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith_int Oand Oand Oandl Oandl e1 ty1 e2 ty2.
+
+
+
+Definition make_or (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith_int Oor Oor Oorl Oorl e1 ty1 e2 ty2.
+
+
+
+Definition make_xor (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  make_binarith_int Oxor Oxor Oxorl Oxorl e1 ty1 e2 ty2.
+
+
+
+Definition make_shl (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  match classify_shift ty1 ty2 with
+
+  | shift_case_ii _ => OK (Ebinop Oshl e1 e2)
+
+  | shift_case_li _ => OK (Ebinop Oshll e1 e2)
+
+  | shift_case_il _ => OK (Ebinop Oshl e1 (Eunop Ointoflong e2))
+
+  | shift_case_ll _ => OK (Ebinop Oshll e1 (Eunop Ointoflong e2))
+
+  | shift_default => Error (msg "Cshmgen.make_shl")
+
+  end.
+
+
+
+Definition make_shr (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  match classify_shift ty1 ty2 with
+
+  | shift_case_ii Signed => OK (Ebinop Oshr e1 e2)
+
+  | shift_case_ii Unsigned => OK (Ebinop Oshru e1 e2)
+
+  | shift_case_li Signed => OK (Ebinop Oshrl e1 e2)
+
+  | shift_case_li Unsigned => OK (Ebinop Oshrlu e1 e2)
+
+  | shift_case_il Signed => OK (Ebinop Oshr e1 (Eunop Ointoflong e2))
+
+  | shift_case_il Unsigned => OK (Ebinop Oshru e1 (Eunop Ointoflong e2))
+
+  | shift_case_ll Signed => OK (Ebinop Oshrl e1 (Eunop Ointoflong e2))
+
+  | shift_case_ll Unsigned => OK (Ebinop Oshrlu e1 (Eunop Ointoflong e2))
+
+  | shift_default => Error (msg "Cshmgen.make_shr")
+
+  end.
+
+
+
+Definition make_cmp (c: comparison) (e1: expr) (ty1: type) (e2: expr) (ty2: type) :=
+
+  match classify_cmp ty1 ty2 with
+
+  | cmp_case_pp => OK (Ebinop (Ocmpu c) e1 e2)
+
+  | cmp_case_pl => OK (Ebinop (Ocmpu c) e1 (Eunop Ointoflong e2))
+
+  | cmp_case_lp => OK (Ebinop (Ocmpu c) (Eunop Ointoflong e1) e2)
+
+  | cmp_default =>
+
+      make_binarith (Ocmp c) (Ocmpu c) (Ocmpf c) (Ocmpl c) (Ocmplu c) e1 ty1 e2 ty2
+
+  end.
+
+
+
+Definition make_load (addr: expr) (ty_res: type) :=
+
+  match (access_mode ty_res) with
+
+  | By_value chunk => OK (Eload chunk addr)
+
+  | By_reference => OK addr
+
+  | By_copy => OK addr
+
+  | By_nothing => Error (msg "Cshmgen.make_load")
+
+  end.
+
+
+
+Definition make_memcpy (dst src: expr) (ty: type) :=
+
+  Sbuiltin None (EF_memcpy (Ctypes.sizeof ty) (Ctypes.alignof_blockcopy ty))
+
+                (dst :: src :: nil).
+
+
+
+Definition make_store (addr: expr) (ty: type) (rhs: expr) :=
+
+  match access_mode ty with
+
+  | By_value chunk => OK (Sstore chunk addr rhs)
+
+  | By_copy => OK (make_memcpy addr rhs ty)
+
+  | _ => Error (msg "Cshmgen.make_store")
+
+  end.
+
+
+
+Definition transl_unop (op: Cop.unary_operation) (a: expr) (ta: type) : res expr :=
+
+  match op with
+
+  | Cop.Onotbool => make_notbool a ta
+
+  | Cop.Onotint => make_notint a ta
+
+  | Cop.Oneg => make_neg a ta
+
+  end.
+
+
+
+Definition transl_binop (op: Cop.binary_operation)
+
+                        (a: expr) (ta: type)
+
+                        (b: expr) (tb: type) : res expr :=
+
+  match op with
+
+  | Cop.Oadd => make_add a ta b tb
+
+  | Cop.Osub => make_sub a ta b tb
+
+  | Cop.Omul => make_mul a ta b tb
+
+  | Cop.Odiv => make_div a ta b tb
+
+  | Cop.Omod => make_mod a ta b tb
+
+  | Cop.Oand => make_and a ta b tb
+
+  | Cop.Oor  => make_or a ta b tb
+
+  | Cop.Oxor => make_xor a ta b tb
+
+  | Cop.Oshl => make_shl a ta b tb
+
+  | Cop.Oshr => make_shr a ta b tb
+
+  | Cop.Oeq => make_cmp Ceq a ta b tb
+
+  | Cop.One => make_cmp Cne a ta b tb
+
+  | Cop.Olt => make_cmp Clt a ta b tb
+
+  | Cop.Ogt => make_cmp Cgt a ta b tb
+
+  | Cop.Ole => make_cmp Cle a ta b tb
+
+  | Cop.Oge => make_cmp Cge a ta b tb
+
+  end.
+
+
+
+Fixpoint transl_expr (a: Clight.expr) {struct a} : res expr :=
+
+  match a with
+
+  | Clight.Econst_int n _ =>
+
+      OK(make_intconst n)
+
+  | Clight.Econst_float n _ =>
+
+      OK(make_floatconst n)
+
+  | Clight.Econst_long n _ =>
+
+      OK(make_longconst n)
+
+  | Clight.Evar id ty =>
+
+      make_load (Eaddrof id) ty
+
+  | Clight.Etempvar id ty =>
+
+      OK(Evar id)
+
+  | Clight.Ederef b ty =>
+
+      do tb <- transl_expr b;
+
+      make_load tb ty
+
+  | Clight.Eaddrof b _ =>
+
+      transl_lvalue b
+
+  | Clight.Eunop op b _ =>
+
+      do tb <- transl_expr b;
+
+      transl_unop op tb (typeof b)
+
+  | Clight.Ebinop op b c _ =>
+
+      do tb <- transl_expr b;
+
+      do tc <- transl_expr c;
+
+      transl_binop op tb (typeof b) tc (typeof c)
+
+  | Clight.Ecast b ty =>
+
+      do tb <- transl_expr b;
+
+      make_cast (typeof b) ty tb
+
+  | Clight.Efield b i ty =>
+
+      match typeof b with
+
+      | Tstruct _ fld _ =>
+
+          do tb <- transl_expr b;
+
+          do ofs <- field_offset i fld;
+
+          make_load
+
+            (Ebinop Oadd tb (make_intconst (Int.repr ofs)))
+
+            ty
+
+      | Tunion _ fld _ =>
+
+          do tb <- transl_expr b;
+
+          make_load tb ty
+
+      | _ =>
+
+          Error(msg "Cshmgen.transl_expr(field)")
+
+      end
+
+  end
+
+
+
+with transl_lvalue (a: Clight.expr) {struct a} : res expr :=
+
+  match a with
+
+  | Clight.Evar id _ =>
+
+      OK (Eaddrof id)
+
+  | Clight.Ederef b _ =>
+
+      transl_expr b
+
+  | Clight.Efield b i ty =>
+
+      match typeof b with
+
+      | Tstruct _ fld _ =>
+
+          do tb <- transl_expr b;
+
+          do ofs <- field_offset i fld;
+
+          OK (Ebinop Oadd tb (make_intconst (Int.repr ofs)))
+
+      | Tunion _ fld _ =>
+
+          transl_expr b
+
+      | _ =>
+
+          Error(msg "Cshmgen.transl_lvalue(field)")
+
+      end
+
+  | _ =>
+
+      Error(msg "Cshmgen.transl_lvalue")
+
+  end.
+
+
+
+Fixpoint transl_arglist (al: list Clight.expr) (tyl: typelist)
+
+                         {struct al}: res (list expr) :=
+
+  match al, tyl with
+
+  | nil, Tnil => OK nil
+
+  | a1 :: a2, Tcons ty1 ty2 =>
+
+      do ta1 <- transl_expr a1;
+
+      do ta1' <- make_cast (typeof a1) ty1 ta1;
+
+      do ta2 <- transl_arglist a2 ty2;
+
+      OK (ta1' :: ta2)
+
+  | _, _ =>
+
+      Error(msg "Cshmgen.transl_arglist: arity mismatch")
+
+  end.
+
+
+
+Fixpoint transl_statement (tyret: type) (nbrk ncnt: nat)
+
+                          (s: Clight.statement) {struct s} : res stmt :=
+
+  match s with
+
+  | Clight.Sskip =>
+
+      OK Sskip
+
+  | Clight.Sassign b c =>
+
+      do tb <- transl_lvalue b;
+
+      do tc <- transl_expr c;
+
+      do tc' <- make_cast (typeof c) (typeof b) tc;
+
+      make_store tb (typeof b) tc'
+
+  | Clight.Sset x b =>
+
+      do tb <- transl_expr b;
+
+      OK(Sset x tb)
+
+  | Clight.Scall x b cl =>
+
+      match classify_fun (typeof b) with
+
+      | fun_case_f args res =>
+
+          do tb <- transl_expr b;
+
+          do tcl <- transl_arglist cl args;
+
+          OK(Scall x (signature_of_type args res) tb tcl)
+
+      | _ => Error(msg "Cshmgen.transl_stmt(call)")
+
+      end
+
+  | Clight.Sbuiltin x ef tyargs bl =>
+
+      do tbl <- transl_arglist bl tyargs;
+
+      OK(Sbuiltin x ef tbl)
+
+  | Clight.Ssequence s1 s2 =>
+
+      do ts1 <- transl_statement tyret nbrk ncnt s1;
+
+      do ts2 <- transl_statement tyret nbrk ncnt s2;
+
+      OK (Sseq ts1 ts2)
+
+  | Clight.Sifthenelse e s1 s2 =>
+
+      do te <- transl_expr e;
+
+      do ts1 <- transl_statement tyret nbrk ncnt s1;
+
+      do ts2 <- transl_statement tyret nbrk ncnt s2;
+
+      OK (Sifthenelse (make_boolean te (typeof e)) ts1 ts2)
+
+  | Clight.Sloop s1 s2 =>
+
+      do ts1 <- transl_statement tyret 1%nat 0%nat s1;
+
+      do ts2 <- transl_statement tyret 0%nat (S ncnt) s2;
+
+      OK (Sblock (Sloop (Sseq (Sblock ts1) ts2)))
+
+  | Clight.Sbreak =>
+
+      OK (Sexit nbrk)
+
+  | Clight.Scontinue =>
+
+      OK (Sexit ncnt)
+
+  | Clight.Sreturn (Some e) =>
+
+      do te <- transl_expr e;
+
+      do te' <- make_cast (typeof e) tyret te;
+
+      OK (Sreturn (Some te'))
+
+  | Clight.Sreturn None =>
+
+      OK (Sreturn None)
+
+  | Clight.Sswitch a sl =>
+
+      do ta <- transl_expr a;
+
+      do tsl <- transl_lbl_stmt tyret 0%nat (S ncnt) sl;
+
+      OK (Sblock (Sswitch ta tsl))
+
+  | Clight.Slabel lbl s =>
+
+      do ts <- transl_statement tyret nbrk ncnt s;
+
+      OK (Slabel lbl ts)
+
+  | Clight.Sgoto lbl =>
+
+      OK (Sgoto lbl)
+
+  end
+
+
+
+with transl_lbl_stmt (tyret: type) (nbrk ncnt: nat)
+
+                     (sl: Clight.labeled_statements)
+
+                     {struct sl}: res lbl_stmt :=
+
+  match sl with
+
+  | Clight.LSdefault s =>
+
+      do ts <- transl_statement tyret nbrk ncnt s;
+
+      OK (LSdefault ts)
+
+  | Clight.LScase n s sl' =>
+
+      do ts <- transl_statement tyret nbrk ncnt s;
+
+      do tsl' <- transl_lbl_stmt tyret nbrk ncnt sl';
+
+      OK (LScase n ts tsl')
+
+  end.
+
+
+
+Definition transl_var (v: ident * type) := (fst v, sizeof (snd v)).
+
+
+
+Definition signature_of_function (f: Clight.function) :=
+
+  mksignature (map typ_of_type (map snd (Clight.fn_params f)))
+
+              (opttyp_of_type (Clight.fn_return f)).
+
+
+
+Definition transl_function (f: Clight.function) : res function :=
+
+  do tbody <- transl_statement f.(Clight.fn_return) 1%nat 0%nat (Clight.fn_body f);
+
+  OK (mkfunction
+
+       (signature_of_function f)
+
+       (map fst (Clight.fn_params f))
+
+       (map transl_var (Clight.fn_vars f))
+
+       (map fst (Clight.fn_temps f))
+
+       tbody).
+
+
+
+Definition transl_fundef (f: Clight.fundef) : res fundef :=
+
+  match f with
+
+  | Clight.Internal g =>
+
+      do tg <- transl_function g; OK(AST.Internal tg)
+
+  | Clight.External ef args res =>
+
+      if list_typ_eq (sig_args (ef_sig ef)) (typlist_of_typelist args)
+
+      && opt_typ_eq (sig_res (ef_sig ef)) (opttyp_of_type res)
+
+      then OK(AST.External ef)
+
+      else Error(msg "Cshmgen.transl_fundef: wrong external signature")
+
+  end.
+
+
+
+Definition transl_globvar (ty: type) := OK tt.
+
+
+
+Definition transl_program (p: Clight.program) : res program :=
+
+  transform_partial_program2 transl_fundef transl_globvar p.
+

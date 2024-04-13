@@ -1,0 +1,5103 @@
+Set Implicit Arguments.
+
+
+
+Require Import FCF.FCF.
+(* FCF.FCF:
+Require Export FCF.Crypto.
+Require Export FCF.ProgramLogic.
+Require Export FCF.ProgTacs.
+Require Export FCF.RndNat.
+Require Export FCF.GenTacs.
+Require Export FCF.NotationV1.
+Require Export FCF.Tactics.
+
+Open Scope eq_scope. *)
+
+Require Import FCF.PRF.
+(* FCF.PRF:
+Set Implicit Arguments.
+Require Import FCF.FCF.
+Require Import FCF.CompFold. 
+Require Export FCF.Array.
+Require Export FCF.Hybrid.
+
+Local Open Scope list_scope.
+Local Open Scope array_scope.
+
+Definition oracleMap(D R S: Set)(eqds : EqDec S)(eqdr : EqDec R)(oracle : S  -> D -> Comp (R * S))(s : S)(ds : list D) :=
+  compFold _ 
+  (fun acc d => [rs, s] <-2 acc; [r, s] <-$2 oracle s d; ret (rs ++ r :: nil, s)) 
+  (nil, s) ds.
+
+Theorem oracleMap_wf : 
+  forall (D R S : Set)(eqds : EqDec S)(eqdr : EqDec R) (oracle : S -> D -> Comp (R * S))ds s,
+  (forall s x, well_formed_comp (oracle s x)) ->
+  well_formed_comp (@oracleMap D R S _ _ oracle s ds).
+
+  Hypothesis RndR_wf : well_formed_comp RndR.
+  
+  Definition randomFunc (f : (list (D * R))) (d : D) : Comp (R * list (D * R)) :=
+      match (arrayLookup _ f d) with
+        | None => (r <-$ RndR; ret (r, (d, r) :: f))
+        | Some r => ret (r, f)
+      end.  
+  
+  Lemma randomFunc_wf : forall f d, 
+    well_formed_comp (randomFunc f d).
+  
+  Hint Resolve randomFunc_wf : wftac.
+
+  Definition RndFunc(lsd : list D) : Comp (list (D * R)) :=
+    compFold _ (fun f d => r <-$ RndR; ret (d, r)::f) nil lsd. 
+  
+End RandomFunc.
+
+Local Open Scope type_scope.
+Local Open Scope comp_scope.
+
+Section PRF_concrete.
+  
+  Variable D R Key : Set.
+  Variable RndKey : Comp Key.
+  Variable RndR : Comp R.
+  Variable f : Key -> D -> R.
+
+  Hypothesis D_EqDec : EqDec D.
+  Hypothesis R_EqDec : EqDec R.
+
+  Definition RndR_func : (list (D * R) -> D -> Comp (R * list (D * R))) :=
+    (randomFunc RndR _).
+
+  Section PRF_NA_concrete.
+  
+    Variable State : Set.
+    Variable A1 : Comp (list D * State).
+    Variable A2 : State -> list R -> Comp bool.
+
+    Definition PRF_NA_G_A : Comp bool := 
+      [lsD, s_A] <-$2 A1; 
+      lsR <-$ (k <-$ RndKey; ret (map (f k) lsD));
+      A2 s_A lsR.
+    
+    Definition PRF_NA_G_B : Comp bool := 
+      [lsD, s_A] <-$2 A1;
+      [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD;
+      A2 s_A lsR.
+    
+    Definition PRF_NA_Advantage := 
+    | Pr[PRF_NA_G_A] - Pr[PRF_NA_G_B] |.  
+
+  End PRF_NA_concrete.
+
+  Section PRF_NAI_concrete.
+
+    Variable A_state : Set.
+    Variable A1 : Comp ((list (list D)) * A_state).
+    Variable A2 : A_state -> list (list R) -> Comp bool.
+
+    Definition PRF_NAI_G0 :=
+      [lsDs, s_A] <-$2 A1;
+      lsRs <-$ compMap _ (fun lsD => k <-$ RndKey; ret (map (f k) lsD)) lsDs;
+      A2 s_A lsRs.
+
+    Definition PRF_NAI_G1 :=
+      [lsDs, s_A] <-$2 A1;
+      lsRs <-$ compMap _ (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR) lsDs;
+      A2 s_A lsRs.
+
+    Definition PRF_NAI_Advantage := 
+    | Pr[PRF_NAI_G0] - Pr[PRF_NAI_G1] |.   
+                         
+  Section PRF_NA_impl_NAI.
+
+    Variable maxLists : nat.
+    Hypothesis maxLists_correct : 
+      forall ls s_A, 
+        In (ls, s_A) (getSupport A1) ->
+        (length ls <= maxLists)%nat.
+
+    Hypothesis A_state_EqDec : EqDec A_state.
+    Hypothesis RndR_wf : well_formed_comp RndR.
+    Hypothesis RndKey_wf : well_formed_comp RndKey.
+
+    Variable maxDistance : Rat.
+    Hypothesis maxDistance_correct : 
+      forall i, 
+      PRF_NA_Advantage (B1 nil _ _ A1 i) (B2 (fun lsD => k <-$ RndKey; ret (map (f k) lsD))
+              (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR)
+              _ A2) <= maxDistance.
+
+    Theorem PRF_NAI_Advantage_eq_Hybrid:
+      PRF_NAI_Advantage == ListHybrid_Advantage 
+                             (fun lsD => k <-$ RndKey; ret (map (f k) lsD))
+                             (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR)
+                             _ A1 A2.
+
+    Theorem PRF_NA_impl_NAI : 
+      PRF_NAI_Advantage <= (maxLists / 1 * maxDistance)%rat.
+
+  End PRF_NA_impl_NAI.
+
+  End PRF_NAI_concrete.
+
+  Section PRF_Full_concrete.
+    
+    Variable A : OracleComp D R bool.
+    
+    Definition f_oracle(k : Key)(x : unit)(d : D) :=
+      ret (f k d, tt).
+    
+    Definition PRF_G_A : Comp bool := 
+      k <-$ RndKey;
+      [b, _] <-$2 A _ _ (f_oracle k) tt;
+      ret b.
+    
+    Definition PRF_G_B : Comp bool := 
+      [b, _] <-$2 A _ _ (RndR_func) nil;
+      ret b.
+    
+    Definition PRF_Advantage := 
+    | Pr[PRF_G_A] - Pr[PRF_G_B] |.  
+    
+  End PRF_Full_concrete.
+
+  Section PRF_Finite_concrete.
+
+    Variable dom : list D.
+    Variable def : R.
+    Variable A : (D -> R) -> Comp bool.
+
+    Definition PRF_Fin_G_A : Comp bool := 
+      k <-$ RndKey;
+      A (f k).
+    
+    Definition PRF_Fin_G_B : Comp bool := 
+      f <-$ @RndFunc D R RndR _ dom;
+      A (fun d => arrayLookupDef _ f d def).
+
+    Definition PRF_Fin_Advantage := 
+    | Pr[PRF_Fin_G_A] - Pr[PRF_Fin_G_B] |.
+
+  End PRF_Finite_concrete.
+  
+End PRF_concrete.
+
+Require Import FCF.Asymptotic.
+Require Import FCF.Admissibility.
+
+Section PRF.
+
+  Variable D R Key : DataTypeFamily.
+  Variable RndKey : forall n, Comp (Key n).
+  Variable RndR : forall n, Comp (R n).
+  Variable f : forall n, Key n -> D n -> R n.
+
+  Hypothesis D_EqDec : forall n, EqDec (D n).
+  Hypothesis R_EqDec : forall n, EqDec (R n).
+
+  Section PRF_NA.
+    Variable admissible_A1 : pred_comp_fam.
+    Variable admissible_A2 : pred_comp_func_2_fam.
+    
+    Definition PRF_NA :=
+      forall (State : DataTypeFamily) A1 A2,
+        admissible_A1 _ A1 -> 
+        admissible_A2 State _ _ A2 ->
+        negligible (fun n => PRF_NA_Advantage (RndKey n) (RndR n) (@f n) _ _ (A1 n) (@A2 n)).
+  End PRF_NA.
+
+  Section PRF_Full.
+    Variable admissible_A : pred_oc_fam.
+    
+    Definition PRF :=
+      forall (A : forall n, OracleComp (D n) (R n) bool),
+        admissible_A _ _ _ A -> 
+        negligible (fun n => PRF_Advantage (RndKey n) (RndR n) (@f n) _ _ (A n)).
+  End PRF_Full.
+      
+End PRF. *)
+
+Require Import hmacfcf.splitVector.
+(* hmacfcf.splitVector:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+Require Import FCF.SemEquiv.
+Require Import FCF.DetSem.
+
+Fixpoint splitVector(A : Set)(n m : nat) : Vector.t A (n + m) -> (Vector.t A n * Vector.t A m) :=
+  match n with
+          | 0 =>
+            fun (v : Vector.t A (O + m)) => (@Vector.nil A, v)
+          | S n' =>
+            fun (v : Vector.t A (S n' + m)) =>
+              let (v1, v2) := splitVector _ _ (Vector.tl v) in
+                (Vector.cons _ (Vector.hd v) _ v1, v2)
+    end.
+
+Theorem splitVector_append :
+  forall (A : Set) n1 (v1 : Vector.t A n1) n2 (v2 : Vector.t A n2),
+
+Theorem append_splitVector_h :
+  forall (A : Set) n1 n2 (x : Vector.t A (n1 + n2)),
+
+Theorem append_splitVector:
+  forall (A : Set) n1 n2 (x : Vector.t A (n1 + n2)) x1 x2,
+
+Theorem shiftOut_plus :
+  forall (n1 n2 : nat) s b s',
+    shiftOut s (n1 + n2) = Some (b, s') ->
+    exists b1 b2 s'',
+      shiftOut s n1 = Some (b1, s'') /\
+      shiftOut s'' n2 = Some (b2, s') /\
+      splitVector n1 n2 b = (b1, b2).
+
+Theorem shiftOut_plus_None :
+  forall n1 n2 s,
+    shiftOut s (n1 + n2) = None ->
+    shiftOut s n1 = None \/
+    (exists x s', shiftOut s n1 = Some (x, s') /\
+      shiftOut s' n2 = None).
+
+Theorem Vector_cons_app_assoc :
+  forall (A : Type)(a : A)(n1 n2 : nat)(v1 : Vector.t A n1)(v2 : Vector.t A n2),
+
+Theorem shiftOut_plus_if :
+  forall n1 n2 s s' s'' b1 b2,
+    shiftOut s n1 = Some (b1, s') ->
+    shiftOut s' n2 = Some (b2, s'') ->
+    shiftOut s (n1 + n2) = Some (Vector.append b1 b2, s'').
+
+Theorem shiftOut_plus_None_if :
+  forall n1 n2 s,
+    (shiftOut s n1 = None \/
+      (exists b s', shiftOut s n1 = Some (b, s') /\
+        shiftOut s' n2 = None)) ->
+    shiftOut s (n1 + n2) = None.
+
+Theorem Rnd_split_equiv :
+  forall n1 n2 z ,
+    evalDist
+    (x <-$ {0, 1}^(n1 + n2);
+      ret (splitVector n1 n2 x)) z ==
+    evalDist
+    (x1 <-$ {0, 1}^n1;
+      x2 <-$ {0, 1}^n2;
+      ret (x1, x2)) z. *)
+
+Require Import hmacfcf.cAU.
+(* hmacfcf.cAU:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+
+Section cAU.
+
+  Variable K D R : Set.
+  Hypothesis D_EqDec : EqDec D.
+  Hypothesis R_EqDec : EqDec R.
+  Variable f : K -> D -> R.
+  Variable RndK : Comp K.
+
+  Section cAU.
+    Variable A : Comp (D * D).
+
+    Definition Adv_au_once_G :=
+      k <-$ RndK;
+      [d1, d2] <-$2 A;
+      ret (negb (eqb d1 d2) && eqb (f k d1) (f k d2)).
+  End cAU.
+
+  Section WCR.
+
+    Variable A : OracleComp D R (D * D).
+
+    Definition WCR_Oracle (k : K)(s : unit)(d : D) :=
+      ret (f k d, tt).
+
+    Definition Adv_WCR_G :=
+      k <-$ RndK;
+      [p, _] <-$2 A _ _ (WCR_Oracle k) tt;
+      [d1, d2] <-2 p;
+      ret (negb (eqb d1 d2) && eqb (f k d1) (f k d2)).
+
+    Definition Adv_WCR := Pr[Adv_WCR_G].
+
+  End WCR.
+
+End cAU. *)
+
+Require Import FCF.CompFold.
+(* FCF.CompFold:
+Set Implicit Arguments.
+Require Import FCF.FCF.
+
+Local Open Scope list_scope.
+
+Fixpoint compFold(A B : Set)(eqd : EqDec B)(f : B -> A -> Comp B)(init : B)(ls : list A) :=
+  match ls with
+      | nil => ret init 
+      | a :: ls' =>
+        init' <-$ f init a;
+          compFold  _ f init' ls'
+  end.
+
+Definition foldBody_option(A B : Set)(eqd : EqDec B)(f : B -> A -> Comp (option B))(b_opt : option B)(a : A) :=
+  match b_opt with
+      | None => ret None
+      | Some b =>
+        f b a
+  end.
+
+Definition opt_pred(A B : Set)(P : A -> B -> Prop)(opt_a : option A)(opt_b : option B) :=
+  match opt_a with
+    | Some a =>
+      match opt_b with
+        | Some b => P a b
+        | None => False
+      end
+    | None =>
+      match opt_b with
+        | Some _ => False
+        | None => True
+      end
+  end.
+
+Theorem foldBody_option_spec : 
+  forall (A B C D: Set)(eqda : EqDec A)(eqdb : EqDec B) (c1 : A -> C -> Comp (option A)) (c2 : B -> D -> Comp (option B)) (post : A -> B -> Prop) (pre1 : A -> B -> Prop) (pre2 : C -> D -> Prop), 
+    (forall a b c d, 
+         pre1 a b -> pre2 c d -> comp_spec (opt_pred post) (c1 a c) (c2 b d)) ->
+    forall opt_a opt_b c d,
+      opt_pred pre1 opt_a opt_b ->
+      pre2 c d ->
+      comp_spec
+        (opt_pred post)
+        (foldBody_option _ c1 opt_a c)
+        (foldBody_option _ c2 opt_b d).
+
+Theorem compFold_option_spec : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(pre : A -> B -> Prop),
+    list_pred pre lsa lsb ->
+    forall (C D : Set){eqdc : EqDec C}{eqdd : EqDec D}(c1 : C -> A -> Comp (option C))(c2 : D -> B -> Comp (option D))(post : C -> D -> Prop) c d,
+      (forall c d a b, post c d -> pre a b -> comp_spec (opt_pred post) (c1 c a) (c2 d b)) ->
+      opt_pred post c d ->
+      comp_spec 
+        (opt_pred post) 
+        (compFold _ (foldBody_option _ c1) c lsa) 
+        (compFold _ (foldBody_option _ c2) d lsb).
+
+Fixpoint compMap (A B : Set)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A) : Comp (list B) :=
+  match ls with
+      | nil => ret nil
+      | a :: lsa' =>
+        b <-$ c a;
+          lsb' <-$ compMap _ c lsa';
+          ret (b :: lsb')
+  end.
+
+Theorem compMap_cons: 
+  forall (A B : Set)(eqdb : EqDec B) (ls : list A)(c : A -> Comp B) (a : A) x,
+    evalDist (compMap _ c (a :: ls)) x ==
+    evalDist (b <-$ c a; lsb <-$ compMap _ c ls; ret (b :: lsb)) x.
+
+Theorem compMap_nil : 
+  forall (A B : Set)(eqdb : EqDec B)(c : A -> Comp B),
+    compMap _ c nil = ret nil.
+
+Theorem list_inhabited : 
+  forall (A : Set), list A.
+
+Theorem compMap_fission_eq:
+  forall (A B C D : Set){eqdb : EqDec B}{eqdd : EqDec D}{eqdc : EqDec C}(ls : list A)(f1 : A -> Comp B)(f2 : A -> Comp C)(f3 : list B -> Comp (list D))(f4 : C -> Comp D) P,
+    (comp_spec eq (f3 nil) (ret nil)) -> 
+    (forall a, comp_spec P (f1 a) (f2 a)) -> 
+    (forall r1 r2 r3, P r1 r2 ->
+      comp_spec eq (f3 (r1 :: r3)) (r0 <-$ f3 r3; a0 <-$ f4 r2; ret a0 :: r0)) ->
+    comp_spec eq 
+    (lsb <-$ compMap _ f1 ls; f3 lsb)
+    (compMap _ (fun a => b <-$ f2 a; f4 b) ls).
+  
+Theorem compMap_map_fission_eq :
+  forall (A B C D : Set){eqdb : EqDec B}{eqdd : EqDec D}{eqdc : EqDec C}(ls : list A)(f1 : A -> Comp B)(f2 : A -> Comp C)(f3 : B -> D)(f4 : C -> D),
+    (forall a, comp_spec (fun b c => f3 b = f4 c)
+              (f1 a) (f2 a)) -> 
+    comp_spec eq (lsb <-$ compMap _ f1 ls; ret (map f3 lsb))
+     (compMap _ (fun a => b <-$ f2 a; ret (f4 b)) ls).
+
+Theorem fold_map_fission_spec_eq : 
+  forall (A B C: Set)(eqdB : EqDec B)(eqdC : EqDec C) ls c init (ca : A -> Comp B) cb,
+    (forall a init, comp_spec eq (c init a) (x <-$ ca a; cb init x)) ->
+    comp_spec eq (compFold _ c init ls) 
+    (lsa <-$ (compMap _ ca ls); compFold _ cb init lsa).
+
+Theorem fold_map_fission_spec : 
+  forall (A E : Set)(P : A -> E -> Prop)(B D : Set)(eqdA : EqDec A)(c1 : A -> B -> Comp A)(ls_b : list B)(init_a : A)
+    (eqdD : EqDec D)(eqdE : EqDec E)(c2 : B -> Comp D)(c3 : E -> D -> Comp E)(init_e : E),
+    P init_a init_e ->
+    (forall a b e, P a e -> comp_spec P (c1 a b) (a0 <-$ c2 b; c3 e a0)) ->
+    comp_spec P 
+    (compFold _ c1 init_a ls_b)
+    (ls_d <-$ (compMap _ c2 ls_b); compFold _ c3 init_e ls_d).
+
+Definition repeatMax(A : Set)(eqd : EqDec A)(c : Comp A)(P : A -> bool) def (n : nat):=
+  compFold _ (fun a' i => if (P a') then (ret a') else c) def (allNatsLt n).
+  
+Lemma repeatMax_fold_true :
+  forall (A B: Set)(ls : list B)(eqd : EqDec A)(c : B -> Comp A)(P : A -> bool)(a : A),
+    P a = true ->
+    comp_spec eq 
+    (compFold _ (fun acc b => if (P acc) then (ret acc) else (c b)) a ls)  
+    (ret a).
+
+Lemma repeatMax_fold_in_support_false : 
+  forall (A B : Set)(ls : list B)(eqd : EqDec A)(c : B -> Comp A)(P : A -> bool)(a : A),
+    (forall b, In b ls -> In a (getSupport (c b))) ->
+    P a = false ->
+    In a
+       (getSupport
+          (compFold eqd
+                    (fun (a' : A) b => if P a' then ret a' else (c b)) a ls)).
+
+Theorem compFold_repeat_spec : 
+  forall (C D: Set)(ls1 : list C)(ls2 : list D)(pre : C -> D -> Prop),
+    list_pred pre ls1 ls2 ->
+    forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(post : A -> B -> Prop)(c1 : C -> Comp A)(P1 : A -> bool)(c2 : D -> Comp B)(P2 : B -> bool) a b,
+    post a b -> 
+    (forall a b, pre a b -> comp_spec post (c1 a) (c2 b)) ->
+    (forall a b, post a b -> (P1 a = true <-> P2 b = true)) ->
+    comp_spec 
+      post 
+      (compFold _ (fun acc v => if (P1 acc) then (ret acc) else (c1 v)) a ls1) 
+      (compFold _ (fun acc v => if (P2 acc) then (ret acc) else (c2 v)) b ls2).
+
+Theorem compFold_eq : 
+  forall (A1 A2 : Set) P (ls1 : list A1) (ls2 : list A2),
+    list_pred P ls1 ls2 ->
+    forall (B : Set)(eqd : EqDec B) (c1 : B -> A1 -> Comp B) (c2: B -> A2 -> Comp B),
+      (forall acc a1 a2, P a1 a2 -> In a1 ls1 -> In a2 ls2 ->
+        comp_spec eq (c1 acc a1) (c2 acc a2) ) ->
+      forall init, 
+        comp_spec eq (compFold _ c1 init ls1) (compFold _ c2 init ls2).
+
+Lemma list_pred_zip_l : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(lsc : list C)(P1 : A -> C -> Prop)(P2 : B -> C -> Prop),
+      list_pred P1 lsa lsc ->
+      list_pred P2 lsb lsc ->
+      list_pred (fun (p : A * B) c => P (fst p) (snd p) /\ P1 (fst p) c /\ P2 (snd p) c) (zip lsa lsb) lsc.
+
+Lemma list_pred_eq : 
+  forall (A : Set)(lsa : list A),
+    list_pred eq lsa lsa.
+
+Lemma list_pred_I : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    (length lsa = length lsb) ->
+    list_pred (fun a b => True) lsa lsb.
+
+Lemma list_pred_length_eq : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+       list_pred P lsa lsb ->
+       length lsa = length lsb.
+
+Lemma list_pred_zip_l_eq : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    list_pred (fun p a => (fst p) = a /\ P (fst p) (snd p)) (zip lsa lsb) lsa.
+
+Lemma list_pred_map_r_eq : 
+  forall (A B : Set)(ls : list A)(f : A -> B),
+    list_pred (fun a b => f a = b) ls (map f ls).
+
+Lemma list_pred_map_r : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(f : B -> C),
+           list_pred (fun a c => exists b, P a b /\ c = f b) lsa (map f lsb).
+
+Lemma list_pred_zip_r : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(lsc : list C)(P1 : A -> C -> Prop)(P2 : B -> C -> Prop),
+      list_pred P1 lsa lsc ->
+      list_pred P2 lsb lsc ->
+      list_pred (fun c (p : A * B) => P (fst p) (snd p) /\ P1 (fst p) c /\ P2 (snd p) c) lsc (zip lsa lsb).
+
+Lemma list_pred_map_l_eq : 
+  forall (A B : Set)(ls : list A)(f : A -> B),
+    list_pred (fun b a => f a = b) (map f ls) ls.
+
+Definition compMap_fold (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list A) :=
+  compFold _ (fun (acc : list B)(a : A) => b <-$ c a; ret (acc ++ (b :: nil))) nil ls.
+
+Lemma compFold_spec : 
+  forall (A C D : Set)(P2 : list A -> C -> D -> Prop)(eqdc : EqDec C)(eqdd : EqDec D)(lsa : list A)(c1 : C -> A -> Comp C)(c2 : D -> A -> Comp D) init1 init2,
+    P2 lsa init1 init2 ->
+    (forall a lsa c d, P2 (a :: lsa) c d -> comp_spec (P2 lsa) (c1 c a) (c2 d a)) ->
+    comp_spec (P2 nil) (compFold _ c1 init1 lsa) (compFold _ c2 init2 lsa).
+
+Theorem compMap_fold_equiv : 
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list A),
+    comp_spec eq (compMap eqd c ls) (compMap_fold eqd c ls).
+
+Lemma compFold_wf : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls : list B) init,
+    (forall a b, well_formed_comp (c a b)) ->
+    well_formed_comp (compFold _ c init ls).
+
+Lemma compMap_map : 
+  forall (A B : Set)(eqd : EqDec B)(f : A -> B) ls,
+    comp_spec eq (compMap _ (fun a => ret (f a)) ls) (ret (map f ls)).
+
+Lemma compFold_nop : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls : list B) init x, 
+    In x (getSupport (compFold _ c init ls)) ->
+    (forall b a, In b ls -> In a (getSupport (c init b)) -> a = init) ->
+    x = init.
+
+Lemma compFold_app : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls1 ls2 : list B) init x,
+    evalDist (compFold _ c init (ls1 ++ ls2)) x ==
+    evalDist (init' <-$ compFold _ c init ls1; compFold _ c init' ls2) x.
+
+Theorem comp_fold_ext : 
+  forall (A B : Set)(eqd : EqDec A)(c1 c2 : A -> B -> Comp A)(ls : list B)(init : A),
+    (forall a b,
+       comp_spec eq (c1 a b) (c2 a b)) ->
+    comp_spec eq (compFold _ c1 init ls) (compFold _ c2 init ls).
+
+Lemma list_pred_app : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa1 lsa2 : list A)(lsb : list B),
+    list_pred P (lsa1 ++ lsa2) lsb ->
+    list_pred P lsa1 (firstn (length lsa1) lsb) *
+    list_pred P lsa2 (skipn (length lsa1) lsb).
+
+Theorem list_pred_map_l_inv :
+  forall (A B C : Set) (lsa : list A) (lsb : list B) (f : A -> C)(P : C -> B -> Prop),
+    list_pred P (map f lsa) lsb ->
+    list_pred (fun a b => P (f a) b) lsa lsb.
+
+Definition flatten_prep
+           (A B : Set)(ls : list (A * (list B))) : list (list (nat * nat * A * B)) :=
+  map (fun p => [a, lsb] <-2 p; map (fun p' => [i, b] <-2 p'; (i, length lsb, a, b)) (zip (allNatsLt (length lsb)) lsb)) ls.
+
+Theorem compFold_flatten : 
+  forall (A B C D: Set) P (eqd1 eqd2 : EqDec C)(c1 : C -> (D * list A) -> Comp C)(c2 : C -> B -> Comp C)(ls1 : list (D * (list A)))(ls2 : list B) init x,
+    list_pred P (flatten (flatten_prep ls1)) ls2 ->
+    (forall d lsa lsb init x, list_pred P (map (fun p => [i, a] <-2 p; (i, (length lsa), d, a)) (zip (allNatsLt (length lsa)) lsa)) lsb -> evalDist (c1 init (d, lsa)) x == evalDist (compFold eqd2 c2 init lsb) x) ->
+    evalDist (compFold eqd1 c1 init ls1) x ==
+    evalDist (compFold eqd2 c2 init ls2) x.
+
+Lemma compMap_eq : 
+  forall (A B : Set)(P : A -> B -> Prop)(C : Set)(eqd : EqDec C)(c1 : A -> Comp C)(c2 : B -> Comp C)(lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    (forall a b, P a b -> forall x, evalDist (c1 a) x == evalDist (c2 b) x) ->
+    forall x, 
+      evalDist (compMap _ c1 lsa) x == evalDist (compMap _ c2 lsb) x.
+
+Require Import Permutation.
+
+Theorem compFold_perm : 
+  forall (A B : Set)(inv : B -> Prop)(ls1 ls2 : list A),
+    Permutation ls1 ls2 ->
+    forall (eqd : EqDec B) (c : B -> A -> Comp B) init x,
+      (forall b a1 a2 x,
+           In a1 ls1 ->
+           In a2 ls2 ->
+           inv b -> 
+           evalDist (b' <-$ c b a1; c b' a2) x ==
+           evalDist (b' <-$ c b a2; c b' a1) x) ->
+      (forall a b b',
+         In a ls1 ->
+         inv b ->
+         In b' (getSupport (c b a)) ->
+         inv b') ->
+      inv init -> 
+      evalDist (compFold _ c init ls1) x ==
+      evalDist (compFold _ c init ls2) x.
+
+Lemma list_pred_app_both : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    list_pred P lsa1 lsb1 ->
+    list_pred P lsa2 lsb2 ->
+    list_pred P (lsa1 ++ lsa2) (lsb1 ++ lsb2).
+
+Lemma list_pred_map_both : 
+  forall (A B C D : Set)(P : A -> B -> Prop)(lsa : list A)(lsb : list B)(f1 : A -> C)(f2 : B -> D),
+    list_pred P lsa lsb ->
+    list_pred (fun c d => exists a b, P a b /\ c = (f1 a) /\ d = (f2 b)) (map f1 lsa) (map f2 lsb).
+
+Lemma compMap_spec : 
+  forall (A B C D : Set)(eqdc : EqDec C)(eqdd : EqDec D)(P1 : A -> B -> Prop)(P2 : C -> D -> Prop)(lsa : list A)(lsb : list B)(c1 : A -> Comp C)(c2 : B -> Comp D),
+    list_pred P1 lsa lsb ->
+    (forall a b, In a lsa -> In b lsb -> P1 a b -> comp_spec P2 (c1 a) (c2 b)) ->
+    comp_spec (list_pred P2)
+                   (compMap _ c1 lsa) 
+                   (compMap _ c2 lsb).
+
+Theorem compMap_fission_ex : 
+  forall (A B C : Set)(eqdb : EqDec B)(eqdc : EqDec C)
+         (c1 : A -> Comp B)(c2 : B -> Comp C)(ls : list A),
+    comp_spec eq 
+              (compMap _ (fun a => b <-$ c1 a; c2 b) ls)
+              (ls' <-$ compMap _ c1 ls; compMap _ c2 ls').
+
+Lemma list_pred_eq_gen : 
+  forall (A : Set)(ls1 ls2 : list A),
+    ls1 = ls2 ->
+    list_pred eq ls1 ls2.
+
+Lemma compMap_support : 
+  forall (A B : Set)(P : A -> B -> Prop)(eqd : EqDec B)(c : A -> Comp B)(lsa : list A)(lsb : list B),
+    In lsb (getSupport (compMap _ c lsa)) ->
+    (forall a b, In a lsa -> In b (getSupport (c a)) -> P a b) ->
+    list_pred P lsa lsb.
+
+Lemma In_zip : 
+  forall (A B : Set)(a : A)( b : B) lsa lsb, 
+    In (a, b) (zip lsa lsb) ->
+    In a lsa /\ In b lsb.
+
+Lemma list_pred_map_l
+: forall (A B : Set) (lsa : list A) (lsb : list B) (P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set) (f : A -> C),
+      list_pred 
+        (fun (c : C) (b : B) => exists a : A, P a b /\ c = f a) (map f lsa)
+        lsb.
+
+Lemma list_pred_map_l_if : 
+  forall (A B C : Set) (P  : C -> B -> Prop)(lsa : list A)(lsb : list B)(f : A -> C),
+    list_pred P (map f lsa) lsb ->
+    list_pred (fun a b => P (f a) b) lsa lsb.
+
+Lemma list_pred_map_r_if : 
+  forall (A B C : Set) (P  : A -> C -> Prop)(lsb : list B)(lsa : list A)(f : B -> C),
+    list_pred P lsa (map f lsb) ->
+    list_pred (fun a b => P a (f b)) lsa lsb.
+
+Lemma list_pred_map_r'
+: forall (A B C : Set) (lsa : list A) (lsb : list B) (P : A -> C -> Prop) (f : B -> C),
+    list_pred (fun a b => P a (f b)) lsa lsb ->
+    list_pred P lsa (map f lsb).
+
+Lemma list_pred_map_l'
+: forall (A B C : Set) (lsa : list A) (lsb : list B) (P : C -> B -> Prop) (f : A -> C),
+    list_pred (fun a b => P (f a) b) lsa lsb ->
+    list_pred P (map f lsa) lsb.
+
+Theorem list_pred_rev : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) P,
+    list_pred P lsa lsb ->
+    forall a b,
+    P a b ->
+    list_pred P (lsa ++ (a :: nil)) (lsb ++ (b :: nil)).
+
+Theorem list_pred_impl'
+     : forall (A B : Set) (lsa : list A) (lsb : list B) (P1 : A -> B -> Prop),
+       list_pred P1 lsa lsb ->
+       forall P2 : A -> B -> Prop,
+       (forall (a : A) (b : B), In a lsa -> In b lsb -> P1 a b -> P2 a b) -> list_pred P2 lsa lsb.
+
+Lemma list_pred_allNatsLt : 
+  forall (A : Set)(ls : list A),
+    list_pred (fun i a => forall a', nth i ls a' = a) (allNatsLt (length ls)) ls.
+
+Lemma compMap_length :
+  forall (A B : Set)(eqd : EqDec B)(ls : list A) x (c : A -> Comp B) ,
+    In x (getSupport (compMap _ c ls)) ->
+    length x = length ls.
+
+Lemma map_eq : 
+  forall (A B C : Set)(lsa : list A)(lsb : list B)(f1 : A -> C)(f2 : B -> C),
+    list_pred (fun a b => f1 a = f2 b) lsa lsb ->
+    map f1 lsa = map f2 lsb.
+
+Lemma zip_length : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    length (zip lsa lsb) = length lsa.
+
+Definition numberedMap(A B : Set)(f : nat -> nat -> A -> B)(ls : list A) :=
+  map (fun p => [i, a] <-2 p; f i (length ls) a) (zip (allNatsLt (length ls)) ls).
+
+Lemma numberedMap_length : 
+  forall (A B : Set)(ls : list A)(f : nat -> nat -> A -> B),
+    length (numberedMap f ls) = length ls.
+
+Lemma nth_zip : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) n a b defa defb,
+    length lsa = length lsb ->
+    nth n (zip lsa lsb) (defa, defb) = (a, b) ->
+    nth n lsa defa = a /\ nth n lsb defb = b.
+
+Lemma compFold_spec' : 
+  forall (A B C D : Set)(P2 : list A -> list B -> C -> D -> Prop)(eqdc1 eqdc2  : EqDec C)(eqdd1 eqdd2 : EqDec D)(lsa : list A)(lsb : list B)(c1 : C -> A -> Comp C)(c2 : D -> B -> Comp D) init1 init2,
+    length lsa = length lsb ->
+    P2 lsa lsb init1 init2 ->
+    (forall a lsa b lsb c d, P2 (a :: lsa) (b :: lsb) c d -> comp_spec (P2 lsa lsb) (c1 c a) (c2 d b)) ->
+    @comp_spec _ _ eqdc1 eqdd1 (P2 nil nil) (compFold eqdc2 c1 init1 lsa) (compFold eqdd2 c2 init2 lsb).
+  
+Lemma compMap_support_app : 
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    In lsb1 (getSupport (compMap _ c lsa1)) ->
+    In lsb2 (getSupport (compMap _ c lsa2)) ->
+    In (lsb1 ++ lsb2) (getSupport (compMap _ c (lsa1 ++ lsa2))).
+
+Lemma list_pred_single : 
+  forall (A : Set) (P : A -> A -> Prop) (lsa : list A),
+    (forall a, In a lsa -> P a a) ->
+    list_pred P lsa lsa.
+
+Lemma flatten_map_eq : 
+  forall (A B : Set)(ls : list (list A))(f : A -> B),
+    map f (flatten ls) = flatten (map (fun ls' => map f ls') ls).
+
+Lemma zip_app : 
+  forall (A B : Set)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    length lsa1 = length lsb1 ->
+    length lsa2 = length lsb2 ->
+    (zip lsa1 lsb1) ++ (zip lsa2 lsb2) =
+    (zip (lsa1 ++ lsa2) (lsb1 ++ lsb2)).
+
+Lemma length_flatten_eq : 
+  forall (A B : Set)(lsa : list (list A))(lsb : list (list B)),
+    list_pred (fun a1 a2 => length a1 = length a2) lsa lsb ->
+    length (flatten lsa) = length (flatten lsb).
+
+Lemma flatten_map_pair_eq : 
+  forall (A B C : Set)(ls : list (list A * list B))(f : A * B -> C),
+    (forall ls1 ls2, In (ls1, ls2) ls -> length ls1 = length ls2) ->
+    flatten (map (fun p => [ls1, ls2] <-2 p; map f (zip ls1 ls2)) ls) = 
+    map f (zip (flatten (fst (unzip ls))) (flatten (snd (unzip ls)))).
+
+Lemma compMap_app : 
+  forall (A B : Set)(eqd : EqDec B)(ls1 ls2 : list A)(c : A -> Comp B) x,
+    evalDist (compMap _ c (ls1 ++ ls2)) x ==
+    evalDist (r1 <-$ compMap _ c ls1; r2 <-$ compMap _ c ls2; ret (r1 ++ r2)) x.
+
+Lemma compMap_flatten :
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list (list A)),
+    comp_spec
+      (fun ls1 ls2 => ls2 = flatten ls1)
+      (compMap _ (fun ls' => compMap _ c ls') ls)
+      (compMap _ c (flatten ls)).
+
+Lemma map_f_equal : 
+  forall (A B : Set)(f1 f2 : A -> B)(ls1 ls2 : list A),
+    (forall a, f1 a = f2 a) ->
+    ls1 = ls2 ->
+    map f1 ls1 = map f2 ls2.
+
+Lemma list_pred_zip_eq_rev : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    (length lsa = length lsb) ->
+    list_pred (fun p1 p2 => [a1, b1] <-2 p1; [b2, a2] <-2 p2; a1 = a2 /\ b1 = b2) (zip lsa lsb) (zip lsb lsa).
+
+Lemma list_pred_zip_in : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    forall a b, 
+      In (a, b) (zip lsa lsb) ->
+      P a b.
+
+Lemma in_zip_swap : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) a b,
+    length lsa = length lsb ->
+    In (a, b) (zip lsa lsb) ->
+    In (b, a) (zip lsb lsa).
+
+Lemma unzip_zip_inv : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    unzip (zip lsa lsb) = (lsa, lsb).
+
+Notation "'foreach' '(' x 'in' ls ')' c " := (compMap _ (fun x => c) ls) (right associativity, at level 85, only parsing) : comp_scope.
+Notation "'foreach' '(' x 'in' ls ')' c " := (map (fun x => c) ls) (right associativity, at level 85, only parsing).
+Notation "'for' '(' x ''<' n ')' c " := (map (fun x => c) (allNatsLt n)) (right associativity, at level 86, only parsing).
+
+Fixpoint removePresent (A : Set)(eqd : eq_dec A)(u ls : list A) :=
+  match ls with
+    | nil => nil
+    | a' :: ls' =>
+      ls'' <- removePresent eqd u ls'; 
+        if (in_dec eqd a' u) then ls'' else (a' :: ls'')
+  end.
+
+Lemma removePresent_not_in : 
+  forall (A : Set)(eqd : eq_dec A)(a : A) ls1 ls2,
+    In a (removePresent eqd ls1 ls2) ->
+    In a ls1 -> 
+    False.
+  
+  induction ls2; intuition; simpl in *.
+  unfold setLet in *.
+
+Ltac hypInv :=
+      try (match goal with
+          | [H: Some _ = Some _ |-_ ] => inversion H; clear H; subst
+      end); try pairInv.
+
+Fixpoint lookupIndex (A : Set)(eqd : eq_dec A)(ls : list A)(a : A) def :=
+  match ls with
+    | nil => def
+    | a' :: ls' =>
+      if (eqd a a') then O else S (lookupIndex eqd ls' a def)
+  end.
+
+Lemma nth_lookupIndex : 
+  forall (A : Set)(eqd : eq_dec A)(ls : list A) n (a a': A),
+    In a ls ->
+    nth (lookupIndex eqd ls a n ) ls a' = a.
+
+Theorem map_ext_in : 
+  forall (A B : Set)(ls : list A)(f1 f2 : A -> B),
+    (forall a, In a ls -> f1 a = f2 a) ->
+    map f1 ls = map f2 ls.
+
+Lemma nth_map_In : 
+  forall (A B : Set)(ls : list A)(f : A -> B) i defa defb,
+    i < length ls ->
+    nth i (map f ls) defa = f (nth i ls defb).
+
+Lemma removePresent_In : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A) a,
+    In a ls2 ->
+    (~ In a ls1) ->
+    In a (removePresent eqd ls1 ls2).
+  
+  induction ls2; intuition; simpl in *.
+  intuition; subst.
+  unfold setLet.
+  destruct (in_dec eqd a0 ls1); intuition.
+  
+  unfold setLet.
+
+Lemma lookupIndex_lt_length :
+  forall (A : Set)(eqd : eq_dec A)(ls : list A) a def,
+    In a ls -> 
+    lookupIndex eqd ls a def < length ls.
+
+Lemma skipn_app : 
+  forall (A : Set)(ls1 ls2 : list A),
+    skipn (length ls1) (ls1 ++ ls2) = ls2.
+
+Lemma fold_add_init_nat_h : 
+  forall (A : Set)(f : A -> nat)(ls : list A)(init1 init2 : nat),
+    (fold_left (fun acc a => acc + (f a))%nat ls (init1 + init2) = 
+     init1 + fold_left (fun acc a => acc + (f a))%nat ls init2)%nat.
+
+Lemma fold_add_init_nat : 
+  forall (A : Set)(f : A -> nat)(ls : list A)(init : nat),
+    (fold_left (fun acc a => acc + (f a))%nat ls init = 
+     init + fold_left (fun acc a => acc + (f a))%nat ls O)%nat.
+
+Lemma length_flatten : 
+  forall (A : Set)(ls : list (list A)),
+    length (flatten ls) =
+    fold_left (fun acc a => (acc + (length a))%nat) ls O.
+
+Lemma fold_left_map_eq : 
+  forall (A B C : Set)(ls : list A)(f1 : A -> B)(f2 : C -> B -> C)(init : C),
+    fold_left (fun acc b => f2 acc b) (map f1 ls) init = 
+    fold_left (fun acc a => f2 acc (f1 a)) ls init.
+
+Lemma fold_add_nat_Permutation : 
+  forall (A : Set)(f : A -> nat)(ls1 ls2 : list A),
+    Permutation ls1 ls2 ->
+    fold_left (fun acc a => acc + (f a))%nat ls1 O = 
+    fold_left (fun acc a => acc + (f a))%nat ls2 O.
+
+Lemma intersect_NoDup : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A),
+    NoDup ls2 ->
+    NoDup (intersect eqd ls1 ls2).
+
+Lemma intersect_comm_Permutation : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A),
+    NoDup ls1 ->
+    NoDup ls2 ->
+    Permutation
+      (intersect eqd ls1 ls2)
+      (intersect eqd ls2 ls1).
+
+Lemma fold_add_nat_filter_partition : 
+  forall (A : Set)(P : A -> bool)(f : A -> nat)(ls : list A),
+    fold_left (fun acc a => acc + (f a))%nat ls O = 
+    (plus
+       (fold_left (fun acc a => acc + (f a))%nat (filter P ls) O)
+       (fold_left (fun acc a => acc + (f a))%nat (filter (fun a => negb (P a)) ls) O)
+    ).
+
+Lemma fold_left_add_removePresent : 
+  forall (B : Set)(eqd : eq_dec B)(f : B -> nat)(ls u : list B),
+    NoDup ls ->
+    NoDup u ->
+    fold_left (fun acc b => (acc + (f b))%nat) (removePresent eqd u ls) O = 
+    minus 
+      (fold_left (fun acc b => (acc + (f b))%nat) ls O)
+      (fold_left (fun acc b => (acc + (f b))%nat) (intersect eqd ls u) O).
+  
+  induction ls; intuition; simpl in *.
+  
+  inversion H; clear H; subst.
+  destruct (in_dec eqd a u).
+  unfold setLet.
+  rewrite IHls; trivial.
+  rewrite (@fold_add_nat_Permutation _ _ (intersect eqd (a :: ls) u) (intersect eqd u (a :: ls))).
+  
+  simpl.
+  destruct (in_dec eqd a u); intuition.
+  simpl.
+  
+  repeat rewrite (@fold_add_init_nat _ _ _ (f a)).
+  rewrite <- minus_plus_simpl_l_reverse.
+  f_equal.
+  eapply fold_add_nat_Permutation.
+  eapply intersect_comm_Permutation; intuition.
+  eapply intersect_comm_Permutation; intuition.
+  econstructor; eauto.
+  
+  unfold setLet.
+
+Lemma fold_add_nat_0 : 
+  forall (A : Set)(ls : list A)(f : A -> nat), 
+    (forall a, In a ls -> f a = O) ->
+    fold_left (fun acc a => acc + (f a))%nat ls O = O.
+
+Lemma map_snd_zip : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map (fun p => snd p) (zip lsa lsb) = lsb.
+
+Theorem Permutation_flatten :
+  forall (A : Set)(ls1 ls2 : list (list A)),
+    Permutation ls1 ls2 ->
+    Permutation (flatten ls1) (flatten ls2).
+
+Theorem zip_map_eq :
+  forall (A B C : Set)(ls : list A)(f1 : A -> B)(f2 : A -> C),
+    zip (map f1 ls) (map f2 ls) = map (fun a => (f1 a, f2 a)) ls.
+
+Theorem removePresent_in_only_if : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    In a (removePresent eqd u ls) ->
+    In a ls.
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Theorem removePresent_correct : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    In a u ->
+    In a (removePresent eqd u ls) ->
+    False.
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Theorem removePresent_NoDup :
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A),
+    NoDup ls ->
+    NoDup (removePresent eqd u ls).
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet.
+
+Theorem removePresent_correct2 : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    (~In a u) ->
+    In a ls ->
+    In a (removePresent eqd u ls).
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Definition optSwap (A : Set)(opt : option (A * A)) :=
+  match opt with
+    | None => None
+    | Some (a1, a2) =>
+      Some (a2, a1)
+  end.
+
+Theorem optSwap_involutive : 
+  forall (A : Set)(opt : option (A * A)),
+    optSwap (optSwap opt) = opt.
+
+Theorem nth_listReplace_nil_eq : 
+  forall (A : Set) i (a def1 def2 : A),
+    nth i (listReplace nil i a def1) def2 = a.
+
+Theorem nth_listReplace_eq : 
+  forall (A : Set) i (ls : list A) a def1 def2,
+    nth i (listReplace ls i a def1) def2 = a.
+
+Theorem nth_NoDup : 
+  forall (A : Set)(ls : list (list A)) i,
+    (forall e, In e ls -> NoDup e) ->
+    NoDup (nth i ls nil).
+
+Lemma listReplace_twice_nil : 
+  forall (A : Set)(n : nat) (a1 a2 def : A),
+    listReplace (listReplace nil n a1 def) n a2 def =
+    listReplace nil n a2 def.
+
+Lemma listReplace_twice : 
+  forall (A : Set)(n : nat)(ls : list A) a1 a2 def,
+    listReplace (listReplace ls n a1 def) n a2 def =
+    listReplace ls n a2 def.
+
+Lemma compFold_foldBodyOption_None : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp (option A))(ls : list B) x,
+    evalDist (compFold _ (foldBody_option _ c) None ls) x ==
+    evalDist (ret None) x.
+
+ Lemma Bvector_ne_exists : 
+      forall (n : nat)(v : Bvector n),
+        n > 0 ->
+        exists v', v <> v'.
+
+Lemma map_eq_inv : 
+      forall (A B : Set)(f1 f2 : A -> B)(ls : list A),
+        map f1 ls = map f2 ls ->
+        forall a, In a ls -> f1 a = f2 a.
+
+Lemma nth_lt_length : 
+  forall (A : Set)(ls : list A)(i : nat) a def,
+    nth i ls def = a ->
+    def <> a ->
+    i < length ls.
+
+Lemma map_eq_nth_h : 
+  forall (A B C : Set) (f1 : A -> C)(f2 : B -> C)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map f1 lsa = map f2 lsb ->
+    forall i def1 def2, 
+      i < length lsa ->
+      f1 (nth i lsa def1) = f2 (nth i lsb def2).
+
+Lemma map_eq_nth : 
+  forall (A B C : Set) i def1 def2 (f1 : A -> C)(f2 : B -> C)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map f1 lsa = map f2 lsb ->
+    i < length lsa ->
+    f1 (nth i lsa def1) = f2 (nth i lsb def2).
+
+Theorem compFold_eq' : 
+  forall (A1 A2 : Set) P (ls1 : list A1) (ls2 : list A2),
+    list_pred P ls1 ls2 ->
+    forall (B : Set)(eqd1 eqd2 : EqDec B) (c1 : B -> A1 -> Comp B) (c2: B -> A2 -> Comp B),
+      (forall acc a1 a2 x, P a1 a2 -> In a1 ls1 -> In a2 ls2 ->evalDist (c1 acc a1) x == evalDist (c2 acc a2) x) ->
+      forall init x, 
+        evalDist (compFold eqd1 c1 init ls1) x == evalDist (compFold eqd2 c2 init ls2) x.
+
+Lemma list_pred_flatten_both : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa : list (list A))(lsb : list (list B)),
+    list_pred (list_pred P) lsa lsb ->
+    list_pred P (flatten lsa) (flatten lsb).
+
+Theorem compMap_wf :
+  forall (A B : Set){eqdb : EqDec B}(c : A -> Comp B)(ls : list A),
+    (forall a, In a ls -> well_formed_comp (c a)) ->
+    well_formed_comp (compMap _ c ls).
+
+Theorem list_pred_listReplace : 
+  forall n (A B : Set) P (lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    forall a b defa defb,
+      P a b -> 
+      P defa defb ->
+      list_pred P (listReplace lsa n a defa) (listReplace lsb n b defb).
+
+Theorem list_pred_nth : 
+  forall n (A B : Set) P (lsa : list A)(lsb : list B) defa defb,
+    list_pred P lsa lsb ->
+    P defa defb ->
+    P (nth n lsa defa) (nth n lsb defb).
+
+Theorem compFold_cons : 
+  forall (A B : Set)(eqda : EqDec A)(c : A -> B -> Comp A)(ls : list B) b (a : A),
+    comp_spec eq (compFold _ c a (b :: ls)) (a' <-$ c a b; compFold _ c a' ls).
+
+Theorem compFold_support_h : 
+  forall (A B : Set)(eqda : EqDec A)(P : A -> list B -> list B -> Prop)(c : A -> B -> Comp A) (ls1 ls2 ls3 : list B)(a z : A),
+    In z (getSupport (compFold _ c a ls1)) ->
+    P a ls2 (ls1 ++ ls3) ->
+    (forall a1 a2 b ls1 ls2,
+       In a2 (getSupport (c a1 b)) ->
+       P a1 ls1 (b :: ls2) ->
+       P a2 (ls1 ++ (b :: nil)) ls2
+    ) ->
+    P z (ls2 ++ ls1) ls3.
+
+Theorem compFold_support : 
+  forall (A B : Set)(eqda : EqDec A)(P : A -> list B -> list B -> Prop)(c : A -> B -> Comp A) (ls1 : list B)(a z : A),
+    In z (getSupport (compFold _ c a ls1)) ->
+    P a nil ls1 ->
+    (forall a1 a2 b ls1 ls2,
+       In a2 (getSupport (c a1 b)) ->
+       P a1 ls1 (b :: ls2) ->
+       P a2 (ls1 ++ (b :: nil)) ls2
+    ) ->
+    P z ls1 nil.
+
+Theorem list_pred_app_both_if : 
+   forall (A B : Set) P (x y : list A)(z q : list B),
+     length x = length z ->
+     list_pred P (x ++ y) (z ++ q) ->
+     list_pred P x z /\ list_pred P y q.
+
+Theorem compMap_seq_map :
+  forall (A B C : Set)(eqdc : EqDec C)(ls : list A)(f : A -> B)(c : B -> Comp C),
+    comp_spec eq
+              (compMap _ c (map f ls))
+              (compMap _ (fun x => c (f x)) ls).
+
+Lemma compMap_Repeat_close : 
+  forall n (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(c : Comp A)(P : A -> bool)(f : A -> B) x,
+    well_formed_comp c ->
+    (exists a, In a (filter P (getSupport c))) ->
+    | (evalDist 
+      (a <-$ compMap eqda (fun _ : nat => c) (forNats n);
+       ret hd_error (map f (filter P a))) x) - 
+      (evalDist 
+         (a <-$ Repeat c P; ret Some (f a)) x) | <= 
+     expRat (Pr[a <-$ c; ret (negb (P a))]) n.
+
+Theorem compMap_head : 
+  forall (A B : Set)(eqd : EqDec B)(f : A -> Comp B)(ls : list A) x,
+    (forall a, In a ls -> well_formed_comp (f a)) ->
+    evalDist (ls' <-$ compMap _ f ls; ret (head ls')) x ==
+    evalDist (match (head ls) with
+                  | None => ret None
+                  | Some a => b <-$ f a; ret (Some b)
+              end) x.
+
+Theorem compMap_filter : 
+  forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list A)(c : A -> Comp B)(P : A -> bool) x,  
+    (forall a, In a ls -> well_formed_comp (c a)) ->
+    evalDist (compMap _ c (filter P ls)) x ==
+    evalDist (ps <-$ compMap _ (fun a => b <-$ (c a); ret (a, b)) ls; ret (snd (unzip (filter (fun p => P (fst p)) ps)))) x.
+
+Theorem prob_sum_le : 
+  forall (A : Set)(ls : list A)(c : A -> Comp bool),
+    Pr 
+      [compFold _ (fun b a => x <-$ c a; ret (b || x)) false ls] <=
+    sumList ls (fun a => Pr [c a]).
+
+Theorem prob_sum_le_mult : 
+  forall (n : nat)(c : Comp bool),
+    Pr 
+      [compFold _ (fun b a => x <-$ c; ret (b || x)) false (forNats n)] <=
+    n/1 * Pr [c].
+
+Theorem compMap_Q_eq_compFold : 
+  forall (B : Set)(eqdb : EqDec B)(Q : B -> bool) n1  (c : Comp B) z,
+    Pr[ls <-$ compMap _ (fun _ => c) (forNats n1); ret (fold_left (fun b x => b || (Q x)) ls z)] == 
+    Pr[compFold _ (fun b _ => z <-$ (x <-$ c; ret Q x); ret b || z) z (forNats n1)].
+
+Theorem Repeat_unroll_n : 
+  forall n (A : Set)(eqda : EqDec A)(c : Comp A)(P : A -> bool) a,
+    well_formed_comp c ->
+    (exists x, In x (filter P (getSupport c))) ->
+    evalDist (Repeat c P) a == 
+    evalDist (x <-$ compMap _ (fun _ => c) (forNats n);
+              match (hd_error (filter P x)) with
+                | None => Repeat c P
+                | Some z => ret z
+              end) a.
+
+Theorem compFold_ret_eq : 
+  forall (A B : Set)(eqdb : EqDec B)(ls : list A)(f : B -> A -> B) init,
+    comp_spec eq
+              (compFold _ (fun b a => ret (f b a)) init ls)
+              (ret (fold_left f ls init)).
+
+Theorem prob_fold_add_false_0 :
+  forall (A B : Set)(c : Comp A)(ls : list B)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) false ls] == 0.
+
+Theorem sumList_support_bool':
+  forall (c : Comp bool) (f : bool -> Rat),
+    sumList (getSupport c) (fun x => evalDist c x * f x) == 
+    Pr  [c ] * (f true) + (evalDist c false * (f false)).
+
+Theorem prob_fold_and_eq_exp_h : 
+  forall (A B : Set)(c : Comp A)(ls : list B)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) true ls] ==
+    expRat (Pr[x <-$c; ret (P x)]) (length ls).
+
+Theorem prob_fold_and_eq_exp : 
+  forall (A : Set)(c : Comp A)(n : nat)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) true (forNats n)] ==
+    expRat (Pr[x <-$c; ret (P x)]) n. *)
+
+
+
+Local Open Scope list_scope.
+
+
+
+Section hF.
+
+
+
+  Variable b k c : nat.
+
+
+
+  Variable h : Bvector c -> Bvector b -> Bvector c.
+
+  Variable F : Bvector k -> list (Bvector b) -> Bvector b.
+
+
+
+  Definition hF key m :=
+
+    [k_Out, k_In] <-2 splitVector c k key;
+
+    h k_Out (F k_In m).
+
+
+
+  Variable A : OracleComp (list (Bvector b)) (Bvector c) bool.
+
+  Hypothesis A_wf : well_formed_oc A.
+
+
+
+  Definition G0 :=
+
+    k_in <-$ {0, 1}^k;
+
+    k_out <-$ {0, 1}^c;
+
+    [b, _] <-$2 A _ _ (fun (_ : unit) m => ret (h k_out (F k_in m), tt)) tt;
+
+    ret b.
+
+
+
+  Definition G1 :=
+
+    k_in <-$ {0, 1}^k;
+
+    [b, _] <-$2 A _ _
+
+    (fun (s : list (Bvector b * Bvector c)) m =>
+
+      randomFunc ({0, 1}^c) _ s (F k_in m)) nil;
+
+    ret b.
+
+
+
+  Definition G2 :=
+
+    [b, _] <-$2 A _ _
+
+    (fun (s : list (list (Bvector b) * Bvector c)) m =>
+
+      randomFunc ({0, 1}^c) _ s m) nil;
+
+    ret b.
+
+
+
+  Definition G0_1 :=
+
+    [k_out, k_in] <-$2 (
+
+    key <-$ {0, 1}^(c + k);
+
+    ret splitVector c k key);
+
+    [b, _] <-$2 A _ _ (fun (_ : unit) m => ret (h k_out (F k_in m), tt)) tt;
+
+    ret b.
+
+
+
+  Theorem G0_1_equiv :
+
+    Pr[PRF_G_A ({0, 1}^(c + k)) hF _ A] == Pr[G0_1].
+
+
+
+    unfold PRF_G_A, G0_1.
+
+    inline_first.
+
+    comp_skip.
+
+    unfold f_oracle, hF.
+
+    remember (splitVector c k x) as z.
+
+    comp_simp.
+
+    reflexivity.
+
+  Qed.
+
+
+
+  Require Import FCF.DetSem FCF.SemEquiv.
+(* FCF.DetSem:
+Set Implicit Arguments.
+
+Require Export FCF.Comp.
+Require Import FCF.Blist.
+Require Import FCF.Fold.
+Require Import Permutation.
+Require Import Omega.
+
+Local Open Scope list_scope. 
+Local Open Scope comp_scope.
+
+Inductive comp_state(A : Set) :=
+  | cs_done : A -> Blist -> comp_state A
+  | cs_eof : comp_state A
+  | cs_more : Comp A -> Blist -> comp_state A.
+
+Inductive comp_answer(A : Set) :=
+  | ca_done : A -> comp_answer A
+  | ca_eof : comp_answer A.
+
+Lemma comp_answer_eq_dec : forall (A : Set),
+      eq_dec A ->
+      eq_dec (comp_answer A).
+
+Fixpoint evalDet_step(A : Set)(c : Comp A)(s : Blist) : comp_state A :=
+  match c in Comp A return comp_state A with
+    | Ret pf a => cs_done a s
+    | Rnd n  => 
+      match (shiftOut s n) with
+        | Some (v, s') => cs_more (Ret (@Bvector_eq_dec n) v) s'
+        | None => (@cs_eof (Bvector n))
+      end
+    | Bind c1 c2 =>     
+      match (evalDet_step c1 s) with
+        | cs_eof _ => (@cs_eof _)
+        | cs_done b s' => cs_more (c2 b) s'
+        | cs_more c1' s' => cs_more (Bind c1' c2) s'
+      end
+    | Repeat c P =>
+      cs_more (Bind c (fun a => if (P a) then (Ret (comp_eq_dec c) a) else (Repeat c P))) s
+   end.
+
+Inductive evalDet_steps(A : Set) : comp_state A -> comp_state A -> Prop :=
+  | evalDet_steps_refl : forall ans,
+    evalDet_steps ans ans
+  | evalDet_steps_step : 
+    forall c s ans ans',
+      (evalDet_step c s) = ans ->
+      evalDet_steps ans ans' ->
+      evalDet_steps (cs_more c s) ans'.
+
+Hint Constructors evalDet_steps : evalDet.
+
+Inductive evalDet(A : Set)(c : Comp A)(s : Blist) : comp_answer A -> Prop :=
+  | evalDet_done : forall a s',
+    evalDet_steps (cs_more c s) (cs_done a s') ->
+    evalDet c s (ca_done a)
+  | evalDet_eof :
+    evalDet_steps (cs_more c s) (@cs_eof A) ->
+    evalDet c s (@ca_eof A).
+    
+Theorem evalDet_steps_trans : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall z, 
+  evalDet_steps y z ->
+  evalDet_steps x z.
+
+Theorem evalDet_steps_bind_more_h : forall(A B : Set) x y,
+  evalDet_steps x y ->
+  forall (c1 : Comp B)(c2 : B -> Comp A) s c1' s',
+  x = (cs_more c1 s) ->
+  y =  (cs_more c1' s') ->
+  evalDet_steps (cs_more (Bind c1 c2) s) (cs_more (Bind c1' c2) s').
+
+Theorem evalDet_steps_bind_more : forall(A B : Set)(c1 : Comp B)(c2 : B -> Comp A) s c1' s',
+  evalDet_steps (cs_more c1 s) (cs_more c1' s') ->
+  evalDet_steps (cs_more (Bind c1 c2) s) (cs_more (Bind c1' c2) s').
+
+Lemma evalDet_steps_done_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A)(a : A) s s',
+  x = (cs_more c s) -> 
+  y = (cs_done a s') ->
+  exists c'' s'', evalDet_steps (cs_more c s) (cs_more c'' s'') /\ evalDet_step c'' s'' = (cs_done a s').
+
+Lemma evalDet_steps_done_inv : forall (A : Set)(c : Comp A)(a : A) s s',
+  evalDet_steps (cs_more c s) (cs_done a s') ->
+  exists c'' s'', evalDet_steps (cs_more c s) (cs_more c'' s'') /\ evalDet_step c'' s'' = (cs_done a s').
+
+Lemma evalDet_steps_eof_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) s,
+  x = (cs_more c s) -> 
+  y = (@cs_eof A) ->
+  exists c'' s'', evalDet_steps (cs_more c s) (cs_more c'' s'') /\ evalDet_step c'' s'' = (@cs_eof A).
+
+Lemma evalDet_steps_eof_inv : forall (A : Set)(c : Comp A) s,
+  evalDet_steps (cs_more c s) (@cs_eof A) ->
+  exists c'' s'', evalDet_steps (cs_more c s) (cs_more c'' s'') /\ evalDet_step c'' s'' = (@cs_eof A).
+
+Theorem evalDet_steps_bind_done : forall(A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a s s',
+  evalDet_steps (cs_more c1 s) (cs_done a s') ->
+  evalDet_steps (cs_more (Bind c1 c2) s) (cs_more (c2 a) s').
+
+Theorem evalDet_bind_eof : forall(A B : Set)(c1 : Comp B)(c2 : B -> Comp A) s,
+  evalDet_steps (cs_more c1 s) (@cs_eof B) ->
+  evalDet_steps (cs_more (Bind c1 c2) s) (@cs_eof A).
+
+Inductive comp_state_eq(A : Set) : comp_state A -> comp_state A -> Prop :=
+  | cse_done : 
+    forall a s, 
+      comp_state_eq (cs_done a s) (cs_done a s)
+  | cse_eof : 
+    comp_state_eq (@cs_eof A) (@cs_eof A)
+  | cse_more : 
+    forall c1 c2 s,
+      Comp_eq c1 c2 ->
+      comp_state_eq (cs_more c1 s) (cs_more c2 s).
+
+Theorem comp_state_eq_refl : forall (A : Set)(c : comp_state A),
+  comp_state_eq c c.
+
+Lemma evalDet_steps_done_func_h : forall (A : Set)(x : comp_state A) y1,
+  evalDet_steps x y1 ->
+  forall a a' s s',
+  y1 = (cs_done a s) ->
+  evalDet_steps x (cs_done a' s') ->
+  (a = a' /\ s = s').
+
+Theorem evalDet_steps_done_func : forall (A : Set) x (a a' : A) s s',
+  evalDet_steps x (cs_done a s) ->
+  evalDet_steps x (cs_done a' s') ->
+  (a = a' /\ s = s').
+
+Lemma evalDet_steps_done_eof_func_h : forall (A : Set)(x : comp_state A) y1,
+  evalDet_steps x y1 ->
+  forall a s,
+  y1 = (cs_done a s) ->
+  evalDet_steps x (@cs_eof A) ->
+  False.
+
+Theorem evalDet_steps_done_eof_func : forall (A : Set) x (a : A) s,
+  evalDet_steps x (cs_done a s) ->
+  evalDet_steps x (@cs_eof A) ->
+  False.
+
+Theorem evalDet_func : forall (A : Set)(c : Comp A)(s : Blist)(y1 y2 : comp_answer A),
+  evalDet c s y1 ->
+  evalDet c s y2 ->
+  y1 = y2.
+
+Definition evalDet_equiv(A : Set)(c1 c2 : Comp A) :=
+  (forall s y, evalDet c1 s y <-> evalDet c2 s y).
+
+Lemma evalDet_equiv_symm : forall (A : Set)(c1 c2 : Comp A),
+  evalDet_equiv c1 c2 ->
+  evalDet_equiv c2 c1.
+
+Theorem evalDet_steps_bind_done_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (B : Set)(c1 : Comp B)(c2 : B -> Comp A) s s' a,
+    x = (cs_more (Bind c1 c2) s) ->
+    y = (cs_done a s') ->
+  exists b s'', evalDet_steps (cs_more c1 s) (cs_done b s'') /\
+    evalDet_steps (cs_more (c2 b) s'') (cs_done a s').
+
+Theorem evalDet_steps_bind_done_inv : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) s s' a,
+  evalDet_steps (cs_more (Bind c1 c2) s) (cs_done a s') ->
+  exists b s'', evalDet_steps (cs_more c1 s) (cs_done b s'') /\
+    evalDet_steps (cs_more (c2 b) s'') (cs_done a s').
+
+Theorem evalDet_steps_bind_eof_inv_h : 
+  forall (A : Set)(x y : comp_state A),
+    evalDet_steps x y ->
+    forall (B : Set)(c1 : Comp B)(c2 : B -> Comp A) s,
+      x = (cs_more (Bind c1 c2) s) ->
+      y = (@cs_eof A) ->
+      evalDet_steps (cs_more c1 s) (@cs_eof B) \/
+      exists b s', evalDet_steps (cs_more c1 s) (cs_done b s') /\ 
+        evalDet_steps (cs_more (c2 b) s') (@cs_eof A).
+  
+Theorem evalDet_steps_bind_eof_inv : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) s,
+  evalDet_steps (cs_more (Bind c1 c2) s) (@cs_eof A) ->
+  evalDet_steps (cs_more c1 s) (@cs_eof B) \/
+  exists b s', evalDet_steps (cs_more c1 s) (cs_done b s') /\ 
+    evalDet_steps (cs_more (c2 b) s') (@cs_eof A).
+
+Theorem evalDet_bind_assoc : forall (A : Set)(c1 : Comp A)(B C : Set)(c2 : A -> Comp B)(c3 : B -> Comp C),
+  evalDet_equiv (Bind (Bind c1 c2) c3) (Bind c1 (fun a => (Bind (c2 a) c3))).
+
+Theorem evalDet_done_eof_func:
+  forall (A : Set) (c : Comp A) (a : A) (s : Blist),
+    evalDet c s (ca_done a) -> evalDet c s (@ca_eof A) -> False.
+
+Lemma getSupport_In_evalDet_step_done : forall (A : Set)(c : Comp A) a s s',
+  evalDet_step c s = cs_done a s' ->
+  In a (getSupport c).
+
+Lemma getSupport_In_evalDet_step_more : forall (A : Set)(c c' : Comp A) s s' a,
+  evalDet_step c s = cs_more c' s' ->
+  In a (getSupport c') ->
+  In a (getSupport c).
+
+Lemma getSupport_In_evalDet_steps_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) a s s',
+    x = (cs_more c s)  ->
+    y = (cs_done a s') -> 
+    In a (getSupport c).
+
+Lemma getSupport_In_evalDet_steps : forall (A : Set)(c : Comp A) a s s',
+  evalDet_steps (cs_more c s) (cs_done a s') -> 
+  In a (getSupport c).
+
+Theorem getSupport_In_evalDet : forall (A : Set)(c : Comp A) a s,
+  evalDet c s (ca_done a) -> 
+  In a (getSupport c).
+
+Inductive evalDet_repeat_steps (A : Set)(P : A -> bool) : comp_state A -> comp_state A -> Prop :=
+| evalDet_repeat_steps_done : 
+  forall c s a s',
+    evalDet_steps (cs_more c s) (cs_done a s') ->
+    P a = true ->
+    evalDet_repeat_steps P (cs_more c s) (cs_done a s')
+| evalDet_repeat_steps_eof :
+  forall c s,
+    evalDet_steps (cs_more c s) (@cs_eof A) ->
+    evalDet_repeat_steps P (cs_more c s) (@cs_eof A)
+| evalDet_repeat_steps_step :
+  forall c s a s' y,
+    evalDet_steps (cs_more c s) (cs_done a s') ->
+    P a = false ->
+    evalDet_repeat_steps P (cs_more c s') y ->
+    evalDet_repeat_steps P (cs_more c s) y.
+
+Inductive evalDet_repeat(A : Set)(P : A -> bool)(c : Comp A)(s : Blist) : comp_answer A -> Prop :=
+  | evalDet_repeat_done : forall a s',
+    evalDet_repeat_steps P (cs_more c s) (cs_done a s') ->
+    evalDet_repeat P c s (ca_done a)
+  | evalDet_repeat_eof :
+    evalDet_repeat_steps P (cs_more c s) (@cs_eof A) ->
+    evalDet_repeat P c s (@ca_eof A).
+
+Lemma list_skipn_strong_ind_h : forall (A : Type) l (P : list A -> Prop) ,
+  P nil -> 
+  (forall x, (forall n, n > 0 -> P (skipn n x)) -> P x) ->
+  (forall n, P (skipn n l)).
+
+Lemma list_skipn_strong_ind : forall (A : Type) l (P : list A -> Prop) ,
+  P nil -> 
+  (forall x, (forall n, n > 0 -> P (skipn n x)) -> P x) ->
+  P l.
+
+Lemma evalDet_step_nil_inv : forall (A : Set)(c : Comp A)(a1 a2 : A) s2,
+  evalDet_step c nil = (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  a1 = a2.
+
+Lemma evalDet_step_done_nil_inv : forall (A : Set)(c : Comp A) a ls,
+  evalDet_step c nil = (cs_done a ls) ->
+  ls = nil.
+
+Lemma evalDet_step_more_nil_inv : forall (A : Set)(c c' : Comp A) ls,
+  evalDet_step c nil = (cs_more c' ls) ->
+  ls = nil.
+
+Lemma evalDet_step_done_support_singleton : forall (A : Set)(c : Comp A) s a,
+  evalDet_step c s = cs_done a s ->
+  getSupport c = (a :: nil).
+
+Lemma getUnique_NoDup_eq : forall (A : Set)(eqd : eq_dec A)(ls : list A),
+  NoDup ls ->
+  getUnique ls eqd = ls.
+
+Lemma getUnique_Permutation : forall (A : Set)(eqd1 eqd2 : eq_dec A)(ls1 ls2 : list A),
+  Permutation ls1 ls2 ->
+  Permutation (getUnique ls1 eqd1) (getUnique ls2 eqd2).
+
+Lemma flatten_Permutation : forall (A : Type)(ls1 ls2 : list (list A)),
+  Permutation ls1 ls2 ->
+  Permutation (flatten ls1) (flatten ls2).
+
+Lemma to_list_nil_inv : forall (A : Type)(n : nat)(v : Vector.t A n),
+
+Lemma app_second_eq :
+  forall (A : Type) (ls2 ls1 ls3 : list A),
+    ls1 = ls2 ++ ls3 -> length ls1 = length ls3 -> ls1 = ls3 /\ ls2 = nil.
+
+Lemma shiftOut_same_inv : forall s n v,
+  shiftOut s n = Some (v, s) ->
+  n = O.
+
+Lemma filter_Permutation : forall (A : Set)(ls1 ls2 : list A)(P : A -> bool),
+  Permutation ls1 ls2 ->
+  Permutation (filter P ls1) (filter P ls2).
+
+Lemma evalDet_step_more_support_preserved : forall (A : Set)(c c' : Comp A) s,
+  evalDet_step c s = (cs_more c' s) ->
+  Permutation (getSupport c) (getSupport c').
+
+Lemma evalDet_steps_nil_eq_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A)(a1 a2 : A) s2,
+  x = (cs_more c nil) -> 
+  y = (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  a1 = a2.
+
+Lemma evalDet_steps_nil_eq : forall (A : Set)(c : Comp A)(a1 a2 : A) s2,
+  evalDet_steps (cs_more c nil) (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  a1 = a2.
+
+Lemma evalDet_step_done_val_eq : forall (A : Set)(c : Comp A)(a1 a2 : A) s1 s2,
+  evalDet_step c s1 = (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  a1 = a2.
+
+Lemma evalDet_step_done_ls_eq : forall (A : Set)(c : Comp A)(a2 : A) s1 s2,
+  evalDet_step c s1 = (cs_done a2 s2) ->
+  s1 = s2.
+
+Lemma shiftOut_skipn : forall n (v : Bvector n) s s',
+  shiftOut s n = Some (v, s') ->
+  s' = skipn n s.
+
+Lemma evalDet_step_more_skipn_eq : forall (A : Set)(c c' : Comp A)(a1 : A) s1 s2,
+  evalDet_step c s1 = (cs_more c' s2) ->
+  In a1 (getSupport c) ->
+  (s1 = s2 \/ (exists n, n > 0 /\ s2 = skipn n s1)).
+
+Lemma evalDet_step_done_skipn : forall (A : Set)(c : Comp A) s a s',
+  evalDet_step  c s = (cs_done a s') ->
+  exists n, s' = skipn n s.
+
+Lemma skipn_sum : forall (A : Type)(n2 n1 : nat)(ls : list A),
+  skipn n1 (skipn n2 ls) = skipn (n2 + n1) ls.
+
+Lemma evalDet_step_more_skipn : forall (A : Set)(c c' : Comp A) s s',
+  evalDet_step  c s = (cs_more c' s') ->
+  exists n, s' = skipn n s.
+
+Lemma evalDet_steps_done_skipn_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) s a s', 
+    x = (cs_more c s) ->
+    y = (cs_done a s') ->
+  exists n, s' = skipn n s.
+
+Lemma evalDet_steps_done_skipn : forall (A : Set)(c : Comp A) s a s',
+  evalDet_steps (cs_more c s) (cs_done a s') ->
+  exists n, s' = skipn n s.
+
+Lemma evalDet_steps_skipn_h : forall (A : Set) a1 (x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A)(a2 : A) s1 s2,
+  x = (cs_more c s1) -> 
+  y = (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  (a1 = a2 \/ (exists n, n > 0 /\ s2 = skipn n s1)).
+
+Lemma evalDet_steps_skipn : forall (A : Set)(c : Comp A)(a1 a2 : A) s1 s2,
+  evalDet_steps (cs_more c s1) (cs_done a2 s2) ->
+  In a1 (getSupport c) ->
+  (a1 = a2 \/ (exists n, n > 0 /\ s2 = skipn n s1)).
+
+Lemma evalDet_repeat_steps_dec : forall (s : Blist)(A : Set)(c : Comp A)(P : A -> bool),
+  (exists a, In a (getSupport c) /\ P a = true) ->
+  (forall s', (exists a s'', evalDet_steps (cs_more c s') (cs_done a s'')) \/ evalDet_steps (cs_more c s') (@cs_eof A)) ->
+  exists y, evalDet_repeat_steps P (cs_more c s) y.
+
+Lemma evalDet_repeat_steps_done_inv_h : forall (A : Set)(P : A -> bool) x y,
+  evalDet_repeat_steps P x y ->
+  forall c s,
+  x = (cs_more c s) -> 
+  evalDet_steps (cs_more (Repeat c P) s) y.
+
+Lemma evalDet_repeat_steps_done_inv : forall (A : Set)(c : Comp A)(P : A -> bool) s y,
+  evalDet_repeat_steps P (cs_more c s) y ->
+  evalDet_steps (cs_more (Repeat c P) s) y.
+
+Lemma evalDet_repeat_steps_more_inv_h : forall (A : Set)(x y : comp_state A) P,
+  evalDet_repeat_steps P x y ->
+  forall (c: Comp A)(P : A -> bool) s,
+  y = (cs_more c s) ->
+  False.
+
+Lemma evalDet_repeat_steps_more_inv : forall (A : Set) x (c : Comp A)(P : A -> bool) s,
+  evalDet_repeat_steps P x (cs_more c s) ->
+  False.
+
+Lemma evalDet_steps_dec : forall (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  forall s, 
+  (exists a s', evalDet_steps (cs_more c s) (cs_done a s')) \/ 
+  (evalDet_steps (cs_more c s) (@cs_eof A)).
+
+Lemma evalDet_dec : forall (A : Set)(c : Comp A)(s : Blist),
+  well_formed_comp c ->
+  (exists a, evalDet c s (ca_done a)) \/ (evalDet c s (@ca_eof A)).
+
+Lemma evalDet_step_app_done_eq : forall (A : Set)(c : Comp A) s s' s'' a,
+  evalDet_step c s = (cs_done a s'') ->
+  evalDet_step c (s ++ s') = (cs_done a (s'' ++ s')).
+
+Lemma evalDet_step_app_more_eq : forall (A : Set)(c c': Comp A) s s' s'',
+  evalDet_step c s = (cs_more c' s'') ->
+  evalDet_step c (s ++ s') = (cs_more c' (s'' ++ s')).
+
+Lemma evalDet_steps_app_eq_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) s s' s'' a,
+    x = (cs_more c s) ->
+    y = (cs_done a s'') ->
+    evalDet_steps (cs_more c (s ++ s')) (cs_done a (s'' ++ s')).
+
+Lemma evalDet_steps_app_eq : forall (A : Set)(c : Comp A) s s' s'' a,
+  evalDet_steps (cs_more c s) (cs_done a s'') ->
+  evalDet_steps (cs_more c (s ++ s')) (cs_done a (s'' ++ s')).
+
+Lemma evalDet_app_eq : forall (A : Set)(c : Comp A) s s' a,
+  evalDet c s (ca_done a) ->
+  evalDet c (s ++ s') (ca_done a).
+
+Lemma evalDet_steps_done_nil_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) a ls,
+    x = (cs_more c nil) ->
+    y = (cs_done a ls) ->
+    ls = nil.
+
+Lemma evalDet_steps_done_nil_inv : forall (A : Set)(c : Comp A) a ls,
+  evalDet_steps (cs_more c nil) (cs_done a ls) ->
+  ls = nil.
+
+Lemma app_eq_nil_inv : forall (A : Set)(ls2 ls1 ls3 : list A),
+  ls1 = ls2 ++ ls3 ->
+  length ls1 = length ls2 ->
+  ls3 = nil.
+
+Lemma evalDet_steps_repeat_done_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (P : A -> bool)(c : Comp A) s a s',
+  evalDet_steps x (cs_more (Repeat c P) s) ->
+  y = (cs_done a s') ->
+  evalDet_repeat_steps P (cs_more c s) (cs_done a s').
+
+Lemma evalDet_steps_repeat_done_inv : forall (A : Set)(P : A -> bool)(c : Comp A) s a s',
+  evalDet_steps (cs_more (Repeat c P) s) (cs_done a s') ->
+  evalDet_repeat_steps P (cs_more c s) (cs_done a s').
+
+Lemma evalDet_steps_repeat_eof_inv_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (P : A -> bool)(c : Comp A) s,
+    evalDet_steps x (cs_more (Repeat c P) s) ->
+    y = (cs_eof A) ->
+  evalDet_repeat_steps P (cs_more c s) (cs_eof A).
+
+Lemma evalDet_steps_repeat_eof_inv : forall (A : Set)(P : A -> bool)(c : Comp A) s,
+  evalDet_steps (cs_more (Repeat c P) s) (cs_eof A)->
+  evalDet_repeat_steps P (cs_more c s) (cs_eof A).
+
+Lemma evalDet_repeat_steps_nil_inv_h : forall (A : Set) P (x y : comp_state A),
+  evalDet_repeat_steps P x y ->
+  forall (P : A -> bool) c a ls',
+  x = (cs_more c nil) ->
+  y = (cs_done a ls') ->
+  ls' = nil.
+
+Lemma evalDet_repeat_steps_nil_inv : forall (A : Set)(P : A -> bool) c a ls',
+  evalDet_repeat_steps P (cs_more c nil) (cs_done a ls') ->
+  ls' = nil.
+
+Lemma evalDet_repeat_steps_app_nil_h : forall (A : Set) P (x y : comp_state A),
+  evalDet_repeat_steps P x y ->
+  forall c ls1 ls2 b a,
+    x = (cs_more c ls1) ->
+    y = (cs_eof A) ->
+    evalDet_repeat_steps P (cs_more c (ls1 ++ b :: nil)) (cs_done a ls2)->
+    (forall s s' b a,
+      evalDet_steps (cs_more c s) (cs_eof A) ->
+      evalDet_steps (cs_more c (s ++ b :: nil)) (cs_done a s') ->
+      s' = nil) ->
+    ls2 = nil.
+
+Lemma evalDet_repeat_steps_app_nil : forall (A : Set)(c : Comp A) P ls1 ls2 b a,
+  evalDet_repeat_steps P (cs_more c ls1) (cs_eof A) ->
+  evalDet_repeat_steps P (cs_more c (ls1 ++ b :: nil)) (cs_done a ls2) ->
+  (forall s s' b a,
+    evalDet_steps (cs_more c s) (cs_eof A) ->
+    evalDet_steps (cs_more c (s ++ b :: nil)) (cs_done a s') ->
+    s' = nil) ->
+  ls2 = nil.
+
+Lemma evalDet_app_nil : forall (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  forall ls1 ls2 b a,
+  evalDet c ls1 (ca_eof A) ->
+  evalDet_steps (cs_more c (ls1 ++ b :: nil)) (cs_done a ls2) ->
+  ls2 = nil.
+
+Lemma evalDet_step_done_inv : forall (A : Set)(c : Comp A) a ls ls',
+  evalDet_step c ls = cs_done a ls' ->
+  exists eqd, 
+    c = Ret eqd a.
+
+Lemma evalDet_step_more_sublist : forall (A : Set)(c : Comp A) c' ls ls',
+  evalDet_step c ls = (cs_more c' ls') ->
+  exists ls'', ls = ls'' ++ ls'.
+    
+Lemma evalDet_sublist_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (c : Comp A) a ls ls' ,
+    x = (cs_more c ls) ->
+    y = (cs_done a ls') ->
+    exists ls'', ls = ls'' ++ ls'.
+
+Lemma evalDet_sublist : forall (A : Set)(c : Comp A) a ls ls',
+  evalDet_steps (cs_more c ls) (cs_done a ls') ->
+  exists ls'', ls = ls'' ++ ls'.
+
+Lemma evalDet_nil : forall (A : Set)(c : Comp A) a ls,
+  evalDet_steps (cs_more c nil) (cs_done a ls) ->
+  ls = nil.
+
+Lemma evalDet_left_total : forall (A : Set)(c : Comp A) s,
+  well_formed_comp c ->
+  exists ans, evalDet c s ans.
+  
+Lemma evalDet_steps_done_support_singleton_h : forall (A : Set)(x1 x2 : comp_state A),
+  evalDet_steps x1 x2 ->
+  forall (c : Comp A) a s,
+    x1 = (cs_more c nil) ->
+    x2 = (cs_done a s) ->
+    getSupport c = a :: nil.
+
+Lemma evalDet_steps_done_support_singleton : forall (A : Set)(c : Comp A) a s,
+  evalDet_steps (cs_more c nil) (cs_done a s) ->
+  getSupport c = a :: nil.
+
+Lemma evalDet_step_well_formed_comp_preserved : forall (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  forall c' s s',
+    evalDet_step c s = (cs_more c' s') ->
+    well_formed_comp c'. *)
+(* FCF.SemEquiv:
+Set Implicit Arguments.
+
+Require Import FCF.Comp.
+Require Import FCF.DetSem.
+Require Import FCF.DistSem.
+Require Import FCF.Rat.
+Require Import Arith.
+Require Import FCF.StdNat.
+Require Import FCF.Fold.
+Require Import FCF.Limit.
+Require Import Permutation.
+
+Local Open Scope rat_scope.
+Local Open Scope list_scope.
+
+Lemma evalDet_step_done_evalDist : forall (A : Set)(eqd : eq_dec A)(c : Comp A) a a' s,
+  evalDet_step c nil = (cs_done a s) ->
+  evalDist c a' == if (eqd a a') then 1 else 0.
+
+Lemma evalDet_step_nil_dist_preserved : forall (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  forall c' a, 
+    evalDet_step c nil = cs_more c' nil ->
+    evalDist c a == evalDist c' a.
+
+Lemma evalDet_steps_done_evalDist_h : forall (A : Set)(x y : comp_state A),
+  evalDet_steps x y ->
+  forall (eqd : eq_dec A)(c : Comp A) a a' s,
+    x = (cs_more c nil) -> 
+    y = (cs_done a s) -> 
+    well_formed_comp c ->
+    evalDist c a' == if (eqd a a') then 1 else 0.
+  
+Lemma evalDet_steps_done_evalDist : forall (A : Set)(eqd : eq_dec A)(c : Comp A) a a' s,
+  well_formed_comp c ->
+  evalDet_steps (cs_more c nil) (cs_done a s) ->
+  evalDist c a' == if (eqd a a') then 1 else 0.
+
+Definition lowDistApprox (A : Set)(c : Comp A)(a : A)(n : nat)(v : Rat) :=
+  exists vals count,
+    rel_map (evalDet c) (getAllBlists n) vals /\
+    pred_count (eq (ca_done a)) vals count  /\
+    v == (count / expnat 2 n).
+
+Lemma map_Ret_repeat : forall (A : Set)(eqd : eq_dec A)(a : A) ls ls',
+  rel_map (evalDet (Ret eqd a)) ls ls' ->
+  ls' = listRepeat (ca_done a) (length ls).
+
+Theorem lowDistApprox_Ret_inv : forall (A : Set)(eqd : eq_dec A)(a a' : A) n v,
+  lowDistApprox (Ret eqd a) a' n v ->
+  v == (if (eqd a a') then 1 else 0).
+
+Inductive lowDistApprox_bind (A B : Set)(c1 : Comp B)(c2 : B -> Comp A)(a : A)(n : nat) : Rat -> Prop :=
+| lda_b_intro : 
+  forall v,
+    sumList_rel (fun (b : B) r => forall r1 r2, lowDistApprox c1 b n r1 -> lowDistApprox (c2 b) a n r2 -> r == r1 * r2) (getSupport c1) v ->
+    lowDistApprox_bind c1 c2  a n v.
+
+Inductive DistApproxTree(A : Set) :=
+| dat_leaf : option A -> DistApproxTree A
+| dat_internal : DistApproxTree A -> DistApproxTree A -> DistApproxTree A.
+
+Inductive dat_correct_h(A : Set)(c : Comp A)(s : Blist) : nat -> DistApproxTree A -> Prop :=
+    | dat_correct_h_leaf_Some :
+      forall a n, 
+        evalDet c s (ca_done a) ->
+        dat_correct_h c s n (dat_leaf (Some a))
+    | dat_correct_h_leaf_None :
+        (forall a, ~ evalDet c s (ca_done a)) ->
+        dat_correct_h c s 0 (dat_leaf None)
+    | dat_correct_h_internal :
+      forall t1 t2 n, 
+        (forall a, ~ evalDet c s (ca_done a)) ->
+        dat_correct_h c (s ++ (true :: nil)) n t1 ->
+        dat_correct_h c (s ++ (false :: nil)) n t2 ->
+        dat_correct_h c s (S n) (dat_internal t1 t2).
+
+Definition dat_correct(A : Set)(c : Comp A)(n : nat) :=
+    dat_correct_h c nil n.
+
+Lemma dat_correct_func : forall (A : Set)(c : Comp A) ls n t1,
+  dat_correct_h c ls n t1 ->
+  forall t2, 
+    dat_correct_h c ls n t2 ->
+    t1 = t2.
+
+Fixpoint getTreeSupport_dups(A : Set)(t : DistApproxTree A) :=
+  match t with
+    | dat_leaf o =>
+      match o with
+        | None => nil
+        | Some a => a :: nil
+      end
+    | dat_internal t1 t2 =>
+      getTreeSupport_dups t1 ++ getTreeSupport_dups t2
+  end.
+
+Definition getTreeSupport(A : Set)(eqd : eq_dec A)(t : DistApproxTree A) : list A :=
+  getUnique (getTreeSupport_dups t) eqd.
+
+Lemma getTreeSupport_in : forall (A : Set)(eqd : eq_dec A)(c : Comp A)(t : DistApproxTree A) n,
+  dat_correct c n t ->
+  forall a,
+    In a (getTreeSupport eqd t) ->
+    In a (getSupport c).
+
+Lemma getTreeSupport_not_in : forall (A : Set)(eqd : eq_dec A)(c : Comp A)(t : DistApproxTree A) n a,
+  dat_correct c n t ->
+  ~In a (getSupport c) ->
+  ~In a (getTreeSupport eqd t).
+
+Lemma dat_exists_h : forall n s (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  exists t : DistApproxTree A,
+    dat_correct_h c s n t.
+
+Theorem dat_exists : forall n (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  exists t : DistApproxTree A,
+    dat_correct c n t.
+
+Fixpoint lowDistApproxFromTree(A : Set)(eqd : eq_dec A)(t : DistApproxTree A)(a : A) :=
+  match t with
+    | dat_leaf o =>
+      match o with
+        | None => 0
+        | Some a' => if (eqd a a') then 1 else 0
+      end
+    | dat_internal t1 t2 =>
+      (lowDistApproxFromTree eqd t1 a) * (1 / 2) + (lowDistApproxFromTree eqd t2 a) * (1 / 2)
+  end.
+
+Definition lowDistApprox_ls (A : Set)(c : Comp A) a n (ls : Blist) r :=
+  exists vals count,
+    rel_map (fun s v => (evalDet c (ls ++ s) v)) (getAllBlists n) vals /\
+    pred_count (eq (ca_done a)) vals count /\
+    count /expnat 2 n == r.
+
+Lemma lowDistApprox_ls_impl : forall n (A : Set)(c : Comp A) a r,
+  lowDistApprox c a n r ->
+  lowDistApprox_ls c a n nil r.
+
+Lemma evalDet_lowDistApprox_ls_done_inv : forall (A : Set)(eqd : eq_dec A)(c : Comp A) s a1 a2 n r,
+  evalDet c s (ca_done a1) ->
+  lowDistApprox_ls c a2 n s r ->
+  r == if (eqd a2 a1) then 1 else 0.
+ 
+Lemma low_tree_approx_same_inv_h : forall n (A : Set)(eqd : eq_dec A)(c : Comp A) ls t,
+  dat_correct_h c ls n t -> 
+  forall a r, 
+    lowDistApprox_ls c a n ls r ->
+    lowDistApproxFromTree eqd t a == r.
+
+Theorem low_tree_approx_same_inv : forall n (A : Set)(eqd : eq_dec A)(c : Comp A)(t : DistApproxTree A) (a : A) r,
+    dat_correct c n t -> 
+    lowDistApprox c a n r ->
+    lowDistApproxFromTree eqd t a == r.   
+
+Theorem getSupport_not_In_lowDistApprox : forall n (A : Set)(c : Comp A)(a : A) r,
+  ~In a (getSupport c) ->
+  lowDistApprox c a n r ->
+  r == 0.
+
+Definition getSupport_bind (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) : list (B * (list A)) :=
+  (map (fun b => (b , (getSupport (c2 b)))) (getSupport c1)).
+
+Fixpoint flattenPair (A B : Type)(ls : list (A * list B)) :=
+  match ls with
+    | nil => nil
+    | (a, ls_b) :: ls' =>
+      (map (fun b => (a, b)) ls_b) ++ (flattenPair ls')
+  end.
+
+Theorem in_flattenPair : forall (A B : Type)(ls : list (A * (list B))) a b entryList,
+  In (a, entryList) ls ->
+  In b entryList ->
+  In (a, b) (flattenPair ls).
+
+Definition getSupport_bind_cp (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) : list (B * A) :=
+  flattenPair (getSupport_bind c1 c2).
+
+Lemma In_getSupport_bind_cp : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) b a,
+  In b (getSupport c1) ->
+  In a (getSupport (c2 b)) ->
+  In (b, a) (getSupport_bind_cp c1 c2).
+
+Lemma not_In_getSupport_bind_cp : forall (A B : Set)(eqda : eq_dec A)(eqdb : eq_dec B)(c1 : Comp B)(c2 : B -> Comp A) b a,
+  ~ In (b, a) (getSupport_bind_cp c1 c2) ->
+  ~ In b (getSupport c1) \/ 
+  ~ In a (getSupport (c2 b)).
+
+Lemma evalDet_lowDistApprox_ls_done:
+  forall (A : Set) (eqd : eq_dec A) (c : Comp A) (s : Blist) 
+    (a1 a2 : A) (n : nat),
+    evalDet c s (ca_done a1) ->
+    lowDistApprox_ls c a2 n s (if eqd a2 a1 then 1 else 0).
+
+Lemma evalDet_lowDistApprox_ls_not_done:
+  forall (A : Set) (c : Comp A) (s : Blist) 
+    (a2 : A) (n : nat),
+    well_formed_comp c ->
+    (forall s' (a : A), In s' (getAllBlists n) -> evalDet c (s ++ s') (ca_done a) -> False) ->
+    lowDistApprox_ls c a2 n s 0.
+
+Lemma low_tree_approx_same_h : forall n (A : Set)(eqd : eq_dec A)(c : Comp A)(t : DistApproxTree A) ls,
+                                 dat_correct_h c ls n t ->
+                                 forall a, 
+                                   well_formed_comp c ->
+                                   lowDistApprox_ls c a n ls (lowDistApproxFromTree eqd t a).
+
+Theorem low_tree_approx_same : forall n (A : Set)(eqd : eq_dec A)(c : Comp A)(t : DistApproxTree A),
+  well_formed_comp c ->
+  dat_correct c n t -> 
+  forall a, 
+    lowDistApprox c a n (lowDistApproxFromTree eqd t a).
+
+Lemma lowDistApprox_left_total : forall (A : Set)(eqd : eq_dec A)(c : Comp A) a,
+  well_formed_comp c ->
+  left_total (lowDistApprox c a).
+
+Inductive datMap(A B : Set)(f : A -> DistApproxTree B -> Prop) : DistApproxTree A -> DistApproxTree B  -> Prop :=
+| datMap_leaf_None :
+    datMap f (dat_leaf None) (dat_leaf None)
+| datMap_leaf_Some : 
+  forall a t,
+    f a t ->
+    datMap f (dat_leaf (Some a)) t
+| datMap_internal : 
+  forall t1a t2a t1b t2b,
+    datMap f t1a t1b ->
+    datMap f t2a t2b ->
+    datMap f (dat_internal t1a t2a) (dat_internal t1b t2b).
+
+Inductive datMap_depth(A B : Set)(f : nat -> A -> DistApproxTree B -> Prop) : nat -> DistApproxTree A -> DistApproxTree B -> Prop :=
+| datMap_depth_leaf_None :
+  forall n, 
+    datMap_depth f n (dat_leaf None) (dat_leaf None)
+| datMap_depth_leaf_Some :
+  forall n a t,
+    f n a t ->
+    datMap_depth f n (dat_leaf (Some a)) t
+| datMap_depth_internal :
+  forall n t1a t2a t1b t2b,
+    datMap_depth f n t1a t1b ->
+    datMap_depth f n t2a t2b ->
+    datMap_depth f (S n) (dat_internal t1a t2a) (dat_internal t1b t2b).
+
+Definition dat_correct_bind(A B : Set)(c1 : Comp B)(c2 : B -> Comp A)(n : nat)(t : DistApproxTree A) :=
+  exists tb, dat_correct c1 n tb /\
+    (datMap_depth (fun n' b ta => (dat_correct (c2 b) n' ta)) n tb t).
+
+Definition dat_correct_bind2(A B : Set)(c1 : Comp B)(c2 : B -> Comp A)(n : nat)(t : DistApproxTree A) :=
+  exists tb, dat_correct c1 n tb /\
+    (datMap (fun b ta => (dat_correct (c2 b) n ta)) tb t).
+
+Lemma lowDistApproxFromTree_eq_0 : forall (A : Set)(eqd : eq_dec A)(t : DistApproxTree A) a,
+  ~In a (getTreeSupport eqd t) ->
+  lowDistApproxFromTree eqd t a == 0.
+
+Lemma lowDistApproxFromTree_datMap_inv : forall (A B : Set)(eqda : eq_dec A)(eqdb : eq_dec B)(tb : DistApproxTree B)(ta : DistApproxTree A)(mapRel : B -> DistApproxTree A -> Prop),
+  datMap mapRel tb ta ->
+  (forall b, In b (getTreeSupport eqdb tb) -> exists t,  mapRel b t) ->
+  (forall b t1 t2, mapRel b t1 -> mapRel b t2 -> t1 = t2) -> 
+  forall a r, 
+    sumList_rel 
+    (fun b r' => 
+      forall ta', mapRel b ta' ->  
+        lowDistApproxFromTree eqdb tb b * lowDistApproxFromTree eqda ta' a == r')
+    (getTreeSupport eqdb tb)
+    r ->
+    lowDistApproxFromTree eqda ta a == r.
+
+Lemma getTreeSupport_approx_0: forall (A : Set)(eqd : eq_dec A)(t : DistApproxTree A) a,
+  ~In a (getTreeSupport eqd t) ->
+  lowDistApproxFromTree eqd t a == 0.
+
+Lemma lowDistApprox_le_1 : forall (A : Set)(c : Comp A) a n r,
+  lowDistApprox c a n r ->
+  r <= 1.
+
+Theorem bind_low_tree_approx_same_inv : forall (A B : Set)(eqda : eq_dec A)(c1 : Comp B)(c2 : B -> Comp A) n a t r,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b))->
+  lowDistApprox_bind c1 c2 a n r ->
+  dat_correct_bind2 c1 c2 n t ->
+  r == lowDistApproxFromTree eqda t a.
+
+Lemma in_flattenPair_inv : forall (A B : Set)(ls : list (A * list B)) a b,
+  In (a, b) (flattenPair ls) ->
+  exists lsb,
+    In b lsb /\ In (a , lsb) ls.
+
+Lemma in_getSupport_bind_cp_fst : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a0,
+  In a0 (getSupport_bind_cp c1 c2) -> 
+  In (fst a0) (getSupport c1).
+
+Lemma lowDistApprox_bind_evalDist_limit : forall (A B :Set)(c1 : Comp B)(c2 : B -> Comp A) a,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) ->
+  (forall (a : B),
+    rat_inf_limit (lowDistApprox c1 a) (evalDist c1 a)) ->
+  (forall (b : B) (a : A),
+    In b (getSupport c1) ->
+    rat_inf_limit (lowDistApprox (c2 b) a) (evalDist (c2 b) a)) ->
+  rat_inf_limit (lowDistApprox_bind c1 c2 a) (evalDist (Bind c1 c2) a).
+
+Lemma datMap_left_total : forall (A B : Set)(eqdb : eq_dec A)(t : DistApproxTree A)(f : A -> DistApproxTree B -> Prop),
+  (forall a, In a (getTreeSupport eqdb t) -> exists b, f a b) ->
+  exists t',
+    datMap f t t'.
+    
+Lemma dat_exists_bind2 : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) n,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) ->
+  exists t, dat_correct_bind2 c1 c2 n t.
+
+Inductive dat_better(A : Set) : DistApproxTree A -> DistApproxTree A -> Prop :=
+| dat_better_leaf_None : forall t,
+  dat_better t (dat_leaf None)
+| dat_better_leaf_Some : forall a,
+  dat_better (dat_leaf (Some a)) (dat_leaf (Some a))
+| dat_better_internal : forall ta1 ta2 tb1 tb2,
+  dat_better ta1 tb1 ->
+  dat_better ta2 tb2 ->
+  dat_better (dat_internal ta1 ta2) (dat_internal tb1 tb2).
+
+Hint Constructors dat_better : dat.
+
+Lemma dat_better_refl : forall (A : Set)(t : DistApproxTree A),
+  dat_better t t.
+
+Lemma dat_better_trans : forall (A : Set)(t1 t2 : DistApproxTree A),
+  dat_better t1 t2 ->
+  forall t3, 
+    dat_better t2 t3 ->
+    dat_better t1 t3.
+
+Lemma dat_correct_dat_better : forall (A : Set)(c : Comp A) ls n1 t1,
+  dat_correct_h c ls n1 t1 ->
+  forall n2 t2,
+    dat_correct_h c ls n2 t2 ->
+    n1 >= n2 ->
+    dat_better t1 t2.
+
+Lemma lowDistApprox_dat_better_le : forall (A : Set)(eqd : eq_dec A)(t1 t2 : DistApproxTree A),
+  dat_better t1 t2 ->
+  forall (a : A), 
+    lowDistApproxFromTree eqd t2 a <= lowDistApproxFromTree eqd t1 a.
+
+Lemma datMap_better : forall (A B : Set)(t : DistApproxTree B) n (rel : nat -> B -> DistApproxTree A -> Prop) t1 t2,
+  (forall n b t1 t2, rel n b t1 -> rel (pred n) b t2 -> dat_better t1 t2) ->
+  datMap (rel n) t t1 ->
+  datMap (rel (pred n)) t t2 ->
+  dat_better t1 t2.
+
+Lemma datMap_depth_better : forall (A B : Set)(tb1 tb2 : DistApproxTree B),
+  dat_better tb1 tb2 ->
+  forall  n1 n2 (f : nat -> B -> DistApproxTree A -> Prop) t1 t2,
+    (forall n1 n2 b t1 t2, n1 >= n2 -> f n1 b t1 -> f n2 b t2 -> dat_better t1 t2) ->
+    datMap (f n1) tb1 t1 ->
+    datMap_depth f n2 tb2 t2 ->
+    n1 >= n2 ->
+    dat_better t1 t2.
+
+Lemma dat_bind_2_better : forall (n : nat) (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) t1 t2,
+  dat_correct_bind2 c1 c2 n t1 ->
+  dat_correct_bind c1 c2 n t2 ->
+  dat_better t1 t2.
+
+Lemma dat_correct_h_bind_app : forall (A B : Set) t (c1 : Comp B)(c2 : B -> Comp A) n ls1 ls2 a,
+  evalDet_steps (cs_more c1 ls1) (cs_done a nil) ->
+  dat_correct_h (Bind c1 c2) (ls1 ++ ls2) n t ->
+  dat_correct_h (c2 a) ls2 n t.
+
+Lemma dat_correct_bind_same_h : forall n (A : Set)(c : Comp A) ls t,
+  dat_correct_h c ls n t ->
+  forall (B : Set)(c1 : Comp B)(c2 : B -> Comp A) t1,
+    c = Bind c1 c2 ->
+    well_formed_comp c1 ->
+    (forall a ls', evalDet_steps (cs_more c1 ls) (cs_done a ls') -> ls' = nil) -> 
+    dat_correct_h c1 ls n t1 ->  
+    datMap_depth
+    (fun (depth : nat) (b : B) t2 => dat_correct_h (c2 b) nil depth t2) 
+    n t1 t.
+
+Lemma lowDistApprox_le_bind : forall n (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a r1 r2,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) ->
+  lowDistApprox (Bind c1 c2) a n r1 -> 
+  lowDistApprox_bind c1 c2 a n r2 ->
+  r1 <= r2.
+
+Lemma dat_correct_bind_same: forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) n t,
+  well_formed_comp c1 ->
+  dat_correct (Bind c1 c2) n t ->
+  dat_correct_bind c1 c2 n t.
+    
+Fixpoint datDepth (A : Set)(t : DistApproxTree A) : nat :=
+  match t with
+    | dat_leaf o => O
+    | dat_internal t1 t2 =>
+      S (max (datDepth t1) (datDepth t2))
+  end.
+
+Lemma datMap_depth_better' : forall (B : Set)(tb1 tb2 : DistApproxTree B),
+  dat_better tb1 tb2 ->
+  forall (A : Set)(rel : nat -> B -> DistApproxTree A -> Prop) n n' t1 t2,
+    datMap_depth rel n tb1 t1 ->
+    datMap (rel n') tb2 t2 ->
+    n >= n' + (datDepth tb2) ->
+    (forall b n1 n2 t1 t2, rel n1 b t1 -> rel n2 b t2 -> n1 >= n2 -> dat_better t1 t2) -> 
+    dat_better t1 t2.
+
+Lemma datCorrect_datDepth : forall (A : Set)(c : Comp A) n t,
+  dat_correct c n t ->
+  (datDepth t <= n)%nat.
+
+Lemma dat_better_bind_div2 : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) n t1 t2,
+  dat_correct_bind c1 c2 n t1 ->
+  dat_correct_bind2 c1 c2 (div2 n) t2 ->
+  dat_better t1 t2.
+
+Lemma lowDistApprox_bind_le_div2 : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a n r1 r2,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) ->
+  lowDistApprox_bind c1 c2 a (div2 n) r1 ->
+  lowDistApprox (Bind c1 c2) a n r2 ->
+  r1 <= r2.
+
+Lemma lowDistApprox_func : forall (A : Set)(c : Comp A) a n r1 r2,
+  well_formed_comp c ->
+  lowDistApprox c a n r1 ->
+  lowDistApprox c a n r2 ->
+  r1 == r2.
+
+Lemma lowDistApprox_bind_left_total : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) -> 
+  left_total (lowDistApprox_bind c1 c2 a).
+
+Lemma lowDistApprox_bind_div2_left_total : forall (A B : Set)(c1 : Comp B)(c2 : B -> Comp A) a,
+  well_formed_comp c1 ->
+  (forall b, In b (getSupport c1) -> well_formed_comp (c2 b)) ->
+  left_total (fun n => lowDistApprox_bind c1 c2 a (div2 n)).
+
+Lemma rel_map_Rnd_NoDup : forall n ls,
+  rel_map (evalDet (Rnd n)) (getAllBlists n) ls ->
+  NoDup ls.
+
+Lemma rel_map_Rnd_any_in : forall n ls (a : Bvector n),
+  rel_map (evalDet (Rnd n)) (getAllBlists n) ls ->
+  In (ca_done a) ls.
+
+Theorem lowDistApprox_Rnd: forall n2 n1 (a : Bvector n1) r,
+  lowDistApprox (Rnd n1) a (n1 + n2) r ->
+  r == (1 / (expnat 2 n1)).
+
+Definition indicator_rel (A : Set)(P : A -> bool) a (r : Rat) :=
+  (P a = true /\ r == 1) \/ (P a = false /\ r == 0).
+
+Definition lowDistApprox_repeat (A : Set)(c : Comp A)(P : A -> bool) a n : Rat -> Prop := 
+  let approx := lowDistApprox c a n in
+    let empty := sumList_rel (fun a => lowDistApprox c a n) (filter (fun a => negb (P a)) (getSupport c)) in
+  ratMult_rel (ratMult_rel (indicator_rel P a)
+    (sumList_rel (fun i => (expRat_rel empty i)) (getNats O (S n)))) 
+  approx.
+
+Lemma lowDistApprox_repeat_left_total : forall (A : Set)(c : Comp A)(P : A -> bool) a,
+  well_formed_comp c ->
+  left_total (lowDistApprox_repeat c P a).
+
+Lemma lowDistApprox_repeat_sqrt_div2_left_total : forall (A : Set)(c : Comp A)(P : A -> bool) a,
+  well_formed_comp c ->
+  left_total (fun n => (lowDistApprox_repeat c P a (Nat.sqrt (div2 n)))).
+
+Inductive datRepeat (A : Set)(f : DistApproxTree A -> Prop)(P : A -> bool) : nat -> DistApproxTree A -> DistApproxTree A -> Prop :=
+  | datRepeat_leaf_None : forall n,
+    datRepeat f P n (dat_leaf None) (dat_leaf None)
+  | datRepeat_leaf_Some_yes : forall a n,
+    P a = true ->
+    datRepeat f P n (dat_leaf (Some a)) (dat_leaf (Some a))
+  | datRepeat_leaf_Some_no : forall a,
+    P a = false ->
+    datRepeat f P O (dat_leaf (Some a)) (dat_leaf None)
+  | datRepeat_leaf_Some_repeat : forall a t t' n,
+    f t ->
+    P a = false ->
+    datRepeat f P n t t' ->
+    datRepeat f P (S n) (dat_leaf (Some a)) t'
+  | datRepeat_internal : forall n t1 t2 t1' t2',
+    datRepeat f P n t1 t1' ->
+    datRepeat f P n t2 t2' ->
+    datRepeat f P n (dat_internal t1 t2) (dat_internal t1' t2').
+
+Definition dat_correct_repeat2(A : Set)(c : Comp A)(P : A -> bool)(n : nat)(t : DistApproxTree A) :=
+exists t1 : DistApproxTree A,
+  dat_correct c n t1 /\
+  datRepeat (dat_correct c n) P n t1 t. 
+
+Lemma datRepeat_left_total : forall n (A : Set)(eqd : eq_dec A)(t : DistApproxTree A)(f : DistApproxTree A -> Prop) P,
+   (exists b : DistApproxTree A, f b) ->
+   exists t', datRepeat f P n t t'.
+
+Lemma dat_exists_repeat2 : forall (A : Set)(c : Comp A)(P : A -> bool)(n : nat),
+  well_formed_comp c ->
+  exists t : DistApproxTree A, dat_correct_repeat2 c P n t.
+
+Fixpoint computeEmptySpace(A : Set)(t : DistApproxTree A)(P : A -> bool) :=
+  match t with
+    | dat_leaf o =>
+      match o with
+        | Some a => indicator (fun a' => (negb (P a'))) a 
+        | None => 0
+      end
+    | dat_internal t1 t2 =>
+      (1 / 2) * (computeEmptySpace t1 P)  + (1 / 2) * (computeEmptySpace t2 P)
+  end.
+
+Lemma computeEmptySpace_correct : forall (A : Set)(eqd : eq_dec A)(t : DistApproxTree A) P,
+  sumList (filter (fun a => negb (P a)) (getTreeSupport eqd t)) (lowDistApproxFromTree eqd t) == (computeEmptySpace t P).
+
+Lemma lowDistApprox_val_eq : forall (A : Set)(c : Comp A) a n r1 r2,
+  lowDistApprox c a n r1 ->
+  r1 == r2 ->
+  lowDistApprox c a n r2.
+
+Lemma repeat_low_tree_approx_same_tree_inv : forall (A : Set)(eqd : eq_dec A)(P : A -> bool)(t1 t2 t3 : DistApproxTree A) n a,
+  datRepeat (eq t3) P n t1 t2 ->
+  lowDistApproxFromTree eqd t2 a == 
+  indicator P a * 
+  ((lowDistApproxFromTree eqd t1 a) + 
+    (computeEmptySpace t1 P) * 
+    sumList (getNats 0 n) (expRat (computeEmptySpace t3 P)) * (lowDistApproxFromTree eqd t3 a)).
+
+Lemma datRepeat_func_eq : forall n (A : Set)(t1 t2 : DistApproxTree A) f P (P' : DistApproxTree A -> Prop),
+  datRepeat f P n t1 t2 ->
+  (forall t, f t -> P' t) ->
+  datRepeat P' P n t1 t2.
+
+Lemma repeat_low_tree_approx_same_inv
+  : forall (A : Set) (eqd : eq_dec A)(c : Comp A)(P : A -> bool) (n : nat) (a : A) (t : DistApproxTree A) (r : Rat),
+    well_formed_comp c ->
+    (exists a, In a (filter P (getSupport c))) ->
+    lowDistApprox_repeat c P a n r ->
+    dat_correct_repeat2 c P n t -> 
+    n > 0 ->
+    r == lowDistApproxFromTree eqd t a.
+
+Lemma dat_better_antisymm : forall (A : Set)(t1 t2 : DistApproxTree A),
+  dat_better t1 t2 ->
+  dat_better t2 t1 ->
+  t1 = t2.
+
+Lemma dat_correct_h_repeat_app : forall (A : Set) t (c : Comp A)(P : A -> bool) n ls1 ls2 a,
+  evalDet_steps (cs_more c ls1) (cs_done a nil) ->
+  P a = false ->
+  dat_correct_h (Repeat c P) (ls1 ++ ls2) n t ->
+  dat_correct_h (Repeat c P) ls2 n t.
+
+Inductive datRepeat_depth (A : Set)(f : nat -> DistApproxTree A -> Prop)(P : A -> bool) : nat -> nat -> DistApproxTree A -> DistApproxTree A -> Prop :=
+  | datRepeat_depth_leaf_None : forall n depth,
+    datRepeat_depth f P n depth (dat_leaf None) (dat_leaf None)
+  | datRepeat_depth_leaf_Some_yes : forall a n depth,
+    P a = true ->
+    datRepeat_depth f P n depth (dat_leaf (Some a)) (dat_leaf (Some a))
+  | datRepeat_depth_leaf_Some_no : forall a depth,
+    P a = false ->
+    datRepeat_depth f P O depth (dat_leaf (Some a)) (dat_leaf None)
+  | datRepeat_depth_leaf_Some_repeat : forall a t t' n depth,
+    P a = false ->
+    f depth t ->
+    datRepeat_depth f P n depth t t' ->
+    datRepeat_depth f P (S n) depth (dat_leaf (Some a)) t'
+  | datRepeat_depth_internal : forall n depth t1 t2 t1' t2',
+    datRepeat_depth f P n depth t1 t1' ->
+    datRepeat_depth f P n depth t2 t2' ->
+    datRepeat_depth f P n (S depth) (dat_internal t1 t2) (dat_internal t1' t2').
+
+Definition dat_correct_repeat(A : Set) (c : Comp A)(P : A -> bool)(n : nat)(t : DistApproxTree A) :=
+exists t1 : DistApproxTree A,
+  dat_correct c n t1 /\
+  datRepeat_depth (dat_correct c) P n n t1 t.
+
+Lemma datRepeat_depth_0 : forall n2 n1 (A : Set)(f : nat -> DistApproxTree A -> Prop) P t1 t2,
+  datRepeat_depth f P n1 O t1 t2 ->
+  n2 >= n1 ->
+  f O (dat_leaf None) ->
+  datRepeat_depth f P n2 O t1 t2.
+
+Lemma dat_correct_repeat_same_h : forall depth repeats (A : Set)(c : Comp A) P ls t a t1,
+  dat_correct_h (Repeat c P) ls depth t ->
+  well_formed_comp c ->
+  In a (filter P (getSupport c)) ->
+  (forall a' n' ls', 
+    evalDet_steps (cs_more c (firstn n' ls)) (cs_done a' ls') -> 
+    ls' = nil)  -> 
+  dat_correct_h c ls depth t1 ->  
+  repeats >= depth ->
+  datRepeat_depth (dat_correct_h c nil) P repeats depth t1 t.
+
+Lemma dat_correct_repeat_same:
+  forall n (A : Set) (t : DistApproxTree A) (c : Comp A) (P : A -> bool),
+  well_formed_comp c ->
+  (exists a, In a (filter P (getSupport c))) ->
+  dat_correct (Repeat c P) n t -> 
+  dat_correct_repeat c P n t.
+
+Lemma datRepeat_depth_better: forall (n2 : nat) (A : Set) (t2 t1 t1' : DistApproxTree A)(rel : nat -> DistApproxTree A -> Prop) reps depth (P : A -> bool),
+  datRepeat_depth rel P reps depth t1 t1' ->
+  forall n1 (t2' : DistApproxTree A),
+    reps >= n2 ->
+    datRepeat (rel n1) P n2 t2 t2' ->
+    dat_better t1 t2 ->
+    depth >= n1 * n2 + datDepth t2 -> 
+    (forall (n1 n2: nat) (t3 t4 : DistApproxTree A),
+      rel n1 t3 -> rel n2 t4 -> n1 >= n2 -> dat_better t3 t4) ->
+    (forall a, rel 0%nat (dat_leaf (Some a)) -> P a = true) ->
+    (forall n t, rel n t -> datDepth t <= n)%nat ->
+    dat_better t1' t2'.
+
+Lemma dat_better_repeat_sqrt : forall (A : Set) (c : Comp A)(P : A -> bool)(n : nat) (t1 t2 : DistApproxTree A),
+  (exists a, In a (filter P (getSupport c))) ->
+  dat_correct_repeat c P n t1 ->
+  dat_correct_repeat2 c P (Nat.sqrt (div2 n)) t2 -> 
+
+Lemma lowDistApprox_repeat_sqrt_le : forall n (A : Set)(c : Comp A)(P : A -> bool) a v1 v2,
+  well_formed_comp c ->
+  (exists a, In a (filter P (getSupport c))) ->
+  lowDistApprox (Repeat c P) a n v1 ->
+  lowDistApprox_repeat c P a (Nat.sqrt (div2 n)) v2 -> 
+
+Lemma datRepeat_better_depth: forall (A : Set) n2 (t2 t1 t1' : DistApproxTree A)(rel : nat -> DistApproxTree A -> Prop) reps depth (P : A -> bool),
+  forall n1 (t2' : DistApproxTree A),
+    datRepeat (rel n1) P n2 t2 t2' ->
+    datRepeat_depth rel P reps depth t1 t1' ->
+    dat_better t2 t1 ->
+    n1 >= depth ->
+    n2 >= reps ->  
+    (forall (n1 n2: nat) (t3 t4 : DistApproxTree A),
+      rel n1 t3 -> rel n2 t4 -> n1 >= n2 -> dat_better t3 t4) ->
+    (forall a, rel 0%nat (dat_leaf (Some a)) -> P a = true) ->
+    (forall n t, rel n t -> datDepth t <= n)%nat ->
+    dat_better t2' t1'.
+
+Lemma dat_repeat_better:
+  forall (A : Set) n (c : Comp A) (P : A -> bool)
+    (t1 t2 : DistApproxTree A),
+    (exists a : A, In a (filter P (getSupport c))) ->
+    dat_correct_repeat c P n t1 ->
+    dat_correct_repeat2 c P n t2 -> 
+    dat_better t2 t1.
+
+Lemma lowDistApprox_le_repeat:
+  forall (n : nat) (A : Set) (c : Comp A) (P : A -> bool)(a : A) (v1 v2 : Rat),
+    well_formed_comp c ->
+    (exists a0 : A, In a0 (filter P (getSupport c))) ->
+    lowDistApprox (Repeat c P) a n v1 ->
+    lowDistApprox_repeat c P a n v2 -> 
+    n > O ->
+    v1 <= v2.
+
+Lemma lowDistApprox_Rnd_lt : forall n1 n2 a r,
+  lowDistApprox (Rnd n1) a n2 r ->
+  n2 < n1 ->
+  r == 0.
+
+Lemma evalDet_step_done_support_singleton : forall (A : Set)(c : Comp A) a s,
+  evalDet_step c nil = (cs_done a s) ->
+  getSupport c = a :: nil.
+
+Lemma lowDistApprox_low : forall (A : Set)(c : Comp A),
+  well_formed_comp c -> 
+  forall n a r, 
+  lowDistApprox c a n r ->
+  r <= evalDist c a.
+
+Lemma lowDistApprox_repeat_scale_limit : forall (A : Set)(c : Comp A)(P : A -> bool),
+  well_formed_comp c ->
+  (exists a, In a (filter P (getSupport c))) ->
+  (forall a, rat_inf_limit (lowDistApprox c a) (evalDist c a)) -> 
+  rat_inf_limit
+     (fun n : nat =>
+      sumList_rel
+        (fun i : nat =>
+         expRat_rel
+           (sumList_rel (fun a0 : A => lowDistApprox c a0 n)
+              (filter (fun a0 : A => negb (P a0)) (getSupport c))) i)
+        (getNats O n))
+     (ratInverse (sumList (filter P (getSupport c)) (evalDist c))).
+
+Lemma lowDistApprox_repeat_limit : forall (A : Set)(c : Comp A)(P : A -> bool) a,
+  well_formed_comp c ->
+  (exists b, In b (filter P (getSupport c))) ->
+  (forall a, rat_inf_limit (lowDistApprox c a) (evalDist c a)) ->
+  rat_inf_limit (lowDistApprox_repeat c P a) (evalDist (Repeat c P) a).
+
+Lemma lowDistApprox_limit_repeat : forall (A : Set)(c : Comp A)(P : A -> bool) a,
+  well_formed_comp c ->
+  (exists a, In a (filter P (getSupport c))) ->
+  (forall a', rat_inf_limit (lowDistApprox c a') (evalDist c a')) ->
+  rat_inf_limit (lowDistApprox (Repeat c P) a) (evalDist (Repeat c P) a).
+
+Theorem evalDet_evalDist_equiv : forall (A : Set)(c : Comp A),
+  well_formed_comp c ->
+  forall a, rat_inf_limit (lowDistApprox c a) (evalDist c a).
+
+Lemma evalDet_equiv_impl_lowDistApprox_equiv : 
+  forall (A : Set)(c1 c2 : Comp A), 
+    evalDet_equiv c1 c2 ->
+    forall a n r,
+      lowDistApprox c1 a n r <-> lowDistApprox c2 a n r.
+
+Theorem det_eq_impl_dist_sem_eq : forall (A : Set)(c1 c2 : Comp A),
+  well_formed_comp c1 ->
+  well_formed_comp c2 -> 
+  evalDet_equiv c1 c2 -> 
+  dist_sem_eq c1 c2.
+
+Print Assumptions det_eq_impl_dist_sem_eq. *)
+
+
+
+  Theorem G0_1_G0_equiv :
+
+    Pr[G0_1] == Pr[G0].
+
+
+
+    unfold G0_1, G0.
+
+    eapply eqRat_trans.
+
+    eapply evalDist_seq_eq.
+
+    eapply Rnd_split_equiv.
+
+    intros.
+
+    eapply eqRat_refl.
+
+
+
+    inline_first.
+
+    comp_swap_r.
+
+    comp_skip.
+
+    inline_first.
+
+    comp_skip.
+
+
+
+  Qed.
+
+
+
+  Theorem G0_equiv :
+
+    Pr[PRF_G_A ({0, 1}^(c + k)) hF _ A] == Pr[G0].
+
+
+
+    rewrite G0_1_equiv.
+
+    apply G0_1_G0_equiv.
+
+
+
+  Qed.
+
+
+
+  Definition hF_oracle k_in (s : unit) m : OracleComp (Bvector b) (Bvector c) (Bvector c * unit) :=
+
+    r <--$ OC_Query _ (F k_in m);
+
+    $ ret (r, tt).
+
+
+
+  Definition PRF_h_A : OracleComp (Bvector b) (Bvector c) bool :=
+
+    k_in <--$$ {0, 1}^k;
+
+    [r, _] <--$2 OC_Run _ _ _ A (hF_oracle k_in) tt;
+
+    $ ret r.
+
+
+
+  Definition G1_1 :=
+
+    k_out <-$ { 0 , 1 }^c;
+
+    [b, _] <-$2 PRF_h_A _ _ (f_oracle h _ k_out) tt;
+
+    ret b.
+
+
+
+  Definition G1_2 :=
+
+    [b, _] <-$2 PRF_h_A _ _ (randomFunc ({0, 1}^c) _) nil;
+
+    ret b.
+
+
+
+  Local Opaque evalDist.
+
+
+
+  Theorem G0_G1_1_equiv :
+
+    Pr[G0] == Pr[G1_1].
+
+
+
+    unfold G0, G1_1.
+
+    comp_swap_l.
+
+    comp_skip.
+
+    unfold PRF_h_A.
+
+    simpl.
+
+    inline_first.
+
+    comp_skip.
+
+    comp_simp.
+
+    inline_first.
+
+    unfold f_oracle.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => True)).
+
+    trivial.
+
+    intuition.
+
+    inline_first.
+
+    comp_simp.
+
+    inline_first.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl in *.
+
+    intuition; subst.
+
+    comp_simp.
+
+    simpl.
+
+    inline_first.
+
+    comp_simp.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Theorem G1_1_2_close :
+
+    | Pr[G1_1] - Pr[G1_2] | <= PRF_Advantage ({0, 1}^c) ({0, 1}^c) h _ _ PRF_h_A.
+
+
+
+    reflexivity.
+
+
+
+  Qed.
+
+
+
+  Theorem G1_2_G1_equiv :
+
+    Pr[G1_2] == Pr[G1].
+
+
+
+    unfold G1_2, G1.
+
+    unfold PRF_h_A.
+
+    simpl.
+
+    inline_first.
+
+    comp_skip.
+
+    inline_first.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => snd a = b)).
+
+    trivial.
+
+
+
+    intuition.
+
+    subst.
+
+    inline_first.
+
+    simpl.
+
+    eapply comp_spec_eq_trans_r.
+
+    Focus 2.
+
+    eapply comp_spec_right_ident.
+
+    comp_skip.
+
+    apply (oneVector c).
+
+    apply (oneVector c).
+
+    inline_first.
+
+    simpl.
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    simpl in *.
+
+    intuition; subst.
+
+    inline_first.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Theorem G0_G1_equiv :
+
+    | Pr[G0] - Pr[G1] | <= PRF_Advantage ({0, 1}^c) ({0, 1}^c) h _ _ PRF_h_A.
+
+
+
+    rewrite G0_G1_1_equiv.
+
+    rewrite <- G1_2_G1_equiv.
+
+    eapply G1_1_2_close.
+
+
+
+  Qed.
+
+
+
+  Definition randomFunc_mem (D R : Set)(eqdd : EqDec D)(eqdr : EqDec R)(RndR : Comp R) (ls : list (D * R))d :=
+
+    match (arrayLookup _ ls d) with
+
+      | Some r =>
+
+        ret (r, (d, r) :: ls)
+
+      | None =>
+
+        r <-$ RndR; ret (r, (d, r) :: ls)
+
+    end.
+
+
+
+    Theorem randomFunc_mem_spec :
+
+    forall (D R : Set)(eqdd : EqDec D)(eqdr : EqDec R)(RndR : Comp R) (x1 x2 : list (D * R)) a,
+
+      (forall z, arrayLookup _ x1 z = arrayLookup _ x2 z) ->
+
+    comp_spec
+
+     (fun y1 y2 =>
+
+      fst y1 = fst y2 /\
+
+      (forall x,
+
+       arrayLookup _ (snd y1) x =
+
+       arrayLookup _ (snd y2) x))
+
+     (randomFunc_mem _ _ RndR x1 a)
+
+     (randomFunc RndR _ x2 a).
+
+
+
+    intuition.
+
+    unfold randomFunc, randomFunc_mem.
+
+    rewrite H.
+
+    case_eq (arrayLookup eqdd x2 a ); intuition.
+
+
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    case_eq (eqb x a); intuition.
+
+    rewrite eqb_leibniz in H1.
+
+    subst.
+
+    intuition.
+
+
+
+    comp_skip.
+
+    eapply comp_base_exists; intuition.
+
+    eapply comp_base_exists; intuition.
+
+
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    rewrite H.
+
+    trivial.
+
+  Qed.
+
+
+
+  Definition G2_1 :=
+
+    k_in <-$ {0, 1}^k;
+
+    [b, _] <-$2 A _ _ (fun s d => randomFunc_mem _ _ ({0, 1}^c) s (F k_in d)) nil;
+
+    ret b.
+
+
+
+  Theorem G2_1_equiv :
+
+    Pr[G1] == Pr[G2_1].
+
+
+
+    unfold G1, G2_1.
+
+    comp_skip.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => forall x, arrayLookup _ a x = arrayLookup _ b x));
+
+    intuition.
+
+
+
+    eapply comp_spec_symm.
+
+    eapply comp_spec_consequence.
+
+    eapply randomFunc_mem_spec; intuition.
+
+    intuition.
+
+    comp_simp.
+
+    simpl in *.
+
+    intuition.
+
+    subst.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Fixpoint arrayLookup_f (A B C : Set)(eqd : EqDec B)(ls : list ((A * B) * C))(a : B) :=
+
+    match ls with
+
+      | nil => None
+
+      | ((x, z), y) :: ls' =>
+
+        if (eqb a z) then (Some y) else (arrayLookup_f _ ls' a)
+
+    end.
+
+
+
+  Definition F_randomFunc k_in f d :=
+
+    match arrayLookup_f _ f (F k_in d) with
+
+      | Some r => ret (r, ((d, F k_in d), r) :: f)
+
+      | None => r <-$ {0, 1}^c; ret (r, ((d, F k_in d), r) :: f)
+
+    end.
+
+
+
+  Definition G2_2 :=
+
+    k_in <-$ {0, 1}^k;
+
+    [b, _] <-$2 A _ _ (F_randomFunc k_in) nil;
+
+    ret b.
+
+
+
+  Theorem G2_1_2_equiv :
+
+    Pr[G2_1] == Pr[G2_2].
+
+
+
+    unfold G2_1, G2_2.
+
+    comp_skip.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => list_pred (fun c d =>  fst c = (snd (fst d)) /\ snd c = snd d) a b)).
+
+    econstructor.
+
+    intuition.
+
+    unfold randomFunc_mem, F_randomFunc.
+
+
+
+    Theorem arrayLookup_f_equiv :
+
+      forall (A B C : Set) (eqdb : EqDec B) (x1 : list (B * C)) (x2 : list (A * B * C)) (a : B),
+
+      list_pred
+
+         (fun c0 d =>
+
+          fst c0 = snd (fst d) /\ snd c0 = snd d) x1 x2 ->
+
+         arrayLookup _ x1 a = arrayLookup_f _ x2 a.
+
+
+
+      induction x1; inversion 1; intuition; simpl in *.
+
+      subst.
+
+      destruct a.
+
+      destruct a2.
+
+      simpl in *.
+
+      subst.
+
+      destruct p.
+
+      simpl.
+
+      destruct (eqb a0 b0 ); intuition.
+
+
+
+    Qed.
+
+
+
+    erewrite arrayLookup_f_equiv ; eauto.
+
+    destruct (arrayLookup_f (Bvector_EqDec b) x2 (F x a) ); intuition.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    econstructor.
+
+    simpl.
+
+    intuition.
+
+    trivial.
+
+    comp_skip.
+
+    apply (oneVector c).
+
+    apply (oneVector c).
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    econstructor.
+
+    intuition.
+
+    eauto.
+
+
+
+    comp_simp.
+
+    simpl in *; intuition.
+
+    subst.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Fixpoint findCollision_1 (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (A * B))(a : A)(b : B) :=
+
+    match ls with
+
+      | nil => None
+
+      | (a', b') :: ls' => if
+
+        (eqb b b' && (negb (eqb a a')))
+
+        then (Some a') else (findCollision_1 _ _ ls' a b)
+
+    end.
+
+
+
+  Definition collidesWith (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (A * B))(a : A) b :=
+
+    if (findCollision_1 _ _ ls a b) then true else false.
+
+
+
+  Fixpoint findCollision(A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (A * B)) : option (A * A * B) :=
+
+    match ls with
+
+      | nil => None
+
+      | (a, b) :: ls' => let a' := (findCollision_1 _ _ ls' a b) in
+
+        match a' with
+
+          | None =>  (findCollision _ _ ls')
+
+          | Some p' => Some (a, p', b)
+
+        end
+
+    end.
+
+
+
+  Definition funcCollision (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (A * B)) :=
+
+    if (findCollision _ _ ls) then true else false.
+
+
+
+  Definition G2_3 :=
+
+    k_in <-$ {0, 1}^k;
+
+    [b, f] <-$2 A _ _ (F_randomFunc k_in) nil;
+
+    ret (b, funcCollision _ _ (fst (split f))).
+
+
+
+  Theorem G2_2_3_equiv :
+
+    Pr[G2_2] == Pr[x <-$ G2_3; ret fst x].
+
+
+
+    unfold G2_2, G2_3.
+
+    inline_first.
+
+    comp_skip.
+
+    inline_first.
+
+    comp_skip.
+
+    comp_simp.
+
+    simpl.
+
+    intuition.
+
+
+
+  Qed.
+
+
+
+  Definition G2_4 :=
+
+    k_in <-$ {0, 1}^k;
+
+    [b, f] <-$2 A _ _ (fun s a => b <- F k_in a; randomFunc_mem _ _ ({0, 1}^c) s (a, b)) nil;
+
+    ret (b, funcCollision _ _ (fst (split f))).
+
+
+
+  Theorem arrayLookup_noCollision_eq :
+
+    forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B)(x1 : list ((A * B) * C)) a b0 b,
+
+      arrayLookup _ x1 (a, b) = Some b0 ->
+
+      collidesWith _ _ (fst (split x1)) a b = false ->
+
+      arrayLookup_f _ x1 b = Some b0.
+
+
+
+    induction x1; intuition; simpl in *.
+
+
+
+    remember (split x1) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    unfold collidesWith in *.
+
+    simpl in *.
+
+    case_eq (eqb b3 b1); intuition.
+
+    rewrite H1 in H0.
+
+    simpl in *.
+
+    case_eq (eqb a0 a); intuition.
+
+    rewrite H2 in H0.
+
+    simpl in *.
+
+    rewrite eqb_leibniz in H1.
+
+    rewrite eqb_leibniz in H2.
+
+    subst.
+
+    unfold eqbPair in *.
+
+    simpl in *.
+
+    repeat rewrite eqb_refl in H.
+
+    simpl in *.
+
+    trivial.
+
+
+
+    rewrite H2 in H0.
+
+    simpl in *.
+
+    discriminate.
+
+
+
+    rewrite H1 in H0.
+
+    simpl in *.
+
+    unfold eqbPair in *.
+
+    simpl in *.
+
+    rewrite H1 in H.
+
+    case_eq (eqb a0 a); intuition.
+
+    rewrite H2 in H.
+
+    simpl in *.
+
+    eapply IHx1; eauto.
+
+    rewrite H2 in H.
+
+    simpl in *.
+
+    eapply IHx1; eauto.
+
+
+
+  Qed.
+
+
+
+  Theorem in_impl_collidesWith :
+
+    forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (A * B))(a a': A) (b : B),
+
+      In (a, b) ls ->
+
+      a <> a' ->
+
+      collidesWith _ _ ls a' b = true.
+
+
+
+    unfold collidesWith in *.
+
+
+
+    induction ls; intuition; simpl in *.
+
+    intuition.
+
+    pairInv.
+
+    case_eq (eqb a' a); intuition.
+
+    rewrite  eqb_leibniz in H.
+
+    subst.
+
+    intuition.
+
+
+
+    rewrite eqb_refl.
+
+    simpl in *.
+
+    trivial.
+
+
+
+    case_eq (eqb b1 b0); intuition.
+
+    case_eq (eqb a' a0); intuition.
+
+    simpl.
+
+    eapply IHls; intuition.
+
+    eauto.
+
+    subst; intuition.
+
+
+
+    simpl.
+
+    eapply IHls; eauto.
+
+
+
+  Qed.
+
+
+
+  Theorem funcCollision_false_impl_collidesWith_false :
+
+    forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B) ls (a : A) (b : B),
+
+      funcCollision _ _ ls = false ->
+
+      In (a, b) ls ->
+
+      collidesWith _ _ ls a b = false.
+
+
+
+    induction ls; intuition; simpl in *.
+
+    intuition.
+
+    pairInv.
+
+
+
+    unfold collidesWith, funcCollision in *.
+
+    simpl in *.
+
+    repeat rewrite eqb_refl.
+
+    simpl.
+
+    case_eq (findCollision_1 eqda eqdb ls a b1); intuition.
+
+    rewrite H0 in H.
+
+    discriminate.
+
+
+
+    unfold collidesWith, funcCollision in *.
+
+    simpl in *.
+
+    case_eq (eqb a0 a); intuition.
+
+    rewrite eqb_leibniz in H0.
+
+    subst.
+
+    rewrite eqb_refl.
+
+    simpl.
+
+    case_eq (findCollision_1 eqda eqdb ls a b0); intuition;
+
+    rewrite H0 in H.
+
+    discriminate.
+
+
+
+    case_eq (eqb b1 b0); intuition.
+
+    simpl.
+
+
+
+    eapply IHls; intuition.
+
+
+
+    simpl.
+
+    eapply IHls; intuition.
+
+
+
+    assert (a <> a0).
+
+    intuition.
+
+    subst.
+
+    rewrite eqb_refl in H0.
+
+    discriminate.
+
+    case_eq (eqb a a0); intuition.
+
+    rewrite eqb_leibniz in H3.
+
+    subst.
+
+    intuition.
+
+    simpl.
+
+    case_eq (eqb b1 b0); intuition.
+
+    simpl.
+
+    rewrite eqb_leibniz in H4.
+
+    subst.
+
+
+
+    specialize (in_impl_collidesWith  _ _ ls _ H1 H2); intuition.
+
+    unfold collidesWith in H4.
+
+    destruct (findCollision_1 eqda eqdb ls a0 b0);
+
+      discriminate.
+
+
+
+    simpl.
+
+    case_eq (findCollision_1 eqda eqdb ls a0 b0); intuition.
+
+    rewrite H5 in H.
+
+    discriminate.
+
+
+
+    rewrite H5 in H.
+
+    eapply IHls; intuition.
+
+  Qed.
+
+
+
+  Theorem arrayLookup_Some_In_split:
+
+    forall (A B : Set) (eqd : EqDec A) (arr : list (A * B)) (a : A) (b : B),
+
+      arrayLookup eqd arr a = Some b -> In a (fst (split arr)).
+
+
+
+    induction arr; intuition; simpl in *.
+
+    discriminate.
+
+
+
+    remember (split arr) as z.
+
+    destruct z.
+
+
+
+    simpl.
+
+    case_eq (eqb a a0); intuition.
+
+    rewrite eqb_leibniz in H0.
+
+    intuition.
+
+    rewrite H0 in H.
+
+    right.
+
+    eapply IHarr; intuition.
+
+    eauto.
+
+  Qed.
+
+
+
+  Theorem arrayLookup_noCollision_eq_f :
+
+    forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B)(x1 : list ((A * B) * C)) (a : A) (b : B) c,
+
+      arrayLookup_f _ x1 b = Some c ->
+
+      collidesWith _ _ (fst (split x1)) a b = false ->
+
+      arrayLookup _ x1 (a, b) = Some c.
+
+
+
+    induction x1; intuition; simpl in *.
+
+    remember (split x1) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    unfold collidesWith in *.
+
+    simpl in *.
+
+    case_eq (eqb b2 b1); intuition.
+
+    rewrite H1 in H.
+
+    rewrite H1 in H0.
+
+    inversion H; clear H; subst.
+
+    simpl in *.
+
+    case_eq (eqb a0 a); intuition.
+
+    rewrite H in H0.
+
+    simpl in *.
+
+    rewrite eqb_leibniz in H1.
+
+    rewrite eqb_leibniz in H.
+
+    subst.
+
+    unfold eqbPair.
+
+    simpl.
+
+    repeat rewrite eqb_refl.
+
+    simpl.
+
+    trivial.
+
+
+
+    rewrite H in H0.
+
+    simpl in *.
+
+    discriminate.
+
+
+
+    rewrite H1 in H0.
+
+    rewrite H1 in H.
+
+    simpl in *.
+
+    unfold eqbPair.
+
+    simpl.
+
+    rewrite H1.
+
+    case_eq (eqb a0 a); intuition.
+
+    simpl.
+
+    eapply IHx1; eauto.
+
+
+
+    simpl.
+
+    eapply IHx1; eauto.
+
+  Qed.
+
+
+
+  Theorem funcCollision_true_cons :
+
+    forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B) (ls : list (A * B)) a,
+
+      funcCollision _ _ ls = true ->
+
+      funcCollision _ _ (a :: ls) = true.
+
+
+
+    unfold funcCollision.
+
+    intuition.
+
+    simpl in *.
+
+    destruct (findCollision_1 eqda eqdb ls a0 b0).
+
+    trivial.
+
+    trivial.
+
+
+
+  Qed.
+
+
+
+  Theorem F_randomFunc_preserves_coll :
+
+    forall c0 x d a b0,
+
+      funcCollision _ _ (fst (split c0)) = true ->
+
+      In (a, b0) (getSupport (F_randomFunc x c0 d)) ->
+
+      funcCollision _ _ (fst (split b0)) = true.
+
+
+
+    intuition.
+
+    unfold F_randomFunc in *.
+
+    case_eq (arrayLookup_f (Bvector_EqDec b) c0 (F x d)); intuition.
+
+    rewrite H2 in H1.
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    eapply funcCollision_true_cons; eauto.
+
+
+
+    rewrite H2 in H1.
+
+
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    eapply funcCollision_true_cons; eauto.
+
+
+
+  Qed.
+
+
+
+  Theorem randomFunc_mem_preserves_coll :
+
+    forall (D1 D2 R : Set)(eqdd : EqDec D1)(eqdd2 : EqDec D2)(eqdr : EqDec R) (RndR : Comp R) (c0 : list ((D1 * D2) * R)) d a b0,
+
+      funcCollision _ _ (fst (split c0)) = true ->
+
+      In (a, b0) (getSupport (randomFunc_mem _ _  RndR c0 d)) ->
+
+      funcCollision _ _ (fst (split b0)) = true.
+
+
+
+    intuition.
+
+    unfold randomFunc_mem in *.
+
+    destruct (arrayLookup _ c0 (a, b0)).
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    eapply funcCollision_true_cons; eauto.
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    eapply funcCollision_true_cons; eauto.
+
+
+
+  Qed.
+
+
+
+  Theorem F_randomFunc_wf :
+
+    forall x y z,
+
+      well_formed_comp (F_randomFunc x y z).
+
+
+
+    intuition.
+
+    unfold F_randomFunc.
+
+    destruct (arrayLookup_f _ y (F x z)); wftac.
+
+
+
+  Qed.
+
+
+
+  Theorem randomFunc_mem_wf :
+
+    forall (A B : Set) x y z (w : list (A * B)) v,
+
+      well_formed_comp z ->
+
+      well_formed_comp (randomFunc_mem x y z w v).
+
+
+
+    intuition.
+
+    unfold randomFunc_mem.
+
+    destruct (arrayLookup x w v); intuition; wftac.
+
+
+
+  Qed.
+
+
+
+  Theorem A_randomFunc_F_spec :
+
+    forall x,
+
+      comp_spec (fun y1 y2 =>
+
+        funcCollision (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b)
+
+       (fst (split (snd y1))) =
+
+       funcCollision (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b)
+
+       (fst (split (snd y2))) /\
+
+        (funcCollision (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b)
+
+       (fst (split (snd y1))) = false ->
+
+       y1 = y2))
+
+       (A (list (list (Bvector b) * Bvector b * Bvector c))
+
+        (list_EqDec
+
+           (pair_EqDec
+
+              (pair_EqDec (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b))
+
+              (Bvector_EqDec c))) (F_randomFunc x) nil)
+
+     (A (list (list (Bvector b) * Bvector b * Bvector c))
+
+        (list_EqDec
+
+           (pair_EqDec
+
+              (pair_EqDec (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b))
+
+              (Bvector_EqDec c)))
+
+        (fun (s : list (list (Bvector b) * Bvector b * Bvector c))
+
+           (a : list (Bvector b)) =>
+
+         randomFunc_mem
+
+           (pair_EqDec (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b))
+
+           (Bvector_EqDec c) ({ 0 , 1 }^c) s (a, F x a)) nil).
+
+
+
+    intuition.
+
+
+
+    eapply comp_spec_consequence.
+
+    eapply (@oc_comp_spec_eq_until_bad _ _ _ _ _ _ _ _ _ _ _ _ _
+
+      (fun z => funcCollision _ _ (fst (split z)))
+
+      (fun z => funcCollision _ _ (fst (split z)))
+
+      (fun a b => a = b)).
+
+
+
+    intuition.
+
+    eapply F_randomFunc_wf.
+
+    intuition.
+
+    eapply randomFunc_mem_wf.
+
+    wftac.
+
+
+
+    intuition; subst.
+
+
+
+    unfold F_randomFunc.
+
+    unfold randomFunc_mem.
+
+
+
+    case_eq ( arrayLookup
+
+         (pair_EqDec (list_EqDec (Bvector_EqDec b)) (Bvector_EqDec b)) x2
+
+         (a, F x a)); intuition.
+
+    case_eq (arrayLookup_f (Bvector_EqDec b) x2 (F x a)); intuition.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    trivial.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq in H2; eauto.
+
+    inversion H2; clear H2; subst.
+
+    trivial.
+
+
+
+    erewrite arrayLookup_noCollision_eq in H2; eauto.
+
+    inversion H2; clear H2; subst.
+
+    trivial.
+
+
+
+    eapply funcCollision_false_impl_collidesWith_false.
+
+    unfold funcCollision in *.
+
+    simpl in *.
+
+    destruct (findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+      (Bvector_EqDec b) l a (F x a)).
+
+    discriminate.
+
+    assert (l = fst (split x2)).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    eauto.
+
+
+
+    eapply arrayLookup_Some_In_split.
+
+    eauto.
+
+
+
+    assert (l = (fst (split x2))).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    unfold funcCollision in *.
+
+    simpl in *.
+
+    unfold collidesWith.
+
+    destruct (findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    trivial.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq in H2; eauto.
+
+    inversion H2; clear H2; subst.
+
+    intuition.
+
+    unfold funcCollision, collidesWith in *.
+
+    simpl in *.
+
+    assert (l = fst (split x2)).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    destruct (findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    trivial.
+
+
+
+    comp_irr_l.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl.
+
+    trivial.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq in H2; eauto.
+
+    discriminate.
+
+    assert (l = fst (split x2)).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    eapply funcCollision_false_impl_collidesWith_false.
+
+
+
+    unfold funcCollision in *.
+
+    simpl in *.
+
+    destruct ( findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    eauto.
+
+    eapply arrayLookup_Some_In_split.
+
+    eauto.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq in H2; eauto.
+
+    discriminate.
+
+    assert (l = fst (split x2)).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    eapply funcCollision_false_impl_collidesWith_false.
+
+
+
+    unfold funcCollision in *.
+
+    simpl in *.
+
+    destruct ( findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    eauto.
+
+    eapply arrayLookup_Some_In_split.
+
+    eauto.
+
+
+
+    case_eq (arrayLookup_f (Bvector_EqDec b) x2 (F x a)); intuition.
+
+    comp_irr_r.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl.
+
+    trivial.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq_f in H; eauto.
+
+    discriminate.
+
+    unfold funcCollision, collidesWith in *.
+
+    simpl in *.
+
+    assert (l = (fst (split x2))).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    destruct (findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    trivial.
+
+
+
+    simpl in *.
+
+    remember (split x2) as z.
+
+    destruct z.
+
+    simpl in *.
+
+
+
+    erewrite arrayLookup_noCollision_eq_f in H; eauto.
+
+    discriminate.
+
+    unfold funcCollision, collidesWith in *.
+
+    simpl in *.
+
+    assert (l = (fst (split x2))).
+
+    rewrite <- Heqz.
+
+    trivial.
+
+    subst.
+
+    destruct (findCollision_1 (list_EqDec (Bvector_EqDec b))
+
+               (Bvector_EqDec b) (fst (split x2)) a (F x a)).
+
+    discriminate.
+
+    trivial.
+
+
+
+    comp_skip.
+
+    apply (oneVector c).
+
+    apply (oneVector c).
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    intuition.
+
+
+
+    eapply F_randomFunc_preserves_coll;
+
+    eauto.
+
+
+
+    intuition.
+
+
+
+    eapply randomFunc_mem_preserves_coll; eauto.
+
+
+
+    trivial.
+
+    trivial.
+
+
+
+    intuition.
+
+    simpl in *; subst.
+
+    destruct b1; trivial.
+
+
+
+    Grab Existential Variables.
+
+    trivial.
+
+  Qed.
+
+
+
+  Theorem G2_3_4_bad_eq :
+
+    Pr[x <-$ G2_3; ret (snd x)] == Pr[x <-$ G2_4; ret (snd x)].
+
+
+
+    unfold G2_3, G2_4.
+
+    inline_first.
+
+    comp_skip.
+
+    inline_first.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+    eapply A_randomFunc_F_spec.
+
+    simpl in *.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_ret; intuition.
+
+  Qed.
+
+
+
+  Theorem G2_3_4_eq_until_bad :
+
+    forall x,
+
+      evalDist G2_3 (x, false) == evalDist G2_4 (x, false).
+
+
+
+    intuition.
+
+    unfold G2_3, G2_4.
+
+    inline_first.
+
+    comp_skip.
+
+    inline_first.
+
+    eapply comp_spec_impl_eq.
+
+    comp_skip.
+
+    eapply A_randomFunc_F_spec.
+
+    simpl in *.
+
+    comp_simp.
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    pairInv.
+
+    intuition.
+
+    pairInv.
+
+    trivial.
+
+
+
+    pairInv.
+
+    simpl in *.
+
+    rewrite H3 in H4.
+
+    intuition.
+
+    pairInv.
+
+    trivial.
+
+
+
+  Qed.
+
+
+
+  Definition F_randomFunc_O f d :
+
+    OracleComp
+
+    (list (Bvector b))
+
+    (Bvector b)
+
+    (Bvector c * list ((list (Bvector b) * Bvector b) * Bvector c))  :=
+
+    fd <--$ OC_Query _ d;
+
+    match arrayLookup_f _ f fd with
+
+      | Some r => $ ret (r, ((d, fd), r) :: f)
+
+      | None => r <--$$ {0, 1}^c; $ ret (r, ((d, fd), r) :: f)
+
+    end.
+
+
+
+  Definition au_F_A : OracleComp (list (Bvector b)) (Bvector b) _ :=
+
+    [_, p ] <--$2 OC_Run _ _ _ A F_randomFunc_O nil;
+
+    let coll :=
+
+      match (findCollision _ _ (fst (split p)) ) with
+
+        | None => (nil, nil)
+
+        | Some p => fst p
+
+      end in
+
+      $ ret (coll).
+
+
+
+  Definition G2_3_bad :=
+
+    k_in <-$ {0, 1}^k;
+
+    [p, _] <-$2 au_F_A _ _ (WCR_Oracle _ F k_in) tt;
+
+    [d1, d2] <-2 p;
+
+    ret (negb (eqb d1 d2) && eqb (F k_in d1) (F k_in d2)).
+
+
+
+  Theorem G2_3_bad_small :
+
+    Pr[G2_3_bad] == Adv_WCR _ _ F (Rnd k) au_F_A.
+
+
+
+    reflexivity.
+
+
+
+  Qed.
+
+
+
+  Theorem G2_3_bad_equiv :
+
+    Pr[x <-$ G2_3; ret (snd x)] == Pr[G2_3_bad].
+
+
+
+    unfold G2_3, G2_3_bad.
+
+    inline_first.
+
+    comp_skip.
+
+    unfold au_F_A.
+
+    simpl.
+
+    inline_first.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => a = fst b)).
+
+    trivial.
+
+    intuition.
+
+    subst.
+
+    unfold F_randomFunc, WCR_Oracle.
+
+    inline_first.
+
+    comp_simp.
+
+    case_eq (arrayLookup_f (Bvector_EqDec b) (fst x2) (F x a)); intuition.
+
+    simpl.
+
+    inline_first.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    simpl.
+
+    inline_first.
+
+    comp_skip.
+
+    apply (oneVector c).
+
+    apply (oneVector c).
+
+    comp_simp.
+
+    inline_first.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    simpl in *.
+
+    intuition; subst.
+
+    comp_simp.
+
+    simpl.
+
+    inline_first.
+
+    unfold funcCollision.
+
+    case_eq (findCollision (list_EqDec (Bvector_EqDec b))
+
+                (Bvector_EqDec b) (fst (split (fst (snd b1))))); intuition.
+
+    destruct p.
+
+    destruct p.
+
+    simpl.
+
+    comp_simp.
+
+    eapply comp_spec_ret; intuition.
+
+
+
+    destruct b1.
+
+    simpl in *.
+
+    destruct p.
+
+    simpl in *.
+
+
+
+    Theorem findCollision_1_correct :
+
+      forall (A B : Set) eqd1 eqd2 (ls : list (A * B)) (x1 x2 : A) y,
+
+      findCollision_1 eqd1 eqd2 ls x1 y =
+
+       Some x2 ->
+
+       x1 <> x2 /\
+
+       In (x2, y) ls.
+
+
+
+      induction ls; intros; simpl in *.
+
+      discriminate.
+
+
+
+      destruct a.
+
+      case_eq (eqb y b0); intros.
+
+      rewrite H0 in H.
+
+      case_eq (eqb x1 a); intros.
+
+      rewrite H1 in H.
+
+      simpl in *.
+
+      eapply IHls in H.
+
+      intuition.
+
+
+
+      rewrite H1 in H.
+
+      simpl in *.
+
+      inversion H; clear H; subst.
+
+      rewrite eqb_leibniz in H0.
+
+      subst.
+
+      intuition.
+
+      subst.
+
+      rewrite eqb_refl in H1.
+
+      discriminate.
+
+
+
+      rewrite H0 in H.
+
+      simpl in *.
+
+      eapply IHls in H.
+
+      intuition.
+
+
+
+    Qed.
+
+
+
+    Theorem findCollision_correct :
+
+      forall (A B : Set) eqd1 eqd2 (ls : list (A * B)) (x1 x2 : A) y,
+
+      findCollision eqd1 eqd2 ls =
+
+       Some (x1, x2, y) ->
+
+       x1 <> x2 /\
+
+       In (x1, y) ls /\
+
+       In (x2, y) ls.
+
+
+
+      induction ls; intros; simpl in *;
+
+      subst; try discriminate.
+
+
+
+      destruct a.
+
+
+
+      case_eq (findCollision_1 eqd1 eqd2 ls a b0); intros.
+
+      rewrite H0 in H.
+
+      eapply findCollision_1_correct in H0.
+
+      intuition.
+
+      subst.
+
+      inversion H; clear H; subst.
+
+      intuition.
+
+      inversion H; clear H; subst.
+
+      intuition.
+
+      inversion H; clear H; subst.
+
+      intuition.
+
+
+
+      rewrite H0 in H.
+
+      eapply IHls in H.
+
+      intuition.
+
+    Qed.
+
+
+
+    apply findCollision_correct in H2.
+
+    intuition.
+
+    case_eq (eqb l l0); intuition.
+
+    rewrite eqb_leibniz in H4.
+
+    intuition.
+
+    simpl.
+
+
+
+    assert (forall a b, In (a, b) (fst (split l1)) -> b = F x a).
+
+    intuition.
+
+    eapply (@oc_comp_invariant _ _ _ _ _ (fun l1 => forall a b, In (a, b) (fst (split l1)) -> b = F x a)) in H0.
+
+    eauto.
+
+    intuition.
+
+    unfold F_randomFunc in *.
+
+    case_eq (arrayLookup_f (Bvector_EqDec b) c0 (F x d)); intuition.
+
+    rewrite H11 in H7.
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    intuition.
+
+    pairInv.
+
+    trivial.
+
+    rewrite H11 in H7.
+
+    repeat simp_in_support.
+
+    simpl in *.
+
+    remember (split c0) as z.
+
+    destruct z.
+
+    simpl in *.
+
+    intuition.
+
+    pairInv.
+
+    trivial.
+
+
+
+    intuition.
+
+    simpl in *.
+
+    intuition.
+
+    trivial.
+
+
+
+    assert (b0 = F x l).
+
+    eapply H6.
+
+    trivial.
+
+    eapply H6 in H5.
+
+    subst.
+
+    rewrite H7.
+
+    rewrite eqbBvector_complete.
+
+    trivial.
+
+
+
+    comp_simp.
+
+    rewrite eqb_refl.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Theorem G2_3_4_close :
+
+    | Pr[x <-$ G2_3; ret fst x] - Pr[x <-$ G2_4; ret fst x] | <=
+
+      Adv_WCR _ _ F (Rnd k) au_F_A.
+
+
+
+    eapply leRat_trans.
+
+    eapply fundamental_lemma_h.
+
+    eapply  G2_3_4_bad_eq .
+
+    eapply  G2_3_4_eq_until_bad.
+
+    rewrite G2_3_bad_equiv.
+
+    rewrite G2_3_bad_small.
+
+    intuition.
+
+
+
+  Qed.
+
+
+
+  Definition G2_5 :=
+
+    [b, _] <-$2 A _ _ (fun s a => randomFunc_mem _ _ ({0, 1}^c) s a) nil;
+
+    ret b.
+
+
+
+  Theorem G2_4_5_equiv :
+
+    Pr[x <-$ G2_4; ret fst x] == Pr[G2_5].
+
+
+
+    unfold G2_4, G2_5.
+
+    inline_first.
+
+    comp_irr_l.
+
+    wftac.
+
+    inline_first.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => forall z, arrayLookup _ a (z, (F x z)) = arrayLookup _ b z)).
+
+    intuition.
+
+    intuition.
+
+    unfold randomFunc_mem.
+
+    rewrite H0.
+
+    case_eq ( arrayLookup (list_EqDec (Bvector_EqDec b)) x2 a); intuition.
+
+    eapply comp_spec_ret; intuition.
+
+    simpl in *.
+
+    unfold eqbPair.
+
+    simpl.
+
+    case_eq (eqb z a); intuition.
+
+    simpl.
+
+    rewrite eqb_leibniz in H3.
+
+    subst.
+
+    rewrite eqbBvector_complete.
+
+    trivial.
+
+    simpl.
+
+    eauto.
+
+
+
+    comp_skip.
+
+    apply (oneVector c).
+
+    apply (oneVector c).
+
+    eapply comp_spec_ret; intuition.
+
+    simpl.
+
+    unfold eqbPair.
+
+    simpl.
+
+    case_eq (eqb z a); intuition.
+
+    simpl.
+
+    rewrite eqb_leibniz in H5.
+
+    subst.
+
+    rewrite eqbBvector_complete.
+
+    trivial.
+
+    simpl.
+
+    trivial.
+
+
+
+    comp_simp.
+
+    simpl in *.
+
+    intuition; subst.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Theorem G2_5_equiv :
+
+    Pr[G2_5] == Pr[G2].
+
+
+
+    unfold G2_5, G2.
+
+    eapply comp_spec_eq_impl_eq.
+
+    comp_skip.
+
+    eapply (@oc_comp_spec_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ (fun a b => forall z, arrayLookup _ a z = arrayLookup _ b z)).
+
+    intuition.
+
+
+
+    intuition.
+
+    eapply randomFunc_mem_spec.
+
+    intuition.
+
+    simpl in *.
+
+    intuition.
+
+    subst.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+
+
+  Qed.
+
+
+
+  Theorem G1_G2_equiv :
+
+    | Pr[G1] - Pr[G2] | <= Adv_WCR _ _ F (Rnd k) au_F_A.
+
+
+
+    rewrite G2_1_equiv.
+
+    rewrite G2_1_2_equiv.
+
+    rewrite G2_2_3_equiv.
+
+    rewrite <- G2_5_equiv.
+
+    rewrite <- G2_4_5_equiv.
+
+    eapply G2_3_4_close.
+
+
+
+  Qed.
+
+
+
+  Theorem G2_equiv :
+
+    Pr[G2] == Pr[PRF_G_B ({0, 1}^c) _ _ A].
+
+
+
+    reflexivity.
+
+
+
+  Qed.
+
+
+
+  Theorem hF_PRF :
+
+    PRF_Advantage ({0, 1}^(c + k)) ({0, 1}^c) hF _ _ A <=
+
+    PRF_Advantage ({0, 1}^c) ({0, 1}^c) h _ _ PRF_h_A +
+
+    Adv_WCR _ _ F (Rnd k) au_F_A.
+
+
+
+    unfold PRF_Advantage.
+
+    rewrite G0_equiv.
+
+    eapply ratDistance_le_trans.
+
+    eapply G0_G1_equiv.
+
+    rewrite <- G2_equiv.
+
+    eapply G1_G2_equiv.
+
+
+
+  Qed.
+
+
+
+End hF.

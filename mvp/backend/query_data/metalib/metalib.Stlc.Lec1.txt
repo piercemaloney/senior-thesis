@@ -1,0 +1,942 @@
+
+
+Require Import Metalib.Metatheory.
+(* Metalib.Metatheory:
+Require Export Coq.Arith.Arith.
+Require Export Coq.FSets.FSets.
+Require Export Coq.Lists.List.
+
+Require Export Metalib.AssocList.
+Require Export Metalib.CoqListFacts.
+Require Export Metalib.LibTactics.
+Require Export Metalib.MetatheoryAtom.
+
+Notation "E [=] F" :=
+  (AtomSetImpl.Equal E F)
+  (at level 70, no associativity)
+  : set_scope.
+
+Notation "E [<=] F" :=
+  (AtomSetImpl.Subset E F)
+  (at level 70, no associativity)
+  : set_scope.
+
+Notation "{}" :=
+  (AtomSetImpl.empty)
+  : set_scope.
+
+Notation "{{  x  }}" :=
+  (AtomSetImpl.singleton x)
+  : set_scope.
+
+Notation "x `in` E" :=
+  (AtomSetImpl.In x E)
+  (at level 70)
+  : set_hs_scope.
+
+Notation "x `notin` E" :=
+  (~ AtomSetImpl.In x E)
+  (at level 70)
+  : set_hs_scope.
+
+Notation "E `union` F" :=
+  (AtomSetImpl.union E F)
+  (at level 65, right associativity, format "E  `union`  '/' F")
+  : set_hs_scope.
+
+Notation add := AtomSetImpl.add.
+Notation empty := AtomSetImpl.empty.
+Notation remove := AtomSetImpl.remove.
+Notation singleton := AtomSetImpl.singleton.
+Notation union := AtomSetImpl.union.
+
+Open Scope set_scope.
+Open Scope set_hs_scope.
+
+Module Export EnvImpl := AssocList.Make Atom AtomSetImpl.
+
+Ltac simpl_env :=
+  simpl_alist.
+
+Tactic Notation "simpl_env" "in" hyp(H) :=
+  simpl_alist in H.
+
+Tactic Notation "simpl_env" "in" "*" :=
+  simpl_alist in *.
+
+Tactic Notation "rewrite_env" constr(E) :=
+  rewrite_alist E.
+
+Tactic Notation "rewrite_env" constr(E) "in" hyp(H) :=
+  rewrite_alist E in H.
+
+Tactic Notation "env" "induction" ident(E) :=
+  alist induction E.
+
+Tactic Notation "env" "induction" ident(E) "as" simple_intropattern(P) :=
+  alist induction E as P.
+
+Notation "[ x ]" := (EnvImpl.one x) : env_scope.
+
+Open Scope env_scope.
+
+Tactic Notation
+  "pick" "fresh" ident(atom_name)
+  "excluding" constr(L)
+  "and" "apply" constr(H)
+  :=
+    first [apply (@H L) | eapply (@H L)];
+      match goal with
+        | |- forall _, _ `notin` _ -> _ =>
+          let Fr := fresh "Fr" in intros atom_name Fr
+        | |- forall _, _ `notin` _ -> _ =>
+          fail 1 "because" atom_name "is already defined"
+        | _ =>
+          idtac
+      end.
+
+Tactic Notation
+  "pick" "fresh" ident(atom_name)
+  "and" "apply" constr(H)
+  :=
+    let L := gather_atoms in
+    let L := beautify_fset L in
+    pick fresh atom_name excluding L and apply H.
+
+Notation uniq_one := uniq_one_1.
+Notation uniq_cons := uniq_cons_3.
+Notation uniq_app := uniq_app_4.
+Notation uniq_map := uniq_map_2.
+
+Notation binds_one := binds_one_3.
+Notation binds_cons := binds_cons_3.
+Notation binds_app_l := binds_app_2.
+Notation binds_app_r := binds_app_3.
+Notation binds_map := binds_map_2.
+
+Notation notin_empty := notin_empty_1.
+Notation notin_add := notin_add_3.
+Notation notin_singleton := notin_singleton_2.
+Notation notin_union := notin_union_3.
+
+Ltac hint_extern_solve_notin :=
+  try eassumption;
+  autorewrite with rewr_dom in *;
+  destruct_notin;
+  repeat first [ apply notin_union_3
+               | apply notin_add_3
+               | apply notin_singleton_2
+               | apply notin_empty_1
+               ];
+  try tauto.
+
+Hint Extern 1 (_ <> _ :> _) => hint_extern_solve_notin.
+
+Hint Extern 1 (_ `notin` _) => hint_extern_solve_notin.
+
+Hint Resolve
+  AtomSetImpl.add_1 AtomSetImpl.add_2 AtomSetImpl.remove_1
+  AtomSetImpl.remove_2 AtomSetImpl.singleton_2 AtomSetImpl.union_2
+  AtomSetImpl.union_3 AtomSetImpl.inter_3 AtomSetImpl.diff_3.
+
+Require Export Metalib.CoqEqDec.
+
+Notation " x  == y " := (eq_dec x y) (at level 70) : coqeqdec_scope.
+
+Open Scope coqeqdec_scope.
+
+Notation var := atom (only parsing).
+
+Notation vars := atoms (only parsing).
+
+Notation eq_var := eq_dec (only parsing).
+
+Notation "x  ===  y" :=
+  (x == y)
+  (at level 70, only parsing)
+  : coqeqdec_scope.
+
+Notation "x \in s" :=
+  (x `in` s)
+  (at level 70, only parsing)
+  : set_sl_scope.
+
+Notation "x \notin s" :=
+  (x `notin` s)
+  (at level 70, only parsing)
+  : set_sl_scope.
+
+Notation "s \u t" :=
+  (s `union` t)
+  (at level 65, right associativity, only parsing)
+  : set_sl_scope.
+
+Open Scope set_sl_scope.
+
+Ltac gather_vars_with F := gather_atoms_with.
+
+Ltac pick_fresh_gen L Y := pick fresh Y for L.
+
+Tactic Notation "auto" "*" := auto.
+
+Ltac apply_fresh_base H gather_vars atom_name :=
+  let L := gather_vars in
+  let L := beautify_fset L in
+  pick fresh x excluding L and apply H.
+
+Set Implicit Arguments.
+Definition union_map (A:Set) (f:A -> vars) (l:list A) :=
+ (List.fold_right (fun t acc => f t \u acc) {}) l. *)
+
+
+
+Require Import Stlc.Definitions.
+(* Stlc.Definitions:
+Require Import Metalib.Metatheory.
+
+Inductive typ : Set :=  
+ | typ_base : typ
+ | typ_arrow (T1:typ) (T2:typ).
+
+Inductive exp : Set :=  
+ | var_b (_:nat)
+ | var_f (x:var)
+ | abs (e:exp)
+ | app (e1:exp) (e2:exp).
+
+Fixpoint subst_exp (u:exp) (y:var) (e:exp) {struct e} : exp :=
+  match e with
+  | (var_b n)   => var_b n
+  | (var_f x)   => (if x == y then u else (var_f x))
+  | (abs e1)    => abs (subst_exp u y e1)
+  | (app e1 e2) => app (subst_exp u y e1) (subst_exp u y e2)
+end.
+
+Fixpoint fv_exp (e_5:exp) : vars :=
+  match e_5 with
+  | (var_b nat)   => {}
+  | (var_f x)   => {{x}}
+  | (abs e)     => fv_exp e
+  | (app e1 e2) => fv_exp e1 \u fv_exp e2
+end.
+
+Fixpoint open_exp_wrt_exp_rec (k:nat) (u:exp) (e:exp) {struct e}: exp :=
+  match e with
+  | (var_b n) =>
+      match lt_eq_lt_dec n k with
+        | inleft (left _) => var_b n
+        | inleft (right _) => u
+        | inright _ => var_b (n - 1)
+      end
+  | (var_f x) => var_f x
+  | (abs e) => abs (open_exp_wrt_exp_rec (S k) u e)
+  | (app e1 e2) => app (open_exp_wrt_exp_rec k u e1)
+                      (open_exp_wrt_exp_rec k u e2)
+end.
+
+Definition open_exp_wrt_exp e u := open_exp_wrt_exp_rec 0 u e.
+
+Module StlcNotations.
+Notation "[ z ~> u ] e" := (subst_exp u z e) (at level 0) : exp_scope.
+Notation open e1 e2     := (open_exp_wrt_exp e1 e2).
+Notation "e ^ x"        := (open_exp_wrt_exp e (var_f x)) : exp_scope.
+End StlcNotations.
+Import StlcNotations.
+Open Scope exp_scope.
+
+Inductive lc_exp : exp -> Prop :=
+ | lc_var_f : forall (x:var),
+     lc_exp (var_f x)
+ | lc_abs : forall (e:exp),
+      (forall x , lc_exp (open e (var_f x)))  ->
+     lc_exp (abs e)
+ | lc_app : forall (e1 e2:exp),
+     lc_exp e1 ->
+     lc_exp e2 ->
+     lc_exp (app e1 e2).
+
+Definition ctx : Set := list (atom * typ).
+
+Inductive typing : ctx -> exp -> typ -> Prop :=
+ | typing_var : forall (G:ctx) (x:var) (T:typ),
+     uniq G ->
+     binds x T G  ->
+     typing G (var_f x) T
+ | typing_abs : forall (L:vars) (G:ctx) (T1:typ) (e:exp) (T2:typ),
+     (forall x , x \notin L -> typing ([(x,T1)] ++ G) (e ^ x) T2)  ->
+     typing G (abs e) (typ_arrow T1 T2)
+ | typing_app : forall (G:ctx) (e1 e2:exp) (T2 T1:typ),
+     typing G e1 (typ_arrow T1 T2) ->
+     typing G e2 T1 ->
+     typing G (app e1 e2) T2 .
+
+Definition is_value (e : exp) : Prop :=
+  match e with
+  | abs _   => True
+  | _       => False
+  end.
+
+Inductive step : exp -> exp -> Prop :=
+ | step_beta : forall (e1 e2:exp),
+     lc_exp (abs e1) ->
+     lc_exp e2 ->
+     step (app  (abs e1) e2)  (open e1 e2)
+ | step_app : forall (e1 e2 e1':exp),
+     lc_exp e2 ->
+     step e1 e1' ->
+     step (app e1 e2) (app e1' e2).
+
+Hint Constructors typing step lc_exp. *)
+
+
+
+Import StlcNotations.
+
+
+
+Definition X : atom := fresh nil.
+
+Definition Y : atom := fresh (X :: nil).
+
+Definition Z : atom := fresh (X :: Y :: nil).
+
+
+
+Definition demo_rep1 := abs (app (var_f Y) (var_b 0)).
+
+
+
+Definition demo_rep2 := abs (abs (app (var_b 0) (var_b 1))).
+
+
+
+Definition demo_rep3 :=
+
+           abs (app (abs (app (var_b 0) (var_b 1))) (var_b 0)).
+
+
+
+Definition two
+
+  := abs (abs (app (var_b 1) (app (var_b 1) (var_b 0)))).
+
+
+
+Definition COMB_K :=
+
+	abs (abs (var_b 1)).
+
+
+
+Definition COMB_S :=
+
+   abs (abs (abs
+
+        (app (app (var_b 2) (var_b 0)) (app (var_b 1) (var_b 0))))).
+
+
+
+Check [Y ~> var_f Z](abs (app (var_b 0)(var_f Y))).
+
+
+
+Check (Y == Z).
+
+
+
+Example demo_subst1:
+
+  [Y ~> var_f Z] (abs (app (var_b 0) (var_f Y))) = (abs (app (var_b 0) (var_f Z))).
+
+Proof.
+
+
+
+  simpl.
+
+  destruct (Y==Y).
+
+  - auto.
+
+  - destruct n. auto.
+
+Qed. 
+
+
+
+Lemma subst_eq_var: forall (x : var) u,
+
+  [x ~> u](var_f x) = u.
+
+Proof.
+
+  
+
+  intros x u.
+
+  simpl.
+
+  destruct (x == x).
+
+  - Case "left".
+
+    auto.
+
+  - Case "right".
+
+    destruct n. auto.
+
+Qed. 
+
+
+
+Lemma subst_neq_var : forall (x y : var) u,
+
+  y <> x -> [x ~> u](var_f y) = var_f y.
+
+Proof.
+
+  
+
+  intros x y u.
+
+  simpl.
+
+  intro Neq.
+
+  destruct (y == x).
+
+  - Case "left".
+
+    destruct Neq. auto.
+
+  - Case "right".
+
+    auto.
+
+Qed. 
+
+
+
+Lemma subst_same : forall y e, [y ~> var_f y] e = e.
+
+Proof.
+
+  
+
+  induction e; simpl; intros; eauto.
+
+  destruct (x == y); subst; eauto.
+
+  rewrite IHe. auto.
+
+  rewrite IHe1. rewrite IHe2. auto.
+
+Qed. 
+
+
+
+Lemma fsetdec_demo : forall (x : atom) (S : atoms),
+
+  x `in` (singleton x `union` S).
+
+Proof.
+
+  fsetdec.
+
+Qed.
+
+
+
+Lemma subst_exp_fresh_eq : forall (x : var) e u,
+
+  x `notin` fv_exp e -> [x ~> u] e = e.
+
+Proof.
+
+  
+
+  intros x e u H.
+
+  induction e.
+
+  - Case "var_b".
+
+    auto.
+
+  - Case "var_f".
+
+    simpl.
+
+    destruct (x0 == x).
+
+    + SCase "x0=x".
+
+      subst. simpl fv_exp in H. fsetdec.
+
+    + SCase "x0<>x".
+
+      auto.
+
+  - Case "abs".
+
+    simpl.
+
+    f_equal.
+
+    auto.
+
+  - Case "app".
+
+    simpl in *.
+
+    f_equal.
+
+    auto.
+
+    auto.
+
+Qed. 
+
+
+
+Lemma fv_exp_subst_exp_notin : forall x y u e,
+
+   x `notin` fv_exp e ->
+
+   x `notin` fv_exp u ->
+
+   x `notin` fv_exp ([y ~> u]e).
+
+Proof.
+
+  intros x y u e Fr1 Fr2.
+
+  induction e; simpl in *.
+
+  - Case "var_b".
+
+    assumption.
+
+  - Case "var_f".
+
+    destruct (x0 == y).
+
+      assumption.
+
+      simpl. assumption.
+
+  - Case "abs".
+
+    apply IHe. assumption.
+
+  - Case "app".
+
+    destruct_notin.
+
+    apply notin_union.
+
+    apply IHe1.
+
+    assumption.
+
+    apply IHe2.
+
+    assumption.
+
+Qed.
+
+
+
+Lemma subst_exp_fresh_same :
+
+forall u e x,
+
+  x `notin` fv_exp e ->
+
+  x `notin` fv_exp ([x ~> u] e).
+
+Proof.
+
+ 
+
+  intros.
+
+  induction e; simpl in *; auto.
+
+  - destruct (x0 == x).
+
+    ++ subst. fsetdec.
+
+    ++ simpl. auto.
+
+Qed. 
+
+
+
+Lemma fv_exp_subst_exp_fresh :
+
+forall e u x,
+
+  x `notin` fv_exp e ->
+
+  fv_exp ([x ~> u] e) [=] fv_exp e.
+
+Proof.
+
+  
+
+  intros.
+
+  induction e; simpl in *; auto.
+
+  - fsetdec.
+
+  - destruct (x0 == x).
+
+    ++ subst. fsetdec.
+
+    ++ simpl. fsetdec.
+
+  - rewrite IHe1.
+
+    rewrite IHe2.
+
+    fsetdec.
+
+    fsetdec.
+
+    fsetdec.
+
+Qed. 
+
+
+
+Lemma fv_exp_subst_exp_upper :
+
+forall e1 e2 x1,
+
+  fv_exp (subst_exp e2 x1 e1) [<=] fv_exp e2 `union` remove x1 (fv_exp e1).
+
+Proof.
+
+  
+
+  intros. induction e1; simpl in *.
+
+  - fsetdec.
+
+  - destruct (x == x1); simpl; fsetdec.
+
+  - rewrite IHe1. fsetdec.
+
+  - rewrite IHe1_1. rewrite IHe1_2.
+
+    fsetdec.
+
+Qed. 
+
+
+
+Lemma demo_open :
+
+  (app (abs (app (var_b 1) (var_b 0))) (var_b 0)) ^ Y =
+
+  (app (abs (app (var_f Y) (var_b 0))) (var_f Y)).
+
+Proof.
+
+  cbn.   
+
+  auto.
+
+Qed.
+
+
+
+Lemma demo_lc :
+
+  lc_exp (app (abs (app (var_f Y) (var_b 0))) (var_f Y)).
+
+Proof.
+
+  eapply lc_app.
+
+    eapply lc_abs.
+
+     intro x. cbn.
+
+     auto.
+
+    auto.
+
+Qed.
+
+
+
+Lemma subst_exp_open_exp_wrt_exp :
+
+forall e3 e1 e2 x1,
+
+  lc_exp e1 ->
+
+  [x1 ~> e1] (open e3 e2) = open ([x1 ~> e1] e3) ([x1 ~> e1] e2).
+
+Proof.
+
+Admitted.
+
+
+
+Lemma subst_var : forall (x y : var) u e,
+
+  y <> x ->
+
+  lc_exp u ->
+
+  ([x ~> u] e) ^ y = [x ~> u] (e ^ y).
+
+Proof.
+
+  
+
+  intros x y u e Neq H.
+
+  rewrite subst_exp_open_exp_wrt_exp with (e2 := var_f y); auto.
+
+  rewrite subst_neq_var; auto.
+
+Qed.   
+
+
+
+Lemma subst_exp_intro : forall (x : var) u e,
+
+  x `notin` (fv_exp e) ->
+
+  open e u = [x ~> u](e ^ x).
+
+Proof.
+
+  intros x u e FV_EXP.
+
+  unfold open.
+
+  generalize 0.
+
+  induction e; intro n0; simpl.
+
+  
+
+  - Case "var_b".
+
+    destruct (lt_eq_lt_dec n n0).
+
+    destruct s. simpl. auto.
+
+    rewrite subst_eq_var. auto.
+
+    simpl. auto.
+
+  - Case "var_f".
+
+    destruct (x0 == x). subst. simpl in FV_EXP. fsetdec. auto.
+
+  - Case "abs".
+
+    f_equal. simpl in FV_EXP. apply IHe. auto.
+
+  - Case "app".
+
+    simpl in FV_EXP.
+
+    f_equal.
+
+    apply IHe1. auto.
+
+    apply IHe2. auto.
+
+Qed. 
+
+
+
+Lemma fv_exp_open_exp_wrt_exp_upper :
+
+forall e1 e2,
+
+  fv_exp (open_exp_wrt_exp e1 e2) [<=] fv_exp e2 `union` fv_exp e1.
+
+Proof.
+
+  
+
+  intros e1 e2.
+
+  unfold open.
+
+  generalize 0.
+
+  induction e1; intro n0; simpl.
+
+  - destruct (lt_eq_lt_dec n n0).
+
+    destruct s. simpl. fsetdec.
+
+    fsetdec.
+
+    simpl. fsetdec.
+
+  - fsetdec.
+
+  - rewrite IHe1. fsetdec.
+
+  - rewrite IHe1_1. rewrite IHe1_2.
+
+    fsetdec.
+
+Qed. 
+
+
+
+Check lc_exp_ind.
+
+
+
+Check lc_abs.
+
+
+
+Lemma subst_lc0 : forall (x : var) u e,
+
+  lc_exp e ->
+
+  lc_exp u ->
+
+  lc_exp ([x ~> u] e).
+
+Proof.
+
+  intros x u e He Hu.
+
+  induction He.
+
+  - Case "lc_var_f".
+
+    simpl.
+
+    destruct (x0 == x).
+
+      auto.
+
+      auto.
+
+  - Case "lc_abs".
+
+    simpl.
+
+    eapply lc_abs.
+
+    intros x0.
+
+    rewrite subst_var.
+
+    apply H0.
+
+Abort.
+
+
+
+Lemma lc_abs_exists : forall (x : var) e,
+
+      lc_exp (e ^ x) ->
+
+      lc_exp (abs e).
+
+Admitted.
+
+
+
+Lemma subst_exp_lc_exp : forall (x : var) u e,
+
+  lc_exp e ->
+
+  lc_exp u ->
+
+  lc_exp ([x ~> u] e).
+
+Proof.
+
+  intros x u e He Hu.
+
+  induction He.
+
+  - Case "lc_var_f".
+
+    simpl.
+
+    destruct (x0 == x); auto.
+
+  - Case "lc_abs".
+
+    simpl.
+
+    pick fresh x0 for {{x}}.  
+
+    apply (lc_abs_exists x0).
+
+    rewrite subst_var; auto.
+
+  - Case "lc_app".
+
+    simpl. eauto.
+
+Qed.
+
+
+
+Lemma step_lc_exp1 : forall e1 e2, step e1 e2 -> lc_exp e1.
+
+Proof. intros e1 e2 H. induction H; auto. Qed.
+
+
+
+Lemma typing_to_lc_exp : forall E e T,
+
+  typing E e T -> lc_exp e.
+
+Proof.
+
+  
+
+  intros E e T H. induction H; eauto.
+
+  pick fresh x1 for L.
+
+  apply (lc_abs_exists x1).
+
+  auto.
+
+Qed.
+
+
+
+Lemma step_lc_exp2 : forall e1 e2, step e1 e2 -> lc_exp e2.
+
+Proof.
+
+  
+
+  induction 1; auto.
+
+  pick fresh x for (fv_exp e1).
+
+  inversion H; subst.
+
+  rewrite (subst_exp_intro x).
+
+  apply subst_exp_lc_exp; auto.
+
+  fsetdec.
+
+Qed. 
+

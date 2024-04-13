@@ -1,0 +1,3459 @@
+
+
+Require Import FcEtt.ext_wf.
+(* FcEtt.ext_wf:
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Require Import FcEtt.imports.
+
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+Require Import FcEtt.tactics.
+
+Require Import FcEtt.utils.
+
+Require Import FcEtt.sigs.
+Require Import FcEtt.toplevel.
+
+Lemma Path_lc : forall T a, Path T a -> lc_tm a.
+
+Hint Resolve Path_lc : lc.
+
+Lemma DataTy_lc : forall A, DataTy A a_Star -> lc_tm A.
+Hint Resolve DataTy_lc : lc.
+
+Lemma CoercedValue_Value_lc_mutual: (forall A, CoercedValue A -> lc_tm A) /\
+                                    (forall A, Value A -> lc_tm A).
+
+Lemma Value_lc : forall A, Value A -> lc_tm A.
+Lemma CoercedValue_lc : forall A, CoercedValue A -> lc_tm A.
+
+Hint Resolve Value_lc CoercedValue_lc : lc.
+
+Lemma ctx_wff_mutual :
+  (forall G0 a A, Typing G0 a A -> Ctx G0) /\
+  (forall G0 phi,   PropWff G0 phi -> Ctx G0) /\
+  (forall G0 D p1 p2, Iso G0 D p1 p2 -> Ctx G0) /\
+  (forall G0 D A B T,   DefEq G0 D A B T -> Ctx G0) /\
+  (forall G0, Ctx G0 -> True).
+
+Definition Typing_Ctx  := first  ctx_wff_mutual.
+Definition PropWff_Ctx := second ctx_wff_mutual.
+Definition Iso_Ctx     := third  ctx_wff_mutual.
+Definition DefEq_Ctx   := fourth ctx_wff_mutual.
+
+Hint Resolve Typing_Ctx PropWff_Ctx Iso_Ctx DefEq_Ctx.
+
+Lemma Ctx_uniq : forall G, Ctx G -> uniq G.
+
+Hint Resolve Ctx_uniq.
+
+Lemma lc_mutual :
+  (forall G0 a A, Typing G0 a A -> lc_tm a /\ lc_tm A) /\
+  (forall G0 phi, PropWff G0 phi -> lc_constraint phi) /\
+  (forall G0 D p1 p2, Iso G0 D p1 p2 -> lc_constraint p1 /\ lc_constraint p2) /\
+  (forall G0 D A B T, DefEq G0 D A B T -> lc_tm A /\ lc_tm B /\ lc_tm T) /\
+  (forall G0, Ctx G0 -> forall x s , binds x s G0 -> lc_sort s).
+
+Definition Typing_lc  := first lc_mutual.
+Definition PropWff_lc := second lc_mutual.
+Definition Iso_lc     := third lc_mutual.
+Definition DefEq_lc   := fourth lc_mutual.
+Definition Ctx_lc     := fifth lc_mutual.
+
+Lemma Typing_lc1 : forall G0 a A, Typing G0 a A -> lc_tm a.
+Lemma Typing_lc2 : forall G0 a A, Typing G0 a A -> lc_tm A.
+
+Lemma Iso_lc1 : forall G0 D p1 p2, Iso G0 D p1 p2 -> lc_constraint p1.
+Lemma Iso_lc2 : forall G0 D p1 p2, Iso G0 D p1 p2 -> lc_constraint p2.
+Lemma DefEq_lc1 : forall G0 D A B T,   DefEq G0 D A B T -> lc_tm A.
+
+Lemma DefEq_lc2 : forall G0 D A B T,   DefEq G0 D A B T -> lc_tm B.
+Lemma DefEq_lc3 : forall G0 D A B T,   DefEq G0 D A B T -> lc_tm T.
+
+Hint Resolve Typing_lc1 Typing_lc2 Iso_lc1 Iso_lc2 DefEq_lc1 DefEq_lc2 DefEq_lc3 Ctx_lc : lc.
+
+Lemma Toplevel_lc : forall c s, binds c s toplevel -> lc_sig_sort s. *)
+
+Require Import FcEtt.ext_weak.
+(* FcEtt.ext_weak:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.tactics.
+Require Import FcEtt.utils.
+Require Export FcEtt.imports.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_par.
+Require Export FcEtt.ett_ind.
+
+Module ext_weak (wf: ext_wf_sig).
+
+Include wf.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma respects_atoms_eq_mutual :
+  (forall G a A,     Typing  G a A       -> True) /\
+  (forall G phi,     PropWff G phi       -> True) /\
+  (forall G D p1 p2, Iso G D p1 p2 -> forall D', D [=] D' -> Iso G D' p1 p2) /\
+  (forall G D A B T,   DefEq G D A B T  -> forall D', D [=] D' -> DefEq G D' A B T) /\
+  (forall G,           Ctx G           -> True).
+
+Definition Iso_respects_atoms_eq   := third  respects_atoms_eq_mutual.
+Definition DefEq_respects_atoms_eq := fourth respects_atoms_eq_mutual.
+
+Ltac binds_cons :=
+  let H5 := fresh in
+  match goal with
+    [
+      H4 : (∃ phi : constraint, binds ?x (Co phi) ?G) → False
+      |- ((exists phi, binds ?x (Co phi) ([(?y, ?s)] ++ ?G)) -> False) ] =>
+    intro H5; destruct H5; apply H4; simpl in H5;
+    destruct (binds_cons_1 _ x y _ s G H5); split_hyp; subst;
+    try done; eauto
+  end.
+
+Lemma strengthen_available_noncovar:
+  (forall G1  a A,    Typing G1 a A -> True) /\
+  (forall G1  phi,    PropWff G1 phi -> True) /\
+  (forall G1 D p1 p2, Iso G1 D p1 p2 -> forall x, not (exists phi, binds x (Co phi) G1) ->
+                 Iso G1 (remove x D) p1 p2) /\
+  (forall G1 D A B A1,DefEq G1 D A B A1 ->  forall x, not (exists phi, binds x (Co phi) G1) ->
+                 DefEq G1 (remove x D) A B A1) /\
+  (forall G1 ,        Ctx G1 -> True).
+
+Lemma DefEq_strengthen_available_tmvar :
+  forall G D g A B, DefEq G D g A B ->  forall x A', binds x (Tm A') G ->
+                    forall D', D' [=] remove x D ->
+                    DefEq G D' g A B.
+
+Lemma weaken_available_mutual:
+  (forall G1  a A,   Typing G1 a A -> True) /\
+  (forall G1  phi,   PropWff G1 phi -> True) /\
+  (forall G1 D p1 p2, Iso G1 D p1 p2 -> forall D', D [<=] D' -> Iso G1 D' p1 p2) /\
+  (forall G1 D A B T,   DefEq G1 D A B T -> forall D', D [<=] D' -> DefEq G1 D' A B T) /\
+  (forall G1 ,       Ctx G1 -> True).
+
+Lemma remove_available_mutual:
+  (forall G1  a A,   Typing G1 a A -> True) /\
+  (forall G1  phi,   PropWff G1 phi -> True) /\
+  (forall G1 D p1 p2, Iso G1 D p1 p2 ->
+                   Iso G1 (AtomSetImpl.inter D (dom G1)) p1 p2) /\
+
+Lemma DefEq_weaken_available :
+  forall G D A B T, DefEq G D A B T -> DefEq G (dom G) A B T.
+
+Lemma Iso_weaken_available :
+  forall G D A B, Iso G D A B -> Iso G (dom G) A B.
+
+Hint Resolve DefEq_weaken_available Iso_weaken_available.
+
+Lemma typing_weakening_mutual:
+  (forall G0 a A,     Typing G0 a A ->
+     forall E F G, (G0 = F ++ G) -> Ctx (F ++ E ++ G) -> Typing (F ++ E ++ G) a A) /\
+  (forall G0 phi,     PropWff G0 phi ->
+     forall E F G, (G0 = F ++ G) -> Ctx (F ++ E ++ G) -> PropWff (F ++ E ++ G) phi) /\
+  (forall G0 D p1 p2, Iso G0 D p1 p2 ->
+     forall E F G, (G0 = F ++ G) -> Ctx (F ++ E ++ G) -> Iso (F ++ E ++ G) D p1 p2) /\
+  (forall G0 D A B T, DefEq G0 D A B T ->
+     forall E F G, (G0 = F ++ G) -> Ctx (F ++ E ++ G) -> DefEq (F ++ E ++ G) D A B T) /\
+  (forall G0,         Ctx G0 ->
+     forall E F G, (G0 = F ++ G) -> Ctx (F ++ E ++ G) -> Ctx (F ++ E ++ G)).
+
+Definition Typing_weakening  := first  typing_weakening_mutual.
+Definition PropWff_weakening := second typing_weakening_mutual.
+Definition Iso_weakening     := third  typing_weakening_mutual.
+Definition DefEq_weakening   := fourth typing_weakening_mutual.
+Definition Ctx_weakening     := fifth  typing_weakening_mutual.
+
+End ext_weak. *)
+
+Require Import FcEtt.ext_subst.
+(* FcEtt.ext_subst:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.tactics.
+Require Export FcEtt.imports.
+Require Import FcEtt.utils.
+Require Export FcEtt.fset_facts.
+
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+
+Require Export FcEtt.beta.
+Require Export FcEtt.ext_wf.
+Require Export FcEtt.ett_value.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Module ext_subst (weak : ext_weak_sig) <: ext_subst_sig.
+  Include weak.
+
+Lemma Ctx_strengthen : forall G1 G2, Ctx (G2 ++ G1) -> Ctx G1.
+
+Lemma binds_to_PropWff: forall G0 A B T c,
+    Ctx G0 ->
+    binds c (Co (Eq A B T)) G0 -> PropWff G0 (Eq A B T).
+
+Lemma tm_subst_fresh_1 :
+forall G a A a0 x s,
+  Typing G a A -> Ctx ((x ~ s) ++ G) -> tm_subst_tm_tm a0 x A = A.
+
+Lemma tm_subst_co_fresh_1 :
+forall G a A a0 c s,
+  Typing G a A -> Ctx ((c ~ s) ++ G) -> co_subst_co_tm a0 c A = A.
+
+Lemma tm_subst_fresh_2 :
+forall G a A a0 x s,
+  Typing G a A -> Ctx ((x ~ s) ++ G) -> tm_subst_tm_tm a0 x a = a.
+
+Lemma co_subst_fresh :
+forall G phi a0 x s,
+  PropWff G phi -> Ctx ((x ~ s) ++ G) -> tm_subst_tm_constraint a0 x phi = phi.
+
+Lemma bind_map_tm_subst_tm_sort: forall c F A B T x a,
+    binds c (Co (Eq A B T)) F ->
+    binds c (Co (Eq (tm_subst_tm_tm a x A)
+                    (tm_subst_tm_tm a x B) (tm_subst_tm_tm a x T))) (map (tm_subst_tm_sort a x) F).
+
+Lemma binds_map_4: forall x A F c0,
+    binds x (Tm A) F ->
+    binds x (Tm (co_subst_co_tm g_Triv c0 A)) (map (co_subst_co_sort g_Triv c0) F).
+
+Lemma binds_map_5: forall c A B T F c1 ,
+    binds c (Co (Eq A B T) ) F ->
+    binds c (Co (Eq (co_subst_co_tm g_Triv c1 A) (co_subst_co_tm g_Triv c1 B) (co_subst_co_tm g_Triv c1 T)) ) (map (co_subst_co_sort g_Triv c1) F).
+
+Lemma tm_subst_tm_tm_dom_invariance: forall x a F, dom F = dom (map (tm_subst_tm_sort a x) F).
+
+Lemma subst_rho: forall L G a A x y b rho
+    (T : Typing G a A)
+    (Neq: x <> y)
+    (Fr: y `notin` fv_tm_tm_tm a)
+    (Fr2: y `notin` L)
+    (K : (forall x, x `notin` L -> RhoCheck rho x (open_tm_wrt_tm b (a_Var_f x)))),
+    RhoCheck rho y  (tm_subst_tm_tm a x (open_tm_wrt_tm b (a_Var_f y))).
+
+Ltac rewrite_subst_context :=
+  match goal with
+  | [ |- context [([(?y, ?C (_ _ _ ?T))] ++ map ?sub ?F ++ ?G0)] ] =>
+    rewrite_env (map sub ((y ~ (C T)) ++ F) ++ G0)
+  end.
+
+Ltac eapply_E_subst :=
+  first [ eapply E_Star     |
+          eapply E_App      |
+          eapply E_IApp     |
+          eapply E_CApp     |
+          eapply E_Const    |
+          eapply E_IsoConv  |
+          eapply E_AppCong  |
+          eapply E_IAppCong |
+          eapply E_CAppCong |
+          eapply E_PiSnd    |
+          eapply E_CPiSnd].
+
+Lemma tm_substitution_mutual :
+  (forall G0 b B (H : Typing G0 b B),
+      forall G a A, Typing G a A ->
+               forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                      Typing (map (tm_subst_tm_sort a x) F ++ G)
+                             (tm_subst_tm_tm a x b)
+                             (tm_subst_tm_tm a x B)) /\
+    (forall G0 phi (H : PropWff G0 phi),
+        forall G a A, Typing G a A ->
+                 forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                        PropWff (map (tm_subst_tm_sort a x) F ++ G)
+                                (tm_subst_tm_constraint a x phi)) /\
+    (forall G0 D p1 p2 (H : Iso G0 D p1 p2),
+        forall G a A, Typing G a A ->
+                 forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                Iso (map (tm_subst_tm_sort a x) F ++ G) D
+                    (tm_subst_tm_constraint a x p1)
+                    (tm_subst_tm_constraint a x p2)) /\
+    (forall G0 D A B T (H : DefEq G0 D A B T),
+       forall G a A0, Typing G a A0 ->
+                 forall F x, G0 = (F ++ (x ~ Tm A0) ++ G) ->
+                        DefEq (map (tm_subst_tm_sort a x) F ++ G) D
+                              (tm_subst_tm_tm a x A)
+                              (tm_subst_tm_tm a x B) (tm_subst_tm_tm a x T)) /\
+    (forall G0 (H : Ctx G0),
+        forall G a A, Typing G a A ->
+                 forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                        Ctx (map (tm_subst_tm_sort a x) F ++ G)).
+
+Lemma Typing_tm_subst : forall G x A b B (H : Typing ((x ~ Tm A) ++ G) b B),
+  forall a, Typing G a A ->
+       Typing G (tm_subst_tm_tm a x b) (tm_subst_tm_tm a x B).
+
+Lemma co_subst_rho: forall L x y a rho
+    (Neq: x <> y)
+    (Fr2: y `notin` L)
+    (K : (forall x, x `notin` L -> RhoCheck rho x (open_tm_wrt_tm a (a_Var_f x)))),
+    RhoCheck rho y  (co_subst_co_tm g_Triv x (open_tm_wrt_tm a (a_Var_f y))).
+
+Lemma co_substitution_mutual :
+    (forall G0 b B (H : Typing G0 b B),
+        forall G D A1 A2 T F c ,
+          G0 = (F ++ (c ~ Co (Eq A1 A2 T) ) ++ G)
+          -> DefEq G D A1 A2 T
+          -> Typing (map (co_subst_co_sort g_Triv c) F ++ G) (co_subst_co_tm g_Triv c b) (co_subst_co_tm g_Triv c B)) /\
+    (forall G0 phi (H : PropWff G0 phi),
+        forall G D A1 A2 T F c,
+          G0 = (F ++ (c ~ Co (Eq A1 A2 T) ) ++ G)
+          -> DefEq G D A1 A2 T
+          -> PropWff (map (co_subst_co_sort g_Triv c) F ++ G) (co_subst_co_constraint g_Triv c phi)) /\
+    (forall G0 D0 p1 p2 (H : Iso G0 D0 p1 p2),
+          forall G D A1 A2 T F c,
+            G0 = (F ++ (c ~ Co (Eq A1 A2 T) ) ++ G)
+            -> DefEq G D A1 A2 T
+            -> Iso (map (co_subst_co_sort g_Triv c) F ++ G) (union D (remove c D0))
+                    (co_subst_co_constraint g_Triv c p1)
+                    (co_subst_co_constraint g_Triv c p2)) /\
+    (forall G0 D0 A B T (H : DefEq G0 D0 A B T),
+        forall G D F c A1 A2 T1,
+          G0 = (F ++ (c ~ Co (Eq A1 A2 T1) ) ++ G)
+          -> DefEq G D A1 A2 T1
+          -> DefEq (map (co_subst_co_sort g_Triv c) F ++ G) (union D (remove c D0))
+                  (co_subst_co_tm g_Triv c A) (co_subst_co_tm g_Triv c B)
+                  (co_subst_co_tm g_Triv c T)) /\
+    (forall G0 (H : Ctx G0),
+        forall G D F c A1 A2 T,
+          G0 = (F ++ (c ~ Co (Eq A1 A2 T) ) ++ G)
+          -> DefEq G D A1 A2 T
+          -> Ctx (map (co_subst_co_sort g_Triv c) F ++ G)).
+
+Lemma Typing_co_subst:
+   forall G D c a1 a2 A b B (H : Typing (c ~ (Co (Eq a1 a2 A)) ++ G) b B),
+     DefEq G D a1 a2 A ->
+     Typing G (co_subst_co_tm g_Triv c b) (co_subst_co_tm g_Triv c B).
+
+Lemma Typing_swap : forall x1 x G a A B,
+      x1 `notin` fv_tm_tm_tm a \u fv_tm_tm_tm B
+    -> x `notin` dom G \u {{ x1 }}
+    -> Typing ([(x1, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x1))
+             (open_tm_wrt_tm B (a_Var_f x1))
+    -> Typing ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x))
+             (open_tm_wrt_tm B (a_Var_f x)).
+
+Lemma DefEq_swap : forall x1 x G A1 D b1 b2 B,
+   x1 `notin` fv_tm_tm_tm b1 \u fv_tm_tm_tm b2 \u fv_tm_tm_tm B
+  -> x `notin` dom G \u {{ x1 }}
+  -> DefEq ([(x1, Tm A1)] ++ G) D
+          (open_tm_wrt_tm b1 (a_Var_f x1)) (open_tm_wrt_tm b2 (a_Var_f x1))
+          (open_tm_wrt_tm B (a_Var_f x1))
+  -> DefEq ([(x, Tm A1)] ++ G) D
+          (open_tm_wrt_tm b1 (a_Var_f x)) (open_tm_wrt_tm b2 (a_Var_f x))
+          (open_tm_wrt_tm B (a_Var_f x)).
+
+Lemma E_Pi_exists : forall x (G : context) (rho : relflag) (A B : tm),
+      x `notin` dom G \u fv_tm_tm_tm B
+      -> Typing ([(x, Tm A)] ++ G) (open_tm_wrt_tm B (a_Var_f x)) a_Star
+      -> Typing G A a_Star -> Typing G (a_Pi rho A B) a_Star.
+
+Lemma E_Abs_exists :  forall x (G : context) (rho : relflag) (a A B : tm),
+    x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm B
+    -> Typing ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm B (a_Var_f x))
+    -> Typing G A a_Star
+    -> RhoCheck rho x (open_tm_wrt_tm a (a_Var_f x))
+    -> Typing G (a_UAbs rho a) (a_Pi rho A B).
+
+End ext_subst. *)
+
+Require Import FcEtt.ext_invert.
+(* FcEtt.ext_invert:
+Require Import FcEtt.sigs.
+Require Import FcEtt.imports.
+Require Import FcEtt.ett_ott.
+Require Import FcEtt.ett_inf.
+Require Import FcEtt.ett_ind.
+
+Require Import FcEtt.ett_par.
+Require Import FcEtt.ext_wf.
+
+Require Import FcEtt.utils.
+
+Module ext_invert (subst : ext_subst_sig) <: ext_invert_sig.
+
+  Include subst.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma binds_to_Typing: forall G T A, Ctx G -> binds T (Tm A) G -> Typing G A a_Star.
+
+Lemma invert_a_Pi:
+  forall G rho A0 A B0,
+    Typing G (a_Pi rho A0 B0) A
+    -> DefEq G (dom G) A a_Star a_Star
+      /\ (exists L, forall x,
+              x `notin` L
+              -> Typing ([(x, Tm A0)] ++ G) (open_tm_wrt_tm B0 (a_Var_f x)) a_Star)
+      /\ Typing G A0 a_Star.
+
+Lemma invert_a_CPi: forall G phi A B0,
+    Typing G (a_CPi phi B0) A ->
+    DefEq G (dom G) A a_Star a_Star /\ (exists L, forall c, c `notin` L -> Typing ([(c, Co phi)] ++ G) (open_tm_wrt_co B0 (g_Var_f c) ) a_Star) /\ PropWff G phi.
+
+Lemma invert_a_Const : forall G T A,
+    Typing G (a_Const T) A ->
+    exists B, DataTy B a_Star /\ DefEq G (dom G) A B  a_Star
+         /\ binds T (Cs B) toplevel.
+
+Lemma invert_a_Fam : forall G F A,
+    Typing G (a_Fam F) A ->
+    exists a B, DefEq G (dom G) A B a_Star /\
+           binds F (Ax a B) toplevel /\ Typing nil B a_Star.
+
+Lemma invert_a_Star: forall A G, Typing G a_Star A -> DefEq G (dom G) A a_Star a_Star.
+
+Lemma invert_a_Var :
+  forall G x A, Typing G (a_Var_f x) A -> exists A', binds x (Tm A') G /\ DefEq G (dom G) A A' a_Star.
+
+Ltac expand sub_tm tm :=
+  match tm with
+  | (a_Abs ?rho (_ ?A1) (_ ?b)) =>
+    replace (a_Abs rho (sub_tm A1) (sub_tm b)) with (sub_tm (a_Abs rho A1 b)); auto
+  | (a_Pi ?rho (_ ?A1) (_ ?B1)) =>
+    replace (a_Pi rho (sub_tm A1) (sub_tm B1)) with (sub_tm (a_Pi rho A1 B1)); auto
+  | (a_CAbs (?sc ?phi) (_ ?B)) =>
+    replace (a_CAbs (sc phi) (sub_tm B)) with (sub_tm (a_CAbs phi B)); auto
+  | (a_CPi (?sc ?phi) (_ ?B)) =>
+    replace (a_CPi (sc phi) (sub_tm B)) with (sub_tm (a_CPi phi B)); auto
+
+  | a_Star => replace a_Star with (sub_tm a_Star); auto
+
+  | _ => idtac
+  end.
+
+Ltac expand_constraint sub_tm sub_constraint constraint :=
+  match constraint with
+  | (Eq (_ _ _ ?a) (_ _ _  ?b) (_ _ _ ?A)) =>
+    replace (Eq (sub_tm a) (sub_tm b) (sub_tm A)) with
+    (sub_constraint (Eq a b A)); auto
+  | _ => idtac
+  end.
+
+Ltac un_subst_tm :=
+   match goal with
+   | [ |- context [tm_subst_tm_tm ?g ?c _] ] =>
+     match goal with
+     | [ |- Typing _ ?a ?A ] => expand (tm_subst_tm_tm g c) a; expand (tm_subst_tm_tm g c) A
+     | [ |- DefEq _ _ ?a ?b ] => expand (tm_subst_tm_tm g c) a; expand (tm_subst_tm_tm g c) b
+     | [ |- PropWff ?phi ] => expand_constraint (tm_subst_tm_tm g c) (tm_subst_tm_constraint g c) phi
+     end
+   | [ |- context [co_subst_co_tm ?g ?c _] ] =>
+     match goal with
+     | [ |- Typing _ ?a ?A ] => expand (co_subst_co_tm g c) a; expand (co_subst_co_tm g c) A
+     | [ |- DefEq _ _ ?a ?b ] => expand (co_subst_co_tm g c) a; expand (co_subst_co_tm g c) b
+     | [ |- PropWff ?phi ] => expand_constraint (co_subst_co_tm g c) (co_subst_co_constraint g c) phi
+     end
+   end.
+
+Lemma Typing_regularity : forall e A G, Typing G e A -> Typing G A a_Star.
+
+Lemma refl_iso: forall G D phi, PropWff G phi -> Iso G D phi phi.
+
+Lemma sym_iso: forall G D phi1 phi2, Iso G D phi1 phi2 -> Iso G D phi2 phi1.
+
+Lemma invert_a_UAbs:
+  forall G rho A b0,
+   Typing G (a_UAbs rho b0) A
+    -> exists A1 B1, DefEq G (dom G) A (a_Pi rho A1 B1) a_Star
+               /\ (exists L, forall x, x `notin` L ->
+                            Typing ([(x, Tm A1)] ++ G)
+                                   (open_tm_wrt_tm b0 (a_Var_f x))
+                                   (open_tm_wrt_tm B1 (a_Var_f x))
+                            /\ Typing ([(x, Tm A1)] ++ G)
+                                     (open_tm_wrt_tm B1 (a_Var_f x)) a_Star
+                            /\ RhoCheck rho x (open_tm_wrt_tm b0 (a_Var_f x)))
+               /\ Typing G A1 a_Star.
+
+Lemma invert_a_UCAbs: forall G A b0,
+    Typing G (a_UCAbs b0) A ->
+    exists a b T B1, PropWff G (Eq a b T) /\ DefEq G (dom G) A (a_CPi (Eq a b T) B1) a_Star
+                /\ (exists L, forall c, c `notin` L ->
+                             Typing ([(c, Co (Eq a b T))] ++ G)
+                                    (open_tm_wrt_co b0 (g_Var_f c)) (open_tm_wrt_co B1 (g_Var_f c))
+                             /\ Typing ([(c, Co (Eq a b T))] ++ G) (open_tm_wrt_co B1 (g_Var_f c)) a_Star).
+
+Lemma invert_a_App_Rel : forall G a b C,
+    Typing G (a_App a Rel b) C ->
+    exists A B, Typing G a (a_Pi Rel A B) /\
+           Typing G b A /\
+           DefEq G (dom G) C (open_tm_wrt_tm B b) a_Star.
+
+Lemma invert_a_App_Irrel : forall G a b C,
+    Typing G (a_App a Irrel b) C ->
+    exists A B b0, Typing G a (a_Pi Irrel A B) /\
+              Typing G b0 A /\
+              DefEq G (dom G) C (open_tm_wrt_tm B b0) a_Star.
+
+Lemma invert_a_CApp : forall G a g A,
+    Typing G (a_CApp a g) A ->
+    g = g_Triv /\
+    exists a1 b1 A1 B, Typing G a (a_CPi (Eq a1 b1 A1) B) /\
+             DefEq G (dom G) a1 b1 A1 /\
+             DefEq G (dom G) A (open_tm_wrt_co B g_Triv) a_Star.
+
+Inductive context_DefEq : available_props -> context -> context -> Prop :=
+| Nul_Eqcontext: forall D, context_DefEq D nil nil
+| Factor_Eqcontext_tm: forall G1 G2 D A A' x,
+    context_DefEq D G1 G2 ->
+    DefEq G1 D A A' a_Star ->
+    DefEq G2 D A A' a_Star ->
+    context_DefEq D ([(x, Tm A)] ++ G1) ([(x, Tm A')] ++ G2)
+| Factor_Eqcontext_co: forall D G1 G2 Phi1 Phi2 c,
+    context_DefEq D G1 G2 ->
+    Iso G1 D Phi1 Phi2 ->
+    Iso G2 D Phi1 Phi2 ->
+    context_DefEq D ([(c, Co Phi1)] ++ G1) ([(c, Co Phi2)] ++ G2).
+
+Hint Constructors context_DefEq.
+
+Lemma context_tm_binding_defeq: forall D (G1 G2: context) A x,
+    Ctx G1 -> Ctx G2 -> context_DefEq D G1 G2 ->
+    binds x (Tm A) G1 -> exists A', (binds x (Tm A') G2) /\ DefEq G2 D A A' a_Star.
+
+Lemma context_co_binding_defeq:
+  forall D (G1 G2: context) phi1 c,
+    Ctx G1 ->
+    Ctx G2 -> context_DefEq D G1 G2 ->
+    binds c (Co phi1) G1 ->
+    exists phi2, (binds c (Co phi2) G2) /\ Iso G2 D phi1 phi2.
+
+Lemma context_DefEq_sub :
+  forall D G1 G2, context_DefEq D G1 G2 -> forall D', D [<=] D' -> context_DefEq D' G1 G2.
+
+Lemma same_dom : forall D (G1 : context) G2,
+    context_DefEq D G1 G2 -> (@dom ett_ott.sort G1) = (@dom ett_ott.sort G2).
+
+Lemma context_DefEq_weaken_available :
+  forall D G1 G2, context_DefEq D G1 G2 -> context_DefEq (dom G1) G1 G2.
+
+Lemma context_DefEq_mutual:
+  (forall G1  a A,   Typing G1 a A -> forall D G2,
+        Ctx G2 -> context_DefEq D G1 G2 -> Typing G2 a A) /\
+  (forall G1  phi,   PropWff G1 phi -> forall D G2,
+        Ctx G2 -> context_DefEq D G1 G2 -> PropWff G2 phi) /\
+  (forall G1 D p1 p2, Iso G1 D p1 p2 ->
+                  forall G2, Ctx G2 -> context_DefEq D G1 G2 -> Iso G2 D p1 p2) /\
+  (forall G1 D1 A B T,   DefEq G1 D1 A B T -> forall G2, Ctx G2 -> context_DefEq D1 G1 G2 ->
+                                          DefEq G2 D1 A B T) /\
+  (forall G1 ,       Ctx G1 -> forall G2 D x A, Ctx G2 -> context_DefEq D G1 G2
+                                   -> binds x (Tm A) G1 -> Typing G2 A a_Star).
+Proof.
+  apply typing_wff_iso_defeq_mutual; eauto 3; try done.
+  - intros G1 x A c H b D G2 H0 H1.
+    case (@context_tm_binding_defeq D G1 G2 A x); auto.
+    intros A2 [h0 h1].
+    apply (E_Conv _ _ _ A2); auto.
+    eapply DefEq_weaken_available; eauto.
+    eapply H; eauto.
+  - intros L G1 rho A B t H t0 H0 D G2 H1 H2.
+    apply (E_Pi (L \u (dom G2))); auto.
+    intros x H3.
+    eapply H; auto.
+    eapply E_ConsTm; eauto.
+    apply Factor_Eqcontext_tm; eauto 2.
+    eapply E_Refl; eauto.
+    eapply H0; eauto.
+  - intros L G1 rho A a B t H t0 H0 r D G2 H1 H2.
+    apply (E_Abs (L \u (dom G2))); auto.
+    intros x H3.
+    eapply H; auto.
+    eapply E_ConsTm; eauto.
+    eapply Factor_Eqcontext_tm; eauto 3.
+    eapply H0; eauto.
+  - intros. eauto 4.
+  - intros. eauto 4.
+  - intros G a B A t H d H0 d0 t0 D G2 H1 H2.
+    apply (E_Conv _ _ _ A); auto. eapply H; eauto.
+    rewrite <- (same_dom H2).
+    eapply H0; eauto.
+    eapply context_DefEq_weaken_available. eauto.
+    eapply t0; eauto.
+  - intros L G1 phi B t H p H0 D G2 H1 H2.
+    apply (E_CPi (L \u (dom G2))); eauto.
+    intros c H3.
+    eapply H; eauto.
+    apply Factor_Eqcontext_co; eauto 2.
+    eapply refl_iso; auto.
+    eapply refl_iso; auto.
+    eauto.
+  - intros L G1 phi a B t H p H0 D G2 H1 H2.
+    apply (E_CAbs (L \u (dom G2))); auto.
+    intros c H3.
+    eapply H; eauto.
+    eapply Factor_Eqcontext_co; eauto 2.
+
+Lemma context_DefEq_typing:
+  forall G1  a A,
+    Typing G1 a A -> forall D G2, Ctx G2 -> context_DefEq D G1 G2 -> Typing G2 a A.
+
+Lemma refl_context_defeq: forall G D, Ctx G -> context_DefEq D G G.
+Proof.
+  move => G; induction G.
+  - intros D H.
+    eapply Nul_Eqcontext.
+  - intros D H. destruct a.
+    inversion H; subst.
+    + apply Factor_Eqcontext_tm; eauto.
+    + apply Factor_Eqcontext_co; eauto 2.
+
+Lemma co_subst_co_tm_var_eq : forall a g c,
+  lc_co g ->
+  erased_tm a -> 
+  co_subst_co_tm g_Triv c a = co_subst_co_tm g c a.
+
+Lemma Typing_swap_co : forall x1 x G a A B,
+      x1 `notin` fv_co_co_tm a \u fv_co_co_tm B
+    -> x `notin` dom G \u {{ x1 }}
+    -> Typing ([(x1, Co A)] ++ G) (open_tm_wrt_co a (g_Var_f x1))
+             (open_tm_wrt_co B (g_Var_f x1))
+    -> Typing ([(x, Co A)] ++ G) (open_tm_wrt_co a (g_Var_f x))
+             (open_tm_wrt_co B (g_Var_f x)).
+
+Lemma E_CAbs_exists :  forall c (G : context) (phi : constraint) (a B : tm),
+    c `notin` fv_co_co_tm a \u fv_co_co_tm B
+    -> Typing ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c))
+       (open_tm_wrt_co B (g_Var_f c))
+    -> PropWff G phi
+    -> Typing G (a_UCAbs a) (a_CPi phi B).
+
+Lemma DefEqIso_regularity :
+  (forall G0 a A, Typing G0 a A -> True ) /\
+  (forall G0 phi,  PropWff G0 phi -> True ) /\
+  (forall G D p1 p2, Iso G D p1 p2 ->
+                 PropWff G p1 /\ PropWff G p2) /\
+  (forall G D A B T,   DefEq G D A B T ->
+                  Typing G A T /\ Typing G B T) /\
+  (forall G0, Ctx G0 -> True).
+Proof.
+  apply typing_wff_iso_defeq_mutual; eauto; try done.
+  - intros G D A1 B1 A A2 B2 d H d0 H0.
+    split_hyp.
+    split; apply E_Wff; solve [auto | eapply Typing_regularity; eauto].
+  - intros G D phi1 phi2 B1 B2 d H.
+    split_hyp.
+    have CTX: Ctx G by eauto.
+    split; solve [eapply invert_a_CPi; eauto].
+  - intros G D a0 b0 A c c0 H b i.
+    apply binds_to_PropWff in b; auto.
+    inversion b; subst.
+    split; auto.
+  -  intros G D a b A d H.
+    split_hyp; auto.
+  - intros G D a b A a1 H1 H hi0 hi1.
+    destruct H as [h0 h1]; auto.
+    split_hyp; auto.
+  - intros L G D rho b1 b2 A2 B d H0 t H1 r1 r2 .
+    split_hyp.
+    repeat split; auto.
+    + apply (E_Abs (L \u (dom G))); eauto.
+      intros x H4.
+      apply H0; auto.
+    + (have: Ctx G by eauto) => CTX.
+      apply (E_Conv _ _ _ ((a_Pi rho A2 B))); auto.
+      -- apply (E_Abs (L \u dom G)); eauto.
+         intros x H4.
+         eapply (@context_DefEq_typing ([(x, Tm A2)] ++ G)); eauto.
+         apply H0; auto.
+         apply Factor_Eqcontext_tm; eauto.
+         apply refl_context_defeq; auto.
+      -- apply (E_PiCong (L \u (dom G))); auto.
+         ++ intros x H4.
+            apply E_Refl; eauto.
+            eapply (@context_DefEq_typing ([(x, Tm A2)] ++ G)); eauto.
+            eapply Typing_regularity; eauto 2.
+            apply H0; auto.
+            apply Factor_Eqcontext_tm; eauto.
+            apply refl_context_defeq; auto.
+         ++ apply (E_Pi (L \u (dom G))); eauto.
+            intros x H4.
+            have: x `notin` L; auto => h0.
+            destruct (H0 x h0).
+            eapply Typing_regularity; eauto 2.
+         ++ apply (E_Pi (L \u (dom G))); eauto.
+            intros x H4.
+            eapply Typing_regularity; eauto 2.
+            apply H0; eauto.
+      -- apply (E_Pi (L \u (dom G))); eauto.
+         intros x H4.
+         eapply Typing_regularity; eauto 2.
+         apply H0; eauto.
+  - intros G D a1 a2 b1 b2 B A d H d0 H0.
+    split_hyp.
+    (have: Ctx G by eauto) => CTX.
+    split; eauto.
+    apply (E_Conv _ _ _ (open_tm_wrt_tm B b2)); auto.
+    eapply (E_App); eauto.
+    apply (E_PiSnd _ _ _ _ _ _ Rel A A); auto.
+    apply E_Refl; auto.
+    eapply Typing_regularity; eauto.
+    apply E_Sym.
+    eapply DefEq_weaken_available; eauto.
+    apply Typing_regularity in H; auto.
+    apply invert_a_Pi in H; eauto.
+    destruct H as [_ [[L h0] _]].
+    pick_fresh x.
+    have: x `notin` L; auto => h1.
+    pose K := Typing_tm_subst (h0 x h1) H0.
+    clearbody K.
+    repeat rewrite tm_subst_tm_tm_open_tm_wrt_tm in K; try solve [apply (Typing_lc H0); eauto].
+    simpl in K.
+    destruct eq_dec; try congruence.
+    rewrite tm_subst_tm_tm_fresh_eq in K; auto.
+  - intros G D A1 A2 B1 B2 d H h0 h1 _.
+    split_hyp.
+    (have: Ctx G by eauto) => CTX.
+    split; eauto.
+  - intros G D A1 A2 rho B1 B2 d H.
+    split_hyp.
+    (have: Ctx G by eauto) => CTX.
+    apply invert_a_Pi in H; eauto.
+    apply invert_a_Pi in H0; eauto.
+    split_hyp.
+    split; eauto.
+  - intros G D B1 a1 B2 a2 rho A1 A2 d H d0 H0.
+    split_hyp.
+    (have: Ctx G by eauto) => CTX.
+    repeat split.
+    + apply invert_a_Pi in H; eauto.
+      destruct H as [_ [[L h0] _]].
+      pick_fresh x.
+      have: x `notin` L; auto => h1.
+      pose K := Typing_tm_subst (h0 x h1) H0.
+      clearbody K.
+      repeat rewrite tm_subst_tm_tm_open_tm_wrt_tm in K; try solve [apply (Typing_lc H0); eauto].
+      simpl in K.
+      destruct eq_dec; try congruence.
+      rewrite tm_subst_tm_tm_fresh_eq in K; auto.
+    + apply invert_a_Pi in H2; eauto.
+      destruct H2 as [_ [[L h0] hi1]].
+      pick_fresh x.
+      have: x `notin` L; auto => h1.
+      apply (E_Conv _ _ A2) in H1; auto.
+      pose K := Typing_tm_subst (h0 x h1) H1.
+      clearbody K.
+      repeat rewrite tm_subst_tm_tm_open_tm_wrt_tm in K; try solve [apply (Typing_lc H1); eauto].
+      simpl in K.
+      destruct eq_dec; try congruence.
+      rewrite tm_subst_tm_tm_fresh_eq in K; auto.
+      apply E_PiFst in d; auto.
+      eapply DefEq_weaken_available; eauto.
+  - intros L G D a b phi1 B d H p H0.
+    split_hyp.
+    have CTX: Ctx G by eauto.
+    repeat split; eauto.
+    + apply (E_CAbs (L \u (dom G))); eauto.
+      intros c H3.
+      apply H; eauto.
+    + apply (E_Conv _ _ _ ((a_CPi phi1 B))); auto.
+      * apply (E_CAbs (L \u (dom G))); eauto.
+        intros c H3.
+        eapply (@context_DefEq_typing ([(c, Co phi1)] ++ G)); eauto.
+        apply H; eauto.
+        apply Factor_Eqcontext_co; eauto 2.
+        apply refl_context_defeq; eauto.
+        all: apply refl_iso; eauto.
+      * apply (E_CPiCong (L \u (dom G))); auto.
+        -- apply refl_iso; auto.
+        -- intros c H3.
+           apply E_Refl; eauto.
+           eapply (@context_DefEq_typing ([(c, Co phi1)] ++ G)); eauto.
+           eapply Typing_regularity; eauto 2.
+           apply H; eauto 4.
+           apply Factor_Eqcontext_co; eauto 4.
+           apply refl_context_defeq; eauto 4.
+           all: apply refl_iso; eauto 4.
+        -- apply (E_CPi (L \u dom G)); eauto.
+           intros c H3.
+           eapply (@context_DefEq_typing ([(c, Co phi1)] ++ G)); eauto.
+           eapply Typing_regularity; eauto 2.
+           apply H; eauto.
+           apply Factor_Eqcontext_co; eauto 4.
+
+Lemma DefEq_regularity :
+  forall G D A B T, DefEq G D A B T -> PropWff G (Eq A B T).
+
+Lemma Iso_regularity :
+  forall G D phi1 phi2, Iso G D phi1 phi2 -> PropWff G phi1 /\ PropWff G phi2.
+
+Lemma PropWff_regularity :
+  forall G A B T, PropWff G (Eq A B T) ->  Typing G A T /\ Typing  G B T.
+
+Lemma DefEq_conv : forall G D a b A B, DefEq G D a b A ->
+                                  DefEq G (dom G) A B a_Star -> DefEq G D a b B.
+
+Lemma trans_iso : forall G D phi1 phi2 phi3,
+    Iso G D phi1 phi2 -> Iso G D phi2 phi3 -> Iso G D phi1 phi3.
+
+Lemma iso_cong : forall G D A A' B B' T T',
+    DefEq G D A A' T -> DefEq G D B B' T -> DefEq G D T T' a_Star ->
+    Iso G D (Eq A B T) (Eq A' B' T').
+
+Lemma E_PiCong2 :  ∀ (L : atoms) (G : context) (D : available_props) rho (A1 B1 A2 B2 : tm),
+    DefEq G D A1 A2 a_Star
+    → (∀ x : atom,
+          x `notin` L
+          → DefEq ([(x, Tm A1)] ++ G) D (open_tm_wrt_tm B1 (a_Var_f x))
+                  (open_tm_wrt_tm B2 (a_Var_f x)) a_Star)
+    → DefEq G D (a_Pi rho A1 B1) (a_Pi rho A2 B2) a_Star.
+
+Lemma E_CPiCong2  : ∀ (L : atoms) (G : context) (D : available_props) (phi1 : constraint)
+                      (A : tm) (phi2 : constraint) (B : tm),
+    Iso G D phi1 phi2
+    → (∀ c : atom,
+          c `notin` L
+              → DefEq ([(c, Co phi1)] ++ G) D (open_tm_wrt_co A (g_Var_f c))
+                      (open_tm_wrt_co B (g_Var_f c)) a_Star)
+
+    → DefEq G D (a_CPi phi1 A) (a_CPi phi2 B) a_Star.
+
+Lemma E_Pi2 : forall L G rho A B,
+    (∀ x : atom, x `notin` L → Typing ([(x, Tm A)] ++ G) (open_tm_wrt_tm B (a_Var_f x)) a_Star) ->
+    Typing G (a_Pi rho A B) a_Star.
+
+Lemma E_Abs2 : ∀ (L : atoms) (G : context) (rho : relflag) (a A B : tm),
+    (∀ x : atom,
+        x `notin` L → Typing ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm B (a_Var_f x)))
+    → (∀ x : atom, x `notin` L → RhoCheck rho x (open_tm_wrt_tm a (a_Var_f x)))
+    → Typing G (a_UAbs rho a) (a_Pi rho A B).
+
+Lemma E_Conv2 : ∀ (G : context) (a B A : tm),
+    Typing G a A → DefEq G (dom G) A B a_Star →
+    Typing G a B.
+
+Lemma E_CPi2 :  ∀ (L : atoms) (G : context) (phi : constraint) (B : tm),
+    (∀ c : atom, c `notin` L → Typing ([(c, Co phi)] ++ G) (open_tm_wrt_co B (g_Var_f c)) a_Star) ->
+    Typing G (a_CPi phi B) a_Star.
+
+Lemma E_CAbs2 : ∀ (L : atoms) (G : context) (a : tm) (phi : constraint) (B : tm),
+       (∀ c : atom,
+        c `notin` L → Typing ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co B (g_Var_f c)))
+       → Typing G (a_UCAbs a) (a_CPi phi B).
+
+Lemma E_AbsCong2
+     : ∀ (L : atoms) (G : context) (D : available_props) (rho : relflag) (b1 b2 A1 B : tm),
+       (∀ x : atom,
+        x `notin` L
+        → DefEq ([(x, Tm A1)] ++ G) D (open_tm_wrt_tm b1 (a_Var_f x)) (open_tm_wrt_tm b2 (a_Var_f x))
+            (open_tm_wrt_tm B (a_Var_f x)))
+       → (∀ x : atom, x `notin` L → RhoCheck rho x (open_tm_wrt_tm b1 (a_Var_f x)))
+       → (∀ x : atom, x `notin` L → RhoCheck rho x (open_tm_wrt_tm b2 (a_Var_f x)))
+       → DefEq G D (a_UAbs rho b1) (a_UAbs rho b2) (a_Pi rho A1 B).
+
+Lemma E_CAbsCong2
+     : ∀ (L : atoms) (G : context) (D : available_props) (a b : tm) (phi1 : constraint)
+       (B : tm),
+       (∀ c : atom,
+        c `notin` L
+        → DefEq ([(c, Co phi1)] ++ G) D (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co b (g_Var_f c))
+                (open_tm_wrt_co B (g_Var_f c))) → DefEq G D (a_UCAbs a) (a_UCAbs b) (a_CPi phi1 B).
+
+Lemma E_Fam2 : ∀ (G : context) (F : tyfam) (A a : tm),
+       Ctx G
+       → binds F (Ax a A) toplevel → Typing G (a_Fam F) A.
+
+Lemma E_Wff2 : ∀ (G : context) (a b A : tm), Typing G a A → Typing G b A → PropWff G (Eq a b A).
+
+End ext_invert. *)
+
+Require Import FcEtt.ext_red.
+(* FcEtt.ext_red:
+Require Import FcEtt.sigs.
+Require Import FcEtt.imports.
+Require Import FcEtt.ett_ott.
+
+Require Import FcEtt.ett_inf.
+Require Import FcEtt.ett_par.
+
+Require Import FcEtt.ett_ind.
+
+Require Import FcEtt.ext_wf.
+
+Require Import FcEtt.ext_red_one.
+
+Require Import FcEtt.tactics.
+
+Module ext_red (invert : ext_invert_sig).
+
+  Export invert.
+
+Module red_one := ext_red_one invert.
+Export red_one.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma Beta_preservation : forall a b, Beta a b -> forall G A, Typing G a A -> Typing G b A.
+
+Lemma E_Beta2 :  ∀ (G : context) (D : available_props) (a1 a2 B : tm),
+       Typing G a1 B → Beta a1 a2 → DefEq G D a1 a2 B.
+
+Lemma reduction_in_Par : forall a a', reduction_in_one a a' -> forall G D, Par G D a a'.
+
+Lemma reduction_in_one_fv_preservation: forall x a b, reduction_in_one a b ->
+                                        x `notin` fv_tm_tm_tm a ->
+                                        x `notin` fv_tm_tm_tm b.
+
+Lemma reduction_rhocheck : forall a a' rho x, reduction_in_one a a' -> RhoCheck rho x a -> RhoCheck rho x a'.
+
+Lemma reduction_preservation : forall a a', reduction_in_one a a' -> forall G A, Typing G a A -> Typing G a' A.
+
+Ltac par_with_context_tail :=
+  match goal with
+  | _ : _ |- Par ([?s] ++ ?G ) (dom ([?s] ++ ?G)) ?a ?b =>
+    eapply context_Par_irrelevance with (G1 := G) (D1 := dom G); eauto
+  end.
+
+Ltac ind_hyp a k1 k2 :=
+  match goal with
+    [ H : ∀ a' : tm, Ctx ?G → Par ?G ?D a a' → Typing ?G a' ?A ∧ DefEq ?G empty a a' ?A,
+        H1 : Par ?G ?D a ?a',
+        H2 : Ctx ?G |- _ ] =>
+    move: (@H a' H2 H1) => [k1 k2]
+
+  end.
+
+Ltac ind_hyp_open x B k1 k2 :=
+  match goal with
+    [ H : forall x, x `notin` ?L -> forall a', Ctx ([(x, ?s)] ++ ?G) -> Par ([(x, ?s)] ++ ?G) ?D (open_tm_wrt_tm B (a_Var_f x)) a' -> ?P,
+        H1 : Ctx ?G,
+        H10 :  forall x : atom, x `notin` ?L0 → Par ?G ?D0 (open_tm_wrt_tm B (a_Var_f x)) (open_tm_wrt_tm ?B' (a_Var_f x))
+                          |- _ ] =>
+    move: (H x ltac:(auto) (open_tm_wrt_tm B' (a_Var_f x)) ltac:(auto)
+                (context_Par_irrelevance ([(x, s)] ++ G) (dom ([(x,s)] ++ G)) (H10 x ltac:(auto)))) => [k0 k1]
+      end.
+
+End  ext_red. *)
+
+Require Import FcEtt.ext_red_one.
+(* FcEtt.ext_red_one:
+Require Import FcEtt.sigs.
+
+Require Export FcEtt.imports.
+Require Import FcEtt.utils.
+Require Export FcEtt.tactics.
+
+Require Export FcEtt.ett_ott.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+
+Require Export FcEtt.ett_par.
+Require Export FcEtt.erase_syntax.
+
+Module ext_red_one (invert : ext_invert_sig).
+  Import invert.
+
+Set Implicit Arguments.
+Set Bullet Behavior "Strict Subproofs".
+
+Lemma reduction_in_one_lc : forall a a', reduction_in_one a a' -> lc_tm a -> lc_tm a'.
+
+Ltac subst_helper x x0 b0 :=
+  replace (a_Var_f x) with (tm_subst_tm_tm b0 x0 (a_Var_f x));
+  [idtac| rewrite tm_subst_tm_tm_var_neq; auto];
+  replace (g_Var_f x) with (tm_subst_tm_co b0 x0 (g_Var_f x));
+  [idtac| simpl; auto];
+  try (rewrite <- tm_subst_tm_tm_open_tm_wrt_co; eauto);
+  try (rewrite <- tm_subst_tm_tm_open_tm_wrt_co; eauto);
+  try (rewrite <- tm_subst_tm_tm_open_tm_wrt_tm; eauto);
+  try (rewrite <- tm_subst_tm_tm_open_tm_wrt_tm; eauto);
+  eauto using tm_subst_tm_tm_lc_tm.
+
+Ltac lc_subst_case x0 b0  :=
+  let x:= fresh in
+  lc_inversion x; subst;
+  try (rewrite tm_subst_tm_tm_open_tm_wrt_tm; eauto);
+  try (rewrite tm_subst_tm_tm_open_tm_wrt_co; eauto);
+
+  econstructor; eauto using Value_lc,
+                      tm_subst_tm_tm_lc_tm, tm_subst_tm_co_lc_co,
+                tm_subst_tm_constraint_lc_constraint;
+    apply_lc_exists x;
+      eauto using tm_subst_tm_tm_lc_tm, tm_subst_tm_co_lc_co,
+              Value_lc, tm_subst_tm_constraint_lc_constraint;
+    subst_helper x x0 b0.
+
+Lemma subst_reduction_in_one : forall a a',
+  reduction_in_one a a' -> forall b x, lc_tm b ->
+  reduction_in_one (tm_subst_tm_tm b x a)
+                   (tm_subst_tm_tm b x a').
+
+Lemma E_AbsTerm_exists : ∀ x (a a' : tm),
+    x `notin` (fv_tm a \u fv_tm a') ->
+     reduction_in_one (open_tm_wrt_tm a (a_Var_f x))
+                       (open_tm_wrt_tm a' (a_Var_f x))
+    → reduction_in_one (a_UAbs Irrel a) (a_UAbs Irrel a').
+
+Lemma no_Value_reduction :
+  (forall a, Value a -> forall b, not (reduction_in_one a b)).
+
+Lemma reduction_in_one_deterministic :
+  forall a a1, reduction_in_one a a1 -> forall a2, reduction_in_one a a2 -> a1 = a2.
+
+End ext_red_one. *)
+
+
+
+Require Import FcEtt.fc_wf.
+(* FcEtt.fc_wf:
+Require Import FcEtt.sigs.
+
+Require Export FcEtt.imports.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+
+Require Import FcEtt.tactics.
+
+Require Import FcEtt.toplevel.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma ann_ctx_wff_mutual :
+  (forall G0 a A, AnnTyping G0 a A -> AnnCtx G0) /\
+  (forall G0 phi,   AnnPropWff G0 phi -> AnnCtx G0) /\
+  (forall G0 D g p1 p2, AnnIso G0 D g p1 p2 -> AnnCtx G0) /\
+  (forall G0 D g A B,   AnnDefEq G0 D g A B -> AnnCtx G0) /\
+  (forall G0, AnnCtx G0 -> True).
+
+Definition AnnTyping_AnnCtx  := first  ann_ctx_wff_mutual.
+Definition AnnPropWff_AnnCtx := second ann_ctx_wff_mutual.
+Definition AnnIso_AnnCtx     := third  ann_ctx_wff_mutual.
+Definition AnnDefEq_AnnCtx   := fourth ann_ctx_wff_mutual.
+
+Hint Resolve AnnTyping_AnnCtx AnnPropWff_AnnCtx AnnIso_AnnCtx
+     AnnDefEq_AnnCtx : ctx_wff.
+
+Ltac sort_inversion :=
+  let h0 := fresh in
+  match goal with
+  | [ H : AnnTyping ([(?x,?s)] ++ ?G) _ _ |- _ ] =>
+    have h0: AnnCtx (x ~ s ++ G); eauto with ctx_wff;
+    inversion h0; subst; auto
+  | [ H : AnnDefEq ([(?x,?s)] ++ ?G) _ _ _ |- _ ] =>
+    have h0: AnnCtx (x ~ s ++ G); eauto with ctx_wff;
+    inversion h0; subst; auto
+  | [ H : AnnIso ([(?x,?s)] ++ ?G) _ _ _ |- _ ] =>
+    have h0: AnnCtx (x ~ s ++ G); eauto with ctx_wff;
+    inversion h0; subst; auto
+  end.
+
+Lemma AnnCtx_uniq G : AnnCtx G -> uniq G.
+
+Hint Resolve AnnCtx_uniq.
+
+Hint Resolve lc_open_switch_co : lc.
+
+Lemma lc_mutual :
+  (forall G0 a A, AnnTyping G0 a A -> lc_tm a /\ lc_tm A) /\
+  (forall G0 phi, AnnPropWff G0 phi -> lc_constraint phi) /\
+  (forall G0 D g p1 p2, AnnIso G0 D g p1 p2 -> lc_constraint p1 /\ lc_constraint p2 /\ lc_co g) /\
+  (forall G0 D g A B,  AnnDefEq G0 D g A B -> lc_tm A /\ lc_tm B /\ lc_co g) /\
+  (forall G0, AnnCtx G0 -> forall x s , binds x s G0 -> lc_sort s).
+
+Definition AnnTyping_lc  := first lc_mutual.
+Definition AnnPropWff_lc := second lc_mutual.
+Definition AnnIso_lc     := third lc_mutual.
+Definition AnnDefEq_lc   := fourth lc_mutual.
+Definition AnnCtx_lc     := fifth lc_mutual.
+
+Lemma AnnTyping_lc1 : forall G a A, AnnTyping G a A -> lc_tm a.
+Lemma AnnTyping_lc2 : forall G a A, AnnTyping G a A -> lc_tm A.
+
+Lemma AnnIso_lc1 : forall G D g p1 p2, AnnIso G D g p1 p2 -> lc_constraint p1.
+Lemma AnnIso_lc2 : forall G D g p1 p2, AnnIso G D g p1 p2 -> lc_constraint p2.
+Lemma AnnIso_lc3 : forall G D g p1 p2, AnnIso G D g p1 p2 -> lc_co g.
+Lemma AnnDefEq_lc1 : forall G D g A B,  AnnDefEq G D g A B -> lc_tm A.
+Lemma AnnDefEq_lc2 : forall G D g A B,  AnnDefEq G D g A B -> lc_tm B.
+Lemma AnnDefEq_lc3 : forall G D g A B,  AnnDefEq G D g A B -> lc_co g.
+
+Hint Resolve AnnTyping_lc1 AnnTyping_lc2 AnnIso_lc1 AnnIso_lc2 AnnIso_lc3 AnnDefEq_lc1 AnnDefEq_lc2 AnnDefEq_lc3 AnnCtx_lc : lc.
+
+Lemma AnnToplevel_lc : forall c s, binds c s an_toplevel -> lc_sig_sort s. *)
+
+Require Import FcEtt.fc_weak.
+(* FcEtt.fc_weak:
+Require Import FcEtt.sigs.
+Require Export FcEtt.imports.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+
+Require Import FcEtt.tactics.
+Require Import FcEtt.ett_par.
+
+Require Import FcEtt.erase_syntax.
+
+Require Export FcEtt.fc_wf.
+
+Module fc_weak (wf : fc_wf_sig) <: fc_weak_sig.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma ann_respects_atoms_eq_mutual :
+  (forall G a A,       AnnTyping  G a A       -> True) /\
+  (forall G phi,       AnnPropWff G phi       -> True) /\
+  (forall G D g p1 p2, AnnIso     G D g p1 p2 -> forall D', D [=] D' -> AnnIso   G D' g p1 p2) /\
+  (forall G D g A B,   AnnDefEq   G D g A B   -> forall D', D [=] D' -> AnnDefEq G D' g A B) /\
+  (forall G,           AnnCtx     G           -> True).
+
+Definition AnnIso_respects_atoms_eq   := third  ann_respects_atoms_eq_mutual.
+Definition AnnDefEq_respects_atoms_eq := fourth ann_respects_atoms_eq_mutual.
+
+Lemma ann_strengthen_noncovar:
+  (forall G1  a A,   AnnTyping G1 a A -> True) /\
+  (forall G1  phi,   AnnPropWff G1 phi -> True) /\
+  (forall G1 D g p1 p2, AnnIso G1 D g p1 p2 -> forall x, not (exists phi, binds x (Co phi) G1) ->
+                     AnnIso G1 (remove x D) g p1 p2) /\
+  (forall G1 D g A B,   AnnDefEq G1 D g A B ->  forall x, not (exists phi, binds x (Co phi) G1) ->
+                    AnnDefEq G1 (remove x D) g A B) /\
+  (forall G1 ,       AnnCtx G1 -> True).
+
+Lemma AnnDefEq_strengthen_available_tm :
+  forall G D g A B, AnnDefEq G D g A B ->  forall x A', binds x (Tm A') G ->
+                    forall D', D' [=] remove x D ->
+                    AnnDefEq G D' g A B.
+
+Lemma ann_weaken_available_mutual:
+  (forall G1  a A,   AnnTyping G1 a A -> True) /\
+  (forall G1  phi,   AnnPropWff G1 phi -> True) /\
+  (forall G1 D g p1 p2, AnnIso G1 D g p1 p2 -> forall D', D [<=] D' -> AnnIso G1 D' g p1 p2) /\
+  (forall G1 D g A B,   AnnDefEq G1 D g A B -> forall D', D [<=] D' -> AnnDefEq G1 D' g A B) /\
+  (forall G1 ,       AnnCtx G1 -> True).
+
+Lemma ann_remove_available_mutual:
+  (forall G1  a A,   AnnTyping G1 a A -> True) /\
+  (forall G1  phi,   AnnPropWff G1 phi -> True) /\
+  (forall G1 D g p1 p2, AnnIso G1 D g p1 p2 ->
+                   AnnIso G1 (AtomSetImpl.inter D (dom G1)) g p1 p2) /\
+
+Lemma AnnDefEq_weaken_available :
+  forall G D g A B, AnnDefEq G D g A B -> AnnDefEq G (dom G) g A B.
+
+Lemma AnnIso_weaken_available :
+  forall G D g A B, AnnIso G D g A B -> AnnIso G (dom G) g A B.
+
+Ltac ann_weak_speedup :=
+  first [eapply An_AppCong | eapply An_PiSnd].
+
+Lemma ann_typing_weakening_mutual:
+  (forall G0 a A,       AnnTyping  G0 a A       ->
+     forall E F G, (G0 = F ++ G) -> AnnCtx (F ++ E ++ G) -> AnnTyping (F ++ E ++ G) a A) /\
+  (forall G0 phi,       AnnPropWff G0 phi       ->
+     forall E F G, (G0 = F ++ G) ->
+        AnnCtx (F ++ E ++ G) -> AnnPropWff (F ++ E ++ G) phi) /\
+  (forall G0 D g p1 p2, AnnIso     G0 D g p1 p2 ->
+     forall E F G, (G0 = F ++ G) ->
+        AnnCtx (F ++ E ++ G) -> AnnIso (F ++ E ++ G) D g p1 p2) /\
+  (forall G0 D g A B,   AnnDefEq   G0 D g A B   ->
+     forall E F G, (G0 = F ++ G) ->
+        AnnCtx (F ++ E ++ G) -> AnnDefEq (F ++ E ++ G) D g A B) /\
+  (forall G0,           AnnCtx     G0           ->
+     forall E F G, (G0 = F ++ G) ->
+        AnnCtx (F ++ E ++ G) -> AnnCtx (F ++ E ++ G)).
+
+Definition AnnTyping_weakening  := first  ann_typing_weakening_mutual.
+Definition AnnPropWff_weakening := second ann_typing_weakening_mutual.
+Definition AnnIso_weakening     := third  ann_typing_weakening_mutual.
+Definition AnnDefEq_weakening   := fourth ann_typing_weakening_mutual.
+Definition AnnCtx_weakening     := fifth  ann_typing_weakening_mutual.
+
+End fc_weak. *)
+
+Require Import FcEtt.fc_subst.
+(* FcEtt.fc_subst:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.tactics.
+
+Require Export FcEtt.imports.
+Require Export FcEtt.utils.
+
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+Require Export FcEtt.fset_facts.
+
+Require Import FcEtt.erase_syntax.
+Require Import FcEtt.ett_par.
+
+Require Import FcEtt.beta.
+
+Require Export FcEtt.fc_wf.
+
+Require Export FcEtt.fc_context_fv.
+
+Import FcEtt.ett_ott.
+
+Module fc_subst (wf : fc_wf_sig) (weak : fc_weak_sig) <: fc_subst_sig.
+
+Export wf.
+Export weak.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma AnnCtx_strengthen : forall G1 G2, AnnCtx (G2 ++ G1) -> AnnCtx G1.
+
+Lemma binds_to_AnnTyping :
+  forall G x A, AnnCtx G -> binds x (Tm A) G -> AnnTyping G A a_Star.
+
+Lemma binds_to_AnnPropWff: forall G0 a b A c,
+    AnnCtx G0 -> binds c (Co (Eq a b A)) G0 -> AnnPropWff G0 (Eq a b A).
+
+Lemma tm_subst_fresh_1 :
+forall G a A a0 x s,
+  AnnTyping G a A -> AnnCtx ((x ~ s) ++ G) -> tm_subst_tm_tm a0 x A = A.
+
+Lemma tm_subst_fresh_2 :
+forall G a A a0 x s,
+  AnnTyping G a A -> AnnCtx ((x ~ s) ++ G) -> tm_subst_tm_tm a0 x a = a.
+
+Lemma co_subst_fresh_1 :
+  forall G a A g c s,
+  AnnTyping G a A -> AnnCtx ((c ~ s) ++ G) -> co_subst_co_tm g c A = A.
+
+Lemma co_subst_fresh_2 :
+  forall G a A g c s,
+  AnnTyping G a A -> AnnCtx ((c ~ s) ++ G) -> co_subst_co_tm g c a = a.
+
+Lemma subst_rho: forall L G a A x y b rho
+    (T : AnnTyping G a A)
+    (Neq: x <> y)
+    (Fr: y `notin` fv_tm_tm_tm (erase_tm a))
+    (Fr2: y `notin` L)
+    (K : (forall x, x `notin` L -> RhoCheck rho x (erase_tm (open_tm_wrt_tm b (a_Var_f x))))),
+    RhoCheck rho y (erase_tm (open_tm_wrt_tm (tm_subst_tm_tm a x b) (a_Var_f y))).
+
+Lemma co_subst_rho: forall L x y a rho g
+    (LC: lc_co g)
+    (Neq: x <> y)
+    (Fr2: x `notin` L)
+    (K : (forall x, x `notin` L -> RhoCheck rho x (erase_tm (open_tm_wrt_tm a (a_Var_f x))))),
+    RhoCheck rho x (erase_tm (open_tm_wrt_tm (co_subst_co_tm g y a) (a_Var_f x))).
+
+Ltac prepare_env :=
+  match goal with
+    [ |- context[ (?x' ~ (?S (?sub ?a1 ?x ?A))) ++ map (?tm_subst_tm_sort ?a1 ?x) ?F ++ ?G ] ] =>
+    rewrite -app_assoc;
+    replace (x' ~ (S (sub a1 x A)) ++  map (tm_subst_tm_sort a1 x) F) with
+    (map (tm_subst_tm_sort a1 x) (x' ~ S A ++ F)); eauto using map_app
+  end.
+
+Ltac binds_PropWff_inversion :=
+  let wff := fresh in
+  match goal with
+    [ bind_c : binds ?c (Co (Eq ?a ?b ?A)) ?G0 |- _ ] =>
+    move: (@binds_to_AnnPropWff G0 _ _ _ _ ltac:(eauto with ctx_wff) bind_c) => wff;
+   inversion wff; subst
+  end.
+
+Lemma ann_tm_substitution_mutual :
+  (forall G0 b B (H : AnnTyping G0 b B),
+      forall G a A, AnnTyping G a A ->
+               forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                      AnnTyping (map (tm_subst_tm_sort a x) F ++ G)
+                                (tm_subst_tm_tm a x b)
+                                (tm_subst_tm_tm a x B)) /\
+  (forall G0 phi (H : AnnPropWff G0 phi),
+      forall G a A, AnnTyping G a A ->
+               forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                      AnnPropWff (map (tm_subst_tm_sort a x) F ++ G)
+                                 (tm_subst_tm_constraint a x phi)) /\
+  (forall G0 D g p1 p2 (H : AnnIso G0 D g p1 p2),
+      forall G a A, AnnTyping G a A ->
+               forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                      AnnIso (map (tm_subst_tm_sort a x) F ++ G)
+                             D
+                             (tm_subst_tm_co a x g)
+                             (tm_subst_tm_constraint a x p1)
+                             (tm_subst_tm_constraint a x p2)) /\
+  (forall  G0 D g A B (H : AnnDefEq G0 D g A B),
+      forall G a A0, AnnTyping G a A0 ->
+                forall F x, G0 = (F ++ (x ~ Tm A0) ++ G) ->
+                       AnnDefEq (map (tm_subst_tm_sort a x) F ++ G)
+                                D
+                                (tm_subst_tm_co a x g)
+                                (tm_subst_tm_tm a x A)
+                                (tm_subst_tm_tm a x B)) /\
+  (forall G0 (H : AnnCtx G0),
+  forall G a A, AnnTyping G a A ->
+  forall F x, G0 = (F ++ (x ~ Tm A) ++ G) ->
+                AnnCtx (map (tm_subst_tm_sort a x) F ++ G)).
+
+Lemma ann_co_substitution_mutual :
+  (forall G0 b B, AnnTyping G0 b B ->
+             forall G D g A1 A2 A3 F c,
+               G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+               -> AnnDefEq G D g A1 A2
+               -> AnnTyping (map (co_subst_co_sort g c) F ++ G)
+                           (co_subst_co_tm g c b) (co_subst_co_tm g c B)) /\
+  (forall  G0 phi (H : AnnPropWff G0 phi),
+      forall G D g A1 A2 A3 F c,
+        G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+        -> AnnDefEq G D g A1 A2
+        -> AnnPropWff (map (co_subst_co_sort g c) F ++ G) (co_subst_co_constraint g c phi)) /\
+  (forall G0 D0 g1 p1 p2 (H : AnnIso G0 D0 g1 p1 p2),
+      forall G D g A1 A2 A3 F c,
+        G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+        -> AnnDefEq G D g A1 A2
+        -> AnnIso (map (co_subst_co_sort g c) F ++ G)
+                 (union D (remove c D0))
+                 (co_subst_co_co g c g1)
+                 (co_subst_co_constraint g c p1)
+                 (co_subst_co_constraint g c p2)) /\
+  (forall G0 D0 g1 A B (H : AnnDefEq G0 D0 g1 A B),
+      forall G D g F c A1 A2 A3,
+        G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+        -> AnnDefEq G D g A1 A2
+        -> AnnDefEq (map (co_subst_co_sort g c) F ++ G) (union D (remove c D0))
+                   (co_subst_co_co g c g1)
+                   (co_subst_co_tm g c A) (co_subst_co_tm g c B)) /\
+
+  (forall  G0 (H : AnnCtx G0),
+      forall G D g F c A1 A2 A3,
+        G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+        -> AnnDefEq G D g A1 A2
+        -> AnnCtx (map (co_subst_co_sort g c) F ++ G)).
+
+Lemma AnnTyping_tm_subst : forall G x A b B (H : AnnTyping ((x ~ Tm A) ++ G) b B),
+  forall a, AnnTyping G a A ->
+       AnnTyping G (tm_subst_tm_tm a x b) (tm_subst_tm_tm a x B).
+
+Lemma AnnTyping_tm_subst_nondep : forall L G a A b B,
+    AnnTyping G a A ->
+    (forall x, x `notin` L -> AnnTyping ([(x,Tm A)] ++ G) (open_tm_wrt_tm b (a_Var_f x)) B) ->
+    AnnTyping G (open_tm_wrt_tm b a) B.
+
+Lemma AnnTyping_co_subst : forall G x A1 A2 A3 b B (H : AnnTyping ((x ~ Co (Eq A1 A2 A3)) ++ G) b B),
+  forall D a, AnnDefEq G D a A1 A2 ->
+       AnnTyping G (co_subst_co_tm a x b) (co_subst_co_tm a x B).
+
+Lemma AnnTyping_co_subst_nondep : forall L G D g A1 A2 A3 b B,
+    AnnDefEq G D g A1 A2 ->
+    (forall x, x `notin` L -> AnnTyping ([(x,Co (Eq A1 A2 A3))] ++ G) (open_tm_wrt_co b (g_Var_f x)) B) ->
+    AnnTyping G (open_tm_wrt_co b g) B.
+
+Ltac co_subst_hyp :=
+  match goal with
+  | [a0 : AnnTyping _ (a_Abs ?rho ?A1 ?b) _  |-  AnnTyping _ (a_Abs ?rho (_ ?A1) (_ ?b)) _ ] =>
+      eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [a0 :  AnnTyping _ (a_Pi ?rho ?A1 ?B1) _ |- AnnTyping _ (a_Pi ?rho (_ ?A1) (_ ?B1)) _  ] =>
+      eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [a0 : AnnTyping _ (a_CAbs ?phi ?B) _  |- AnnTyping _ (a_CAbs (_ ?phi) (_ ?B)) _ ] =>
+      eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [a0 : AnnTyping _ (a_CPi ?phi ?B) _ |- AnnTyping _ (a_CPi (_ ?phi) (_ ?B)) _ ] =>
+    eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [ a0 : AnnTyping _ (a_App ?a1 ?rho ?a2) _ |- AnnTyping _ (a_App (_ ?a1) ?rho (_ ?a2)) _ ] =>
+    eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [ a0 : AnnTyping _ (a_CApp ?a1 ?g2) _ |- AnnTyping _ (a_CApp (_ ?a1) (_ ?g2)) _ ] =>
+    eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [a0 : AnnDefEq _  _ _ (a_CPi ?phi1 ?B1) (a_CPi ?phi2 ?B2)  |-
+     AnnDefEq _ _ _ (a_CPi (_ ?phi1) _) (a_CPi (_ ?phi2) _) ] =>
+    eapply AnnDefEq_weaken_available;
+    eapply (fourth ann_co_substitution_mutual _ _ _ _ _ a0);
+    eauto
+  | [a0 : AnnPropWff _ (Eq ?a ?b ?A) |- AnnPropWff _ (Eq (_ ?a) (_ ?b) (_ ?A)) ] =>
+    eapply (second ann_co_substitution_mutual _ _ a0); eauto
+  | [ a0 : AnnTyping _ ?a _ |- AnnTyping _ (_ ?a) _ ] =>
+    eapply (first ann_co_substitution_mutual _ _ _ a0); eauto
+  | [a0 : AnnDefEq _ _ _ ?a _ |- AnnDefEq _ _ _ (_ ?a) _ ] =>
+      eapply AnnDefEq_weaken_available;
+      eapply (fourth ann_co_substitution_mutual _ _ _ _ _ a0);
+      eauto
+  | [ a0 : AnnDefEq _ _ ?g _ _ |- AnnDefEq _ _ (_ ?g) _ _ ] =>
+      eapply AnnDefEq_weaken_available;
+      eapply (fourth ann_co_substitution_mutual _ _ _ _ _ a0);
+      eauto
+  end.
+
+Lemma ann_co_substitution_mutual2 :
+    (forall G0 b B, AnnTyping G0 b B -> True) /\
+    (forall G0 phi, AnnPropWff G0 phi -> True) /\
+    (forall G0 D0 g1 p1 p2 (H : AnnIso G0 D0 g1 p1 p2),
+        forall D G g A1 A2 A3 F c, G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+                              -> AnnDefEq G D g A1 A2
+                              -> c `notin` D0
+                              -> AnnIso (map (co_subst_co_sort g c) F ++ G)
+                                       D0
+                                       (co_subst_co_co g c g1)
+                                       (co_subst_co_constraint g c p1)
+                                       (co_subst_co_constraint g c p2)) /\
+    (forall G0 D0 g1 A B (H : AnnDefEq G0 D0 g1 A B),
+        forall G D g F c A1 A2 A3, G0 = (F ++ (c ~ Co (Eq A1 A2 A3)) ++ G)
+                              -> AnnDefEq G D g A1 A2
+                              -> c `notin` D0
+                              -> AnnDefEq (map (co_subst_co_sort g c) F ++ G) D0
+                                         (co_subst_co_co g c g1)
+                                         (co_subst_co_tm g c A) (co_subst_co_tm g c B)) /\
+    (forall G0, AnnCtx G0 -> True).
+
+Lemma AnnTyping_tm_swap : forall c c0 B G a A,
+    c `notin` fv_tm_tm_tm A ->
+    c `notin` fv_tm_tm_tm a ->
+    c0 `notin` dom G \u {{ c }} ->
+    AnnTyping ([(c, Tm B)] ++ G) (open_tm_wrt_tm a (a_Var_f c))
+         (open_tm_wrt_tm A (a_Var_f c)) ->
+    AnnTyping ([(c0, Tm B)] ++ G) (open_tm_wrt_tm a (a_Var_f c0))
+                  (open_tm_wrt_tm A (a_Var_f c0)).
+
+  Ltac rename_tm_Typing x0 K2 :=
+    let M1 := fresh in
+    let K1 := fresh in
+    match goal with
+      [ H0 : AnnTyping ([(?x, Tm ?A)] ++ ?G) (open_tm_wrt_tm ?B (a_Var_f ?x)) ?C |- _]
+        => assert (AC : AnnCtx ([(x, Tm A)] ++ G)); eauto with ctx_wff;
+          inversion AC; subst;
+          assert (TV : AnnTyping ([(x0,Tm A)] ++ G) (a_Var_f x0) A); eauto;
+          assert (CTX : AnnCtx ([(x,Tm A)] ++ [(x0, Tm A)] ++ G));
+       [ match goal with
+          [ H7 : AnnTyping G A a_Star |- _] =>
+        econstructor; auto;
+           pose M1 := (AnnTyping_weakening H7 [(x0,Tm A)] nil G);
+                      simpl_env in M1; eapply M1; eauto end |
+           pose K1 := AnnTyping_weakening H0 [(x0,Tm A)] [(x, Tm A)] G eq_refl CTX;
+                      clearbody K1;
+          pose K2 := (first ann_tm_substitution_mutual) _ _ _ K1 _ _ _ TV nil x eq_refl;
+          clearbody K2; simpl_env in K2;
+          repeat rewrite tm_subst_tm_tm_open_tm_wrt_tm in K2; auto;
+          rewrite tm_subst_tm_tm_var in K2;
+          rewrite tm_subst_tm_tm_fresh_eq in K2]
+    end.
+
+ Lemma AnnTyping_co_swap : forall c c0 phi G a A,
+    c `notin` fv_co_co_tm A ->
+    c `notin` fv_co_co_tm a ->
+    c0 `notin` dom G \u {{ c }} ->
+    AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c))
+         (open_tm_wrt_co A (g_Var_f c)) ->
+    AnnTyping ([(c0, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c0))
+                  (open_tm_wrt_co A (g_Var_f c0)).
+
+Lemma AnnDefEq_tm_swap : forall x1 x G A1 D g2 b1 b2,
+   x1 `notin` fv_tm_tm_co g2 \u fv_tm_tm_tm b1 \u fv_tm_tm_tm b2
+  -> x `notin` dom G \u {{ x1 }}
+  -> AnnDefEq ([(x1, Tm A1)] ++ G) D  (open_co_wrt_tm g2 (a_Var_f x1))
+             (open_tm_wrt_tm b1 (a_Var_f x1)) (open_tm_wrt_tm b2 (a_Var_f x1))
+  -> AnnDefEq ([(x, Tm A1)] ++ G) D  (open_co_wrt_tm g2 (a_Var_f x))
+             (open_tm_wrt_tm b1 (a_Var_f x)) (open_tm_wrt_tm b2 (a_Var_f x)).
+
+Lemma AnnDefEq_co_swap : forall c1 c phi1 G D g3 B1 B2,
+    c1 `notin` D \u fv_co_co_tm B1 \u fv_co_co_tm B2 \u fv_co_co_co g3 ->
+    c `notin` dom G \u {{ c1 }} ->
+    (AnnDefEq ([(c1, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c1))
+              (open_tm_wrt_co B1 (g_Var_f c1)) (open_tm_wrt_co B2 (g_Var_f c1)))
+    -> (AnnDefEq ([(c, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c))
+              (open_tm_wrt_co B1 (g_Var_f c)) (open_tm_wrt_co B2 (g_Var_f c))).
+
+Lemma An_Pi_exists : forall x G rho A B,
+    x `notin` dom G \u fv_tm_tm_tm B
+  → AnnTyping ([(x, Tm A)] ++ G)
+              (open_tm_wrt_tm B (a_Var_f x)) a_Star
+  → AnnTyping G A a_Star
+  → AnnTyping G (a_Pi rho A B) a_Star.
+
+Lemma An_Pi_inversion :
+    ∀ (G:context) rho A B T,
+      AnnTyping G (a_Pi rho A B) T ->
+      T = a_Star /\
+      AnnTyping G A a_Star /\
+      ∀ x, x \notin dom G -> AnnTyping (( x ~ Tm  A) ++ G) (open_tm_wrt_tm B (a_Var_f x)) a_Star.
+
+Lemma An_Abs_exists :
+  ∀ x (G:context) rho (A a B:tm),
+    x \notin dom G \u fv_tm_tm_tm a \u fv_tm_tm_tm B ->
+      AnnTyping G A a_Star ->
+      AnnTyping (( x ~ Tm  A) ++ G)
+                (open_tm_wrt_tm a (a_Var_f x))
+                (open_tm_wrt_tm B (a_Var_f x))  ->
+      RhoCheck rho x (erase_tm (open_tm_wrt_tm a (a_Var_f x))) ->
+      AnnTyping G (a_Abs rho A a) (a_Pi rho A B).
+
+Lemma fv_erase_tm_other : forall y G A x a,
+    fv_tm_tm_tm (open_tm_wrt_tm a (a_Var_f y)) [<=] dom ([(y, Tm A)] ++ G) ->
+    y `notin` {{ x }}  ->
+    x `notin` dom G ->
+    x `notin` fv_tm_tm_tm (erase_tm a).
+
+Lemma An_Abs_inversion :
+  ∀ (G:context) rho (a:tm) A A1,
+    AnnTyping G (a_Abs rho A a) A1 ->
+    (exists B, A1 = a_Pi rho A B /\
+    AnnTyping G A a_Star /\
+    ∀ x, x \notin dom G ->
+      RhoCheck rho x (erase_tm (open_tm_wrt_tm a (a_Var_f x))) /\
+      AnnTyping (( x ~ Tm  A) ++ G)
+                (open_tm_wrt_tm a (a_Var_f x))
+                (open_tm_wrt_tm B (a_Var_f x))).
+
+Lemma An_Abs_impossible :   forall x G rho,
+     x \notin dom G
+   -> forall A a, (forall B, not (AnnTyping ((x ~ Tm A) ++ G) (open_tm_wrt_tm a (a_Var_f x)) B))
+   -> forall A1, not (AnnTyping G (a_Abs rho A a) A1).
+
+Lemma An_CPi_exists :
+    ∀ c (G : context) (phi : constraint) (B : tm),
+      c \notin dom G \u fv_co_co_tm B ->
+      AnnPropWff G phi
+      → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co B (g_Var_f c)) a_Star
+      → AnnTyping G (a_CPi phi B) a_Star.
+
+Lemma An_CPi_inversion :
+    ∀ (G:context) (phi : constraint) (B T : tm),
+      AnnTyping G (a_CPi phi B) T ->
+      T = a_Star /\
+      AnnPropWff G phi /\
+      ∀ c, c \notin dom G
+           -> AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co B (g_Var_f c)) a_Star.
+
+Lemma An_CAbs_exists :  ∀ c (G : context) (phi : constraint) (a B : tm),
+    c \notin dom G \u fv_co_co_tm a \u fv_co_co_tm B
+      ->  AnnPropWff G phi
+       → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c))
+              (open_tm_wrt_co B (g_Var_f c))
+       → AnnTyping G (a_CAbs phi a) (a_CPi phi B).
+
+Lemma An_CAbs_inversion : ∀ (G : context) (phi : constraint) (a A : tm),
+    AnnTyping G (a_CAbs phi a) A
+    -> exists B, A = (a_CPi phi B) /\
+    forall c, c  `notin` dom G
+     ->   AnnPropWff G phi /\
+       AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c))
+                 (open_tm_wrt_co B (g_Var_f c)).
+
+Lemma An_AbsCong_exists : ∀ x1 x2 (G : context) D rho (g1 g2 : co) (A1 b1 A2 b3 b2 B : tm),
+    x1 `notin` (dom G \u fv_tm_tm_tm b1 \u fv_tm_tm_tm b2 \u  fv_tm_tm_co g2)
+    -> x2 `notin` (dom G \u fv_tm_tm_tm b2 \u fv_tm_tm_tm b3 \u  fv_tm_tm_co g1)
+    ->  AnnDefEq G D g1 A1 A2
+    → (AnnDefEq ([(x1, Tm A1)] ++ G) D  (open_co_wrt_tm g2 (a_Var_f x1))
+                (open_tm_wrt_tm b1 (a_Var_f x1)) (open_tm_wrt_tm b2 (a_Var_f x1)))
+    → (open_tm_wrt_tm b3 (a_Var_f x2) =
+       open_tm_wrt_tm b2 (a_Conv (a_Var_f x2) (g_Sym g1)))
+    → AnnTyping G A1 a_Star
+    → AnnTyping G A2 a_Star
+    → RhoCheck rho x1 (erase_tm (open_tm_wrt_tm b1 (a_Var_f x1)))
+    → RhoCheck rho x2 (erase_tm (open_tm_wrt_tm b3 (a_Var_f x2)))
+    -> AnnTyping G (a_Abs rho A1 b2) B
+    → AnnDefEq G D (g_AbsCong rho g1 g2) (a_Abs rho A1 b1) (a_Abs rho A2 b3).
+
+Lemma An_AbsCong_inversion :
+  forall G D rho g1 g2 B1 B2,
+    AnnDefEq G D (g_AbsCong rho g1 g2) B1 B2 ->
+  exists A1 A2 b1 b2 b3 B,
+    B1 = (a_Abs rho A1 b1) /\
+    B2 = (a_Abs rho A2 b3) /\
+    AnnTyping G A1 a_Star  /\
+    AnnTyping G A2 a_Star  /\
+    AnnDefEq G D g1 A1 A2  /\
+    AnnTyping G (a_Abs rho A1 b2) B /\
+    (forall x, x \notin dom G ->
+          AnnDefEq  ((x ~ Tm A1) ++  G) D (open_co_wrt_tm g2 (a_Var_f x))
+                    (open_tm_wrt_tm b1 (a_Var_f x))
+                    ((open_tm_wrt_tm b2 (a_Var_f x))) /\
+          (open_tm_wrt_tm b3 (a_Var_f x)) =
+          (open_tm_wrt_tm b2 (a_Conv (a_Var_f x) (g_Sym g1))) /\
+          (RhoCheck rho x  (erase_tm (open_tm_wrt_tm b1 (a_Var_f x)))) /\
+          (RhoCheck rho x  (erase_tm (open_tm_wrt_tm b3 (a_Var_f x))))).
+
+Lemma An_CPiCong_exists :  ∀ c1 c2 (G : context) D (g1 g3 : co) (phi1 : constraint)
+       (B1 : tm) (phi2 : constraint) (B3 B2 : tm),
+    AnnIso G D g1 phi1 phi2
+    -> c1 `notin` D \u fv_co_co_tm B2 \u fv_co_co_tm B1 \u fv_co_co_co g3
+    -> c2 `notin` fv_co_co_co g1 \u fv_co_co_tm B2 \u fv_co_co_tm B3
+    → (AnnDefEq ([(c1, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c1))
+                (open_tm_wrt_co B1 (g_Var_f c1)) (open_tm_wrt_co B2 (g_Var_f c1)))
+    → (open_tm_wrt_co B3 (g_Var_f c2) =
+       open_tm_wrt_co B2 (g_Cast (g_Var_f c2) (g_Sym g1)))
+    → AnnTyping G (a_CPi phi1 B1) a_Star
+    → AnnTyping G (a_CPi phi2 B3) a_Star
+    -> AnnTyping G (a_CPi phi1 B2) a_Star
+    → AnnDefEq G D (g_CPiCong g1 g3) (a_CPi phi1 B1)
+               (a_CPi phi2 B3).
+
+Lemma An_CPiCong_inversion :  ∀ (G : context) D (g1 g3 : co)
+                                (A1 A2 : tm),
+    AnnDefEq G D (g_CPiCong g1 g3) A1 A2
+    -> exists phi1 phi2 B1 B2 B3,
+     A1 = (a_CPi phi1 B1) /\
+    A2 = (a_CPi phi2 B3) /\
+    AnnIso G D g1 phi1 phi2 /\
+    AnnTyping G (a_CPi phi1 B1) a_Star /\
+    AnnTyping G (a_CPi phi2 B3) a_Star /\
+    AnnTyping G (a_CPi phi1 B2) a_Star /\
+    (forall c, c  `notin` dom G
+    → (AnnDefEq ([(c, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c))
+                (open_tm_wrt_co B1 (g_Var_f c)) (open_tm_wrt_co B2 (g_Var_f c))) /\
+      (open_tm_wrt_co B3 (g_Var_f c) =
+       open_tm_wrt_co B2 (g_Cast (g_Var_f c) (g_Sym g1)))).
+
+Lemma An_PiCong_exists : forall x1 x2 (G:context) D rho
+                           (g1 g2 : co) (A1 B1 A2 B3 B2 : tm),
+    x1 `notin` (dom G \u fv_tm_tm_tm B1 \u fv_tm_tm_tm B2 \u  fv_tm_tm_co g2)
+    -> x2 `notin` (dom G \u fv_tm_tm_tm B2 \u fv_tm_tm_tm B3 \u  fv_tm_tm_co g1)
+    -> AnnDefEq G D g1 A1 A2
+    → AnnDefEq ([(x1, Tm A1)] ++ G) D (open_co_wrt_tm g2 (a_Var_f x1))
+               (open_tm_wrt_tm B1 (a_Var_f x1)) (open_tm_wrt_tm B2 (a_Var_f x1))
+    → (open_tm_wrt_tm B3 (a_Var_f x2) =
+       open_tm_wrt_tm B2 (a_Conv (a_Var_f x2) (g_Sym g1)))
+    → AnnTyping G (a_Pi rho A1 B1) a_Star
+    → AnnTyping G (a_Pi rho A2 B3) a_Star
+    → AnnTyping G (a_Pi rho A1 B2) a_Star
+    → AnnDefEq G D (g_PiCong rho g1 g2) (a_Pi rho A1 B1) (a_Pi rho A2 B3).
+
+Lemma An_PiCong_inversion : forall (G:context) (D:available_props) (rho:relflag) (g1 g2:co) (C1 C2 :tm),
+    AnnDefEq G D (g_PiCong rho g1 g2) C1 C2
+  -> exists A1 B1 A2 B2 B3,
+    C1 = (a_Pi rho A1 B1) /\
+    C2 = (a_Pi rho A2 B3) /\
+    AnnTyping G (a_Pi rho A1 B1) a_Star /\
+    AnnTyping G (a_Pi rho A2 B3) a_Star /\
+    AnnTyping G (a_Pi rho A1 B2) a_Star /\
+    AnnDefEq G D g1 A1 A2 /\
+
+    (forall x , x \notin dom G  ->
+            AnnDefEq  (( x ~ Tm  A1 ) ++  G )  D  ( open_co_wrt_tm g2 (a_Var_f x) )   ( open_tm_wrt_tm B1 (a_Var_f x) )   (  (open_tm_wrt_tm  B2   (a_Var_f x) )  )  /\
+            (open_tm_wrt_tm B3 (a_Var_f x)  = (open_tm_wrt_tm  B2   (a_Conv (a_Var_f x) (g_Sym g1))))).
+
+Lemma An_CAbsCong_exists :
+  forall c1 c2 (G : context) (D : available_props) (g1 g3 g4 : co)
+    (phi1 : constraint) (a1 : tm) (phi2 : constraint) (a3 a2 B1 B2 B : tm),
+    AnnIso G D g1 phi1 phi2
+    -> c1 `notin` D \u fv_co_co_tm a2 \u fv_co_co_tm a1 \u fv_co_co_co g3
+    -> c2 `notin` fv_co_co_co g1 \u fv_co_co_tm a2 \u fv_co_co_tm a3
+    → (AnnDefEq ([(c1, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c1))
+                (open_tm_wrt_co a1 (g_Var_f c1)) (open_tm_wrt_co a2 (g_Var_f c1)))
+    → (open_tm_wrt_co a3 (g_Var_f c2) =
+       open_tm_wrt_co a2 (g_Cast (g_Var_f c2) (g_Sym g1)))
+    → AnnTyping G (a_CAbs phi1 a1) (a_CPi phi1 B1)
+    → AnnTyping G (a_CAbs phi2 a3) (a_CPi phi2 B2)
+    → AnnDefEq G (dom G) g4 (a_CPi phi1 B1) (a_CPi phi2 B2)
+    -> AnnTyping G (a_CAbs phi1 a2) B
+    → AnnDefEq G D (g_CAbsCong g1 g3 g4) (a_CAbs phi1 a1) (a_CAbs phi2 a3).
+
+Lemma An_CAbsCong_inversion :
+  forall (G : context) (D : available_props) (g1 g3 g4 : co) A1 A2,
+    AnnDefEq G D (g_CAbsCong g1 g3 g4) A1 A2
+    -> exists phi1 phi2 a1 a2 a3 B1 B2 B,
+      A1 = (a_CAbs phi1 a1) /\
+      A2 = (a_CAbs phi2 a3) /\
+      AnnIso G D g1 phi1 phi2 /\
+      AnnTyping G (a_CAbs phi1 a1) (a_CPi phi1 B1) /\
+      AnnTyping G (a_CAbs phi2 a3) (a_CPi phi2 B2) /\
+      AnnTyping G (a_CAbs phi1 a2) B /\
+      AnnDefEq G (dom G) g4 (a_CPi phi1 B1) (a_CPi phi2 B2) /\
+      forall c1,
+      c1`notin` dom G
+    → (AnnDefEq ([(c1, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c1))
+                (open_tm_wrt_co a1 (g_Var_f c1)) (open_tm_wrt_co a2 (g_Var_f c1))) /\
+      (open_tm_wrt_co a3 (g_Var_f c1) =
+       open_tm_wrt_co a2 (g_Cast (g_Var_f c1) (g_Sym g1))).
+
+End fc_subst. *)
+
+Require Import FcEtt.fc_unique.
+(* FcEtt.fc_unique:
+Require Import FcEtt.sigs.
+
+Require Export FcEtt.ett_inf_cs.
+Require Export FcEtt.ett_ind.
+Require Import FcEtt.imports.
+Require Import FcEtt.tactics.
+
+Require Import FcEtt.ett_par.
+
+Module fc_unique (wf : fc_wf_sig) (subst : fc_subst_sig) <: fc_unique_sig.
+Import wf subst.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Hint Resolve AnnCtx_uniq.
+Hint Rewrite tm_subst_tm_tm_var co_subst_co_co_var.
+
+Ltac apply_ind a :=
+  match goal with
+  | H : (forall A2 : tm, AnnTyping ?G a A2 -> ?B = A2), Y : AnnTyping ?G a ?C |- _  =>
+    apply H in Y; inversion Y
+  | H : forall A B, AnnDefEq ?G ?D a A B -> ?A1 = A /\ ?B1 = B, Y : AnnDefEq ?G ?D a ?A2 ?B2 |- _ =>
+    apply H in Y; split_hyp; subst
+  | H : ∀ q1 q2 : constraint, AnnIso ?G ?D a q1 q2 → ?phi1 = q1 ∧ ?phi2 = q2,
+    Y : AnnIso ?G ?D a ?q1 ?q2 |- _ =>
+apply H in Y; split_hyp; subst
+
+end.
+
+Ltac apply_ind_var c a :=
+      match goal with
+        | H7 : ∀ c : atom,
+            ¬ c `in` ?L0
+                   → AnnTyping ?G (open_tm_wrt_co a (g_Var_f c)) ?B,
+          H0 : ∀ c : atom,
+            ¬ c `in` ?L
+             → ∀ A2 : tm,
+          AnnTyping ?G (open_tm_wrt_co a (g_Var_f c)) A2 → ?C = A2 |- _ =>
+  specialize H7 with c; apply H0 in H7; eauto
+       | H8 : ∀ x : atom,
+       ¬ x `in` ?L0
+       → AnnDefEq ?G ?D (open_co_wrt_tm a (a_Var_f x)) ?B0 ?B5,
+        H0 : ∀ x : atom,
+       ¬ x `in` ?L
+       → ∀ a1 b1 : tm,
+         AnnDefEq ?G ?D (open_co_wrt_tm a (a_Var_f x)) a1 b1
+         → ?B1 = a1 ∧ ?B2  = b1 |- _ =>
+  specialize H8 with c; edestruct (H0 c); eauto
+  end.
+
+Ltac equate_bodies x :=
+      match goal with
+        H11 : ∀ x : atom,
+          ¬ x `in` ?L0 → open_tm_wrt_tm ?B4 (a_Var_f x) = open_tm_wrt_tm ?B2 ?C,
+    e : ∀ x : atom, ¬ x `in` ?L → open_tm_wrt_tm ?B3 (a_Var_f x) =
+                                  open_tm_wrt_tm ?B2 ?C
+    |- _ =>
+        let FR := fresh in
+        let FR2 := fresh in
+        specialize H11 with x;
+        assert (FR: ¬ x `in` L0); eauto; apply H11 in FR;
+        specialize e with x;
+        assert (FR2 : ¬ x `in` L); eauto; apply e in FR2;
+        rewrite -FR in FR2;
+        apply open_tm_wrt_tm_inj in FR2; try fsetdec_fast
+        end.
+
+Ltac resolve_binds_unique :=
+  let EQ := fresh in
+  let h  := fresh in
+  match goal with
+  |   b : binds ?c ?A ?G,  H4 : binds ?c ?B ?G  |- _  =>
+      assert (EQ : uniq G); eauto using AnnCtx_uniq,uniq_an_toplevel;
+      move: (binds_unique _ _ _ _ _ b H4 EQ) => h; inversion h
+  end.
+
+Lemma unique_mutual :
+  (forall G a A1, AnnTyping G a A1 -> forall {A2}, AnnTyping G a A2 -> A1 = A2) /\
+  (forall G phi, AnnPropWff G phi -> True) /\
+  (forall G D g p1 p2, AnnIso G D g p1 p2 -> forall {q1 q2}, AnnIso G D g q1 q2 -> p1 = q1 /\ p2 = q2) /\
+  (forall G D g a b, AnnDefEq G D g a b -> forall {a1 b1}, AnnDefEq G D g a1 b1 -> a = a1 /\ b = b1) /\
+  (forall G, AnnCtx G -> True).
+
+Definition AnnTyping_unique := first unique_mutual.
+Definition AnnDefEq_unique  := fourth unique_mutual.
+Definition AnnIso_unique    := third unique_mutual.
+
+Ltac resolve_unique_subst  :=
+  match goal with
+  |   _ : AnnTyping ?G ?a ?A,  H :AnnTyping ?G ?a ?B  |- _  =>
+      assert (A = B); try (eapply (first unique_mutual); eauto 1); subst; clear H
+  |   H1 : AnnDefEq ?G ?D ?g ?A1 ?B1,  H2 :AnnDefEq ?G ?D ?g ?A2 ?B2  |- _  =>
+      destruct (fourth unique_mutual _ _ _ _ _ H1 _ _ H2); subst; clear H2
+  end.
+
+Ltac resolve_unique_nosubst  :=
+  match goal with
+  |   H1 : AnnTyping ?G ?a ?A,  H2 :AnnTyping ?G ?a ?B  |- _  =>
+      assert (A = B); [ eapply (first unique_mutual);
+                          [eapply H1 | eapply H2]|]; subst B; clear H2
+  |   H1 : AnnDefEq ?G ?D ?g ?A1 ?B1,  H2 :AnnDefEq ?G ?D ?g ?A2 ?B2  |- _  =>
+      destruct (fourth unique_mutual _ _ _ _ _ H1 _ _ H2);
+      try subst A2; try subst B2; try subst A1; try subst B1;
+      clear H2
+  end.
+
+Lemma no_reduction_mutual :
+  (forall a, CoercedValue a -> forall G b, not (head_reduction G a b)) /\
+  (forall a, Value a -> forall G b, not (head_reduction G a b)).
+Lemma no_Value_reduction : forall a, Value a -> forall G b, not (head_reduction G a b).
+Lemma no_CoercedValue_reduction : forall a, CoercedValue a -> forall G b, not (head_reduction G a b).
+
+Lemma head_reduction_deterministic :
+  forall G a a1, head_reduction G a a1 -> forall a2, head_reduction G a a2 -> a1 = a2.
+
+End fc_unique. *)
+
+Require Import FcEtt.fc_invert.
+(* FcEtt.fc_invert:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.imports.
+Require Import FcEtt.tactics.
+Require Import FcEtt.fset_facts.
+
+Require Import FcEtt.ett_ott.
+Require Import FcEtt.ett_inf.
+Require Import FcEtt.ett_inf_cs.
+Require Import FcEtt.ett_ind.
+
+Require Import FcEtt.erase_syntax.
+Require Export Metalib.CoqEqDec.
+Require Import Coq.Logic.Decidable.
+Require Import Metalib.Metatheory.
+Require Import FcEtt.fc_unique.
+
+Require Import FcEtt.fc_wf.
+Require Import FcEtt.toplevel.
+Require Import FcEtt.fc_context_fv.
+
+Module fc_invert (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig).
+Import weak subst.
+
+Module unique := fc_unique wf subst.
+Import unique.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma AnnTyping_regularity :
+  (forall G a A, AnnTyping G a A -> AnnTyping G A a_Star).
+
+Lemma AnnPropWff_regularity :
+  forall G A B A1, AnnPropWff G (Eq A B A1) -> exists B1 g,
+      AnnTyping G A A1 /\ AnnTyping G B B1 /\ AnnDefEq G empty g A1 B1.
+
+Lemma erase_pi : forall G AB0 rho A B S, erase AB0 = (a_Pi rho A B) -> AnnTyping G AB0 S ->
+  exists A1 B0, erase AB0 = erase (a_Pi rho A1 B0) /\ erase A1 = A /\ erase B0 = B /\ AnnTyping G (a_Pi rho A1 B0) a_Star.
+
+Lemma erase_cpi : forall AB0 A B G S,
+    erase AB0 = (a_CPi A B) -> AnnTyping G AB0 S ->
+    exists A1 B0, erase AB0 = erase (a_CPi A1 B0) /\ erase_constraint A1 = A /\ erase B0 = B
+             /\ AnnTyping G (a_CPi A1 B0) a_Star.
+
+Lemma erase_app_Rel :
+  forall AB0 A B C G, erase AB0 = (a_App A Rel B) -> AnnTyping G AB0 C ->
+  exists A1 B0 g D, erase AB0 = erase (a_App A1 Rel B0) /\ erase A1 = A /\ erase B0 = B /\
+          AnnTyping G (a_App A1 Rel B0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma erase_app_Irrel :
+  forall AB0 A C G, erase AB0 = (a_App A Irrel a_Bullet) -> AnnTyping G AB0 C ->
+  exists A1 B0 g D, erase AB0 = erase (a_App A1 Irrel B0) /\ erase A1 = A /\
+          AnnTyping G (a_App A1 Irrel B0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma erasure_compatible : forall G a A (H1 :AnnTyping G a A),
+    forall b B (H2 : AnnTyping G b B)
+      (E : erase a = erase b)
+      (F : erase A = erase B),
+    exists g1, AnnDefEq G (dom G) g1 a b.
+
+Lemma AnnDefEqAnnIso_regularity :
+  (forall G0 a A, AnnTyping G0 a A -> True ) /\
+  (forall G0 phi,   AnnPropWff G0 phi -> True ) /\
+  (forall G D g p1 p2, AnnIso G D g p1 p2 ->
+                 AnnPropWff G p1 /\ AnnPropWff G p2) /\
+  (forall G D g A B,   AnnDefEq G D g A B ->
+           exists C1 C2 g', AnnTyping G A C1 /\ AnnTyping G B C2 /\ AnnDefEq G (dom G) g' C1 C2) /\
+  (forall G0, AnnCtx G0 -> True).
+
+Definition  AnnDefEq_regularity :
+    (forall G D g A B,   AnnDefEq G D g A B ->
+                    exists C1 C2 g', AnnTyping G A C1 /\ AnnTyping G B C2
+                                /\ AnnDefEq G (dom G) g' C1 C2) :=
+  fourth AnnDefEqAnnIso_regularity.
+
+Definition AnnIso_regularity :
+  forall G D g phi1 phi2, AnnIso G D g phi1 phi2 ->
+                     AnnPropWff G phi1 /\ AnnPropWff G phi2 :=
+  third AnnDefEqAnnIso_regularity.
+
+  Lemma An_Sym2
+    : ∀ (G : context) (D : available_props) (g : co) (a b : tm),
+      AnnDefEq G D g b a → AnnDefEq G D (g_Sym g) a b.
+
+Lemma An_Trans2
+     : ∀ (G : context) (D : available_props) (g1 g2 : co)
+       (a b a1 : tm),
+       AnnDefEq G D g1 a a1
+       → AnnDefEq G D g2 a1 b
+       → AnnDefEq G D (g_Trans g1 g2) a b .
+
+Lemma erase_a_Const : forall G0 a0 A0 A1 T,
+       erase a0 = a_Const T ->
+       binds T (Cs A1) an_toplevel ->
+       AnnTyping G0 a0 A0   ->
+       exists g, AnnDefEq G0 (dom G0) g A0 A1.
+
+Lemma erase_capp :
+  forall AB0 C G, AnnTyping G AB0 C -> forall A, erase AB0 = (a_CApp A g_Triv) ->
+  exists a1 g0 g D, erase AB0 = erase (a_CApp a1 g0) /\ erase a1 = A /\
+          AnnTyping G (a_CApp a1 g0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma An_AppCong2 : ∀ (G : context) (D : available_props) rho (g1 g2 : co)
+       (a1 a2 b1 b2 A B : tm),
+       AnnDefEq G D g1 a1 b1
+       → AnnDefEq G D g2 a2 b2
+         → AnnTyping G (a_App a1 rho a2) A
+           → AnnTyping G (a_App b1 rho b2) B
+           → AnnDefEq G D (g_AppCong g1 rho g2) (a_App a1 rho a2) (a_App b1 rho b2).
+
+Lemma An_CAppCong2 :
+      ∀ (G : context) (D : available_props) (g1 g2 g3 : co) (a1 b1 a2 b2 a3 b3 A B : tm),
+       AnnDefEq G D g1 a1 b1
+       → AnnDefEq G (dom G) g2 a2 b2
+       → AnnDefEq G (dom G) g3 a3 b3
+       → AnnTyping G (a_CApp a1 g2) A
+       → AnnTyping G (a_CApp b1 g3) B
+       → AnnDefEq G D (g_CAppCong g1 g2 g3) (a_CApp a1 g2) (a_CApp b1 g3).
+
+Lemma An_Trans'
+     : ∀ (G : context) (D : available_props) (g1 g2 : co)
+       (a b a1 : tm),
+       AnnDefEq G D g1 a a1
+       → AnnDefEq G D g2 a1 b
+       → exists g, AnnDefEq G D g a b .
+
+Lemma An_Sym'
+   : ∀ (G : context) (D : available_props) (g : co) (a b : tm),
+       AnnDefEq G D g b a → exists g, AnnDefEq G D g a b.
+
+Lemma An_Refl_Star : forall G D a b A,
+     erase a = erase b -> AnnTyping G b a_Star ->
+     AnnTyping G a A -> erase A = a_Star ->
+     exists g, AnnDefEq G D g a b.
+
+Lemma An_IsoRefl2_derivable  : ∀ (G : context) (D : available_props) (phi1 phi2 : constraint),
+       AnnPropWff G phi1
+       → AnnPropWff G phi2
+       → erase_constraint phi1 = erase_constraint phi2 →
+       exists g,
+       AnnIso G D g phi1 phi2.
+
+Lemma An_Pi_exists2
+     : ∀ (x : atom) (G : list (atom * sort)) (rho : relflag) (A B : tm),
+       x `notin` union (dom G) (fv_tm_tm_tm B)
+       → AnnTyping ([(x, Tm A)] ++ G) (open_tm_wrt_tm B (a_Var_f x)) a_Star
+       → AnnTyping G (a_Pi rho A B) a_Star.
+
+Lemma An_Abs_exists2
+  : ∀ (x : atom) (G : context) (rho : relflag) (A a B : tm),
+    x `notin` union (dom G) (union (fv_tm_tm_tm a) (fv_tm_tm_tm B))
+    → AnnTyping ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm B (a_Var_f x))
+    → RhoCheck rho x (erase_tm (open_tm_wrt_tm a (a_Var_f x)))
+    → AnnTyping G (a_Abs rho A a) (a_Pi rho A B).
+
+Lemma An_CPi_exists2
+  : ∀ (c : atom) (G : context) (phi : constraint) (B : tm),
+       c `notin` union (dom G) (fv_co_co_tm B)
+       → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co B (g_Var_f c)) a_Star
+       → AnnTyping G (a_CPi phi B) a_Star.
+
+Lemma An_CAbs_exists2
+   : ∀ (c : atom) (G : context) (phi : constraint) (a B : tm),
+       c `notin` union (dom G) (union (fv_co_co_tm a) (fv_co_co_tm B))
+       → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co B (g_Var_f c))
+       → AnnTyping G (a_CAbs phi a) (a_CPi phi B).
+
+Lemma An_Fam2 :  ∀ (G : context) (F : tyfam) (A a : tm),
+       AnnCtx G
+       → binds F (Ax a A) an_toplevel
+       → AnnTyping G (a_Fam F) A.
+
+Lemma An_AbsCong_exists2
+      : ∀ (x1 x2 : atom) (G : context) (D : available_props) (rho : relflag) (g1 g2 : co)
+        (A1 b1 A2 b3 b2 B : tm),
+        x1 `notin` union (dom G) (union (fv_tm_tm_tm b1) (union (fv_tm_tm_tm b2) (fv_tm_tm_co g2)))
+        → x2 `notin` union (dom G) (union (fv_tm_tm_tm b2) (union (fv_tm_tm_tm b3) (fv_tm_tm_co g1)))
+          → AnnDefEq G D g1 A1 A2
+            → AnnDefEq ([(x1, Tm A1)]++ G) D (open_co_wrt_tm g2 (a_Var_f x1))
+                (open_tm_wrt_tm b1 (a_Var_f x1)) (open_tm_wrt_tm b2 (a_Var_f x1))
+              → open_tm_wrt_tm b3 (a_Var_f x2) = open_tm_wrt_tm b2 (a_Conv (a_Var_f x2) (g_Sym g1))
+                  → AnnTyping G A2 a_Star
+                    → RhoCheck rho x1 (erase_tm (open_tm_wrt_tm b1 (a_Var_f x1)))
+                      → RhoCheck rho x2 (erase_tm (open_tm_wrt_tm b3 (a_Var_f x2)))
+                        → AnnTyping G (a_Abs rho A1 b2) B
+                          → AnnDefEq G D (g_AbsCong rho g1 g2) (a_Abs rho A1 b1) (a_Abs rho A2 b3).
+
+ Lemma An_CPiCong_exists2
+      : ∀ (c : atom) (G : context) (D : available_props)
+        (g1 g3 : co) (phi1 : constraint) (B1 : tm)
+        (phi2 : constraint) (B3 B2 : tm),
+        AnnIso G D g1 phi1 phi2
+        → c
+          `notin` (union (dom G)
+                   (union D
+                    (union (fv_co_co_tm B2)
+                       (union (fv_co_co_tm B1)
+                          (union (fv_co_co_co g3)
+                              (union (fv_co_co_co g1)
+                                     (fv_co_co_tm B3)))))))
+          → AnnDefEq ([(c, Co phi1)] ++ G) D
+                     (open_co_wrt_co g3 (g_Var_f c))
+                     (open_tm_wrt_co B1 (g_Var_f c))
+                     (open_tm_wrt_co B2 (g_Var_f c))
+          → open_tm_wrt_co B3 (g_Var_f c) =
+            open_tm_wrt_co B2 (g_Cast (g_Var_f c) (g_Sym g1))
+          → AnnTyping G (a_CPi phi1 B1) a_Star
+          → AnnTyping G (a_CPi phi1 B2) a_Star
+          → AnnDefEq G D (g_CPiCong g1 g3) (a_CPi phi1 B1) (a_CPi phi2 B3).
+
+End fc_invert. *)
+
+Require Import FcEtt.fc_get.
+(* FcEtt.fc_get:
+Require Import FcEtt.fc_invert.
+Require Import Omega.
+Require Import Coq.Arith.Wf_nat.
+Require Import FcEtt.toplevel.
+
+Require Import FcEtt.erase_syntax.
+Require Import FcEtt.sigs.
+Require Import FcEtt.fc_unique.
+Require Import FcEtt.fc_invert.
+Require Import FcEtt.fc_context_fv.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Module fc_get (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig) (unique: fc_unique_sig).
+Import wf weak subst.
+
+Module invert := fc_invert wf weak subst.
+Import invert.
+
+Fixpoint get_tpg_n (n : nat) (G : context) (a : tm) { struct n } : tm :=
+match n with
+| 0 => a_Star
+| S m =>
+  match a with
+  | a_Star => a_Star
+  | a_Var_f x =>
+    match binds_lookup _ x G with
+    | inl (exist (Tm A) _) => A
+    | _ => a_Star
+    end
+  | a_Pi  rho A B => a_Star
+  | a_Abs rho A a =>
+    let (x,_) := atom_fresh (dom G) in
+    a_Pi rho A (close_tm_wrt_tm x (get_tpg_n m ((x,Tm A)::G) (open_tm_wrt_tm a (a_Var_f x))))
+  | a_App a1 rho a2 =>
+    match get_tpg_n m G a1 with
+      | a_Pi rho A B => open_tm_wrt_tm B a2
+      | _ => a_Star
+    end
+  | a_Conv a g => let (_,b) := get_deq_n m G g in b
+  | a_CPi phi B => a_Star
+  | a_CAbs phi a => let (x,_) := atom_fresh (dom G) in
+                   a_CPi phi (close_tm_wrt_co x (get_tpg_n m ((x,Co phi)::G) (open_tm_wrt_co a (g_Var_f x))))
+  | a_Fam F =>
+    match binds_lookup _ F an_toplevel with
+    | inl (exist (Ax a A) _) => A
+    | _ => a_Star
+    end
+  | a_CApp a1 g2 =>
+    match get_tpg_n m G a1 with
+      | a_CPi phi B => open_tm_wrt_co B g2
+      | _ => a_Star
+    end
+  | a_Const T =>
+     match binds_lookup _ T an_toplevel with
+    | inl (exist (Cs A) _) => A
+    | _ => a_Star
+    end
+  | _ => a_Star
+  end
+end
+with
+get_iso_n (n : nat) (G : context) (g : co) : (constraint * constraint) :=
+  match n with
+  | 0 => (Eq a_Star a_Star a_Star,Eq a_Star a_Star a_Star)
+  | S m =>
+    match g with
+    | (g_EqCong g1 A g2) =>
+      let (A1, A2) := get_deq_n m G g1 in
+      let (B1, B2) := get_deq_n m G g2 in
+      (Eq A1 B1 A, Eq A2 B2 A)
+    | g_CPiFst g =>
+      let (T1,T2) := get_deq_n m G g in
+      match (T1, T2) with
+      | (a_CPi phi1 A2, a_CPi phi2 B2) => (phi1, phi2)
+      | _ => (Eq a_Star a_Star a_Star,Eq a_Star a_Star a_Star)
+      end
+    | g_Sym g =>
+      let (phi2, phi1) := get_iso_n m G g in
+      (phi1, phi2)
+    | g_IsoConv (Eq a1 a2 A) (Eq a1' a2' B) g =>
+      (Eq a1 a2 A, Eq a1' a2' B)
+    | _ => (Eq a_Star a_Star a_Star,Eq a_Star a_Star a_Star)
+    end
+  end
+with
+get_deq_n (n : nat) (G : context) (g : co) : (tm * tm) :=
+  match n with
+  | 0 => (a_Star, a_Star)
+  | S m =>
+    match g with
+    | g_Var_f c => match binds_lookup _ c G with
+                  | inl (exist (Co (Eq a b A)) _) => (a,b)
+                  | _ => (a_Star, a_Star)
+                  end
+    | g_Refl a => (a,a)
+    | g_Refl2 a b g => (a,b)
+    | g_Beta a b => (a,b)
+    | g_Sym g => let (a,b) := get_deq_n m G g in
+                (b,a)
+    | g_Trans g1 g2 =>
+      let (a,c1) := get_deq_n m G g1 in
+      let (c2, b) := get_deq_n m G g2 in
+      (a,b)
+    | g_PiCong rho g1 g2 =>
+      let (x,_) := atom_fresh (dom G) in
+      let (A1,A2) := get_deq_n m G g1 in
+      let (B1,B2) := get_deq_n m ([(x, Tm A1)] ++ G) (open_co_wrt_tm g2 (a_Var_f x)) in
+      let B3 := tm_subst_tm_tm (a_Conv (a_Var_f x) (g_Sym g1)) x B2 in
+      (a_Pi rho A1 (close_tm_wrt_tm x B1), a_Pi rho A2 (close_tm_wrt_tm x B3))
+    | g_AbsCong rho g1 g2 =>
+      let (x,_) := atom_fresh (dom G) in
+      let (A1,A2) := get_deq_n m G g1 in
+      let (b1,b2) := get_deq_n m ([(x,Tm A1)] ++ G) (open_co_wrt_tm g2 (a_Var_f x)) in
+      let b3 := tm_subst_tm_tm (a_Conv (a_Var_f x) (g_Sym g1)) x b2 in
+      (a_Abs rho A1 (close_tm_wrt_tm x b1), a_Abs rho A2 (close_tm_wrt_tm x b3))
+    | g_AppCong g1 rho g2 =>
+      let (a1, b1) := get_deq_n m G g1 in
+      let (a2, b2) := get_deq_n m G g2 in
+      (a_App a1 rho a2, a_App b1 rho b2)
+    | g_PiFst g =>
+      let (a,b) := get_deq_n m G g in
+      match (a,b) with
+      | (a_Pi rho1 A1 B1, a_Pi rho2 A2 B2) => (A1, A2)
+      | (_,_) => (a_Star, a_Star)
+      end
+    | g_PiSnd g1 g2 =>
+      let (T1,T2) := get_deq_n m G g1 in
+      let (a1,a2) := get_deq_n m G g2 in
+      match (T1,T2) with
+      | (a_Pi rho1 A1 B1, a_Pi rho2 A2 B2) =>
+        (open_tm_wrt_tm B1 a1, open_tm_wrt_tm B2 a2)
+      | (_,_) => (a_Star, a_Star)
+      end
+    | g_CPiCong g1 g3 =>
+      let (phi1,phi2) := get_iso_n m G g1 in
+      let (x,_) := atom_fresh (dom G) in
+      let (B1,B2) := get_deq_n m ([(x,Co phi1)] ++ G)
+                               (open_co_wrt_co g3 (g_Var_f x)) in
+      let B3 := co_subst_co_tm (g_Cast (g_Var_f x) (g_Sym g1)) x B2 in
+      (a_CPi phi1 (close_tm_wrt_co x B1), a_CPi phi2 (close_tm_wrt_co x B3))
+    | g_CAbsCong g1 g2 g3 =>
+      let (phi1,phi2) := get_iso_n m G g1 in
+      let (x,_) := atom_fresh (dom G) in
+      let (b1,b2) := get_deq_n m ([(x,Co phi1)] ++ G)
+                               (open_co_wrt_co g2 (g_Var_f x)) in
+      let b3 := co_subst_co_tm (g_Cast (g_Var_f x) (g_Sym g1)) x b2 in
+      (a_CAbs phi1 (close_tm_wrt_co x b1), a_CAbs phi2 (close_tm_wrt_co x b3))
+
+    | (g_CAppCong g1 g2 g3) =>
+      let (a1, b1) := get_deq_n m G g1 in
+      (a_CApp a1 g2,a_CApp b1 g3)
+    | (g_CPiSnd g1 g2 g3) =>
+      match get_deq_n m G g1 with
+      | (a_CPi (Eq a a' A) B1, a_CPi (Eq b b' B) B2) =>
+         (open_tm_wrt_co  B1   g2, open_tm_wrt_co  B2   g3 )
+      | (_,_) => (a_Star, a_Star)
+      end
+    | (g_Cast g1 g2) =>
+      match get_iso_n m G g2 with
+      | (Eq a a' A, Eq b b' B) => (b,b')
+      end
+    |  (g_IsoSnd g) =>
+       match get_iso_n m G g with
+       | (Eq a a' A, Eq b b' B) => (A, B)
+       end
+    | (g_Eta b) =>
+      let (x,_) := atom_fresh (dom G) in
+      match get_tpg_n m G b with
+      | (a_Pi rho A B) => (a_Abs rho A (close_tm_wrt_tm x (a_App b rho (a_Var_f x))), b)
+      | (a_CPi phi _) =>  (a_CAbs phi (close_tm_wrt_co x (a_CApp b (g_Var_f x))), b)
+      | _ => (a_Star, a_Star)
+      end
+         | _ => (a_Star, a_Star)
+    end
+  end.
+
+Definition get_tpg (G : context) (a:tm) : tm :=
+  get_tpg_n (size_tm a) G a.
+Definition get_deq (G : context) (g:co) : (tm*tm) :=
+  get_deq_n (size_co g) G g.
+Definition get_iso (G : context) (g:co) : (constraint*constraint) :=
+  get_iso_n (size_co g) G g.
+
+Lemma get_n_correct : forall n,
+    (forall G a A B, size_tm a <= n -> AnnTyping G a A -> get_tpg_n n G a = B -> A = B) /\
+    (forall G D g A B A' B', size_co g <= n -> AnnDefEq G D g A B ->
+                        get_deq_n n G g = (A',B') -> A = A' /\ B = B') /\
+    (forall G D g A B A' B', size_co g <= n -> AnnIso G D g A B ->
+                        get_iso_n n G g = (A',B') -> A = A' /\ B = B').
+
+Lemma get_tpg_correct : (forall G a A B, AnnTyping G a A -> get_tpg G a = B -> A = B).
+
+Lemma get_deq_correct: (forall G D g A B A' B',  AnnDefEq G D g A B ->
+                                            get_deq G g = (A',B') -> A = A' /\ B = B').
+
+Lemma get_iso_correct: (forall G D g A B A' B',  AnnIso G D g A B ->
+                                            get_iso G g = (A',B') -> A = A' /\ B = B').
+
+Lemma An_PiCong_exists2: forall x1 x2 (G:context) D rho
+                           (g1 g2 : co) (A1 B1 A2 B3 B2 : tm),
+    x1 `notin` (dom G \u fv_tm_tm_tm B1 \u fv_tm_tm_tm B2 \u  fv_tm_tm_co g2)
+    -> x2 `notin` (dom G \u singleton x1 \u fv_tm_tm_tm B2 \u fv_tm_tm_tm B3 \u  fv_tm_tm_co g1)
+    -> AnnDefEq G D g1 A1 A2
+    → AnnDefEq ([(x1, Tm A1)] ++ G) D (open_co_wrt_tm g2 (a_Var_f x1))
+               (open_tm_wrt_tm B1 (a_Var_f x1)) (open_tm_wrt_tm B2 (a_Var_f x1))
+    → (open_tm_wrt_tm B3 (a_Var_f x2) =
+       open_tm_wrt_tm B2 (a_Conv (a_Var_f x2) (g_Sym g1)))
+    → get_tpg G A1 = a_Star
+    → get_tpg ([(x1,Tm A1)] ++ G) (open_tm_wrt_tm B1 (a_Var_f x1)) = a_Star
+    → get_tpg ([(x1,Tm A1)] ++ G) (open_tm_wrt_tm B2 (a_Var_f x1)) = a_Star
+    → get_tpg G A2 = a_Star
+    → get_tpg ([(x1,Tm A2)] ++ G) (open_tm_wrt_tm B3 (a_Var_f x1)) = a_Star
+    → AnnDefEq G D (g_PiCong rho g1 g2) (a_Pi rho A1 B1) (a_Pi rho A2 B3).
+
+Lemma An_PiCong_exists3: forall x (G:context) D rho
+                           (g1 g2 : co) (A1 B1 A2 B3 B2 : tm),
+    x `notin` (dom G \u fv_tm_tm_co g2 \u fv_tm_tm_co g1)
+    -> AnnDefEq G D g1 A1 A2
+    → AnnDefEq ([(x, Tm A1)] ++ G) D (open_co_wrt_tm g2 (a_Var_f x)) B1 B2
+    → B3 = tm_subst_tm_tm (a_Conv (a_Var_f x) (g_Sym g1)) x B2
+    → get_tpg G A1 = a_Star
+    → get_tpg ([(x,Tm A1)] ++ G) B1 = a_Star
+    → get_tpg ([(x,Tm A1)] ++ G) B2 = a_Star
+    → get_tpg G A2 = a_Star
+    → get_tpg ([(x,Tm A2)] ++ G) B3 = a_Star
+    → AnnDefEq G D (g_PiCong rho g1 g2) (a_Pi rho A1 (close_tm_wrt_tm x B1)) (a_Pi rho A2 (close_tm_wrt_tm x B3)).
+
+Lemma An_AbsCong_exists3: forall x (G:context) D rho
+                           (g1 g2 : co) (A1 B1 A2 B3 B2 B: tm),
+    x `notin` (dom G \u fv_tm_tm_co g2 \u fv_tm_tm_co g1)
+    -> AnnDefEq G D g1 A1 A2
+    → AnnDefEq ([(x, Tm A1)] ++ G) D (open_co_wrt_tm g2 (a_Var_f x)) B1 B2
+    → B3 = tm_subst_tm_tm (a_Conv (a_Var_f x) (g_Sym g1)) x B2
+    → get_tpg G A1 = a_Star
+    → get_tpg ([(x,Tm A1)] ++ G) B2 = B 
+    → get_tpg G A2 = a_Star
+    → RhoCheck rho x (erase_tm B1)
+    → RhoCheck rho x (erase_tm B3)
+    → AnnDefEq G D (g_AbsCong rho g1 g2)
+               (a_Abs rho A1 (close_tm_wrt_tm x B1))
+               (a_Abs rho A2 (close_tm_wrt_tm x B3)).
+
+Lemma An_CPiCong_exists_3 :  ∀ c (G : context) D (g1 g3 : co) (phi1 : constraint)
+       (B1 : tm) (phi2 : constraint) (B3 B2 : tm),
+     c `notin` dom G \u D \u fv_co_co_co g3 \u fv_co_co_co g1
+    -> AnnIso G D g1 phi1 phi2
+    → AnnDefEq ([(c, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c)) B1 B2
+    → B3 = co_subst_co_tm (g_Cast (g_Var_f c) (g_Sym g1)) c B2
+    -> get_tpg ([(c,Co phi1)] ++ G) B1 = a_Star
+    -> get_tpg ([(c,Co phi2)] ++ G) B3 = a_Star
+    -> get_tpg ([(c,Co phi1)] ++ G) B2 = a_Star
+    → AnnDefEq G D (g_CPiCong g1 g3) (a_CPi phi1 (close_tm_wrt_co c B1))
+               (a_CPi phi2 (close_tm_wrt_co c B3)).
+
+Lemma An_CAbsCong_exists3 :
+        ∀ (c : atom) (G : context) (D : available_props)
+           (g1 g3 g4 : co) (phi1 : constraint) (a1 : tm)
+           (phi2 : constraint) (a3 a2 B1 B3 : tm),
+    AnnIso G D g1 phi1 phi2
+    → c `notin` dom G \u D \u (fv_co_co_co g3) \u (fv_co_co_co g1)
+        \u fv_co_co_co g4
+    → AnnDefEq ([(c, Co phi1)] ++ G) D (open_co_wrt_co g3 (g_Var_f c)) a1 a2
+    → a3 = co_subst_co_tm (g_Cast (g_Var_f c) (g_Sym g1)) c a2
+    → get_tpg ([(c, Co phi1)] ++ G) a1 = B1
+    -> get_tpg ([(c, Co phi2)] ++ G) a3 = B3
+    → AnnDefEq G (dom G) g4 (a_CPi phi1 (close_tm_wrt_co c B1))
+               (a_CPi phi2 (close_tm_wrt_co c B3))
+    → AnnDefEq G D (g_CAbsCong g1 g3 g4)
+               (a_CAbs phi1 (close_tm_wrt_co c a1))
+               (a_CAbs phi2 (close_tm_wrt_co c a3))
+                             .
+
+End fc_get. *)
+
+Require Import FcEtt.fc_dec.
+(* FcEtt.fc_dec:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.fc_dec_fuel.
+Require Import FcEtt.fc_dec_fun.
+Require Import FcEtt.fc_dec_aux.
+
+Require Import FcEtt.imports.
+
+Require Import FcEtt.ett_ind.
+Require Export FcEtt.fc_invert.
+
+Require Import Coq.Init.Specif.
+Require Import Coq.micromega.Lia.
+
+Module fc_dec (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig) (unique: fc_unique_sig).
+
+Module invert := fc_invert wf weak subst.
+Module fuel := fc_dec_fuel wf weak subst unique.
+Module tc_fun := fc_dec_fun wf weak subst unique.
+Module aux := fc_dec_aux wf weak subst unique.
+
+Import tc_fun fuel aux unique wf subst invert.
+
+Definition fuel_at n : Type :=
+    (∀ a, size_tm a <= n ->  fuel_tpg a) *
+    (∀ phi, size_constraint phi <= n -> fuel_pwf phi) *
+    (∀ gamma, size_co gamma <= n -> fuel_iso gamma) *
+    (∀ gamma, size_co gamma <= n -> fuel_deq gamma).
+
+Ltac wfind :=
+  match goal with
+    | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_tpg ?a ] => eapply (Hind (size_tm a))
+    | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_deq ?g ] => eapply (Hind (size_co g))
+    | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_iso ?g ] => eapply (Hind (size_co g))
+    | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_pwf ?g ] => eapply (Hind (size_constraint g))
+  end.
+
+Lemma fuel_all : ∀ n, fuel_at n.
+
+Definition gaspump : ∀ t : tm, fuel_tpg t.
+
+Definition FC_typechecker : ∀ t : tm, {T : tm | AnnTyping nil t T } + {(forall T, ¬ AnnTyping nil t T)} :=
+  fun t => AnnTyping_dec nil t (gaspump t) An_Empty.
+
+Theorem FC_typechecking_decidable : ∀ t : tm, (exists T : tm, AnnTyping nil t T) \/ (∀ T, ¬ AnnTyping nil t T).
+
+End fc_dec. *)
+
+Require Import FcEtt.fc_preservation.
+(* FcEtt.fc_preservation:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.imports.
+Require Import FcEtt.tactics.
+
+Require Import FcEtt.ett_ott.
+Require Import FcEtt.ett_inf.
+Require Import FcEtt.ett_inf_cs.
+Require Import FcEtt.ett_ind.
+
+Require Import FcEtt.ett_par.
+Require Import FcEtt.ext_invert.
+Require Import FcEtt.ext_red.
+Require Import FcEtt.ext_red_one.
+Require Import FcEtt.erase_syntax.
+
+Require Import FcEtt.fc_invert FcEtt.fc_unique.
+
+Module fc_preservation (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig)
+        (e_subst : ext_subst_sig).
+
+Import subst weak wf.
+
+Module e_invert := ext_invert e_subst.
+Import e_invert.
+
+Module red := ext_red e_invert.
+Import red.
+
+Module red_one := ext_red_one e_invert.
+Import red_one.
+
+Module invert := fc_invert wf weak subst.
+Module unique := fc_unique wf subst.
+Import invert unique.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma open_a_Conv : forall a b g,
+    open_tm_wrt_tm (a_Conv a g) b =
+    a_Conv (open_tm_wrt_tm a b) (open_co_wrt_tm g b).
+
+Lemma open_a_Conv_co : forall a b g,
+    open_tm_wrt_co (a_Conv a g) b =
+    a_Conv (open_tm_wrt_co a b) (open_co_wrt_co g b).
+
+Ltac lc_erase_hyp :=
+  match goal with
+  | H : AnnTyping ?G ?a ?A0 |- lc_tm (erase_tm ?a) => eapply lc_erase; apply (AnnTyping_lc H)
+  | H : AnnTyping ?G ?a ?A0 |- lc_tm ?a => apply (AnnTyping_lc1 H)
+  | H : lc_tm ?a |- lc_tm (erase ?a) => eapply lc_erase; eauto
+  | H : lc_tm (a_Abs ?r ?a ?b) |- lc_tm ?c => apply lc_erase in H; simpl in H; auto
+  | H : lc_tm (a_CAbs ?a ?b) |- lc_tm ?c => apply lc_erase in H; simpl in H; auto
+  end.
+
+Lemma binds_toplevel: forall F a A,
+  binds F (Ax a A) an_toplevel ->
+  binds F (Ax (erase a) (erase A)) toplevel.
+
+Ltac do_rho :=
+  match goal with
+    H : ∀ x : atom, x `notin` ?L → RhoCheck Irrel x (erase_tm (open_tm_wrt_tm ?b (a_Var_f x))) |-
+                    ?x `notin` fv_tm_tm_tm (open_tm_wrt_tm (erase ?b) (a_Var_f ?x)) =>
+    let h := fresh in
+    let F := fresh in
+    assert (F : x `notin` L); auto;
+    move: (H x F) => h; inversion h; subst;
+    replace (a_Var_f x) with (erase (a_Var_f x)); auto;
+    rewrite open_tm_erase_tm; auto
+  end.
+
+Ltac eauto_lc := simpl; eauto using AnnTyping_lc1, Value_lc,
+                        AnnDefEq_lc3, AnnPropWff_lc.
+
+Lemma head_reduction_in_one : forall G a b,
+    head_reduction G a b -> forall A,  AnnTyping G a A ->
+    reduction_in_one (erase a) (erase b) \/ erase a = erase b.
+
+Lemma head_reduction_erased : forall G a b, head_reduction G a b ->
+    forall A, AnnTyping G a A ->  Par G (dom G) (erase a) (erase b).
+
+Lemma preservation : forall G a A, AnnTyping G a A -> forall a', head_reduction G a a' -> AnnTyping G a' A.
+
+End fc_preservation. *)
+
+Require Import FcEtt.fc_consist.
+(* FcEtt.fc_consist:
+Require Import FcEtt.sigs.
+
+Require Export FcEtt.tactics.
+Require Export FcEtt.imports.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ott.
+Require Export FcEtt.ett_ind.
+Require Export FcEtt.ext_wf.
+Require Export FcEtt.ett_par.
+Require Export FcEtt.ett_inf_cs.
+
+Require Import FcEtt.erase_syntax.
+Require Import FcEtt.fc_invert.
+Require Import FcEtt.ext_consist.
+Require Import FcEtt.erase.
+Require Import FcEtt.fc_head_reduction.
+
+Require Import FcEtt.fc_preservation.
+Require Import FcEtt.ext_subst.
+
+Set Implicit Arguments.
+Set Bullet Behavior "Strict Subproofs".
+
+Module fc_consist (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig)
+                  (e_invert : ext_invert_sig)(e_subst : ext_subst_sig).
+
+Import wf weak.
+
+Export subst.
+
+Module invert := fc_invert wf weak subst.
+Export invert.
+
+Module consist := ext_consist e_invert wf.
+Export consist.
+
+Module erase' := erase wf weak subst e_invert.
+Export erase'.
+
+Module head := fc_head_reduction  e_invert weak wf subst.
+Export head.
+
+Module pres := fc_preservation wf weak subst e_subst.
+Import pres.
+
+Lemma erased_tm_erase_mutual :
+  (forall G0 a B (H : AnnTyping G0 a B),
+     erased_tm (erase a) /\ erased_tm (erase B)) /\
+  (forall G0 phi (H : AnnPropWff G0 phi),
+      forall a b A, phi = (Eq a b A) ->
+                                         erased_tm (erase a) /\ erased_tm (erase b)
+                                         /\ erased_tm (erase A)) /\
+  (forall G0 D g p1 p2 (H : AnnIso G0 D g p1 p2),
+     True) /\
+  (forall  G0 D g A B (H : AnnDefEq G0 D g A B),
+      True) /\
+  (forall G0 (H : AnnCtx G0),
+     forall x A, binds x (Tm A) G0 -> erased_tm (erase_tm A)
+  ).
+
+Lemma erased_tm_erase : forall G0 a B, AnnTyping G0 a B -> erased_tm (erase a).
+
+Lemma erased_tm_erase_type : forall G0 a B, AnnTyping G0 a B -> erased_tm (erase B).
+
+Hint Resolve erased_tm_erase : erased.
+
+Definition AnnGood G D := Good (erase_context G) D.
+
+Lemma AnnGoodIsGood : forall G D, AnnGood G D -> Good (erase_context G) D.
+
+Lemma AnnGoodnil : AnnGood nil AtomSetImpl.empty.
+
+Lemma AnnDefEq_consistent : forall S D g A B, AnnDefEq S D g A B -> AnnGood S D -> consistent (erase A) (erase B).
+
+Lemma Paths_are_DataTy : forall T a,
+    Path T a -> Value a -> forall G A, AnnTyping G a A -> DataTy A a_Star.
+
+Lemma Paths_have_value_types : forall T a,
+    Path T a -> Value a -> forall G A, AnnTyping G a A -> value_type A.
+
+Lemma values_have_value_types :
+  forall G D a A, AnnGood G D ->  AnnTyping G a A -> Value a -> value_type A.
+
+Lemma canonical_forms_a_Pi :
+  forall G D a rho A B, AnnGood G D ->
+                   AnnTyping G a (a_Pi rho A B) -> Value a ->
+                   (exists a', a = a_Abs rho A a') \/ (exists T, Path T a).
+
+Lemma canonical_forms_a_CPi :
+  forall G D a phi B, AnnGood G D ->
+                 AnnTyping G a (a_CPi phi B) -> Value a ->
+                 (exists a', a = a_CAbs phi a') \/ (exists T, Path T a).
+
+Lemma consistent_a_Pi :
+  forall G A B C g rho,
+    AnnGood G (dom G) -> value_type C ->
+    AnnDefEq G (dom G) g C (a_Pi rho A B) -> exists A' B', C = a_Pi rho A' B'.
+
+Lemma consistent_a_CPi :
+  forall G phi B C g,
+    AnnGood G (dom G) -> value_type C -> AnnDefEq G (dom G) g C (a_CPi phi B) -> exists phi' B', C = a_CPi phi' B'.
+
+Definition irrelevant G D (a : tm) :=
+  (forall x A, binds x (Tm A) G -> x `notin` fv_tm (erase a)) /\ AnnGood G D.
+
+Lemma progress : forall G a A, irrelevant G (dom G) a -> AnnTyping G a A -> CoercedValue a \/ exists a', head_reduction G a a'.
+
+Inductive multi (rel : tm -> tm -> Prop) : tm -> tm -> Prop :=
+| multi_refl : forall a, lc_tm a -> multi rel a a
+| multi_step : forall a b c, rel a b -> multi rel b c -> multi rel a c.
+
+Lemma multi_trans : forall r a b, multi r a b -> forall c, multi r b c -> multi r a c.
+
+Lemma multi_An_AbsTerm_exists : ∀ (G : list (atom * sort)) (x : atom) (A a a' : tm),
+       x `notin` union (fv_tm a) (union (fv_tm a') (dom G))
+       → AnnTyping G A a_Star
+         → multi (head_reduction ([(x, Tm A)] ++ G)) (open_tm_wrt_tm a (a_Var_f x))
+             (open_tm_wrt_tm a' (a_Var_f x))
+           → multi (head_reduction G) (a_Abs Irrel A a) (a_Abs Irrel A a').
+
+Lemma multi_An_ConvTerm : ∀ (G : context) (a : tm) (g : co) (a' : tm),
+    lc_co g → multi (head_reduction G) a a'
+    → multi (head_reduction G) (a_Conv a g) (a_Conv a' g).
+
+Lemma multi_An_AppLeft : ∀ (G : context) (a b: tm) rho (a' : tm),
+    lc_tm b → multi (head_reduction G) a a'
+    → multi (head_reduction G) (a_App a rho b) (a_App a' rho b).
+
+Lemma multi_An_CAppLeft : ∀ (G : context) (a: tm) (g:co) (a' : tm),
+    lc_co g → multi (head_reduction G) a a'
+    → multi (head_reduction G) (a_CApp a g) (a_CApp a' g).
+
+Lemma multi_preservation : forall G a b A, multi (head_reduction G) a b ->
+                                      AnnTyping G a A ->
+                                      AnnTyping G b A.
+
+Lemma erased_constraint_erase :
+  forall G a b A, AnnPropWff G (Eq a b A) -> erased_tm (erase a) /\ erased_tm (erase b)
+                                      /\ erased_tm (erase A).
+
+Lemma erased_context_erase :
+  forall G, AnnCtx G -> erased_context (erase_context G).
+
+Lemma AnnGood_add_tm :
+  forall G x A,  x `notin` dom G -> AnnTyping G A a_Star -> AnnGood G (dom G) -> AnnGood (x ~ Tm A ++ G) (dom (x ~ Tm A ++ G)).
+
+Ltac eauto_lc := simpl; eauto using AnnTyping_lc1, Value_lc,
+                        AnnDefEq_lc3, AnnPropWff_lc.
+
+Lemma erased_Value_reduces_to_CoercedValue :
+  forall G a0 A,
+    AnnTyping G a0 A
+    -> AnnGood G (dom G) -> forall a, erase a0 = a -> Value a
+           -> exists av, multi (head_reduction G) a0 av /\ CoercedValue av /\ erase av = a.
+
+Ltac solve_irrelevant y AA b0 h0 :=
+  match goal with
+    [ H1 : irrelevant _ _ _ |- _ ] => inversion H1 end;
+  match goal with
+    [ H4 : forall x A, binds x _ _ -> x `notin` _ |- _ ] =>
+    simpl in H4; econstructor; eauto;
+    try (intros y AA b0; move: (H4 y AA b0) => h0; fsetdec) end.
+
+Lemma paths_arent_abs :
+  forall a T, Path T a -> forall rho b, a = a_UAbs rho b -> False.
+
+Ltac no_paths:=
+  match goal with
+    [ EE : erase (a_App ?b0 ?rho ?a) = a_UAbs _ ?b, H : Path ?T ?b0 |- _ ] =>
+    destruct rho; simpl in EE;
+    match goal with
+      [ FF : ?a = a_UAbs _ ?b |- _ ] =>
+      have P: (Path T a); by eauto using lc_tm_erase end end.
+
+Ltac induction_a0 :=
+  let IR := fresh  in
+  let a0' := fresh in
+  let y := fresh in
+  let AA := fresh in
+  let b0 := fresh in
+  let h0 := fresh in
+  match goal with
+    [ IHa0 : ∀ A0 : tm, irrelevant ?G (dom ?G) ?a0 → _,
+        H1 : irrelevant ?G _ (a_Conv ?a0 ?g),
+        H2 : AnnTyping ?G (a_Conv ?a0 ?g) ?A0 |- _ ] =>
+    inversion H2; subst;
+    (have IR: irrelevant G (dom G) a0 by solve_irrelevant y AA b0 h0);
+    move: (IHa0 _ IR ltac:(eauto) ltac:(auto)) =>
+    [a0' [? ?]];
+    exists (a_Conv a0' g);
+    split; [ eapply multi_An_ConvTerm; eauto with lc | simpl; auto ]
+  end.
+
+Lemma reduction_annotation : forall a a',
+    reduction_in_one a a' ->
+    forall G a0 A0, irrelevant G (dom G) a0 -> AnnTyping G a0 A0 -> erase a0 = a ->
+    exists a0', multi (head_reduction G) a0 a0' /\ erase a0' = a'.
+
+End fc_consist. *)
+
+Require Import FcEtt.fc_head_reduction.
+(* FcEtt.fc_head_reduction:
+Require Import FcEtt.sigs.
+Require Import FcEtt.fc_wf.
+
+Module fc_head_reduction (e_invert : ext_invert_sig)
+       (wk: fc_weak_sig) (wf : fc_wf_sig) (sub : fc_subst_sig).
+
+Import e_invert.
+Import wk.
+Import sub.
+
+Require Export FcEtt.imports.
+Require Import FcEtt.utils.
+Require Export FcEtt.tactics.
+
+Require Export FcEtt.ett_ott.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+
+Require Export FcEtt.ett_par.
+Require Export FcEtt.erase_syntax.
+
+Require Import FcEtt.ext_red_one.
+Module red1 := ext_red_one e_invert.
+Import red1.
+
+Set Implicit Arguments.
+Set Bullet Behavior "Strict Subproofs".
+
+Lemma weaken_head_reduction : forall G0 a a',
+    head_reduction G0 a a' ->
+    forall E F G, (G0 = F ++ G) -> AnnCtx (F ++ E ++ G) -> head_reduction (F ++ E ++ G) a a'.
+
+Lemma subst_head_reduction : forall G a a',
+    head_reduction G a a' -> forall G1 G2 A b x,
+       G = G1 ++ [(x, Tm A)] ++ G2
+      -> AnnTyping G2 b A
+      -> head_reduction (map (tm_subst_tm_sort b x) G1 ++ G2)
+                       (tm_subst_tm_tm b x a)
+                       (tm_subst_tm_tm b x a').
+
+Ltac resolve_open a :=
+    let s := fresh in
+    match goal with
+      [ x1 : ?b = open_tm_wrt_tm a (a_Var_f ?x) |- _ ] =>
+      destruct a; inversion x1;
+        [unfold open_tm_wrt_tm in x1;
+         simpl in x1;
+         match goal with [ n:nat |- _ ] =>
+                         destruct (lt_eq_lt_dec n 0) as [s | [| s]];
+                         try destruct s; inversion x1
+         end | subst; unfold open_tm_wrt_tm in x1;
+               unfold open_tm_wrt_tm; simpl in *; inversion x1; clear x1]
+    end.
+
+Lemma An_AbsTerm_exists : ∀ G x A (a a' : tm),
+    x `notin` (fv_tm a \u fv_tm a' \u dom G) ->
+    AnnTyping G A a_Star ->
+    head_reduction ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x))
+                                      (open_tm_wrt_tm a' (a_Var_f x))
+    → head_reduction G (a_Abs Irrel A a) (a_Abs Irrel A a').
+
+End fc_head_reduction. *)
+
+
+
+Require Import FcEtt.erase.
+(* FcEtt.erase:
+Require Import FcEtt.sigs.
+
+Require Import FcEtt.utils.
+Require Import FcEtt.ett_inf_cs.
+Require Import FcEtt.ett_ind.
+Require Import FcEtt.imports.
+Require Import FcEtt.tactics.
+Require Import FcEtt.erase_syntax.
+Require Import FcEtt.ext_red.  
+Require Import FcEtt.fc_invert FcEtt.fc_unique.
+Require Import FcEtt.ett_par.
+Require Import FcEtt.toplevel.
+Require Import FcEtt.fc_context_fv.
+
+Module erase (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig)
+             (e_invert : ext_invert_sig).
+
+Include e_invert.
+
+Module e_red := ext_red e_invert.
+Import e_red.
+
+Import wf weak subst.
+
+Module invert := fc_invert wf weak subst.
+Module unique := fc_unique wf subst.
+Import invert unique.
+
+Set Implicit Arguments.
+Set Bullet Behavior "Strict Subproofs".
+
+Lemma Path_erase : forall T a, Path T a -> Path T (erase a).
+
+Hint Constructors Typing PropWff Iso DefEq Ctx.
+
+Ltac dispatch_rho  :=
+  match goal with
+  |  H11 : ∀ x : atom,
+      ¬ x `in` ?L0 →
+             RhoCheck ?rho x (erase_tm (open_tm_wrt_tm ?b1 (a_Var_f x)))
+             |-
+             ∀ x : atom,
+               ¬ x `in` ?LL → RhoCheck ?rho x (open_tm_wrt_tm (erase_tm ?b1) (a_Var_f x))
+           =>
+   let Fr := fresh in
+   let r' := fresh in
+   intros x; intros;
+   assert (FrL0 : x `notin` L0); eauto;
+   move: (H11 x FrL0) => r';
+   autorewcshyp r';
+   rewrite -open_tm_erase_tm in r'; eapply r'
+end.
+
+Lemma erase_mutual :
+  (forall G a A, AnnTyping G a A ->
+          Typing (erase_context G) (erase a) (erase A)) /\
+  (forall G phi, AnnPropWff G phi ->
+          PropWff (erase_context G) (erase phi)) /\
+  (forall G D g p1 p2, AnnIso G D g p1 p2 ->
+          Iso (erase_context G) D
+              (erase_constraint p1) (erase_constraint p2)) /\
+  (forall G D g a b,
+      AnnDefEq G D g a b ->
+      forall A, AnnTyping G a A ->
+             DefEq (erase_context G) D (erase a) (erase b) (erase A)) /\
+  (forall G, AnnCtx G -> Ctx (erase_context G) /\
+    forall c t, binds c t G -> binds c (erase_sort t) (erase_context G)).
+
+Definition AnnTyping_erase :
+  (forall G a A, AnnTyping G a A ->
+            Typing (erase_context G) (erase a) (erase A)) := first erase_mutual.
+Definition AnnPropWff_erase :
+  (forall G phi, AnnPropWff G phi ->
+            PropWff (erase_context G) (erase phi)) := second erase_mutual.
+Definition AnnIso_erase :
+  (forall G D g p1 p2, AnnIso G D g p1 p2 ->
+          Iso (erase_context G) D
+              (erase_constraint p1) (erase_constraint p2)) := third erase_mutual.
+Definition AnnDefEq_erase :
+  (forall G D g a b,
+      AnnDefEq G D g a b ->
+      forall A, AnnTyping G a A ->
+           DefEq (erase_context G) D (erase a) (erase b) (erase A)) := fourth erase_mutual.
+Definition AnnCtx_erase :
+  (forall G, AnnCtx G -> Ctx (erase_context G) /\
+    forall c t, binds c t G -> binds c (erase_sort t) (erase_context G)) := fifth erase_mutual.
+
+Lemma erasure_a_Star :
+  forall G a A, AnnTyping G a A -> erase A = a_Star ->
+           exists a', erase a = erase a' /\ AnnTyping G a' a_Star.
+
+Lemma erasure_cvt :
+    forall G a A, AnnTyping G a A -> forall B, erase A = erase B -> AnnTyping G B a_Star ->
+                                    exists a', erase a = erase a' /\ AnnTyping G a' B.
+
+Lemma AnnDefEq_invertb : forall G D g a b, AnnDefEq G D g a b ->
+  exists A b' g, AnnTyping G a A /\ AnnTyping G b' A /\ erase b' = erase b /\ AnnDefEq G D g b b'.
+
+Lemma erasure_AnnDefEq : forall G D g A'' B'' S A' B',
+      AnnDefEq G D g A'' B'' ->
+      AnnTyping G A'' S -> erase S = a_Star ->
+      erase A'' = erase A' -> erase B'' = erase B' ->
+      AnnTyping G A' a_Star -> AnnTyping G B' a_Star ->
+      exists g', AnnDefEq G D g' A' B'.
+
+Lemma AnnDefEq_invert_a_Star : forall G0 D g1 A1' A2' S,
+      AnnDefEq G0 D g1 A1' A2' ->
+      AnnTyping G0 A1' S ->
+      erase S = a_Star ->
+      exists A1'', exists A2'', exists g, erase A1'' = erase A1'
+                       /\ erase A2'' = erase A2'
+                       /\ AnnDefEq G0 D g A1'' A2''
+                       /\ AnnTyping G0 A1'' a_Star
+                       /\ AnnTyping G0 A2'' a_Star.
+
+Lemma Path_to_Path : forall  a0, lc_tm a0 -> forall T a,
+      Path T a -> erase a0 = a -> Path T a0.
+
+Lemma annotation_mutual :
+  (forall G a A, Typing G a A ->
+     forall G0, erase_context G0 = G -> AnnCtx G0 ->
+     exists a0 A0,
+         (erase a0) = a /\
+         (erase A0) = A /\
+         AnnTyping G0 a0 A0) /\
+  (forall G phi, PropWff G phi ->
+     forall G0, erase_context G0 = G -> AnnCtx G0 ->
+     exists phi0,
+          erase_constraint phi0 = phi /\
+          AnnPropWff G0 phi0) /\
+  (forall G D p1 p2, Iso G D p1 p2 ->
+     forall G0, erase_context G0 = G -> AnnCtx G0 ->
+     exists g0 p1' p2',
+       (erase_constraint p1') = p1 /\
+       (erase_constraint p2') = p2 /\
+       AnnIso G0 D g0 p1' p2') /\
+  (forall G D a b A, DefEq G D a b A ->
+     forall G0, erase_context G0 = G -> AnnCtx G0 ->
+     exists g a0 b0 A0,
+       (erase a0) = a /\
+       (erase b0) = b /\
+       (erase A0) = A /\
+       AnnDefEq G0 D g a0 b0 /\ AnnTyping G0 a0 A0 /\ AnnTyping G0 b0 A0) /\
+  (forall G, Ctx G -> True).
+
+End erase. *)
+
+Require Import FcEtt.ext_consist.
+(* FcEtt.ext_consist:
+Require Import FcEtt.sigs.
+
+Require Import Omega.
+
+Require Export FcEtt.imports.
+Require Import FcEtt.utils.
+Require Export FcEtt.tactics.
+Require Export FcEtt.ett_ott.
+Require Export FcEtt.ett_inf.
+Require Export FcEtt.ett_ind.
+Require Export FcEtt.ett_par.
+Require Export FcEtt.erase_syntax.
+Require Import FcEtt.ext_red_one.
+Require Import FcEtt.ext_red.
+
+Require Import FcEtt.ext_wf.
+
+Module ext_consist (invert : ext_invert_sig)(fc_wf: fc_wf_sig).
+Import invert.
+Import fc_wf.
+
+Module red_one := ext_red_one invert.
+Export red_one.
+
+Module red := ext_red invert.
+Export red.
+
+Set Implicit Arguments.
+Set Bullet Behavior "Strict Subproofs".
+
+Definition Good (G : context) (D : available_props):=
+  erased_context G /\
+  forall c1 A B1 T1,
+    binds c1 (Co (Eq A B1 T1)) G
+    -> c1 `in` D
+    -> exists C, Par G D A C /\ Par G D B1 C.
+
+Lemma open2 :
+  forall x b b' S D a a',
+    x `notin` fv_tm_tm_tm a' \u fv_tm_tm_tm a ->
+    erased_tm b ->
+    erased_tm (open_tm_wrt_tm a (a_Var_f x)) ->
+    Par S D (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm a' (a_Var_f x)) ->
+    Par S D b b' ->
+    Par S D (open_tm_wrt_tm a b) (open_tm_wrt_tm a' b').
+
+Lemma a_Pi_head : forall S G b A rho B,
+    Par S G (a_Pi rho A B) b -> exists A' B' L,
+      b = a_Pi rho A' B' /\ Par S G A A' /\
+      (forall x, x `notin` L -> Par S G (open_tm_wrt_tm B (a_Var_f x)) (open_tm_wrt_tm B' (a_Var_f x))).
+
+Lemma Par_Abs_inversion : forall G D a b rho,
+    Par G D (a_UAbs rho a) b ->
+    (exists a', b = (a_UAbs rho a') /\
+          forall x, x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm a' ->
+               Par G D (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm a' (a_Var_f x)))
+    \/
+    (exists a', Par G D a' b /\ (forall x, x `notin`  fv_tm_tm_tm a ->
+          open_tm_wrt_tm a (a_Var_f x) = a_App a' rho (a_Var_f x)) /\ rho = Rel)
+    \/ (exists a', Par G D a' b /\ (forall x, x `notin`  fv_tm_tm_tm a ->
+          open_tm_wrt_tm a (a_Var_f x) = a_App a' rho a_Bullet) /\ rho = Irrel). 
+
+Lemma Par_Abs_inversion_Rel : forall G D a b,
+    Par G D (a_UAbs Rel a) b ->
+    (exists a', b = (a_UAbs Rel a') /\
+          forall x, x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm a' ->
+               Par G D (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm a' (a_Var_f x)))
+    \/
+    (exists a', Par G D a' b /\ (forall x, x `notin`  fv_tm_tm_tm a ->
+          open_tm_wrt_tm a (a_Var_f x) = a_App a' Rel (a_Var_f x))).
+
+Lemma Par_Abs_inversion_Irrel : forall G D a b,
+    Par G D (a_UAbs Irrel a) b ->
+    (exists a', b = (a_UAbs Irrel a') /\
+          forall x, x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm a' ->
+               Par G D (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm a' (a_Var_f x)))
+    \/ (exists a', Par G D a' b /\ (forall x, x `notin`  fv_tm_tm_tm a ->
+          open_tm_wrt_tm a (a_Var_f x) = a_App a' Irrel a_Bullet)). 
+
+Lemma Par_CAbs_inversion : forall G D a b,
+    Par G D (a_UCAbs a) b ->
+    (exists a', b = (a_UCAbs a') /\
+          forall c, c `notin` fv_co_co_tm a \u fv_co_co_tm a' ->
+               Par G D (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co a' (g_Var_f c)))
+    \/ (exists a', Par G D a' b /\ (forall c, c `notin`  fv_co_co_tm a ->
+          open_tm_wrt_co a (g_Var_f c) = a_CApp a' g_Triv)). 
+
+Lemma copen2 :
+  forall c (b: co) S D a a',
+    lc_co b ->
+    c `notin` fv_co_co_tm a' \u fv_co_co_tm a ->
+    Par S D (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co a' (g_Var_f c)) ->
+    Par S D (open_tm_wrt_co a b) (open_tm_wrt_co a' b).
+
+Ltac try_refl :=
+  try match goal with
+      | [ P2 : Par _ _ _ ?b |- _ ] =>
+        exists b; assert (lc_tm b); try eapply Par_lc2; eauto; try split; eauto; fail
+      end.
+
+Ltac invert_equality :=
+  match goal with
+  | [ H : _ = _ |- _ ] =>
+    inversion H
+  end.
+
+  Ltac try_refl_left :=
+  try match goal with
+      | [ P2 : Par _ _ ?b ?b |- exists cc:tm, Par ?S ?D ?b cc /\ Par ?S ?D ?a2 cc ] =>
+        exists a2; assert (lc_tm a2); try eapply Par_lc2; eauto; try split; eauto; fail
+      end.
+  Ltac try_refl_right :=
+  try match goal with
+      | [ P2 : Par _ _ ?b ?b |- exists cc:tm, Par ?S ?D ?a2 cc /\ Par ?S ?D ?b cc ] =>
+        exists a2; assert (lc_tm a2); try eapply Par_lc2; eauto; try split; eauto; fail
+      end.
+
+  Ltac invert_erased :=
+    match goal with
+    | [ H : erased_tm ?a |- _ ] => inversion H; subst; clear H
+    end.
+
+  Ltac invert_erased_tm b :=
+        let h0 := fresh in
+        match goal with
+          [ h : Par ?G ?D ?a b, h1: erased_tm ?a |- _ ] =>
+          assert (h0 : erased_tm b);
+          [ eapply (Par_erased_tm h); eauto | inversion h0; subst]
+        end.
+
+      Ltac eta_expand x :=
+        let h1 := fresh in
+      match goal with
+       | [ H18 : ∀ x : atom,
+              x `notin` ?L0
+              → open_tm_wrt_tm ?a (a_Var_f x) = a_App ?b0 ?rho (a_Var_f x)
+              |- _ ] =>
+        pick fresh x for (L0 \u  fv_tm_tm_tm a \u fv_tm_tm_tm b0);
+        move: (H18 x ltac:(auto)) => h1; clear H18;
+        rewrite (@tm_subst_tm_tm_intro x a); auto; rewrite h1;
+        simpl; destruct (@eq_dec tmvar _ x x); try done;
+        rewrite tm_subst_tm_tm_fresh_eq; auto
+       | [ H18 : ∀ x : atom,
+              x `notin` ?L0
+              → open_tm_wrt_tm ?a (a_Var_f x) = a_App ?b0 ?rho a_Bullet
+              |- _ ] =>
+        pick fresh x for (L0 \u  fv_tm_tm_tm a \u fv_tm_tm_tm b0);
+        move: (H18 x ltac:(auto)) => h1; clear H18;
+        rewrite (@tm_subst_tm_tm_intro x a); auto; rewrite h1;
+        simpl; destruct (@eq_dec tmvar _ x x); try done;
+        rewrite tm_subst_tm_tm_fresh_eq; auto
+       | [ H18 : ∀ x : atom,
+              x `notin` ?L0
+              → open_tm_wrt_co ?a (g_Var_f x) = a_CApp ?b0 g_Triv
+              |- _ ] =>
+        pick fresh x for (L0 \u  fv_co_co_tm a \u fv_co_co_tm b0);
+        move: (H18 x ltac:(auto)) => h1; clear H18;
+        rewrite (@co_subst_co_tm_intro x a); auto; rewrite h1;
+        simpl; destruct (@eq_dec tmvar _ x x); try done;
+        rewrite co_subst_co_tm_fresh_eq; auto
+      end.
+
+      Ltac eta_case a'0 Y2 :=
+         let x:= fresh in
+         pick fresh x;
+         rewrite (tm_subst_tm_tm_intro x a'0); auto;
+         rewrite Y2; auto; simpl;
+         rewrite (tm_subst_tm_tm_fresh_eq); auto;
+         destruct eq_dec; try done;
+         eauto; clear x.
+
+Ltac invert_lc :=
+  match goal with
+    | [ H : lc_tm ?a |- _ ] => inversion H; subst; clear H
+  end.
+
+  Ltac use_size_induction a ac Par1 Par2 :=
+  match goal with
+  | [   IH : forall y: nat, ?T,
+        H2 : Good ?G ?D,
+        H3 : erased_tm a,
+        H : Par ?G ?D a ?b0,
+        H4 : Par ?G ?D a ?b1 |- _ ] =>
+      move: (@IH (size_tm a) ltac:(omega) a ltac:(auto) _ _ _ H2 H3 H _ H4) => [ ac [Par1 Par2]]
+  end.
+
+  Ltac use_size_induction_open a0 x ac Par1 Par2 :=
+      let h0 := fresh in
+      let h1 := fresh in
+      let h2 := fresh in
+      let EQ1 := fresh in
+      let EQ2 := fresh in
+      match goal with
+        | [  H : ∀ x : atom,
+              x `notin` ?L
+              → Par ?S ?D (?open_tm_wrt_tm a0 (?a_Var_f x)) ?b,
+             H4: ∀ x : atom,
+                 x `notin` ?L0
+                 → Par ?S ?D (?open_tm_wrt_tm a0 (?a_Var_f x)) ?c,
+             H1 : ∀ x : atom, x `notin` ?L1 →
+    erased_tm (?open_tm_wrt_tm a0 (?a_Var_f x)) |- _ ] =>
+    move: (H x ltac:(auto)) => h0; clear H;
+    move: (H4 x ltac:(auto)) => h1; clear H4;
+                               move: (H1 x ltac:(auto)) => h2; clear H1;
+    move: (size_tm_open_tm_wrt_tm_var a0 x) => EQ1;
+    move: (size_tm_open_tm_wrt_co_var a0 x) => EQ2;
+
+    use_size_induction (open_tm_wrt_tm a0 (a_Var_f x)) ac Par1 Par2;
+    clear h0; clear h1; clear h2; clear EQ1; clear EQ2
+    end.
+
+Ltac par_erased_open x J Par4 :=
+  let K := fresh in
+  let KK := fresh in
+  let h0 := fresh in
+  match goal with
+  | [H13 : ∀ x : atom, x `notin` ?L →
+                       Par ?G ?D (open_tm_wrt_tm ?a (a_Var_f x)) ?b,
+     H4 : ∀ x : atom, x `notin` ?L1 → erased_tm  (open_tm_wrt_tm ?a (a_Var_f x))
+       |- _ ] =>
+    have: x `notin` L; auto => h0;
+    pose K:= H13 x h0; clearbody K; clear h0;
+    have: x `notin` L1; auto => h0;
+    pose KK := H4 x h0; clearbody KK;
+    pose J := subst3 x Par4 KK K;
+    clearbody J;
+    repeat rewrite tm_subst_tm_tm_open_tm_wrt_tm in J; [auto;
+    simpl in J;
+    destruct eq_dec; try congruence;
+    repeat rewrite tm_subst_tm_tm_fresh_eq in J; auto
+    | try apply (Par_lc2 Par4); auto
+    | apply (Par_lc1 Par4); auto]
+  end.
+
+      Ltac finish_open_co a'0 :=
+        let K := fresh in
+        let J := fresh in
+        let h0 := fresh in
+      match goal with
+      | H12 : forall c, c `notin` ?L -> Par ?G ?D (open_tm_wrt_co a'0 (g_Var_f c)) (open_tm_wrt_co ?b (g_Var_f c)) |- _ =>
+        pick_fresh c;
+        have: c `notin` L; auto => h0;
+        pose K := H12 c h0; clearbody K;
+        pose J := subst4 c lc_g_Triv K;
+        clearbody J;
+        repeat rewrite co_subst_co_tm_open_tm_wrt_co in J; eauto;
+        simpl in J;
+        destruct eq_dec; try congruence;
+        repeat rewrite co_subst_co_tm_fresh_eq in J; eauto with lc
+
+      end.
+
+Lemma open_tm_wrt_tm_bullet_var_eq: forall a x, 
+    x `notin` fv_tm_tm_tm (open_tm_wrt_tm a (a_Var_f x)) ->
+    open_tm_wrt_tm a (a_Bullet) = open_tm_wrt_tm a (a_Var_f x).
+
+Lemma open_tm_wrt_tm_inj_irrel: forall(a2 a1 : tm) (x1 : atom),
+x1 `notin` fv_tm_tm_tm (open_tm_wrt_tm a2 (a_Var_f x1)) 
+-> x1 `notin` fv_tm_tm_tm (open_tm_wrt_tm a1 (a_Var_f x1))
+  -> open_tm_wrt_tm a2 a_Bullet = open_tm_wrt_tm a1 (a_Var_f x1)
+    -> a2 = a1.
+
+Lemma open_tm_wrt_co_triv_var_eq: forall a c, 
+    c `notin` fv_co_co_tm (open_tm_wrt_co a (g_Var_f c)) ->
+    open_tm_wrt_co a g_Triv = open_tm_wrt_co a (g_Var_f c).
+
+Lemma open_tm_wrt_co_inj: forall(a2 a1 : tm) (c : atom),
+c `notin` fv_co_co_tm (open_tm_wrt_co a2 (g_Var_f c)) 
+-> c `notin` fv_co_co_tm (open_tm_wrt_co a1 (g_Var_f c))
+  -> open_tm_wrt_co a2 g_Triv = open_tm_wrt_co a1 (g_Var_f c)
+    -> a2 = a1.
+
+Lemma erased_fv_co: forall a x, erased_tm a -> x `notin` fv_co_co_tm a.
+
+Lemma confluence_size : forall n a, size_tm a <= n ->  forall S D a1, Good S D -> erased_tm a -> Par S D a a1 -> forall a2, Par S D a a2 -> exists b, Par S D a1 b /\ Par S D a2 b.
+
+Lemma confluence : forall S D a a1, Good S D -> erased_tm a -> Par S D a a1 -> forall a2, Par S D a a2 -> exists b, Par S D a1 b /\ Par S D a2 b.
+
+Lemma multipar_Star : forall S D A B, multipar S D A B -> A = a_Star -> B = a_Star.
+
+Lemma multipar_Bullet : forall S D B, multipar S D a_Bullet B -> B = a_Bullet.
+
+Inductive Path_consistent : const -> tm -> tm -> Prop :=
+  PC_Const : forall T, Path_consistent T (a_Const T) (a_Const T)
+| PC_App   : forall T a1 a2 b1 b2,
+    erased_tm a2 -> erased_tm b2 ->
+    Path_consistent T a1 b1 ->
+    Path_consistent T (a_App a1 Rel a2) (a_App b1 Rel b2)
+| PC_AppIrrel : forall T a1 b1,
+    Path_consistent T a1 b1 ->
+    Path_consistent T (a_App a1 Irrel a_Bullet) (a_App b1 Irrel a_Bullet)
+| PC_CApp  : forall T a1 b1,
+    Path_consistent T a1 b1 ->
+    Path_consistent T (a_CApp a1 g_Triv) (a_CApp b1 g_Triv).
+Hint Constructors Path_consistent.
+
+Lemma Path_consistent_Path1 : forall T a b, Path_consistent T a b -> Path T a.
+Lemma Path_consistent_Path2 : forall T a b, Path_consistent T a b -> Path T b.
+
+Lemma Path_consistent_erased1 : forall T a b, Path_consistent T a b -> erased_tm a.
+Lemma Path_consistent_erased2 : forall T a b, Path_consistent T a b -> erased_tm b.
+Hint Resolve Path_consistent_erased1 Path_consistent_erased2 : erased.
+
+Lemma Path_consistent_Refl :
+  forall a T, Path T a -> erased_tm a -> Path_consistent T a a.
+
+Lemma Path_consistent_Trans_aux :
+  forall b T,  Path T b -> forall a c, Path_consistent T a b -> Path_consistent T b c -> Path_consistent T a c.
+
+Lemma Path_consistent_Trans : forall T a b c,
+  Path_consistent T a b -> Path_consistent T b c -> Path_consistent T a c.
+
+Lemma Path_consistent_Sym :
+  forall T a b, Path_consistent T a b -> Path_consistent T b a.
+
+Lemma Par_Path_consistent :
+  forall S D a b T, Par S D a b -> Path T a -> erased_tm a -> Path_consistent T a b.
+
+Lemma multipar_Path_consistent :
+  forall S D a b T, multipar S D a b -> Path T a -> erased_tm a -> Path_consistent T a b.
+
+Lemma Par_Path :
+  forall S D a b T, Par S D a b -> Path T a -> Path T b.
+
+Lemma multipar_Path : forall S D a b T ,
+    multipar S D a b -> Path T a -> Path T b.
+
+    Lemma Par_Path_consistent_App : forall T G D a1 a2 b1 b2,
+        Path_consistent T (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+        Par G D (a_App a1 Rel a2) ( a_App b1 Rel b2) ->
+        Par G D a1 b1.
+
+    Lemma Par_Path_consistent_AppIrrel : forall T G D a1 b1,
+        Path_consistent T (a_App a1 Irrel a_Bullet) (a_App b1 Irrel a_Bullet) ->
+        Par G D (a_App a1 Irrel a_Bullet) ( a_App b1 Irrel a_Bullet) ->
+        Par G D a1 b1.
+
+    Lemma Par_Path_consistent_CApp : forall T G D a1 b1,
+        Path_consistent T (a_CApp a1 g_Triv) (a_CApp b1 g_Triv) ->
+        Par G D (a_CApp a1 g_Triv) (a_CApp b1 g_Triv) ->
+        Par G D a1 b1.
+
+    Lemma Par_Path_consistent_App2 : forall T G D a1 a2 b1 b2,
+        Path_consistent T (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+        Par G D (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+        Par G D a2 b2.
+
+    Lemma multipar_Path_consistent_App : forall G D a1 a2 b1 b2 T,
+      multipar G D (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+      Path_consistent T (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+      multipar G D a1 b1.
+
+    Lemma multipar_Path_consistent_AppIrrel : forall G D a1 b1 T,
+      multipar G D (a_App a1 Irrel a_Bullet) (a_App b1 Irrel a_Bullet) ->
+      Path_consistent T (a_App a1 Irrel a_Bullet) (a_App b1 Irrel a_Bullet) ->
+      multipar G D a1 b1.
+
+     Lemma multipar_Path_consistent_App2 : forall G D a1 a2 b1 b2 T,
+      multipar G D (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+      Path_consistent T (a_App a1 Rel a2) (a_App b1 Rel b2) ->
+      multipar G D a2 b2.
+
+    Lemma multipar_Path_consistent_CApp : forall G D a1 b1 T,
+      multipar G D (a_CApp a1 g_Triv) (a_CApp b1 g_Triv) ->
+      Path_consistent T (a_CApp a1 g_Triv) (a_CApp b1 g_Triv) ->
+      multipar G D a1 b1.
+
+Ltac binds_notbinds :=
+    match goal with
+    [ H0 : binds ?c (Ax ?T ?a) toplevel,
+      H5 : forall (c : atom) a, not (binds c (Ax ?T a) an_toplevel) |- _  ] =>
+      unfold not in H5; unfold toplevel in H0; unfold erase_sig in H0;
+      apply binds_map_3 in H0; destruct H0 as (s' & EQ & B);
+      destruct s'; simpl in EQ; inversion EQ; subst;
+      apply H5 in B; contradiction
+      end.
+
+Lemma Par_Const : forall S D T b,
+    Par S D (a_Const T) b -> b = a_Const T.
+
+Lemma multipar_Const : forall S D T b,
+    multipar S D (a_Const T) b ->
+    (b = a_Const T).
+
+Lemma multipar_Pi : forall S D rho A B, multipar S D A B -> forall A1 A2,
+      A = a_Pi rho A1 A2 -> exists B1 B2, B = (a_Pi rho B1 B2).
+
+Lemma multipar_CPi : forall S D A C, multipar S D A C -> forall A1 A2 A3 B, A = a_CPi (Eq A1 A2 A3) B -> exists B1 B2 B3 C2,
+        C = (a_CPi (Eq B1 B2 B3) C2).
+
+Lemma multipar_UAbs_Rel : forall S D a b x,
+    x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm b ->
+    multipar S D (a_UAbs Rel a) b ->
+    (exists b2, b = (a_UAbs Rel b2))
+    \/ (exists a1, exists a2, multipar S D (a_UAbs Rel a) (a_UAbs Rel a1) /\
+               open_tm_wrt_tm a1 (a_Var_f x) = a_App a2 Rel (a_Var_f x)).
+
+Lemma multipar_UAbs_Irrel : forall S D a b x,
+    x `notin` fv_tm_tm_tm a \u fv_tm_tm_tm b ->
+    multipar S D (a_UAbs Irrel a) b ->
+    (exists b2, b = (a_UAbs Irrel b2))
+    \/ (exists a1, exists a2, multipar S D (a_UAbs Irrel a) (a_UAbs Irrel a1) /\
+               open_tm_wrt_tm a1 (a_Var_f x) = a_App a2 Irrel a_Bullet).
+
+Lemma multipar_CAbs : forall S D A C, multipar S D A C -> forall A1 A2 A3 B, A = a_CAbs (Eq A1 A2 A3) B -> exists B1 B2 B3 C2,
+        C = (a_CAbs (Eq B1 B2 B3) C2).
+
+Definition decide_Path : forall a, lc_tm a -> (exists T, Path T a) \/ (forall T, not (Path T a)).
+
+Ltac step_left := apply consistent_a_Step_R; [auto |intro N; inversion N; inversion H0]; fail.
+Ltac step_right := apply consistent_a_Step_L; [auto | intro N; inversion N; inversion H0]; fail.
+
+Ltac multipar_step SIDE EQ :=
+  match goal with
+  | [ SIDE : multipar _ _ a_Star _ |- _ ] =>
+    apply multipar_Star in SIDE; auto; rename SIDE into EQ
+  | [ SIDE : multipar _ _ (a_Pi _ _ _) _ |- _ ] =>
+    destruct (multipar_Pi SIDE eq_refl) as [b1' [b2' EQ]]
+  | [ SIDE : multipar _ _ (a_CPi ?phi _) _ |- _ ] =>
+    try (destruct phi); destruct (multipar_CPi SIDE eq_refl)
+      as (B1' & B2' & C1' & C2' &  EQ)
+  | [ SIDE : multipar _ _ (a_Const ?T) _ |- _ ] =>
+    apply multipar_Const in SIDE; auto; rename SIDE into EQ
+  | [ SIDE : Path_consistent _ _ _ |- _ ] =>
+    rename SIDE into EQ
+  end.
+
+Lemma join_consistent : forall S D a b, joins S D a b -> consistent a b.
+
+Lemma multipar_confluence_helper : forall S D a a1, Good S D -> erased_tm a -> multipar S D a a1
+-> forall a2, Par S D a a2 -> exists e, Par S D a1 e /\ multipar S D a2 e.
+
+Lemma multipar_confluence : forall S D a a1, Good S D -> erased_tm a -> multipar S D a a1
+-> forall a2, multipar S D a a2 -> exists b, multipar S D a1 b /\ multipar S D a2 b.
+
+Lemma multipar_append : forall S D a b c, multipar S D a b -> multipar S D b c -> multipar S D a c.
+
+Lemma join_transitive : forall S D a b, Good S D -> joins S D a b -> forall c, joins S D b c -> joins S D a c.
+
+Lemma join_symmetry: forall S D a b, joins S D a b -> joins S D b a.
+
+Definition extends (G G2 : context) := exists G1, G = G1 ++ G2.
+
+Lemma multipar_lc2: forall G D a1 a2, lc_tm a1 -> multipar G D a1 a2 -> lc_tm a2.
+
+Hint Resolve multipar_context_independent : DB.
+
+Lemma join_context_independent: forall G1 G2 D A B, erased_context G2 ->
+                                             joins G1 D A B -> joins G2 D A B.
+
+Lemma Good_NoAssn: forall c G D phi, erased_sort (Co phi) -> Good G D -> c `notin` D -> Good ((c, Co phi) :: G) D.
+
+Hint Resolve Good_NoAssn.
+
+Hint Resolve multipar_context_independent.
+
+Lemma Good_add_tm: forall G D x A,
+    erased_tm A -> Good G D -> Good ((x, Tm A)::G ) D.
+
+Lemma Good_add_tm_2: forall G D x A, x `notin` dom G -> erased_tm A -> Good G D -> Good ((x, Tm A)::G ) (add x D).
+
+Lemma multipar_app_left_Rel:
+  forall a a' c' S D, lc_tm a -> multipar S D a' c' -> multipar S D (a_App a Rel a') (a_App a Rel c').
+
+Lemma multipar_capp_left: forall a a' S D, multipar S D a a' -> multipar S D (a_CApp a g_Triv) (a_CApp a' g_Triv).
+
+Lemma join_capp: forall a a' S D, joins S D a a' -> joins S D (a_CApp a g_Triv) (a_CApp a' g_Triv).
+
+Lemma multipar_app_lr_Rel: forall a a' c c' S D, lc_tm a -> lc_tm a' -> multipar S D a c -> multipar S D a' c' -> multipar S D (a_App a Rel a') (a_App c Rel c').
+
+Lemma multipar_app_lr_Irrel: forall a c S D, lc_tm a -> multipar S D a c -> multipar S D (a_App a Irrel a_Bullet) (a_App c Irrel a_Bullet).
+
+Lemma join_app_Rel: forall a a' b b' S D, joins S D a b -> joins S D a' b' -> joins S D (a_App a Rel a') (a_App b Rel b').
+
+Lemma join_app_Irrel: forall a b S D, joins S D a b -> joins S D (a_App a Irrel a_Bullet) (a_App b Irrel a_Bullet).
+
+Lemma multipar_UAbs_exists :  ∀ (x : atom) (G : context) (D : available_props)
+       (rho : relflag) (a a' : tm),
+    x `notin` fv_tm_tm_tm a
+       → multipar G D (open_tm_wrt_tm a (a_Var_f x)) a'
+         → multipar G D (a_UAbs rho a) (a_UAbs rho (close_tm_wrt_tm x a')).
+
+Lemma multipar_iapp : forall G D a c y L,
+    y `notin` fv_tm_tm_tm a \u L ->
+    (forall x, x `notin` L -> RhoCheck Irrel x (open_tm_wrt_tm a (a_Var_f x))) ->
+    multipar G D (open_tm_wrt_tm a a_Bullet) c ->
+    multipar G D (a_UAbs Irrel a) (a_UAbs Irrel (close_tm_wrt_tm y c)).
+
+Lemma joins_iapp : forall S D a1 a2 L1 L2,
+    (forall x, x `notin` L1 -> RhoCheck Irrel x (open_tm_wrt_tm a1 (a_Var_f x))) ->
+    (forall x, x `notin` L2 -> RhoCheck Irrel x (open_tm_wrt_tm a2 (a_Var_f x))) ->
+    joins S D (open_tm_wrt_tm a1 a_Bullet) (open_tm_wrt_tm a2 a_Bullet) ->
+    joins S D (a_UAbs Irrel a1) (a_UAbs Irrel a2).
+
+Lemma multipar_App_destruct_Rel : forall S D a1 a2 c,
+    multipar S D (a_App a1 Rel a2) c ->
+    (exists a1' a2',
+        multipar S D (a_App a1 Rel a2) (a_App (a_UAbs Rel a1') Rel a2') /\
+        multipar S D a1 (a_UAbs Rel a1') /\
+        multipar S D a2 a2' /\
+        multipar S D (open_tm_wrt_tm a1' a2') c) \/
+    (exists a1' a2',
+        multipar S D (a_App a1 Rel a2) (a_App a1' Rel a2') /\
+        multipar S D a1 a1' /\
+        multipar S D a2 a2').
+
+Lemma multipar_App_destruct_Irrel : forall S D a1 c,
+    multipar S D (a_App a1 Irrel a_Bullet) c ->
+    (exists a1',
+        multipar S D (a_App a1 Irrel a_Bullet) (a_App (a_UAbs Irrel a1') Irrel a_Bullet) /\
+        multipar S D a1 (a_UAbs Irrel a1') /\ multipar S D (open_tm_wrt_tm a1' a_Bullet) c) \/
+    (exists a1',
+        multipar S D (a_App a1 Irrel a_Bullet) (a_App a1' Irrel a_Bullet) /\
+        multipar S D a1 a1').
+
+Lemma consistent_mutual:
+  (forall S a A,   Typing S a A -> True) /\
+  (forall S phi,   PropWff S phi -> True) /\
+  (forall S D p1 p2, Iso S D p1 p2 -> Good S D -> (forall A1 B1 T1 A2 B2 T2, p1 = Eq A1 B1 T1 -> p2 = Eq A2 B2 T2-> (joins S D A1 A2 /\ joins S D B1 B2 /\ joins S D T1 T2))) /\
+  (forall S D A B T,   DefEq S D A B T -> Good S D -> joins S D A B) /\
+  (forall S,       Ctx S -> True).
+
+Lemma consistent_defeq: forall S D A B T,   DefEq S D A B T -> Good S D -> joins S D A B.
+
+Lemma no_aAbs : forall G rho A' a A, Typing G (a_Abs rho A' a) A -> False.
+
+Lemma no_aCAbs : forall G A' a A, Typing G (a_CAbs A' a) A -> False.
+
+Lemma Good_nil : forall D, Good nil D.
+
+Lemma consistent_Star : forall A0,
+    consistent a_Star A0 -> value_type A0 -> A0 = a_Star.
+
+Definition irrelevant G D (a : tm) :=
+  (forall x A, binds x (Tm A) G -> x `notin` fv_tm a) /\ Good G D.
+
+Lemma irrelevant_Good : forall G D a, irrelevant G D a -> Good G D.
+
+Ltac impossible_Path :=
+  match goal with
+     [H : Path ?T (a_Pi _ _ _) |- _] => inversion H
+   | [H : Path ?T a_Star |- _] => inversion H
+   | [H : Path ?T (a_CPi _ _) |- _] => inversion H
+  end.
+
+Ltac impossible_defeq :=
+  let h0 := fresh in
+  let VT := fresh in
+  let VT2 := fresh in
+  match goal with
+  | [ H : DefEq ?G (dom ?G) ?B ?A ?C |- _ ] =>
+    pose h0:= H; clearbody h0;
+    apply consistent_defeq in h0; eauto;
+    [apply join_consistent in h0;
+     destruct (DefEq_lc H) as (l0 & l1 & l2); inversion l0; inversion l1; subst;
+     have VT: value_type A; eauto;
+     have VT2 : value_type B; eauto;
+     inversion h0; subst; try impossible_Path;
+     eauto; try done | eapply irrelevant_Good; eauto]
+  end.
+
+Lemma canonical_forms_Star : forall G a, irrelevant G (dom G) a ->
+    Typing G a a_Star -> Value a -> value_type a.
+
+Lemma DefEq_Star: forall A G D, Good G D -> value_type A -> DefEq G D A a_Star a_Star -> A = a_Star.
+
+Lemma canonical_forms_Pi : forall G rho a A B, irrelevant G (dom G) a ->
+    Typing G a (a_Pi rho A B) -> Value a ->
+    (exists a1, a = a_UAbs rho a1) \/ (exists T, Path T a).
+
+Lemma canonical_forms_CPi : forall G a phi B, irrelevant G (dom G) a ->
+    Typing G a (a_CPi phi B) -> Value a ->
+    (exists a1, a = a_UCAbs a1) \/ (exists T, Path T a).
+
+Ltac show_irrelevant IR :=
+        let x := fresh in
+        let A0 := fresh in
+        let B0 := fresh in
+        let h0 := fresh in
+        let h1 := fresh in
+        unfold irrelevant in *;
+        move: IR => [h0 h1]; split; auto;
+        intros x A0 B0;  apply h0 in B0; simpl in B0; fsetdec.
+
+Lemma notin_sub : forall x a b, x `notin` a -> b [<=] a -> x `notin` b.
+
+Lemma progress : forall G a A, Typing G a A ->
+                          irrelevant G (dom G) a ->
+                          Value a \/ exists a', reduction_in_one a a'.
+
+End ext_consist. *)
+
+
+
+Module ext_weak    := ext_weak ext_wf.
+
+Module ext_subst   := ext_subst ext_weak.
+
+Module ext_invert  := ext_invert ext_subst.
+
+Module ext_red     := ext_red ext_invert.
+
+Module ext_red_one := ext_red_one ext_invert.
+
+
+
+Module fc_weak           := fc_weak fc_wf.
+
+Module fc_subst          := fc_subst fc_wf fc_weak.
+
+Module fc_unique         := fc_unique fc_wf fc_subst.
+
+Module fc_invert         := fc_invert fc_wf fc_weak fc_subst.
+
+Module fc_get            := fc_get fc_wf fc_weak fc_subst fc_unique.
+
+Module fc_dec            := fc_dec fc_wf fc_weak fc_subst fc_unique.
+
+Module fc_preservation   := fc_preservation fc_wf fc_weak fc_subst ext_subst.
+
+Module fc_consist        := fc_consist fc_wf fc_weak fc_subst.
+
+Module fc_head_reduction := fc_head_reduction ext_invert.
+
+
+
+Module erase       := erase fc_wf fc_weak fc_subst.
+
+Module ext_consist := ext_consist ext_invert fc_wf.
+

@@ -1,0 +1,509 @@
+
+
+Require Import syntax.
+(* syntax:
+Inductive ty : Set :=
+  | nat_ty : ty 
+  | bool_ty : ty 
+  | arr : ty -> ty -> ty.   
+
+Inductive vari : Set :=
+    x : nat -> vari.
+
+Inductive tm : Set :=
+  | o : tm 
+  | ttt : tm 
+  | fff : tm 
+  | abs : vari -> ty -> tm -> tm 
+  | appl : tm -> tm -> tm 
+  | cond : tm -> tm -> tm -> tm 
+  | var : vari -> tm 
+  | succ : tm -> tm 
+  | prd : tm -> tm 
+  | is_o : tm -> tm 
+  | Fix : vari -> ty -> tm -> tm 
+  | clos : tm -> vari -> ty -> tm -> tm. *)
+
+Require Import freevars.
+(* freevars:
+Require Import syntax.
+Require Import utils.
+
+Inductive FV (z : vari) : tm -> Prop :=
+  | FV_abs :
+      forall e : tm,
+      FV z e -> forall v : vari, z <> v -> forall t : ty, FV z (abs v t e)
+  | FV_fix :
+      forall e : tm,
+      FV z e -> forall v : vari, z <> v -> forall t : ty, FV z (Fix v t e)
+  | FV_appl1 : forall e_1 e_2 : tm, FV z e_1 -> FV z (appl e_1 e_2)
+  | FV_appl2 : forall e_1 e_2 : tm, FV z e_2 -> FV z (appl e_1 e_2)
+  | FV_cond1 : forall e_1 e_2 e_3 : tm, FV z e_1 -> FV z (cond e_1 e_2 e_3)
+  | FV_cond2 : forall e_1 e_2 e_3 : tm, FV z e_2 -> FV z (cond e_1 e_2 e_3)
+  | FV_cond3 : forall e_1 e_2 e_3 : tm, FV z e_3 -> FV z (cond e_1 e_2 e_3)
+  | FV_var : forall v : vari, z = v -> FV z (var v)
+  | FV_succ : forall e : tm, FV z e -> FV z (succ e)
+  | FV_prd : forall e : tm, FV z e -> FV z (prd e)
+  | FV_is_o : forall e : tm, FV z e -> FV z (is_o e)
+  | FV_closa :
+      forall (v : vari) (t : ty) (e e_1 : tm),
+      FV z e_1 -> FV z (clos e v t e_1)
+  | FV_closb :
+      forall (v : vari) (t : ty) (e e_1 : tm),
+      FV z e -> z <> v -> FV z (clos e v t e_1).
+
+Goal
+forall (x v : vari) (t : ty) (e : tm),
+~ FV x (abs v t e) -> x = v \/ ~ FV x e.
+intros.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_abs; assumption.
+Save notFV_abs.
+
+Goal
+forall (v : vari) (e1 e2 : tm), ~ FV v (appl e1 e2) -> ~ FV v e1 /\ ~ FV v e2.
+intros v e1 e2 N.
+split.
+red in |- *; intro; apply N; apply FV_appl1; assumption.
+red in |- *; intro; apply N; apply FV_appl2; assumption.
+Save notFV_appl.
+
+Goal
+forall (v : vari) (e1 e2 e3 : tm),
+~ FV v (cond e1 e2 e3) -> ~ FV v e1 /\ ~ FV v e2 /\ ~ FV v e3.
+intros v e1 e2 e3 N.
+split.
+red in |- *; intro; apply N; apply FV_cond1; assumption.
+split.
+red in |- *; intro; apply N; apply FV_cond2; assumption.
+red in |- *; intro; apply N; apply FV_cond3; assumption.
+Save notFV_cond.
+
+Goal forall v x : vari, ~ FV v (var x) -> v <> x.
+intros v x N.
+red in |- *; intro; apply N; apply FV_var; assumption.
+Save notFV_var.
+
+Goal forall (v : vari) (e : tm), ~ FV v (succ e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_succ; assumption.
+Save notFV_succ.
+
+Goal forall (v : vari) (e : tm), ~ FV v (prd e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_prd; assumption.
+Save notFV_prd.
+
+Goal forall (v : vari) (e : tm), ~ FV v (is_o e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_is_o; assumption.
+Save notFV_is_o.
+
+Goal
+forall (x v : vari) (t : ty) (e : tm),
+~ FV x (Fix v t e) -> x = v \/ ~ FV x e.
+intros.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_fix; assumption.
+Save notFV_fix.
+
+Goal
+forall (x v : vari) (t : ty) (e a : tm),
+~ FV x (clos e v t a) -> ~ FV x a /\ (x = v \/ ~ FV x e).
+intros.
+split.
+red in |- *; intro; apply H; apply FV_closa; assumption.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_closb; assumption.
+Save notFV_clos.
+
+Definition fv (v : vari) (e : tm) :=
+  match e return Prop with
+  | o =>
+      	 False
+       
+  | ttt => False
+       
+  | fff => False
+       
+  | abs y s e => FV v e /\ v <> y
+                            
+  | appl e1 e2 => FV v e1 \/ FV v e2 
+                  
+  | cond e1 e2 e3 => FV v e1 \/ FV v e2 \/ FV v e3 
+                                	
+  | var y => v = y
+             	
+  | succ n => FV v n
+      	
+  | prd n => FV v n
+      	
+  | is_o n => FV v n
+      	
+  | Fix y s e => FV v e /\ v <> y
+                           
+  | clos e y s e1 => FV v e1 \/ FV v e /\ v <> y
+  end.
+
+Goal forall (v : vari) (e : tm), FV v e -> fv v e.
+
+simple induction 1; simpl in |- *; intros.
+split; assumption.
+split; assumption.
+left; assumption.
+right; assumption.
+left; assumption.
+right; left; assumption.
+right; right; assumption.
+assumption.
+assumption.
+assumption.
+assumption.
+left; assumption.
+right; split; assumption.
+Save FV_fv.
+
+Goal forall v : vari, ~ FV v o.
+intro v; red in |- *; intro F.
+change (fv v o) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_o.
+
+Goal forall v : vari, ~ FV v ttt.
+intro v; red in |- *; intro F.
+change (fv v ttt) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_ttt.
+
+Goal forall v : vari, ~ FV v fff.
+intro v; red in |- *; intro F.
+change (fv v fff) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_fff.
+
+Goal
+forall (v x : vari) (t : ty) (e : tm), FV v (abs x t e) -> FV v e /\ v <> x.
+intros v x t e F.
+change (fv v (abs x t e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_abs.
+
+Goal
+forall (v x : vari) (t : ty) (e : tm), FV v (Fix x t e) -> FV v e /\ v <> x.
+intros v x t e F.
+change (fv v (Fix x t e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_fix.
+
+Goal forall (v : vari) (e1 e2 : tm), FV v (appl e1 e2) -> FV v e1 \/ FV v e2.
+intros v e1 e2 F.
+change (fv v (appl e1 e2)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_appl.
+
+Goal
+forall (v : vari) (e1 e2 e3 : tm),
+FV v (cond e1 e2 e3) -> FV v e1 \/ FV v e2 \/ FV v e3.
+intros v e1 e2 e3 F.
+change (fv v (cond e1 e2 e3)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_cond.
+
+Goal forall v x : vari, FV v (var x) -> v = x.
+intros v x F.
+change (fv v (var x)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_var.
+
+Goal forall (v : vari) (e : tm), FV v (succ e) -> FV v e.
+intros v e F.
+change (fv v (succ e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_succ.
+
+Goal forall (v : vari) (e : tm), FV v (prd e) -> FV v e.
+intros v e F.
+change (fv v (prd e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_prd.
+
+Goal forall (v : vari) (e : tm), FV v (is_o e) -> FV v e.
+intros v e F.
+change (fv v (is_o e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_is_o.
+
+Goal
+forall (v x : vari) (t : ty) (e a : tm),
+FV v (clos e x t a) -> FV v a \/ FV v e /\ v <> x.
+intros v x t e a F.
+change (fv v (clos e x t a)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_clos. *)
+
+
+
+Inductive rename : vari -> vari -> tm -> tm -> Prop :=
+
+  | ren_o : forall nv v : vari, rename nv v o o
+
+  | ren_ttt : forall nv v : vari, rename nv v ttt ttt
+
+  | ren_fff : forall nv v : vari, rename nv v fff fff
+
+  | ren_abs1 :
+
+      forall (nv v : vari) (t : ty) (e : tm),
+
+      rename nv v (abs v t e) (abs v t e)
+
+  | ren_abs2 :
+
+      forall (nv v x nx : vari) (t : ty) (e1 e2 e3 : tm),
+
+      nv = x ->
+
+      ~ FV nx e1 ->
+
+      nx <> v ->
+
+      nx <> nv ->
+
+      rename nx x e1 e2 ->
+
+      rename nv v e2 e3 -> rename nv v (abs x t e1) (abs nx t e3)
+
+  | ren_abs3 :
+
+      forall (nv v x : vari) (t : ty) (e ne : tm),
+
+      v <> x ->
+
+      nv <> x -> rename nv v e ne -> rename nv v (abs x t e) (abs x t ne)
+
+  | ren_appl :
+
+      forall (nv v : vari) (e1 e2 ne1 ne2 : tm),
+
+      rename nv v e1 ne1 ->
+
+      rename nv v e2 ne2 -> rename nv v (appl e1 e2) (appl ne1 ne2)
+
+  | ren_cond :
+
+      forall (nv v : vari) (e1 ne1 e2 ne2 e3 ne3 : tm),
+
+      rename nv v e1 ne1 ->
+
+      rename nv v e2 ne2 ->
+
+      rename nv v e3 ne3 -> rename nv v (cond e1 e2 e3) (cond ne1 ne2 ne3)
+
+  | ren_var_eq : forall nv v : vari, rename nv v (var v) (var nv)
+
+  | ren_var_not_eq :
+
+      forall nv v x : vari, v <> x -> rename nv v (var x) (var x)
+
+  | ren_succ :
+
+      forall (nv v : vari) (e ne : tm),
+
+      rename nv v e ne -> rename nv v (succ e) (succ ne)
+
+  | ren_prd :
+
+      forall (nv v : vari) (e ne : tm),
+
+      rename nv v e ne -> rename nv v (prd e) (prd ne)
+
+  | ren_is_o :
+
+      forall (nv v : vari) (e ne : tm),
+
+      rename nv v e ne -> rename nv v (is_o e) (is_o ne)
+
+  | ren_fix1 :
+
+      forall (nv v : vari) (t : ty) (e : tm),
+
+      rename nv v (Fix v t e) (Fix v t e)
+
+  | ren_fix2 :
+
+      forall (nv v x nx : vari) (t : ty) (e1 e2 e3 : tm),
+
+      nv = x ->
+
+      ~ FV nx e1 ->
+
+      nx <> v ->
+
+      nx <> nv ->
+
+      rename nx x e1 e2 ->
+
+      rename nv v e2 e3 -> rename nv v (Fix x t e1) (Fix nx t e3)
+
+  | ren_fix3 :
+
+      forall (nv v x : vari) (t : ty) (e ne : tm),
+
+      v <> x ->
+
+      nv <> x -> rename nv v e ne -> rename nv v (Fix x t e) (Fix x t ne)
+
+  | ren_clos1 :
+
+      forall (nv v : vari) (t : ty) (e a na : tm),
+
+      rename nv v a na -> rename nv v (clos e v t a) (clos e v t na)
+
+  | ren_clos2 :
+
+      forall (nv v x nx : vari) (t : ty) (e e' ne a na : tm),
+
+      nv = x ->
+
+      ~ FV nx e ->
+
+      nx <> v ->
+
+      nx <> nv ->
+
+      rename nx x e e' ->
+
+      rename nv v e' ne ->
+
+      rename nv v a na -> rename nv v (clos e x t a) (clos ne nx t na)
+
+  | ren_clos3 :
+
+      forall (nv v x : vari) (t : ty) (e ne a na : tm),
+
+      v <> x ->
+
+      nv <> x ->
+
+      rename nv v e ne ->
+
+      rename nv v a na -> rename nv v (clos e x t a) (clos ne x t na).
+
+
+
+Goal
+
+forall (nx x : vari) (e ne : tm), rename nx x e ne -> nx <> x -> ~ FV x ne.
+
+
+
+   simple induction 1; simpl in |- *; intros.
+
+   apply inv_FV_o.
+
+   apply inv_FV_ttt.
+
+   apply inv_FV_fff.
+
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F);
+
+    simple induction 1; intros Fe N.
+
+   apply N; reflexivity.
+
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F).
+
+   simple induction 1; intros Fe3 N.
+
+   red in H7; apply H7; assumption.
+
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F).
+
+   simple induction 1; intros Fe N.
+
+   red in H3; apply H3; assumption.
+
+   red in |- *; intro F; specialize inv_FV_appl with (1 := F);
+
+    simple induction 1.
+
+   apply H1; assumption.
+
+   apply H3; assumption.
+
+   red in |- *; intro F; specialize inv_FV_cond with (1 := F);
+
+    simple induction 1. apply H1; assumption.
+
+   simple induction 1.
+
+   apply H3; assumption.
+
+   apply H5; assumption.
+
+   red in |- *; intro F; specialize inv_FV_var with (1 := F).
+
+   intro; apply H0; symmetry  in |- *; assumption.
+
+   red in |- *; intro F; specialize inv_FV_var with (1 := F).  assumption.
+
+   red in |- *; intro F; specialize inv_FV_succ with (1 := F).
+
+   apply H1; assumption.
+
+   red in |- *; intro F; specialize inv_FV_prd with (1 := F); apply H1;
+
+    assumption.
+
+   red in |- *; intro F; specialize inv_FV_is_o with (1 := F); apply H1;
+
+    assumption.
+
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F);
+
+    simple induction 1; intros Fe N.
+
+   apply N; reflexivity.
+
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F).
+
+   simple induction 1; intros Fe3 N.
+
+   red in H7; apply H7; assumption.
+
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F).
+
+   simple induction 1; intros Fe N.
+
+   red in H3; apply H3; assumption.
+
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+
+   simple induction 1. apply H1; assumption.
+
+   simple induction 1; intros Fe N.
+
+   apply N; reflexivity.
+
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+
+   simple induction 1.  apply H9; assumption.
+
+   simple induction 1; intros Fe3 N.
+
+   red in H7; apply H7; assumption.
+
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+
+   simple induction 1.  apply H5; assumption.
+
+   simple induction 1; intros Fe N.
+
+   red in H3; apply H3; assumption.
+
+Save RenNotFree.
+
+   

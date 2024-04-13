@@ -1,0 +1,1384 @@
+Require Import Arith.
+
+Require Import Coq.Lists.List.
+
+Require Import ListExt.
+(* ListExt:
+Require Import Coq.Lists.List.
+
+Section List_Remove.
+
+Variable A : Set.
+Hypothesis Aeq_dec : forall a b : A, {a = b} + {a <> b}.
+
+Definition list_remove (x : A) (l : list A) : list A :=
+  list_rec (fun _ => list A) nil
+    (fun (a : A) _ (recl : list A) =>
+     match Aeq_dec a x with
+     | left _ => recl
+     | right _ => a :: recl
+     end) l.
+
+Lemma In_list_remove1 :
+ forall (a b : A) (l : list A), In a (list_remove b l) -> In a l.
+
+Lemma In_list_remove2 :
+ forall (a b : A) (l : list A), In a (list_remove b l) -> a <> b.
+
+Lemma In_list_remove3 :
+ forall (a b : A) (l : list A), In a l -> a <> b -> In a (list_remove b l).
+
+End List_Remove.
+
+Section No_Duplicate.
+
+Variable A : Set.
+Hypothesis Aeq_dec : forall a b : A, {a = b} + {a <> b}.
+
+Definition no_dup (l : list A) : list A :=
+  list_rec (fun _ => list A) nil
+    (fun (a : A) _ (rec : list A) =>
+     match In_dec Aeq_dec a rec with
+     | left _ => rec
+     | right _ => a :: rec
+     end) l.
+
+Lemma no_dup1 : forall (a : A) (l : list A), In a l -> In a (no_dup l).
+
+Lemma no_dup2 : forall (a : A) (l : list A), In a (no_dup l) -> In a l.
+
+Lemma no_dup3 : forall (k l : list A) (a : A), no_dup k = a :: l -> ~ In a l.
+
+End No_Duplicate. *)
+
+Require Import folProp.
+(* folProp:
+Require Import Wf_nat.
+Require Import Max.
+Require Import Arith.
+Require Import Coq.Lists.List.
+Require Import ListExt.
+Require Import Peano_dec.
+
+Require Export fol.
+
+Section Fol_Properties.
+
+Variable L : Language.
+
+Notation Formula := (Formula L) (only parsing).
+Notation Formulas := (Formulas L) (only parsing).
+Notation System := (System L) (only parsing).
+Notation Term := (Term L) (only parsing).
+Notation Terms := (Terms L) (only parsing).
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let forallH := forallH L.
+Let lt_depth := lt_depth L.
+
+Section Free_Variables.
+
+Fixpoint freeVarTerm (s : fol.Term L) : list nat :=
+  match s with
+  | fol.var v => v :: nil
+  | fol.apply f ts => freeVarTerms (arity L (inr _ f)) ts
+  end
+ 
+ with freeVarTerms (n : nat) (ss : fol.Terms L n) {struct ss} : 
+ list nat :=
+  match ss with
+  | Tnil => nil (A:=nat)
+  | Tcons m t ts => freeVarTerm t ++ freeVarTerms m ts
+  end.
+
+Lemma freeVarTermApply :
+ forall (f : Functions L) (ts : fol.Terms L _),
+
+Fixpoint freeVarFormula (A : fol.Formula L) : list nat :=
+  match A with
+  | fol.equal t s => freeVarTerm t ++ freeVarTerm s
+  | fol.atomic r ts => freeVarTerms _ ts
+  | fol.impH A B => freeVarFormula A ++ freeVarFormula B
+  | fol.notH A => freeVarFormula A
+  | fol.forallH v A => list_remove _ eq_nat_dec v (freeVarFormula A)
+  end.
+
+Definition ClosedSystem (T : fol.System L) :=
+  forall (v : nat) (f : fol.Formula L),
+  mem _ T f -> ~ In v (freeVarFormula f).
+
+Definition closeList (l : list nat) (x : fol.Formula L) : 
+  fol.Formula L :=
+  list_rec (fun _ => fol.Formula L) x
+    (fun (a : nat) _ (rec : fol.Formula L) => forallH a rec) l.
+
+Definition close (x : fol.Formula L) : fol.Formula L :=
+  closeList (no_dup _ eq_nat_dec (freeVarFormula x)) x.
+
+Lemma freeVarClosedList1 :
+ forall (l : list nat) (v : nat) (x : fol.Formula L),
+
+Lemma freeVarClosedList2 :
+ forall (l : list nat) (v : nat) (x : fol.Formula L),
+
+Lemma freeVarClosed :
+ forall (x : fol.Formula L) (v : nat), ~ In v (freeVarFormula (close x)).
+
+Fixpoint freeVarListFormula (l : fol.Formulas L) : 
+ list nat :=
+  match l with
+  | nil => nil (A:=nat)
+  | f :: l => freeVarFormula f ++ freeVarListFormula l
+  end.
+
+Lemma freeVarListFormulaApp :
+ forall a b : fol.Formulas L,
+
+Lemma In_freeVarListFormula :
+ forall (v : nat) (f : fol.Formula L) (F : fol.Formulas L),
+
+Lemma In_freeVarListFormulaE :
+ forall (v : nat) (F : fol.Formulas L),
+
+Definition In_freeVarSys (v : nat) (T : fol.System L) :=
+  exists f : fol.Formula L, In v (freeVarFormula f) /\ mem _ T f.
+
+Lemma notInFreeVarSys :
+ forall x, ~ In_freeVarSys x (Ensembles.Empty_set (fol.Formula L)).
+
+End Free_Variables.
+
+Section Substitution.
+
+Fixpoint substituteTerm (s : fol.Term L) (x : nat) 
+ (t : fol.Term L) {struct s} : fol.Term L :=
+  match s with
+  | fol.var v =>
+      match eq_nat_dec x v with
+      | left _ => t
+      | right _ => var v
+      end
+  | fol.apply f ts => apply f (substituteTerms _ ts x t)
+  end
+ 
+ with substituteTerms (n : nat) (ss : fol.Terms L n) 
+ (x : nat) (t : fol.Term L) {struct ss} : fol.Terms L n :=
+  match ss in (fol.Terms _ n0) return (fol.Terms L n0) with
+  | Tnil => Tnil L
+  | Tcons m s ts =>
+      Tcons L m (substituteTerm s x t) (substituteTerms m ts x t)
+  end.
+
+Lemma subTermVar1 :
+ forall (v : nat) (s : fol.Term L), substituteTerm (var v) v s = s.
+
+Lemma subTermVar2 :
+ forall (v x : nat) (s : fol.Term L),
+
+Lemma subTermFunction :
+ forall (f : Functions L) (ts : fol.Terms L (arity L (inr _ f))) 
+
+Definition newVar (l : list nat) : nat := fold_right max 0 (map S l).
+
+Lemma newVar2 : forall (l : list nat) (n : nat), In n l -> n < newVar l.
+
+Lemma newVar1 : forall l : list nat, ~ In (newVar l) l.
+
+Definition substituteFormulaImp (f : fol.Formula L)
+  (frec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L f})
+  (g : fol.Formula L)
+  (grec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L g})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (impH f g)} :=
+  match frec p with
+  | exist f' prf1 =>
+      match grec p with
+      | exist g' prf2 =>
+          exist
+            (fun y : fol.Formula L =>
+             depth L y = S (max (depth L f) (depth L g))) 
+            (impH f' g')
+            (eq_ind_r
+               (fun n : nat =>
+                S (max n (depth L g')) = S (max (depth L f) (depth L g)))
+               (eq_ind_r
+                  (fun n : nat =>
+                   S (max (depth L f) n) = S (max (depth L f) (depth L g)))
+                  (refl_equal (S (max (depth L f) (depth L g)))) prf2) prf1)
+      end
+  end.
+
+Remark substituteFormulaImpNice :
+ forall (f g : fol.Formula L)
+
+Definition substituteFormulaNot (f : fol.Formula L)
+  (frec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L f})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (notH f)} :=
+  match frec p with
+  | exist f' prf1 =>
+      exist (fun y : fol.Formula L => depth L y = S (depth L f)) 
+        (notH f')
+        (eq_ind_r (fun n : nat => S n = S (depth L f))
+           (refl_equal (S (depth L f))) prf1)
+  end.
+
+Remark substituteFormulaNotNice :
+ forall (f : fol.Formula L)
+
+Definition substituteFormulaForall (n : nat) (f : fol.Formula L)
+  (frec : forall b : fol.Formula L,
+          lt_depth b (forallH n f) ->
+          nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L b})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (forallH n f)} :=
+  match p with
+  | (v, s) =>
+      match eq_nat_dec n v with
+      | left _ =>
+          exist (fun y : fol.Formula L => depth L y = S (depth L f))
+            (forallH n f) (refl_equal (depth L (forallH n f)))
+      | right _ =>
+          match In_dec eq_nat_dec n (freeVarTerm s) with
+          | left _ =>
+              let nv := newVar (v :: freeVarTerm s ++ freeVarFormula f) in
+              match frec f (depthForall L f n) (n, var nv) with
+              | exist f' prf1 =>
+                  match
+                    frec f'
+                      (eqDepth L f' f (forallH n f) 
+                         (sym_eq prf1) (depthForall L f n)) p
+                  with
+                  | exist f'' prf2 =>
+                      exist
+                        (fun y : fol.Formula L => depth L y = S (depth L f))
+                        (forallH nv f'')
+                        (eq_ind_r (fun n : nat => S n = S (depth L f))
+                           (refl_equal (S (depth L f))) 
+                           (trans_eq prf2 prf1))
+                  end
+              end
+          | right _ =>
+              match frec f (depthForall L f n) p with
+              | exist f' prf1 =>
+                  exist (fun y : fol.Formula L => depth L y = S (depth L f))
+                    (forallH n f')
+                    (eq_ind_r (fun n : nat => S n = S (depth L f))
+                       (refl_equal (S (depth L f))) prf1)
+              end
+          end
+      end
+  end.
+
+Remark substituteFormulaForallNice :
+ forall (v : nat) (a : fol.Formula L)
+
+Definition substituteFormulaHelp (f : fol.Formula L) 
+
+Definition substituteFormula (f : fol.Formula L) (v : nat) 
+  (s : fol.Term L) : fol.Formula L := proj1_sig (substituteFormulaHelp f v s).
+
+Lemma subFormulaEqual :
+ forall (t1 t2 : fol.Term L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaRelation :
+ forall (r : Relations L) (ts : fol.Terms L (arity L (inl _ r))) 
+
+Lemma subFormulaImp :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaNot :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaForall :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Section Extensions.
+
+Let orH := orH L.
+Let andH := andH L.
+Let existH := existH L.
+Let iffH := iffH L.
+Let ifThenElseH := ifThenElseH L.
+
+Lemma subFormulaOr :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaAnd :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaExist :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Lemma subFormulaIff :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaIfThenElse :
+ forall (f1 f2 f3 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+End Extensions.
+
+Lemma subFormulaDepth :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Section Substitution_Properties.
+
+Lemma subTermId :
+ forall (t : fol.Term L) (v : nat), substituteTerm t v (var v) = t.
+
+Lemma subTermsId :
+ forall (n : nat) (ts : fol.Terms L n) (v : nat),
+
+Lemma subFormulaId :
+ forall (f : fol.Formula L) (v : nat), substituteFormula f v (var v) = f.
+
+Lemma subFormulaForall2 :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Let existH := existH L.
+
+Lemma subFormulaExist2 :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+End Substitution_Properties.
+
+End Substitution.
+ 
+Definition Sentence (f:Formula) := (forall v : nat, ~ In v (freeVarFormula f)).
+
+End Fol_Properties. *)
+
+Require Import subProp.
+(* subProp:
+Require Import Ensembles.
+Require Import Coq.Lists.List.
+Require Import Peano_dec.
+Require Import ListExt.
+Require Import Arith.
+
+Require Import folProof.
+Require Import folLogic.
+Require Import folProp.
+Require Import folReplace.
+
+Section Substitution_Properties.
+
+Variable L : Language.
+Let Formula := Formula L.
+Let Formulas := Formulas L.
+Let System := System L.
+Let Term := Term L.
+Let Terms := Terms L.
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let forallH := forallH L.
+Let orH := orH L.
+Let andH := andH L.
+Let existH := existH L.
+Let iffH := iffH L.
+Let SysPrf := SysPrf L.
+
+Lemma freeVarSubTerm1 :
+ forall (t : Term) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L t) ->
+ v <> x -> In x (freeVarTerm L (substituteTerm L t v s)).
+
+Lemma freeVarSubTerms1 :
+ forall (n : nat) (ts : Terms n) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerms L n ts) ->
+ v <> x -> In x (freeVarTerms L n (substituteTerms L n ts v s)).
+
+Lemma freeVarSubFormula1 :
+ forall (f : Formula) (v : nat) (s : Term) (x : nat),
+ v <> x ->
+ In x (freeVarFormula L f) ->
+ In x (freeVarFormula L (substituteFormula L f v s)).
+
+Lemma freeVarSubTerm2 :
+ forall (t : Term) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L s) ->
+ In v (freeVarTerm L t) -> In x (freeVarTerm L (substituteTerm L t v s)).
+
+Lemma freeVarSubTerms2 :
+ forall (n : nat) (ts : Terms n) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L s) ->
+ In v (freeVarTerms L n ts) ->
+ In x (freeVarTerms L n (substituteTerms L n ts v s)).
+
+Lemma freeVarSubFormula2 :
+ forall (f : Formula) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L s) ->
+ In v (freeVarFormula L f) ->
+ In x (freeVarFormula L (substituteFormula L f v s)).
+
+Lemma freeVarSubTerm3 :
+ forall (t : Term) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L (substituteTerm L t v s)) ->
+ In x (list_remove _ eq_nat_dec v (freeVarTerm L t)) \/
+ In x (freeVarTerm L s).
+
+Lemma freeVarSubTerms3 :
+ forall (n : nat) (ts : fol.Terms L n) (v : nat) (s : Term) (x : nat),
+
+Lemma freeVarSubFormula3 :
+ forall (f : Formula) (v : nat) (s : Term) (x : nat),
+ In x (freeVarFormula L (substituteFormula L f v s)) ->
+ In x (list_remove _ eq_nat_dec v (freeVarFormula L f)) \/
+ In x (freeVarTerm L s).
+
+Lemma freeVarSubTerm4 :
+ forall (t : Term) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerm L (substituteTerm L t v s)) ->
+ ~ In v (freeVarTerm L t) -> In x (freeVarTerm L t).
+
+Lemma freeVarSubTerms4 :
+ forall (n : nat) (ts : Terms n) (v : nat) (s : Term) (x : nat),
+ In x (freeVarTerms L n (substituteTerms L n ts v s)) ->
+ ~ In v (freeVarTerms L n ts) -> In x (freeVarTerms L n ts).
+
+Lemma freeVarSubFormula4 :
+ forall (f : Formula) (v : nat) (s : Term) (x : nat),
+ In x (freeVarFormula L (substituteFormula L f v s)) ->
+ ~ In v (freeVarFormula L f) -> In x (freeVarFormula L f).
+
+Lemma subTermNil :
+ forall (t : Term) (v : nat) (s : Term),
+ ~ In v (freeVarTerm L t) -> substituteTerm L t v s = t.
+
+Lemma subTermTrans :
+ forall (t : Term) (v1 v2 : nat) (s : Term),
+ ~ In v2 (list_remove _ eq_nat_dec v1 (freeVarTerm L t)) ->
+ substituteTerm L (substituteTerm L t v1 (var v2)) v2 s =
+ substituteTerm L t v1 s.
+
+Lemma subTermExch :
+ forall (t : Term) (v1 v2 : nat) (s1 s2 : Term),
+ v1 <> v2 ->
+ ~ In v2 (freeVarTerm L s1) ->
+ ~ In v1 (freeVarTerm L s2) ->
+ substituteTerm L (substituteTerm L t v1 s1) v2 s2 =
+ substituteTerm L (substituteTerm L t v2 s2) v1 s1.
+
+Lemma subTermsNil :
+ forall (n : nat) (ts : Terms n) (v : nat) (s : Term),
+ ~ In v (freeVarTerms L n ts) -> substituteTerms L n ts v s = ts.
+
+Lemma subTermsTrans :
+ forall (n : nat) (ts : Terms n) (v1 v2 : nat) (s : Term),
+ ~ In v2 (list_remove _ eq_nat_dec v1 (freeVarTerms L n ts)) ->
+ substituteTerms L n (substituteTerms L n ts v1 (var v2)) v2 s =
+ substituteTerms L n ts v1 s.
+
+Lemma subTermsExch :
+ forall (n : nat) (ts : Terms n) (v1 v2 : nat) (s1 s2 : Term),
+ v1 <> v2 ->
+ ~ In v2 (freeVarTerm L s1) ->
+ ~ In v1 (freeVarTerm L s2) ->
+ substituteTerms L n (substituteTerms L n ts v1 s1) v2 s2 =
+ substituteTerms L n (substituteTerms L n ts v2 s2) v1 s1.
+
+Remark subFormulaNTEHelp :
+ forall (f g : Formula) (v : nat) (s : Term),
+ SysPrf (Ensembles.Add _ (Empty_set Formula) f) g ->
+
+Remark subFormulaNTE :
+ forall (f : Formula) (T : System),
+ (forall (v : nat) (s : Term),
+  ~ In v (freeVarFormula L f) ->
+  SysPrf T (iffH (substituteFormula L f v s) f)) /\
+ (forall (v1 v2 : nat) (s : Term),
+  ~ In v2 (list_remove _ eq_nat_dec v1 (freeVarFormula L f)) ->
+  SysPrf T
+    (iffH (substituteFormula L (substituteFormula L f v1 (var v2)) v2 s)
+       (substituteFormula L f v1 s))) /\
+ (forall (v1 v2 : nat) (s1 s2 : Term),
+  v1 <> v2 ->
+  ~ In v2 (freeVarTerm L s1) ->
+  ~ In v1 (freeVarTerm L s2) ->
+  SysPrf T
+    (iffH (substituteFormula L (substituteFormula L f v1 s1) v2 s2)
+       (substituteFormula L (substituteFormula L f v2 s2) v1 s1))).
+
+Lemma subFormulaNil :
+ forall (f : Formula) (T : System) (v : nat) (s : Term),
+ ~ In v (freeVarFormula L f) -> SysPrf T (iffH (substituteFormula L f v s) f).
+
+Lemma subFormulaTrans :
+ forall (f : Formula) (T : System) (v1 v2 : nat) (s : Term),
+ ~ In v2 (list_remove _ eq_nat_dec v1 (freeVarFormula L f)) ->
+ SysPrf T
+   (iffH (substituteFormula L (substituteFormula L f v1 (var v2)) v2 s)
+      (substituteFormula L f v1 s)).
+
+Lemma subFormulaExch :
+ forall (f : Formula) (T : System) (v1 v2 : nat) (s1 s2 : Term),
+ v1 <> v2 ->
+ ~ In v2 (freeVarTerm L s1) ->
+ ~ In v1 (freeVarTerm L s2) ->
+ SysPrf T
+   (iffH (substituteFormula L (substituteFormula L f v1 s1) v2 s2)
+      (substituteFormula L (substituteFormula L f v2 s2) v1 s1)).
+
+End Substitution_Properties. *)
+
+Require Import extEqualNat.
+(* extEqualNat:
+Require Import Arith.
+
+Fixpoint naryFunc (n : nat) : Set :=
+  match n with
+  | O => nat
+  | S n => nat -> naryFunc n
+  end.
+
+Fixpoint naryRel (n : nat) : Set :=
+  match n with
+  | O => bool
+  | S n => nat -> naryRel n
+  end.
+
+Definition extEqual (n : nat) (a b : naryFunc n) : Prop.
+
+Lemma extEqualRefl : forall (n : nat) (a : naryFunc n), extEqual n a a.
+
+Lemma extEqualSym :
+ forall (n : nat) (a b : naryFunc n), extEqual n a b -> extEqual n b a.
+
+Lemma extEqualTrans :
+ forall (n : nat) (a b c : naryFunc n),
+ extEqual n a b -> extEqual n b c -> extEqual n a c.
+
+Fixpoint charFunction (n : nat) : naryRel n -> naryFunc n :=
+  match n return (naryRel n -> naryFunc n) with
+  | O => fun R : bool => match R with
+                         | true => 1
+                         | false => 0
+                         end
+  | S m => fun (R : naryRel (S m)) (a : nat) => charFunction m (R a)
+  end. *)
+
+Require Import LNN.
+(* LNN:
+Require Import Arith.
+Require Import Ensembles.
+Require Import Coq.Lists.List.
+
+Require Export Languages.
+Require Import folProof.
+Require Import folProp.
+Require Import folLogic3.
+
+Definition Formula := Formula LNN.
+Definition Formulas := Formulas LNN.
+Definition System := System LNN.
+Definition Sentence := Sentence LNN.
+Definition Term := Term LNN.
+Definition Terms := Terms LNN.
+Definition var := var LNN.
+Definition equal := equal LNN.
+Definition impH := impH LNN.
+Definition notH := notH LNN.
+Definition iffH := iffH LNN.
+Definition forallH := forallH LNN.
+Definition orH := orH LNN.
+Definition andH := andH LNN.
+Definition existH := existH LNN.
+Definition ifThenElseH := ifThenElseH LNN.
+Definition SysPrf := SysPrf LNN.
+
+Definition Plus (x y : Term) : Term :=
+  apply LNN Plus (Tcons LNN 1 x (Tcons LNN 0 y (Tnil LNN))).
+
+Definition Times (x y : Term) : Term :=
+  apply LNN Times (Tcons LNN 1 x (Tcons LNN 0 y (Tnil LNN))).
+
+Definition Succ (x : Term) : Term :=
+  apply LNN Succ (Tcons LNN 0 x (Tnil LNN)).
+
+Definition Zero : Term := apply LNN Zero (Tnil LNN).
+
+Definition LT (x y : Term) : Formula :=
+  atomic LNN LT (Tcons LNN 1 x (Tcons LNN 0 y (Tnil LNN))). 
+
+Lemma LNN_dec : language_decideable LNN.
+
+Section Free_Variables.
+
+Lemma freeVarPlus :
+ forall x y : Term,
+ freeVarTerm LNN (Plus x y) = freeVarTerm LNN x ++ freeVarTerm LNN y.
+
+Lemma freeVarTimes :
+ forall x y : Term,
+ freeVarTerm LNN (Times x y) = freeVarTerm LNN x ++ freeVarTerm LNN y.
+
+Lemma freeVarSucc :
+ forall x : Term, freeVarTerm LNN (Succ x) = freeVarTerm LNN x.
+
+Lemma freeVarZero : freeVarTerm LNN Zero = nil.
+
+Lemma freeVarLT :
+ forall x y : Term,
+ freeVarFormula LNN (LT x y) = freeVarTerm LNN x ++ freeVarTerm LNN y.
+
+End Free_Variables.
+
+Section Logic.
+
+Lemma Axm :
+ forall (T : System) (f : Formula), mem _ T f -> SysPrf T f.
+
+Lemma sysExtend :
+ forall (T U : System) (f : Formula),
+ Included _ T U -> SysPrf T f -> SysPrf U f.
+
+Lemma sysWeaken :
+ forall (T : System) (f g : Formula), SysPrf T f -> SysPrf (Ensembles.Add _ T g) f.
+
+Lemma impI :
+ forall (T : System) (f g : Formula),
+ SysPrf (Ensembles.Add _ T g) f -> SysPrf T (impH g f).
+
+Lemma impE :
+ forall (T : System) (f g : Formula),
+ SysPrf T (impH g f) -> SysPrf T g -> SysPrf T f.
+
+Lemma contradiction :
+ forall (T : System) (f g : Formula),
+ SysPrf T f -> SysPrf T (notH f) -> SysPrf T g.
+
+Lemma nnE :
+ forall (T : System) (f : Formula), SysPrf T (notH (notH f)) -> SysPrf T f.
+
+Lemma noMiddle : forall (T : System) (f : Formula), SysPrf T (orH (notH f) f).
+
+Lemma nnI :
+ forall (T : System) (f : Formula), SysPrf T f -> SysPrf T (notH (notH f)).
+
+Lemma cp1 :
+ forall (T : System) (f g : Formula),
+ SysPrf T (impH (notH f) (notH g)) -> SysPrf T (impH g f).
+
+Lemma cp2 :
+ forall (T : System) (f g : Formula),
+ SysPrf T (impH g f) -> SysPrf T (impH (notH f) (notH g)).
+
+Lemma orI1 :
+ forall (T : System) (f g : Formula), SysPrf T f -> SysPrf T (orH f g).
+
+Lemma orI2 :
+ forall (T : System) (f g : Formula), SysPrf T g -> SysPrf T (orH f g).
+
+Lemma orE :
+ forall (T : System) (f g h : Formula),
+ SysPrf T (orH f g) ->
+ SysPrf T (impH f h) -> SysPrf T (impH g h) -> SysPrf T h.
+
+Lemma orSys :
+ forall (T : System) (f g h : Formula),
+ SysPrf (Ensembles.Add _ T f) h -> SysPrf (Ensembles.Add _ T g) h -> SysPrf (Ensembles.Add _ T (orH f g)) h.
+
+Lemma andI :
+ forall (T : System) (f g : Formula),
+ SysPrf T f -> SysPrf T g -> SysPrf T (andH f g).
+
+Lemma andE1 :
+ forall (T : System) (f g : Formula), SysPrf T (andH f g) -> SysPrf T f.
+
+Lemma andE2 :
+ forall (T : System) (f g : Formula), SysPrf T (andH f g) -> SysPrf T g.
+
+Lemma iffI :
+ forall (T : System) (f g : Formula),
+ SysPrf T (impH f g) -> SysPrf T (impH g f) -> SysPrf T (iffH f g).
+
+Lemma iffE1 :
+ forall (T : System) (f g : Formula),
+ SysPrf T (iffH f g) -> SysPrf T (impH f g).
+
+Lemma iffE2 :
+ forall (T : System) (f g : Formula),
+ SysPrf T (iffH f g) -> SysPrf T (impH g f).
+
+Lemma forallI :
+ forall (T : System) (f : Formula) (v : nat),
+ ~ In_freeVarSys LNN v T -> SysPrf T f -> SysPrf T (forallH v f).
+
+Lemma forallE :
+ forall (T : System) (f : Formula) (v : nat) (t : Term),
+ SysPrf T (forallH v f) -> SysPrf T (substituteFormula LNN f v t).
+
+Lemma forallSimp :
+ forall (T : System) (f : Formula) (v : nat),
+ SysPrf T (forallH v f) -> SysPrf T f.
+
+Lemma existI :
+ forall (T : System) (f : Formula) (v : nat) (t : Term),
+ SysPrf T (substituteFormula LNN f v t) -> SysPrf T (existH v f).
+
+Lemma existE :
+ forall (T : System) (f g : Formula) (v : nat),
+ ~ In_freeVarSys LNN v T ->
+ ~ In v (freeVarFormula LNN g) ->
+ SysPrf T (existH v f) -> SysPrf T (impH f g) -> SysPrf T g.
+
+Lemma existSimp :
+ forall (T : System) (f : Formula) (v : nat),
+ SysPrf T f -> SysPrf T (existH v f).
+
+Lemma existSys :
+ forall (T : System) (f g : Formula) (v : nat),
+ ~ In_freeVarSys LNN v T ->
+ ~ In v (freeVarFormula LNN g) ->
+ SysPrf (Ensembles.Add _ T f) g -> SysPrf (Ensembles.Add _ T (existH v f)) g.
+
+Lemma absurd1 :
+ forall (T : System) (f : Formula),
+ SysPrf T (impH f (notH f)) -> SysPrf T (notH f).
+
+Lemma nImp :
+ forall (T : System) (f g : Formula),
+ SysPrf T (andH f (notH g)) -> SysPrf T (notH (impH f g)).
+
+Lemma nOr :
+ forall (T : System) (f g : Formula),
+ SysPrf T (andH (notH f) (notH g)) -> SysPrf T (notH (orH f g)).
+
+Lemma nAnd :
+ forall (T : System) (f g : Formula),
+ SysPrf T (orH (notH f) (notH g)) -> SysPrf T (notH (andH f g)).
+
+Lemma nForall :
+ forall (T : System) (f : Formula) (v : nat),
+ SysPrf T (existH v (notH f)) -> SysPrf T (notH (forallH v f)).
+
+Lemma nExist :
+ forall (T : System) (f : Formula) (v : nat),
+ SysPrf T (forallH v (notH f)) -> SysPrf T (notH (existH v f)).
+
+Lemma impRefl : forall (T : System) (f : Formula), SysPrf T (impH f f).
+
+Lemma impTrans :
+ forall (T : System) (f g h : Formula),
+ SysPrf T (impH f g) -> SysPrf T (impH g h) -> SysPrf T (impH f h).
+
+Lemma orSym :
+ forall (T : System) (f g : Formula),
+ SysPrf T (orH f g) -> SysPrf T (orH g f).
+
+Lemma andSym :
+ forall (T : System) (f g : Formula),
+ SysPrf T (andH f g) -> SysPrf T (andH g f).
+
+Lemma iffRefl : forall (T : System) (f : Formula), SysPrf T (iffH f f).
+
+Lemma iffSym :
+ forall (T : System) (f g : Formula),
+ SysPrf T (iffH f g) -> SysPrf T (iffH g f).
+
+Lemma iffTrans :
+ forall (T : System) (f g h : Formula),
+ SysPrf T (iffH f g) -> SysPrf T (iffH g h) -> SysPrf T (iffH f h).
+
+Lemma eqRefl : forall (T : System) (a : Term), SysPrf T (equal a a).
+
+Lemma eqSym :
+ forall (T : System) (a b : Term),
+ SysPrf T (equal a b) -> SysPrf T (equal b a).
+
+Lemma eqTrans :
+ forall (T : System) (a b c : Term),
+ SysPrf T (equal a b) -> SysPrf T (equal b c) -> SysPrf T (equal a c).
+
+Lemma eqPlus :
+ forall (T : System) (a b c d : Term),
+ SysPrf T (equal a b) ->
+ SysPrf T (equal c d) -> SysPrf T (equal (Plus a c) (Plus b d)).
+
+Lemma eqTimes :
+ forall (T : System) (a b c d : Term),
+ SysPrf T (equal a b) ->
+ SysPrf T (equal c d) -> SysPrf T (equal (Times a c) (Times b d)).
+
+Lemma eqSucc :
+ forall (T : System) (a b : Term),
+ SysPrf T (equal a b) -> SysPrf T (equal (Succ a) (Succ b)).
+
+Lemma eqLT :
+ forall (T : System) (a b c d : Term),
+ SysPrf T (equal a b) ->
+ SysPrf T (equal c d) -> SysPrf T (iffH (LT a c) (LT b d)).
+
+End Logic.
+
+Fixpoint natToTerm (n : nat) : Term :=
+  match n with
+  | O => Zero
+  | S m => Succ (natToTerm m)
+  end.
+
+Lemma closedNatToTerm :
+ forall a v : nat, ~ In v (freeVarTerm LNN (natToTerm a)). *)
+
+
+
+Section RepresentableExpressible.
+
+
+
+Variable T : System.
+
+Hypothesis closedT1: (ClosedSystem LNN T).
+
+
+
+Lemma closedT : forall v : nat, ~ In_freeVarSys LNN v T.
+
+Proof.
+
+unfold not in |- *; intros.
+
+unfold In_freeVarSys in H.
+
+induction H as (x, H).
+
+elim closedT1 with v x; tauto.
+
+Qed.
+
+
+
+Fixpoint RepresentableHalf1 (n : nat) : naryFunc n -> Formula -> Prop :=
+
+  match n return (naryFunc n -> Formula -> Prop) with
+
+  | O =>
+
+      fun (f : naryFunc 0) (A : Formula) =>
+
+      SysPrf T (impH A (equal (var 0) (natToTerm f)))
+
+  | S m =>
+
+      fun (f : naryFunc (S m)) (A : Formula) =>
+
+      forall a : nat,
+
+      RepresentableHalf1 m (f a)
+
+        (substituteFormula LNN A (S m) (natToTerm a))
+
+  end.
+
+
+
+Fixpoint RepresentableHalf2 (n : nat) : naryFunc n -> Formula -> Prop :=
+
+  match n return (naryFunc n -> Formula -> Prop) with
+
+  | O =>
+
+      fun (f : naryFunc 0) (A : Formula) =>
+
+      SysPrf T (impH (equal (var 0) (natToTerm f)) A)
+
+  | S m =>
+
+      fun (f : naryFunc (S m)) (A : Formula) =>
+
+      forall a : nat,
+
+      RepresentableHalf2 m (f a)
+
+        (substituteFormula LNN A (S m) (natToTerm a))
+
+  end.
+
+
+
+Lemma RepresentableHalf1Alternate :
+
+ forall (n : nat) (f : naryFunc n) (A B : Formula),
+
+ SysPrf T (impH A B) -> RepresentableHalf1 n f B -> RepresentableHalf1 n f A.
+
+Proof.
+
+intros n.
+
+induction n as [| n Hrecn]; intros.
+
+simpl in |- *.
+
+simpl in H0.
+
+apply impTrans with B.
+
+auto.
+
+auto.
+
+simpl in |- *.
+
+simpl in H0.
+
+intros.
+
+apply Hrecn with (substituteFormula LNN B (S n) (natToTerm a)).
+
+rewrite <- (subFormulaImp LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+auto.
+
+apply H0.
+
+Qed.
+
+
+
+Lemma RepresentableHalf2Alternate :
+
+ forall (n : nat) (f : naryFunc n) (A B : Formula),
+
+ SysPrf T (impH A B) -> RepresentableHalf2 n f A -> RepresentableHalf2 n f B.
+
+Proof.
+
+intros n.
+
+induction n as [| n Hrecn]; intros.
+
+simpl in |- *.
+
+simpl in H0.
+
+apply impTrans with A.
+
+auto.
+
+auto.
+
+simpl in |- *.
+
+simpl in H0.
+
+intros.
+
+apply Hrecn with (substituteFormula LNN A (S n) (natToTerm a)).
+
+rewrite <- (subFormulaImp LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+auto.
+
+apply H0.
+
+Qed.
+
+
+
+Fixpoint RepresentableHelp (n : nat) : naryFunc n -> Formula -> Prop :=
+
+  match n return (naryFunc n -> Formula -> Prop) with
+
+  | O =>
+
+      fun (f : naryFunc 0) (A : Formula) =>
+
+      SysPrf T (iffH A (equal (var 0) (natToTerm f)))
+
+  | S m =>
+
+      fun (f : naryFunc (S m)) (A : Formula) =>
+
+      forall a : nat,
+
+      RepresentableHelp m (f a) (substituteFormula LNN A (S m) (natToTerm a))
+
+  end.
+
+
+
+Lemma RepresentableHalfHelp :
+
+ forall (n : nat) (f : naryFunc n) (A : Formula),
+
+ RepresentableHalf1 n f A ->
+
+ RepresentableHalf2 n f A -> RepresentableHelp n f A.
+
+Proof.
+
+intro.
+
+induction n as [| n Hrecn]; simpl in |- *; intros.
+
+apply iffI; auto.
+
+apply Hrecn; auto.
+
+Qed.
+
+
+
+Definition Representable (n : nat) (f : naryFunc n) 
+
+  (A : Formula) : Prop :=
+
+  (forall v : nat, In v (freeVarFormula LNN A) -> v <= n) /\
+
+  RepresentableHelp n f A.
+
+
+
+Lemma RepresentableAlternate :
+
+ forall (n : nat) (f : naryFunc n) (A B : Formula),
+
+ SysPrf T (iffH A B) -> RepresentableHelp n f A -> RepresentableHelp n f B.
+
+Proof.
+
+intros n.
+
+induction n as [| n Hrecn]; intros.
+
+simpl in |- *.
+
+simpl in H0.
+
+apply iffTrans with A.
+
+apply iffSym.
+
+auto.
+
+auto.
+
+simpl in |- *.
+
+simpl in H0.
+
+intros.
+
+apply Hrecn with (substituteFormula LNN A (S n) (natToTerm a)).
+
+rewrite <- (subFormulaIff LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+auto.
+
+apply H0.
+
+Qed.
+
+
+
+Lemma Representable_ext :
+
+ forall (n : nat) (f g : naryFunc n) (A : Formula),
+
+ extEqual n f g -> RepresentableHelp n f A -> RepresentableHelp n g A.
+
+Proof.
+
+intro.
+
+induction n as [| n Hrecn].
+
+simpl in |- *.
+
+intros.
+
+rewrite <- H.
+
+auto.
+
+simpl in |- *.
+
+intros.
+
+eapply Hrecn.
+
+apply H.
+
+auto.
+
+Qed.
+
+
+
+Fixpoint ExpressibleHelp (n : nat) : naryRel n -> Formula -> Prop :=
+
+  match n return (naryRel n -> Formula -> Prop) with
+
+  | O =>
+
+      fun (R : naryRel 0) (A : Formula) =>
+
+      match R with
+
+      | true => SysPrf T A
+
+      | false => SysPrf T (notH A)
+
+      end
+
+  | S m =>
+
+      fun (R : naryRel (S m)) (A : Formula) =>
+
+      forall a : nat,
+
+      ExpressibleHelp m (R a) (substituteFormula LNN A (S m) (natToTerm a))
+
+  end.
+
+
+
+Definition Expressible (n : nat) (R : naryRel n) (A : Formula) : Prop :=
+
+  (forall v : nat, In v (freeVarFormula LNN A) -> v <= n /\ v <> 0) /\
+
+  ExpressibleHelp n R A.
+
+
+
+Lemma expressibleAlternate :
+
+ forall (n : nat) (R : naryRel n) (A B : Formula),
+
+ SysPrf T (iffH A B) -> ExpressibleHelp n R A -> ExpressibleHelp n R B.
+
+Proof.
+
+intros n.
+
+induction n as [| n Hrecn]; intros.
+
+induction R.
+
+simpl in |- *.
+
+simpl in H0.
+
+apply impE with A.
+
+apply iffE1.
+
+apply H.
+
+auto.
+
+simpl in |- *.
+
+simpl in H0.
+
+apply impE with (notH A).
+
+apply cp2.
+
+apply iffE2.
+
+auto.
+
+auto.
+
+simpl in H0.
+
+simpl in |- *.
+
+intros.
+
+apply (Hrecn (R a)) with (substituteFormula LNN A (S n) (natToTerm a)).
+
+rewrite <- (subFormulaIff LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+auto.
+
+apply H0.
+
+Qed.
+
+
+
+Hypothesis nn1:(SysPrf T (notH (equal (natToTerm 1) (natToTerm 0)))).
+
+
+
+Lemma Representable2Expressible :
+
+ forall (n : nat) (R : naryRel n) (A : Formula),
+
+ Representable n (charFunction n R) A ->
+
+ Expressible n R (substituteFormula LNN A 0 (natToTerm 1)).
+
+Proof.
+
+intros.
+
+induction H as (H, H0).
+
+split.
+
+intros.
+
+induction (freeVarSubFormula3 _ _ _ _ _ H1).
+
+split.
+
+apply H.
+
+eapply In_list_remove1.
+
+apply H2.
+
+eapply In_list_remove2.
+
+apply H2.
+
+elim H2.
+
+clear H.
+
+cut (RepresentableHelp n (charFunction n R) A).
+
+generalize A.
+
+clear H0 A.
+
+induction n as [| n Hrecn]; intros.
+
+simpl in H.
+
+simpl in |- *.
+
+induction R.
+
+simpl in H.
+
+apply
+
+ impE with (substituteFormula LNN (equal (var 0) (Succ Zero)) 0 (Succ Zero)).
+
+apply iffE2.
+
+rewrite <- (subFormulaIff LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+apply H.
+
+rewrite (subFormulaEqual LNN).
+
+simpl in |- *.
+
+apply eqRefl.
+
+simpl in H.
+
+apply
+
+ impE with (notH (substituteFormula LNN (equal (var 0) Zero) 0 (Succ Zero))).
+
+apply cp2.
+
+apply iffE1.
+
+rewrite <- (subFormulaIff LNN).
+
+apply forallE.
+
+apply forallI.
+
+apply closedT.
+
+apply H.
+
+rewrite (subFormulaEqual LNN).
+
+simpl in |- *.
+
+replace (apply LNN Languages.Zero (Tnil LNN)) with (natToTerm 0).
+
+replace (Succ Zero) with (natToTerm 1).
+
+simpl.
+
+apply nn1.
+
+reflexivity.
+
+reflexivity.
+
+simpl in H.
+
+simpl in |- *.
+
+intros.
+
+apply
+
+ expressibleAlternate
+
+  with
+
+    (substituteFormula LNN (substituteFormula LNN A (S n) (natToTerm a)) 0
+
+       (Succ Zero)).
+
+apply (subFormulaExch LNN).
+
+discriminate.
+
+apply closedNatToTerm.
+
+auto.
+
+apply Hrecn.
+
+apply H.
+
+apply H0.
+
+Qed.
+
+
+
+End RepresentableExpressible.
+

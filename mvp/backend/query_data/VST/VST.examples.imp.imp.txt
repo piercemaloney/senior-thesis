@@ -1,0 +1,728 @@
+Require Import List.
+(* List:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+
+Local Open Scope nat_scope.
+
+Theorem qam_count_gen : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S)(n : nat),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= n + (count x)) ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q * n + (count s).
+
+Local Open Scope rat_scope.
+
+Theorem evalDist_bind_event_le : 
+  forall (A : Set)(c : Comp A)(f : A -> Comp bool)(evta : A -> bool) (k1 k2 : Rat),
+    Pr[a <-$ c; ret (evta a)] <= k1 ->
+    (forall a, In a (getSupport c) -> evta a = false -> Pr[f a] <= k2) ->
+    Pr[a <-$ c; f a] <= k1 + k2.
+
+Theorem oc_eventProb : 
+  forall (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (S : Set)(eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (count : S -> nat)(evt : S -> bool)(s : S)(k : nat -> Rat) i,
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (i + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= i + (count s))%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k (i * n + (count s))%nat).
+
+Theorem oc_eventProb_0_1 : 
+  forall (S : Set)(count : S -> nat)(evt : S -> bool)(k : nat -> Rat)
+         (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (s : S),
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (1 + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= 1 + (count s))%nat ->
+      count s = 0%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k n).  
+
+Local Open Scope nat_scope.
+
+Theorem qam_count : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= 1 + (count x)) ->
+      count s = 0 ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q.
+
+Local Transparent evalDist.
+
+Section RndInList.
+  
+  Variable eta : nat.
+
+  Theorem RndInList_prob_h :
+    forall (ls : list (Bvector eta)),
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+
+  Theorem RndInList_prob :
+    forall (ls : list (Bvector eta))(q : nat),
+      length ls <= q ->
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= q / 2 ^ eta)%rat.
+  
+End RndInList.
+
+Local Open Scope rat_scope.
+
+Theorem RndNat_eq_any : 
+  forall (eta : nat)(x : Bvector eta),
+    Pr  [a0 <-$ { 0 , 1 }^eta; ret (eqb x a0) ] == 1 / 2^eta.
+
+Require Import FCF.CompFold.
+Local Opaque evalDist.
+
+Section FixedInRndList.
+  
+  Variable A : Set.
+  Variable eta : nat.
+
+  Theorem FixedInRndList_prob :
+    forall (ls : list A)(x : Bvector eta),
+      (Pr[lsR <-$ compMap _ (fun _ => {0, 1}^eta) ls; ret (if (in_dec (EqDec_dec _) x lsR) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+  
+End FixedInRndList.
+
+Section RndInAdaptive.
+
+  Variable A B C : Set.
+  
+  Local Open Scope rat_scope.
+
+  Theorem orb_prob : 
+    forall (A B : Set)(c : Comp A)(f : A -> Comp B) evt1 evt2 k1 k2,
+      Pr[x <-$ c; ret (evt1 x)] <= k1 ->
+      (forall a, In a (getSupport c) -> evt1 a = false -> Pr[y <-$ f a; ret (evt2 y)] <= k2) ->
+      Pr[x <-$ c; y <-$ f x; ret (evt1 x || evt2 y)] <= k1 + k2.
+
+  Theorem RndInAdaptive_prob : 
+    forall (c : OracleComp A B C)(q : nat),
+      queries_at_most c q ->
+      forall (S : Set)(evt : S -> bool)(eqd : EqDec S)(o : S -> A -> Comp (B * S))(k : Rat),
+        (forall a b, 
+          evt a = false ->
+          Pr[ d <-$ o a b; ret (evt (snd d))] <= k)->
+        (forall a b x y,
+          In (a, b) (getSupport (o x y)) -> evt x = true -> evt b = true) ->
+        forall (s : S),
+          evt s = false ->
+          Pr[ d <-$ c _ _ o s; ret (evt (snd d))] <= q / 1 * k.
+
+End RndInAdaptive. *)
+
+Require Import Arith.
+
+Require Import Relations.
+(* Relations:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import Coq.ZArith.BinInt. 
+Require Import Coq.ZArith.Zcomplements. 
+Require Import compcert.lib.Integers.          
+Require Import Coq.Numbers.Natural.Peano.NPeano.
+
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Program.Tactics.
+Require Import sha.XorCorrespondence. 
+Require Import sha.Bruteforce.
+Require Import sha.general_lemmas.
+Require Import sha.hmac_pure_lemmas.
+
+Definition Blist := list bool.
+Open Scope Z_scope.
+
+Inductive InBlocks {A : Type} (n : nat) : list A -> Prop :=
+  | InBlocks_nil : InBlocks n []
+  | InBlocks_block : forall (front back full : list A),
+                   length front = n ->
+                   full = front ++ back ->
+                   InBlocks n back ->
+                   InBlocks n full.
+
+Lemma InBlocks_len : forall {A : Type} (l : list A) (n : nat),
+                       PeanoNat.Nat.divide (n) (length l) -> InBlocks n l.
+
+Inductive bytes_bits_lists : Blist -> list byte -> Prop :=
+  | eq_empty : bytes_bits_lists nil nil
+  | eq_cons : forall (bits : Blist) (bytes : list byte)
+                     (b0 b1 b2 b3 b4 b5 b6 b7 : bool) (b : byte),
+                bytes_bits_lists bits bytes ->
+                convertByteBits [b0; b1; b2; b3; b4; b5; b6; b7] b ->
+                bytes_bits_lists (b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: bits)
+                                 (b :: bytes).
+
+Definition div_mod (num : Z) (denom : Z) : bool * Z :=
+  (Z.gtb (num / denom) 0, num mod denom).
+
+Definition byteToBits (byte : byte) : Blist :=
+  let (b7, rem7) := div_mod (Byte.unsigned byte) 128 in
+  let (b6, rem6) := div_mod rem7 64 in
+  let (b5, rem5) := div_mod rem6 32 in
+  let (b4, rem4) := div_mod rem5 16 in
+  let (b3, rem3) := div_mod rem4 8 in
+  let (b2, rem2) := div_mod rem3 4 in
+  let (b1, rem1) := div_mod rem2 2 in
+  let (b0, rem0) := div_mod rem1 1 in
+  [b0; b1; b2; b3; b4; b5; b6; b7].
+
+Fixpoint bytesToBits (bytes : list byte) : Blist :=
+  match bytes with
+    | [] => []
+    | byte :: xs => byteToBits byte ++ bytesToBits xs
+  end.
+
+Definition bitsToByte (bits : Blist) : byte :=
+  Byte.repr 
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: nil =>
+      (1 * (asZ b0) + 2 * (asZ b1) + 4 * (asZ b2) + 8 * (asZ b3)
+      + 16 * (asZ b4) + 32 * (asZ b5) + 64 * (asZ b6) + 128 * (asZ b7))
+    | _ => -1                  
+  end.
+
+Fixpoint bitsToBytes (bits : Blist) : list byte :=
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs =>
+      bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] :: bitsToBytes xs
+    | _ => []
+  end.
+
+Lemma byteToBits_length bt: length (byteToBits bt) = 8%nat.
+
+Lemma bytes_bits_length : forall (bits : Blist) (bytes : list byte),
+  bytes_bits_lists bits bytes -> length bits = (length bytes * 8)%nat.
+
+Lemma bytesToBits_app : forall (l1 l2 : list byte),
+                          bytesToBits (l1 ++ l2) = bytesToBits l1 ++ bytesToBits l2.
+
+Lemma bytesToBits_len : forall (l : list byte),
+                          length (bytesToBits l) = (length l * 8)%nat.
+
+Theorem byte_bit_byte_id : forall (b : byte),
+                                bitsToByte (byteToBits b) = b.
+
+Theorem bits_byte_bits_id : forall (b0 b1 b2 b3 b4 b5 b6 b7 : bool),
+                              [b0; b1; b2; b3; b4; b5; b6; b7] =
+                              byteToBits (bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7]).
+
+Theorem bytes_bits_bytes_id : forall (bytes : list byte),
+                                bitsToBytes (bytesToBits bytes) = bytes.
+
+Theorem bytes_bits_def_eq : forall (bytes : list byte),
+                              bytes_bits_lists (bytesToBits bytes) bytes.
+
+Theorem bytes_bits_comp_ind : forall (bits : Blist) (bytes : list byte),
+                               bits = bytesToBits bytes ->
+                               bytes_bits_lists bits bytes.
+
+Theorem bytes_bits_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bytes = bitsToBytes bits.
+
+Theorem bits_bytes_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bits = bytesToBits bytes.
+
+Lemma bitsToBytes_app : forall (l m : Blist),
+                          InBlocks 8 l ->
+                          bitsToBytes (l ++ m) = bitsToBytes l ++ bitsToBytes m.
+
+Lemma bitsToBytes_len_gen : forall (l : Blist) (n : nat),
+                          length l = (n * 8)%nat ->
+                          length (bitsToBytes l) = n.
+
+Lemma bitsToBytes_len : forall (l : Blist),
+                          length l = 512%nat ->
+                          Zlength (bitsToBytes l) = 64%Z.
+
+Lemma bits_bytes_bits_id : forall (l : Blist),
+                             InBlocks 8 l ->
+                             bytesToBits (bitsToBytes l) = l.
+
+Lemma bytes_bits_lists_append:
+  forall (l1 : Blist) (l2 : list byte) (m1 : Blist) (m2 : list byte),
+    bytes_bits_lists l1 l2
+    -> bytes_bits_lists m1 m2
+    -> bytes_bits_lists (l1 ++ m1) (l2 ++ m2).
+
+Lemma bytesToBits_nil_inv l: nil = bytesToBits l -> l = nil.
+
+Lemma bytesToBits_cons b l:
+      bytesToBits (b::l) = byteToBits b ++ bytesToBits l.
+
+Lemma byteToBits_injective: forall a b,
+      byteToBits a = byteToBits b ->
+      a = b.
+
+Lemma bytesToBits_injective: forall b1 b2, bytesToBits b1 = bytesToBits b2 ->
+       b1=b2.
+
+Lemma bitsToBytes_injective8 b1 b2 (B: bitsToBytes b1 = bitsToBytes b2)
+       (L1: PeanoNat.Nat.divide 8 (length b1))
+
+Lemma bitsToByte_cons: forall bits h t, (h::t) = bitsToBytes bits ->
+      exists b0, exists b1, exists b2, exists b3,
+      exists b4, exists b5, exists b6, exists b7, exists xs,
+      bits = b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs /\
+      h = bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] /\
+      t = bitsToBytes xs.
+
+Definition intsToBits (l : list Int.int) : list bool :=
+  bytesToBits (intlist_to_bytelist l).
+
+Definition bitsToInts (l : Blist) : list Int.int :=
+  bytelist_to_intlist (bitsToBytes l). *)
+
+
+
+Require Import msl.msl_standard.
+(* msl.msl_standard:
+Require Export VST.msl.Extensionality.
+Require Export VST.msl.ageable.
+Require Export VST.msl.age_sepalg.
+Require Export VST.msl.base.
+Require Export VST.msl.boolean_alg.
+Require Export VST.msl.knot_full_variant.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.knot_full_sa.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.predicates_hered.
+Require Export VST.msl.predicates_sl.
+Require Export VST.msl.corable.
+Require Export VST.msl.subtypes.
+Require Export VST.msl.subtypes_sl.
+Require Export VST.msl.predicates_rec.
+Require Export VST.msl.contractive.
+Require Export VST.msl.sepalg.
+Require Export VST.msl.functors.
+Require Export VST.msl.sepalg_functors.
+Require Export VST.msl.sepalg_generators.
+Require Export VST.msl.combiner_sa.
+Require Export VST.msl.shares.
+Require Export VST.msl.cross_split.
+Require Export VST.msl.psepalg.
+Require Export VST.msl.pshares.
+Require Export VST.msl.eq_dec.
+
+Export MixVariantFunctor.
+Export MixVariantFunctorLemmas.
+Export MixVariantFunctorGenerator. *)
+
+
+
+Definition ident := nat.
+
+Definition addr  := nat.
+
+
+
+Inductive val : Set :=
+
+  | int_val : nat -> val
+
+  | ptr_val : addr -> val.
+
+
+
+Definition locals := ShareMap.map ident val.
+
+Instance Join_locals: Join locals := ShareMap.Join_map _ _ (Join_equiv _).
+
+Instance locals_sa : Sep_alg locals := ShareMap.sa_map _ _ _.
+
+
+
+Definition expr :=
+
+  { f: locals -> option val |
+
+    forall l l' v, join_sub l l' -> f l = Some v -> f l' = Some v }.
+
+
+
+Definition mem := ShareMap.map addr val.
+
+Instance Join_mem: Join mem := ShareMap.Join_map _ _ (Join_equiv _).
+
+Instance mem_sa : Sep_alg mem := ShareMap.sa_map _ _ _.
+
+
+
+Inductive cmd :=
+
+  | skip
+
+  | seq : cmd -> cmd -> cmd
+
+  | call : ident -> ident -> list expr -> cmd
+
+  | ret : expr -> cmd
+
+  | load : ident -> expr -> cmd
+
+  | store : expr -> expr -> cmd
+
+  | assign : ident -> expr -> cmd
+
+  | cif : expr -> cmd -> cmd -> cmd
+
+  | while : expr -> cmd -> cmd.
+
+
+
+Inductive fun_decl :=
+
+  { fnd_formals : list ident
+
+  ; fnd_locals  : list (ident * val)
+
+  ; fnd_cmd     : cmd
+
+  ; fnd_valid   : NoDup (fnd_formals ++ map (@fst _ _) fnd_locals)
+
+  }.
+
+
+
+Definition program_unit := nat -> option fun_decl.
+
+
+
+Inductive ctl :=
+
+  | kseq : cmd -> ctl -> ctl
+
+  | kcall : ident -> locals -> ctl -> ctl
+
+  | kext  : ident -> ident -> list val -> ctl -> ctl
+
+  | knil : ctl.
+
+
+
+Definition state := (ctl * locals * mem)%type.
+
+
+
+Fixpoint evaluate_exprs (rho:locals) (es:list expr) (vs:list val) : Prop :=
+
+  match es, vs with
+
+  | e::es', v::vs' => proj1_sig e rho = Some v /\ evaluate_exprs rho es' vs'
+
+  | nil, nil => True
+
+  | _, _ => False
+
+  end.
+
+
+
+Section function_entry_locals.
+
+  Variable vals:list val.
+
+  Variable fd:fun_decl.
+
+
+
+  Let actuals := combine (fnd_formals fd) vals.
+
+
+
+  Definition make_locals := ShareMap.build_map _ _ _ (actuals ++ fnd_locals fd).
+
+End function_entry_locals.
+
+
+
+Fixpoint unwind_return (k:ctl) : option (ident * locals * ctl):=
+
+   match k with
+
+   | kseq _ k' => unwind_return k'
+
+   | kcall i rho k => Some (i,rho,k)
+
+   | kext _ _ _ _ => None
+
+   | knil => None
+
+   end.
+
+
+
+Inductive step (pu:program_unit) :
+
+  forall (k:ctl) (rho:locals) (m:mem)
+
+         (c:cmd)
+
+         (k':ctl) (rho':locals) (m':mem), Prop :=
+
+
+
+ | step_skip : forall k rho m,
+
+       step pu  k rho m
+
+                skip
+
+                k rho m
+
+
+
+ | step_seq : forall k rho m c1 c2,
+
+       step pu k rho m
+
+               (seq c1 c2)
+
+               (kseq c1 (kseq c2 k)) rho m
+
+
+
+ | step_if_false : forall k rho m e c1 c2,
+
+       proj1_sig e rho = Some (int_val 0) ->
+
+
+
+       step pu k rho m
+
+               (cif e c1 c2)
+
+               (kseq c2 k) rho m
+
+
+
+ | step_if_true : forall k rho m x e c1 c2,
+
+       x <> 0 ->
+
+       proj1_sig e rho = Some (int_val x) ->
+
+
+
+       step pu k rho m
+
+               (cif e c1 c2)
+
+               (kseq c1 k) rho m
+
+
+
+ | step_while_false : forall k rho m e c,
+
+       proj1_sig e rho = Some (int_val 0) ->
+
+
+
+       step pu k rho m
+
+               (while e c)
+
+               k rho m
+
+
+
+ | step_while_true : forall k rho m e c x,
+
+       x <> 0 ->
+
+       proj1_sig e rho = Some (int_val x) ->
+
+
+
+       step pu k rho m
+
+               (while e c)
+
+               (kseq c (kseq (while e c) k)) rho m
+
+
+
+ | step_ret : forall k rho m e v i rho' k' rho'',
+
+       proj1_sig e rho = Some v ->
+
+       unwind_return k = (Some (i,rho',k')) ->
+
+       ShareMap.map_upd _ _ _ i v rho' = Some rho'' ->
+
+       step pu k rho m
+
+               (ret e)
+
+               k' rho''  m
+
+
+
+ | step_call_internal : forall k rho m x f exps vals fd,
+
+       evaluate_exprs rho exps vals ->
+
+       pu f = Some fd ->
+
+       step pu k rho m
+
+               (call x f exps)
+
+               (kseq (fnd_cmd fd) (kcall x rho k))
+
+                  (make_locals vals fd) m
+
+
+
+ | step_call_external : forall k rho m x f exps vals,
+
+       pu f = None ->
+
+       evaluate_exprs rho exps vals ->
+
+       step pu k rho m
+
+               (call x f exps)
+
+               (kext x f vals k) rho m
+
+
+
+ | step_assign : forall k rho rho' m i e v,
+
+       proj1_sig e rho = Some v ->
+
+       ShareMap.map_upd _ _ _ i v rho = Some rho' ->
+
+       step pu k rho m
+
+               (assign i e)
+
+               k rho' m
+
+
+
+ | step_load : forall k rho rho' m i e a v,
+
+       proj1_sig e rho = Some (ptr_val a) ->
+
+       ShareMap.map_val _ _ a m = Some v ->
+
+       ShareMap.map_upd _ _ _ i v rho = Some rho' ->
+
+       step pu k rho m
+
+               (load i e)
+
+               k rho' m
+
+
+
+ | step_store : forall k rho m e1 a e2 v m',
+
+       proj1_sig e1 rho = Some (ptr_val a) ->
+
+       proj1_sig e2 rho = Some v ->
+
+
+
+       ShareMap.map_upd _ _ _ a v m = Some m' ->
+
+
+
+       step pu k rho m
+
+               (store e1 e2)
+
+               k rho m'.
+
+
+
+Inductive step' (pu:program_unit) :
+
+  forall (st st':state), Prop :=
+
+
+
+  | step'_step : forall c k rho m k' rho' m',
+
+      step  pu k rho m c k' rho' m' ->
+
+      step' pu (kseq c k,rho,m) (k',rho',m').
+
+
+
+Lemma evaluate_exprs_fun : forall rho exps vals1 vals2,
+
+  evaluate_exprs rho exps vals1 ->
+
+  evaluate_exprs rho exps vals2 ->
+
+  vals1 = vals2.
+
+Proof.
+
+  intros rho exps. induction exps; simpl; intros.
+
+  destruct vals1. destruct vals2. auto. elim H0. elim H.
+
+  destruct vals1. elim H. destruct vals2. elim H0.
+
+  intuition. f_equal. congruence. auto.
+
+Qed.
+
+
+
+Lemma step_fun : forall pu k rho m c k1 rho1 m1 k2 rho2 m2,
+
+  step pu k rho m c k1 rho1 m1 ->
+
+  step pu k rho m c k2 rho2 m2 ->
+
+  (k1,rho1,m1) = (k2,rho2,m2).
+
+Proof.
+
+  intros; inv H; inv H0; try congruence.
+
+  assert (vals = vals0).
+
+  eapply evaluate_exprs_fun; eauto.
+
+  congruence.
+
+  assert (vals = vals0).
+
+  eapply evaluate_exprs_fun; eauto.
+
+  congruence.
+
+Qed.
+

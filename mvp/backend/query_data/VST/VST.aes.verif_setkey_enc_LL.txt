@@ -1,0 +1,1085 @@
+Require Import aes.api_specs.
+(* aes.api_specs:
+Definition t_struct_aesctx := Tstruct _mbedtls_aes_context_struct noattr.
+Definition t_struct_tables := Tstruct _aes_tables_struct noattr.
+
+Definition tables_initialized (tables : val) := data_at Ews t_struct_tables
+  (map Vint FSb, (map Vint FT0, (map Vint FT1, (map Vint FT2, (map Vint FT3,
+  (map Vint RSb, (map Vint RT0, (map Vint RT1, (map Vint RT2, (map Vint RT3,
+  (map Vint RCON))))))))))) tables.
+
+Definition Vundef256 : list val := repeat Vundef 256%nat.
+
+Definition tables_uninitialized tables := data_at Ews t_struct_tables (Vundef256, 
+  (Vundef256, (Vundef256, (Vundef256, (Vundef256, (Vundef256,
+  (Vundef256, (Vundef256, (Vundef256, (Vundef256, 
+  (repeat Vundef 10))))))))))) tables.
+
+Definition gen_tables_spec :=
+  DECLARE _aes_gen_tables
+    WITH gv: globals
+    PRE [  ]
+      PROP ()
+      LOCAL (gvars gv)
+      SEP (tables_uninitialized (gv _tables))
+    POST [ tvoid ]
+      PROP ()
+      LOCAL ()
+      SEP (tables_initialized (gv _tables))
+.
+
+Definition word_to_int (w : (int * int * int * int)) : int :=
+  match w with (b0, b1, b2, b3) =>
+    (Int.or (Int.or (Int.or
+             b0
+    (Int.shl b1 (Int.repr  8)))
+    (Int.shl b2 (Int.repr 16)))
+    (Int.shl b3 (Int.repr 24)))
+  end.
+
+Definition SubWord (w: int) : int := word_to_int (
+  (Znth (byte0 w) FSb),
+  (Znth (byte1 w) FSb),
+  (Znth (byte2 w) FSb),
+  (Znth (byte3 w) FSb)
+).
+
+Definition RotWord(i: int): int := 
+  Int.or (Int.and (Int.shl i (Int.repr 8)) (Int.repr (-1))) (Int.shru i (Int.repr 24)).
+
+Definition RCon : list int := map (fun i => Int.shl i (Int.repr 24)) [
+   (Int.repr 1);
+   (Int.repr 2);
+   (Int.repr 4);
+   (Int.repr 8);
+   (Int.repr 16);
+   (Int.repr 32);
+   (Int.repr 64)
+].
+
+Definition GrowKeyByOne(w: list int): list int :=
+  let i := Zlength w in
+  let temp := (Znth (i-1) w) in
+  let temp' := if (i mod Nk =? 0) then
+    Int.xor (SubWord (RotWord temp)) (Znth (i/Nk) RCon)
+  else if (i mod Nk =? 4) then
+    SubWord temp
+  else
+    temp
+  in
+    w ++ [Int.xor (Znth (i-8) w) temp'].
+
+Fixpoint pow_fun{T: Type}(f: T -> T)(n: nat)(a: T): T := match n with
+| O => a
+| S m => f (pow_fun f m a)
+end.
+
+Definition KeyExpansion2: list int -> list int := pow_fun GrowKeyByOne (Z.to_nat (Nb*(Nr+2)-Nk)).
+
+Definition get_uint32_le (arr: list Z) (i: Z) : int :=
+ (Int.or (Int.or (Int.or
+            (Int.repr (Znth  i    arr))
+   (Int.shl (Int.repr (Znth (i+1) arr)) (Int.repr  8)))
+   (Int.shl (Int.repr (Znth (i+2) arr)) (Int.repr 16)))
+   (Int.shl (Int.repr (Znth (i+3) arr)) (Int.repr 24))).
+
+Definition key_bytes_to_key_words(key_bytes: list Z): list int := 
+  fill_list 8 (fun i => get_uint32_le key_bytes (i*4)).
+
+Definition key_expansion_spec :=
+  DECLARE _mbedtls_aes_setkey_enc
+    WITH ctx : val, key : val, ctx_sh : share, key_sh : share, key_chars : list Z,
+         init_done : Z, ish: share, gv: globals
+    PRE [ _ctx OF (tptr t_struct_aesctx), _key OF (tptr tuchar), _keybits OF tuint  ]
+      PROP (writable_share ctx_sh; readable_share key_sh; readable_share ish;
+            Zlength key_chars = 32;
+            init_done = 1 )
+      LOCAL (temp _ctx ctx; temp _key key; temp _keybits (Vint (Int.repr 256)); 
+             gvars gv)
+      SEP (data_at ctx_sh t_struct_aesctx 
+                   (Vint Int.zero,
+                   (nullval, 
+                   (map Vint (repeat_op_table 68 Int.zero id)))) ctx;
+           data_at key_sh (tarray tuchar (4*8)) (map Vint (map Int.repr key_chars)) key;
+           
+           data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+           tables_initialized (gv _tables))
+    POST [  tint ]
+      PROP () 
+      LOCAL (temp ret_temp (Vint Int.zero))
+      SEP (data_at key_sh (tarray tuchar (4*8)) (map Vint (map Int.repr key_chars)) key;
+           data_at ctx_sh t_struct_aesctx 
+                   (Vint (Int.repr 14),
+                   ((field_address t_struct_aesctx [StructField _buf] ctx), 
+                   (map Vint (KeyExpansion2 (key_bytes_to_key_words key_chars))
+                    ++ (repeat_op_table 4 (Vint Int.zero) id)))) ctx;
+           data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+           tables_initialized (gv _tables)).
+
+Definition encryption_spec_ll :=
+  DECLARE _mbedtls_aes_encrypt
+  WITH ctx : val, input : val, output : val, 
+       ctx_sh : share, in_sh : share, out_sh : share, 
+       plaintext : list Z, 
+       exp_key : list Z, 
+       gv: globals 
+  PRE [ _ctx OF (tptr t_struct_aesctx), _input OF (tptr tuchar), _output OF (tptr tuchar) ]
+    PROP (Zlength plaintext = 16; Zlength exp_key = 60;
+          readable_share ctx_sh; readable_share in_sh; writable_share out_sh)
+    LOCAL (temp _ctx ctx; temp _input input; temp _output output; gvars gv)
+    SEP (data_at ctx_sh (t_struct_aesctx) (
+          (Vint (Int.repr Nr)),
+          ((field_address t_struct_aesctx [StructField _buf] ctx),
+          (map Vint (map Int.repr (exp_key ++ (list_repeat (8%nat) 0)))))
+          
+         ) ctx;
+         data_at in_sh (tarray tuchar 16) (map Vint (map Int.repr plaintext)) input;
+         data_at_ out_sh (tarray tuchar 16) output;
+         tables_initialized (gv _tables))
+  POST [ tvoid ]
+    PROP() LOCAL()
+    SEP (data_at ctx_sh (t_struct_aesctx) (
+          (Vint (Int.repr Nr)),
+          ((field_address t_struct_aesctx [StructField _buf] ctx),
+          (map Vint (map Int.repr (exp_key ++ (list_repeat (8%nat) 0)))))
+         ) ctx;
+         data_at in_sh  (tarray tuchar 16)
+                 (map Vint (map Int.repr plaintext)) input;
+         data_at out_sh (tarray tuchar 16)
+                 (map Vint (mbed_tls_aes_enc plaintext (exp_key ++ (list_repeat (8%nat) 0)))) output;
+         tables_initialized (gv _tables)).
+
+Definition Gprog : funspecs := ltac:(with_library prog [
+  gen_tables_spec; key_expansion_spec; encryption_spec_ll
+]).
+
+Global Opaque field_address.
+
+Arguments col _ _ : simpl never.
+
+Arguments Z.land _ _ : simpl never.
+
+Arguments Nat.sub _ _ : simpl never. *)
+
+Require Import aes.partially_filled.
+(* aes.partially_filled:
+Require Import ZArith.
+Local Open Scope Z_scope.
+Require Import Integers.
+Require Import VST.floyd.proofauto.
+Require Import compcert.common.Values.
+Require Export List. Export ListNotations.
+Require Export aes.list_utils.
+
+Definition partially_filled(i n: Z)(f: Z -> int): list val := 
+  (map Vint (fill_list i f)) ++ (repeat_op_table (n-i) Vundef id).
+
+Lemma update_partially_filled: forall (i: Z) (f: Z -> int) (l: Z),
+  0 <= i < l ->
+  upd_Znth i (partially_filled i l f) (Vint (f i))
+  = partially_filled (i+1) l f.
+
+Lemma Znth_partially_filled: forall (i j n: Z) (f: Z -> int),
+  0 <= i -> i < j -> j <= n ->
+  Znth i (partially_filled j n f) = Vint (f i). *)
+
+Require Import aes.bitfiddling.
+(* aes.bitfiddling:
+Require Export aes.conv_HL_to_LL.
+Local Open Scope Z.
+
+Lemma byte0_word_to_int: forall b0 b1 b2 b3,
+  byte0 (word_to_int (b0, b1, b2, b3)) = Int.unsigned b0.
+
+Lemma byte1_word_to_int: forall b0 b1 b2 b3,
+  byte1 (word_to_int (b0, b1, b2, b3)) = Int.unsigned b1.
+
+Lemma byte2_word_to_int: forall b0 b1 b2 b3,
+  byte2 (word_to_int (b0, b1, b2, b3)) = Int.unsigned b2.
+
+Lemma byte3_word_to_int: forall b0 b1 b2 b3,
+  byte3 (word_to_int (b0, b1, b2, b3)) = Int.unsigned b3.
+
+Lemma xor_byte0_with_FSb: forall b0 b1 b2 b3 i,
+  Int.xor (word_to_int (b0, b1, b2, b3)) (Znth i tablesLL.FSb)
+
+Lemma xor_byte1_with_FSb: forall b0 b1 b2 b3 i,
+  Int.xor (word_to_int (b0, b1, b2, b3)) (Int.shl (Znth i tablesLL.FSb) (Int.repr 8))
+
+Lemma xor_byte2_with_FSb: forall b0 b1 b2 b3 i,
+  Int.xor (word_to_int (b0, b1, b2, b3)) (Int.shl (Znth i tablesLL.FSb) (Int.repr 16))
+
+Lemma xor_byte3_with_FSb: forall b0 b1 b2 b3 i,
+  Int.xor (word_to_int (b0, b1, b2, b3)) (Int.shl (Znth i tablesLL.FSb) (Int.repr 24))
+
+Lemma equiv_sbox: forall b,
+  Znth (Int.unsigned b) tablesLL.FSb = look_sbox b.
+
+Lemma xor_word_to_int: forall a0 a1 a2 a3 b0 b1 b2 b3,
+  Int.xor (word_to_int (a0, a1, a2, a3)) (word_to_int (b0, b1, b2, b3))
+
+Lemma rot8_word_to_int: forall b0 b1 b2 b3,
+  rot8 (word_to_int (b0, b1, b2, b3)) = word_to_int (b3, b0, b1, b2).
+
+Lemma mask_byte_nop: forall i,
+  0 <= Int.unsigned i < 256 ->
+
+Lemma FSb_range: forall i,
+  0 <= Int.unsigned (Znth i FSb) < 256.
+
+Lemma zero_ext_nop: forall i,
+  0 <= (Int.unsigned i) < 256 ->
+
+Lemma FSb_inj: forall i j,
+  0 <= i < 256 ->
+  0 <= j < 256 ->
+  Znth i FSb = Znth j FSb ->
+  i = j.
+
+Lemma FSb_RSb_id: forall j,
+  0 <= j < 256 ->
+  j = Int.unsigned (Znth (Int.unsigned (Znth j RSb)) FSb).
+
+Lemma RSb_inj: forall i j,
+  0 <= i < 256 ->
+  0 <= j < 256 ->
+  Znth i RSb = Znth j RSb ->
+  i = j.
+
+Lemma RSb_range: forall i,
+  0 <= Int.unsigned (Znth i RSb) < 256.
+
+Lemma xor_is_or_4_bytes: forall b0 b1 b2 b3,
+  (Int.xor (Int.xor (Int.xor b0
+
+Lemma masked_byte_range: forall i,
+  0 <= Z.land i 255 < 256.
+
+Lemma zero_ext_mask: forall i,
+  Int.zero_ext 8 i = Int.and i (Int.repr 255). *)
+
+Require Import aes.verif_setkey_enc_LL_loop_body.
+(* aes.verif_setkey_enc_LL_loop_body:
+Require Import aes.api_specs.
+Require Import aes.partially_filled.
+Require Import aes.bitfiddling.
+Open Scope Z.
+Local Open Scope logic.
+
+Ltac forward_if_diff add := match add with
+| (PROPx ?P2 (LOCALx ?Q2 (SEPx ?R2))) => match goal with
+  | |- semax ?Delta (PROPx ?P1 (LOCALx ?Q1 (SEPx ?R1))) _ _ =>
+    let P3 := fresh "P3" in let Q3 := fresh "Q3" in let R3 := fresh "R3" in
+    pose (P3 := P1 ++ P2); pose (Q3 := Q1 ++ Q2); pose (R3 := R1 ++ R2);
+    simpl in P3, Q3, R3;
+    forward_if (PROPx P3 (LOCALx Q3 (SEPx R3)));
+    subst P3 Q3 R3
+  end
+end.
+
+Ltac replace_temp name new_value := match goal with
+| |- context [ (temp name ?old_value) ] =>
+     let E := fresh "E" in assert_PROP (old_value = new_value) as E;
+     [ | replace (temp name old_value) with (temp name new_value) by congruence; clear E ]
+end.
+Tactic Notation "replace_temp" constr(name) constr(new_value) :=
+  replace_temp name new_value.
+Tactic Notation "replace_temp" constr(name) constr(new_value) "by" tactic(t) :=
+  replace_temp name new_value; [ t | ].
+
+Definition first_loop_inv00 ctx key init_done key_chars ctx_sh key_sh ish i gv :=
+    PROP ( )
+    LOCAL (
+      temp _RK  (field_address t_struct_aesctx [StructField _buf] ctx);
+      temp _key key; temp _keybits (Vint (Int.repr 256));
+      gvars gv)
+    SEP (
+      field_at ctx_sh t_struct_aesctx [StructField _nr] (Vint (Int.repr 14)) ctx;
+      field_at ctx_sh t_struct_aesctx [StructField _rk] 
+        (field_address t_struct_aesctx [StructField _buf] ctx) ctx;
+      field_at ctx_sh t_struct_aesctx [StructField _buf]
+        (partially_filled i 68 (fun i => get_uint32_le key_chars (i*4))) ctx;
+      data_at key_sh (tarray tuchar (4 * 8)) (map Vint (map Int.repr key_chars)) key;
+      data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+      tables_initialized (gv _tables)).
+
+Definition first_loop_inv0 ctx key init_done key_chars ctx_sh key_sh ish gv :=
+  EX i: Z, first_loop_inv00 ctx key init_done key_chars ctx_sh key_sh ish i gv.
+
+Definition main_loop_invariant0 ctx key ctx_sh key_sh ish key_chars init_done i gv :=
+  PROP ( )
+  LOCAL (
+    temp _RK (offset_val (i*32) (field_address t_struct_aesctx [StructField _buf] ctx));
+    gvars gv
+  ) SEP (
+    field_at ctx_sh t_struct_aesctx [StructField _nr] (Vint (Int.repr 14)) ctx;
+    field_at ctx_sh t_struct_aesctx [StructField _rk]
+      (field_address t_struct_aesctx [StructField _buf] ctx) ctx;
+    field_at ctx_sh t_struct_aesctx [StructField _buf]
+      (map Vint (pow_fun GrowKeyByOne (Z.to_nat (i*8)) (key_bytes_to_key_words key_chars))
+      ++ repeat_op_table (60-i*8) Vundef id) ctx;
+    data_at key_sh (tarray tuchar (4 * 8)) (map Vint (map Int.repr key_chars)) key;
+    data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+    tables_initialized (gv _tables)
+  ).
+
+Definition main_loop_invariant ctx key ctx_sh key_sh ish key_chars init_done gv :=
+  EX i: Z, main_loop_invariant0 ctx key ctx_sh key_sh ish key_chars init_done i gv.
+
+Lemma Znth_partially_expanded_key: forall key i,
+  0 <= i < 7 ->
+  forall j,
+  0 <= j < 8 + i*8 ->
+  (Znth j (map Vint (pow_fun GrowKeyByOne (Z.to_nat (i * 8)) key)
+
+Lemma Zlength_partially_expanded_key: forall i key_chars,
+  0 <= i < 7 ->
+  Zlength key_chars = 32 ->
+  Zlength (map Vint (pow_fun GrowKeyByOne (Z.to_nat (i * 8)) (key_bytes_to_key_words key_chars)) ++
+
+Lemma update_partially_expanded_key: forall k j j' v key_chars,
+
+  j = j'+k-8 ->
+  upd_Znth (j' + k) (map Vint (pow_fun GrowKeyByOne (Z.to_nat j) (key_bytes_to_key_words key_chars))
+
+Lemma Vundef_is_Vint:
+  repeat_op_table 4 Vundef id = repeat_op_table 4 (Vint Int.zero) id.
+
+Definition setkey_enc_loop_body := 
+(Ssequence
+                    (Sset _rk0
+                      (Ederef
+                        (Ebinop Oadd (Etempvar _RK (tptr tuint))
+                          (Econst_int (Int.repr 0) tint) (tptr tuint)) tuint))
+                    (Ssequence
+                      (Sset _rk7
+                        (Ederef
+                          (Ebinop Oadd (Etempvar _RK (tptr tuint))
+                            (Econst_int (Int.repr 7) tint) (tptr tuint))
+                          tuint))
+                      (Ssequence
+                        (Sset _rcon
+                          (Ederef
+                            (Ebinop Oadd
+                              (Efield
+                                (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                _RCON (tarray tuint 10)) (Etempvar _i tuint)
+                              (tptr tuint)) tuint))
+                        (Ssequence
+                          (Sset _b0__1
+                            (Ecast
+                              (Ederef
+                                (Ebinop Oadd
+                                  (Efield
+                                    (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                    _FSb (tarray tuchar 256))
+                                  (Ebinop Oand
+                                    (Ebinop Oshr (Etempvar _rk7 tuint)
+                                      (Econst_int (Int.repr 8) tint) tuint)
+                                    (Econst_int (Int.repr 255) tint) tuint)
+                                  (tptr tuchar)) tuchar) tuint))
+                          (Ssequence
+                            (Sset _b1__1
+                              (Ecast
+                                (Ederef
+                                  (Ebinop Oadd
+                                    (Efield
+                                      (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                      _FSb (tarray tuchar 256))
+                                    (Ebinop Oand
+                                      (Ebinop Oshr (Etempvar _rk7 tuint)
+                                        (Econst_int (Int.repr 16) tint)
+                                        tuint)
+                                      (Econst_int (Int.repr 255) tint) tuint)
+                                    (tptr tuchar)) tuchar) tuint))
+                            (Ssequence
+                              (Sset _b2__1
+                                (Ecast
+                                  (Ederef
+                                    (Ebinop Oadd
+                                      (Efield
+                                        (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                        _FSb (tarray tuchar 256))
+                                      (Ebinop Oand
+                                        (Ebinop Oshr (Etempvar _rk7 tuint)
+                                          (Econst_int (Int.repr 24) tint)
+                                          tuint)
+                                        (Econst_int (Int.repr 255) tint)
+                                        tuint) (tptr tuchar)) tuchar) tuint))
+                              (Ssequence
+                                (Sset _b3__1
+                                  (Ecast
+                                    (Ederef
+                                      (Ebinop Oadd
+                                        (Efield
+                                          (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                          _FSb (tarray tuchar 256))
+                                        (Ebinop Oand (Etempvar _rk7 tuint)
+                                          (Econst_int (Int.repr 255) tint)
+                                          tuint) (tptr tuchar)) tuchar)
+                                    tuint))
+                                (Ssequence
+                                  (Sassign
+                                    (Ederef
+                                      (Ebinop Oadd
+                                        (Etempvar _RK (tptr tuint))
+                                        (Econst_int (Int.repr 8) tint)
+                                        (tptr tuint)) tuint)
+                                    (Ebinop Oxor
+                                      (Ebinop Oxor
+                                        (Ebinop Oxor
+                                          (Ebinop Oxor
+                                            (Ebinop Oxor
+                                              (Etempvar _rk0 tuint)
+                                              (Etempvar _rcon tuint) tuint)
+                                            (Etempvar _b0__1 tuint) tuint)
+                                          (Ebinop Oshl
+                                            (Etempvar _b1__1 tuint)
+                                            (Econst_int (Int.repr 8) tint)
+                                            tuint) tuint)
+                                        (Ebinop Oshl (Etempvar _b2__1 tuint)
+                                          (Econst_int (Int.repr 16) tint)
+                                          tuint) tuint)
+                                      (Ebinop Oshl (Etempvar _b3__1 tuint)
+                                        (Econst_int (Int.repr 24) tint)
+                                        tuint) tuint))
+                                  (Ssequence
+                                    (Sset _rk0
+                                      (Ederef
+                                        (Ebinop Oadd
+                                          (Etempvar _RK (tptr tuint))
+                                          (Econst_int (Int.repr 1) tint)
+                                          (tptr tuint)) tuint))
+                                    (Ssequence
+                                      (Sset _rk7
+                                        (Ederef
+                                          (Ebinop Oadd
+                                            (Etempvar _RK (tptr tuint))
+                                            (Econst_int (Int.repr 8) tint)
+                                            (tptr tuint)) tuint))
+                                      (Ssequence
+                                        (Sassign
+                                          (Ederef
+                                            (Ebinop Oadd
+                                              (Etempvar _RK (tptr tuint))
+                                              (Econst_int (Int.repr 9) tint)
+                                              (tptr tuint)) tuint)
+                                          (Ebinop Oxor (Etempvar _rk0 tuint)
+                                            (Etempvar _rk7 tuint) tuint))
+                                        (Ssequence
+                                          (Sset _rk0
+                                            (Ederef
+                                              (Ebinop Oadd
+                                                (Etempvar _RK (tptr tuint))
+                                                (Econst_int (Int.repr 2) tint)
+                                                (tptr tuint)) tuint))
+                                          (Ssequence
+                                            (Sset _rk7
+                                              (Ederef
+                                                (Ebinop Oadd
+                                                  (Etempvar _RK (tptr tuint))
+                                                  (Econst_int (Int.repr 9) tint)
+                                                  (tptr tuint)) tuint))
+                                            (Ssequence
+                                              (Sassign
+                                                (Ederef
+                                                  (Ebinop Oadd
+                                                    (Etempvar _RK (tptr tuint))
+                                                    (Econst_int (Int.repr 10) tint)
+                                                    (tptr tuint)) tuint)
+                                                (Ebinop Oxor
+                                                  (Etempvar _rk0 tuint)
+                                                  (Etempvar _rk7 tuint)
+                                                  tuint))
+                                              (Ssequence
+                                                (Sset _rk0
+                                                  (Ederef
+                                                    (Ebinop Oadd
+                                                      (Etempvar _RK (tptr tuint))
+                                                      (Econst_int (Int.repr 3) tint)
+                                                      (tptr tuint)) tuint))
+                                                (Ssequence
+                                                  (Sset _rk7
+                                                    (Ederef
+                                                      (Ebinop Oadd
+                                                        (Etempvar _RK (tptr tuint))
+                                                        (Econst_int (Int.repr 10) tint)
+                                                        (tptr tuint)) tuint))
+                                                  (Ssequence
+                                                    (Sassign
+                                                      (Ederef
+                                                        (Ebinop Oadd
+                                                          (Etempvar _RK (tptr tuint))
+                                                          (Econst_int (Int.repr 11) tint)
+                                                          (tptr tuint))
+                                                        tuint)
+                                                      (Ebinop Oxor
+                                                        (Etempvar _rk0 tuint)
+                                                        (Etempvar _rk7 tuint)
+                                                        tuint))
+                                                    (Ssequence
+                                                      (Sset _rk0
+                                                        (Ederef
+                                                          (Ebinop Oadd
+                                                            (Etempvar _RK (tptr tuint))
+                                                            (Econst_int (Int.repr 4) tint)
+                                                            (tptr tuint))
+                                                          tuint))
+                                                      (Ssequence
+                                                        (Sset _rk7
+                                                          (Ederef
+                                                            (Ebinop Oadd
+                                                              (Etempvar _RK (tptr tuint))
+                                                              (Econst_int (Int.repr 11) tint)
+                                                              (tptr tuint))
+                                                            tuint))
+                                                        (Ssequence
+                                                          (Sset _b0__1
+                                                            (Ecast
+                                                              (Ederef
+                                                                (Ebinop Oadd
+                                                                  (Efield
+                                                                    (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                                                    _FSb
+                                                                    (tarray tuchar 256))
+                                                                  (Ebinop Oand
+                                                                    (Etempvar _rk7 tuint)
+                                                                    (Econst_int (Int.repr 255) tint)
+                                                                    tuint)
+                                                                  (tptr tuchar))
+                                                                tuchar)
+                                                              tuint))
+                                                          (Ssequence
+                                                            (Sset _b1__1
+                                                              (Ecast
+                                                                (Ederef
+                                                                  (Ebinop Oadd
+                                                                    (Efield
+                                                                    (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                                                    _FSb
+                                                                    (tarray tuchar 256))
+                                                                    (Ebinop Oand
+                                                                    (Ebinop Oshr
+                                                                    (Etempvar _rk7 tuint)
+                                                                    (Econst_int (Int.repr 8) tint)
+                                                                    tuint)
+                                                                    (Econst_int (Int.repr 255) tint)
+                                                                    tuint)
+                                                                    (tptr tuchar))
+                                                                  tuchar)
+                                                                tuint))
+                                                            (Ssequence
+                                                              (Sset _b2__1
+                                                                (Ecast
+                                                                  (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Efield
+                                                                    (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                                                    _FSb
+                                                                    (tarray tuchar 256))
+                                                                    (Ebinop Oand
+                                                                    (Ebinop Oshr
+                                                                    (Etempvar _rk7 tuint)
+                                                                    (Econst_int (Int.repr 16) tint)
+                                                                    tuint)
+                                                                    (Econst_int (Int.repr 255) tint)
+                                                                    tuint)
+                                                                    (tptr tuchar))
+                                                                    tuchar)
+                                                                  tuint))
+                                                              (Ssequence
+                                                                (Sset _b3__1
+                                                                  (Ecast
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Efield
+                                                                    (Evar _tables (Tstruct _aes_tables_struct noattr))
+                                                                    _FSb
+                                                                    (tarray tuchar 256))
+                                                                    (Ebinop Oand
+                                                                    (Ebinop Oshr
+                                                                    (Etempvar _rk7 tuint)
+                                                                    (Econst_int (Int.repr 24) tint)
+                                                                    tuint)
+                                                                    (Econst_int (Int.repr 255) tint)
+                                                                    tuint)
+                                                                    (tptr tuchar))
+                                                                    tuchar)
+                                                                    tuint))
+                                                                (Ssequence
+                                                                  (Sassign
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 12) tint)
+                                                                    (tptr tuint))
+                                                                    tuint)
+                                                                    (Ebinop Oxor
+                                                                    (Ebinop Oxor
+                                                                    (Ebinop Oxor
+                                                                    (Ebinop Oxor
+                                                                    (Etempvar _rk0 tuint)
+                                                                    (Etempvar _b0__1 tuint)
+                                                                    tuint)
+                                                                    (Ebinop Oshl
+                                                                    (Etempvar _b1__1 tuint)
+                                                                    (Econst_int (Int.repr 8) tint)
+                                                                    tuint)
+                                                                    tuint)
+                                                                    (Ebinop Oshl
+                                                                    (Etempvar _b2__1 tuint)
+                                                                    (Econst_int (Int.repr 16) tint)
+                                                                    tuint)
+                                                                    tuint)
+                                                                    (Ebinop Oshl
+                                                                    (Etempvar _b3__1 tuint)
+                                                                    (Econst_int (Int.repr 24) tint)
+                                                                    tuint)
+                                                                    tuint))
+                                                                  (Ssequence
+                                                                    (Sset _rk0
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 5) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sset _rk7
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 12) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sassign
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 13) tint)
+                                                                    (tptr tuint))
+                                                                    tuint)
+                                                                    (Ebinop Oxor
+                                                                    (Etempvar _rk0 tuint)
+                                                                    (Etempvar _rk7 tuint)
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sset _rk0
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 6) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sset _rk7
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 13) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sassign
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 14) tint)
+                                                                    (tptr tuint))
+                                                                    tuint)
+                                                                    (Ebinop Oxor
+                                                                    (Etempvar _rk0 tuint)
+                                                                    (Etempvar _rk7 tuint)
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sset _rk0
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 7) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sset _rk7
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 14) tint)
+                                                                    (tptr tuint))
+                                                                    tuint))
+                                                                    (Ssequence
+                                                                    (Sassign
+                                                                    (Ederef
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 15) tint)
+                                                                    (tptr tuint))
+                                                                    tuint)
+                                                                    (Ebinop Oxor
+                                                                    (Etempvar _rk0 tuint)
+                                                                    (Etempvar _rk7 tuint)
+                                                                    tuint))
+                                                                    (Sset _RK
+                                                                    (Ebinop Oadd
+                                                                    (Etempvar _RK (tptr tuint))
+                                                                    (Econst_int (Int.repr 8) tint)
+                                                                    (tptr tuint)))))))))))))))))))))))))))))))))))).
+
+Lemma setkey_enc_loop_body_lemma:
+forall 
+ (Espec : OracleKind) (ctx key : val) (ctx_sh key_sh : share) 
+ (key_chars : list Z) (init_done : Z) (ish : share) (gv: globals)
+ (SH : writable_share ctx_sh) (SH0 : readable_share key_sh) (SH1 : readable_share ish)
+ (H : Zlength key_chars = 32) (H0 : init_done = 1) (i : Z)
+ (H1 : 0 <= i < 7),
+semax (func_tycontext f_mbedtls_aes_setkey_enc Vprog Gprog [])
+  (PROP ( )
+   LOCAL (temp _i (Vint (Int.repr i)); *)
+
+Open Scope Z.
+
+Local Open Scope logic.
+
+
+
+Ltac forward_if_diff add := match add with
+
+| (PROPx ?P2 (LOCALx ?Q2 (SEPx ?R2))) => match goal with
+
+  | |- semax ?Delta (PROPx ?P1 (LOCALx ?Q1 (SEPx ?R1))) _ _ =>
+
+    let P3 := fresh "P3" in let Q3 := fresh "Q3" in let R3 := fresh "R3" in
+
+    pose (P3 := P1 ++ P2); pose (Q3 := Q1 ++ Q2); pose (R3 := R1 ++ R2);
+
+    simpl in P3, Q3, R3;
+
+    forward_if (PROPx P3 (LOCALx Q3 (SEPx R3)));
+
+    subst P3 Q3 R3
+
+  end
+
+end.
+
+
+
+Ltac replace_temp name new_value := match goal with
+
+| |- context [ (temp name ?old_value) ] =>
+
+     let E := fresh "E" in assert_PROP (old_value = new_value) as E;
+
+     [ | replace (temp name old_value) with (temp name new_value) by congruence; clear E ]
+
+end.
+
+Tactic Notation "replace_temp" constr(name) constr(new_value) :=
+
+  replace_temp name new_value.
+
+Tactic Notation "replace_temp" constr(name) constr(new_value) "by" tactic(t) :=
+
+  replace_temp name new_value; [ t | ].
+
+
+
+Definition first_loop_inv00 ctx key init_done key_chars ctx_sh key_sh ish i gv :=
+
+    PROP ( )
+
+    LOCAL (
+
+      temp _RK  (field_address t_struct_aesctx [StructField _buf] ctx);
+
+      temp _key key; temp _keybits (Vint (Int.repr 256));
+
+      gvars gv)
+
+    SEP (
+
+      field_at ctx_sh t_struct_aesctx [StructField _nr] (Vint (Int.repr 14)) ctx;
+
+      field_at ctx_sh t_struct_aesctx [StructField _rk] 
+
+        (field_address t_struct_aesctx [StructField _buf] ctx) ctx;
+
+      field_at ctx_sh t_struct_aesctx [StructField _buf]
+
+        (partially_filled i 68 (fun i => get_uint32_le key_chars (i*4))) ctx;
+
+      data_at key_sh (tarray tuchar (4 * 8)) (map Vint (map Int.repr key_chars)) key;
+
+      data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+
+      tables_initialized (gv _tables)).
+
+
+
+Definition first_loop_inv0 ctx key init_done key_chars ctx_sh key_sh ish gv :=
+
+  EX i: Z, first_loop_inv00 ctx key init_done key_chars ctx_sh key_sh ish i gv.
+
+
+
+Definition main_loop_invariant0 ctx key ctx_sh key_sh ish key_chars init_done i gv :=
+
+  PROP ( )
+
+  LOCAL (
+
+    temp _RK (offset_val (i*32) (field_address t_struct_aesctx [StructField _buf] ctx));
+
+    gvars gv
+
+  ) SEP (
+
+    field_at ctx_sh t_struct_aesctx [StructField _nr] (Vint (Int.repr 14)) ctx;
+
+    field_at ctx_sh t_struct_aesctx [StructField _rk]
+
+      (field_address t_struct_aesctx [StructField _buf] ctx) ctx;
+
+    field_at ctx_sh t_struct_aesctx [StructField _buf]
+
+      (map Vint (pow_fun GrowKeyByOne (Z.to_nat (i*8)) (key_bytes_to_key_words key_chars))
+
+      ++ repeat_op_table (60-i*8) Vundef id) ctx;
+
+    data_at key_sh (tarray tuchar (4 * 8)) (map Vint (map Int.repr key_chars)) key;
+
+    data_at ish tint (Vint (Int.repr init_done)) (gv _aes_init_done);
+
+    tables_initialized (gv _tables)
+
+  ).
+
+
+
+Definition main_loop_invariant ctx key ctx_sh key_sh ish key_chars init_done gv :=
+
+  EX i: Z, main_loop_invariant0 ctx key ctx_sh key_sh ish key_chars init_done i gv.
+
+
+
+Lemma Vundef_is_Vint:
+
+  repeat_op_table 4 Vundef id = repeat_op_table 4 (Vint Int.zero) id.
+
+Admitted.
+
+
+
+Lemma key_expansion_final_eq: forall key_chars,
+
+  pow_fun GrowKeyByOne (Z.to_nat (Nb * (Nr + 2) - Nk)) (key_bytes_to_key_words key_chars)
+
+  = KeyExpansion2 (key_bytes_to_key_words key_chars).
+
+Proof.
+
+  intros. unfold KeyExpansion2. reflexivity.
+
+Qed.
+
+
+
+Lemma body_key_expansion: semax_body Vprog Gprog f_mbedtls_aes_setkey_enc key_expansion_spec.
+
+Proof.
+
+  start_function.
+
+  forward.
+
+  match goal with
+
+  | |- semax ?Delta (PROPx ?P1 (LOCALx ?Q1 (SEPx ?R1))) _ _ =>
+
+    forward_if (PROPx P1 (LOCALx Q1 (SEPx R1)))
+
+  end.
+
+  congruence. 
+
+  forward. entailer!.  
+
+  
+
+  forward.  deadvars!.
+
+  
+
+  forward. replace_temp _t'1 (field_address t_struct_aesctx [StructField _buf] ctx). {
+
+    entailer!. rewrite field_compatible_field_address by auto with field_compatible. reflexivity.
+
+  }
+
+  forward. replace_temp _t'1 (field_address t_struct_aesctx [StructField _buf] ctx) by entailer!.
+
+  forward.  deadvars!.
+
+  
+
+  forward_for_simple_bound 8 
+
+    (first_loop_inv0 ctx key init_done key_chars ctx_sh key_sh ish gv).
+
+  { 
+
+    unfold first_loop_inv00.
+
+    entailer!.
+
+    unfold_data_at 1%nat. cancel. }
+
+  { 
+
+    reassoc_seq.
+
+    assert (Int.unsigned (Int.shl (Int.repr i) (Int.repr 2)) = (4 * i)%Z) as E1. {
+
+      rewrite <- Int.mul_pow2 with (n := (Int.repr 4)) by reflexivity.
+
+      rewrite mul_repr. rewrite Z.mul_comm. apply Int.unsigned_repr. rep_omega.
+
+    }
+
+    forward. 
+
+    assert (Hz: 0 <= Int.unsigned (Int.add (Int.shl (Int.repr i) (Int.repr 2)) (Int.repr 1)) < Zlength key_chars). {
+
+        rewrite H. unfold Int.add. rewrite E1.
+
+        rewrite (Int.unsigned_repr (Z.pos _)) by computable.
+
+        rewrite Int.unsigned_repr; [ omega | ]. rep_omega.
+
+     }
+
+    forward. clear Hz.
+
+    assert (Hz: 0 <= Int.unsigned (Int.add (Int.shl (Int.repr i) (Int.repr 2)) (Int.repr 2)) < Zlength key_chars). {
+
+        rewrite H. unfold Int.add. rewrite E1.
+
+        rewrite (Int.unsigned_repr (Z.pos _)) by computable.
+
+        rewrite Int.unsigned_repr; [ omega | ]. rep_omega.
+
+     }
+
+    forward. clear Hz.
+
+    assert (Hz: 0 <= Int.unsigned (Int.add (Int.shl (Int.repr i) (Int.repr 2)) (Int.repr 3)) < Zlength key_chars). {
+
+        rewrite H. unfold Int.add. rewrite E1.
+
+        rewrite (Int.unsigned_repr (Z.pos _)) by computable.
+
+        rewrite Int.unsigned_repr; [ omega | ]. rep_omega.
+
+     }
+
+    forward. clear Hz.
+
+
+
+    rewrite E1. 
+
+    simpl.
+
+    forward.
+
+    
+
+    assert_PROP ((if field_compatible_dec t_struct_aesctx [StructField _buf] ctx then offset_val 8 ctx
+
+      else Vundef) = field_address t_struct_aesctx [StructField _buf] ctx) by entailer!.
+
+    forward.
+
+    entailer!.
+
+    replace (4 * i)%Z with (i * 4)%Z by omega.
+
+    assert (forall sh t gfs v1 v2 p, v1 = v2 -> field_at sh t gfs v1 p |-- field_at sh t gfs v2 p)
+
+    as field_at_change_value. 
+
+    { intros. replace v1 with v2 by assumption. apply derives_refl. }
+
+    apply field_at_change_value.
+
+    fold ((fun i0 => get_uint32_le key_chars (i0 * 4)) i).
+
+   rewrite <- update_partially_filled by omega. f_equal. f_equal. 
+
+   unfold get_uint32_le. unfold Int.add. rewrite E1. 
+
+   rewrite !(Int.unsigned_repr (Z.pos _)) by computable.
+
+   rewrite !Int.unsigned_repr by rep_omega.
+
+   rewrite !(Z.mul_comm 4). reflexivity.
+
+  }
+
+  reassoc_seq.
+
+  deadvars!.
+
+  
+
+  forward_for_simple_bound 7
+
+    (main_loop_invariant ctx key ctx_sh key_sh ish key_chars init_done gv).
+
+  { 
+
+    
+
+    unfold main_loop_invariant0.
+
+    assert_PROP (isptr (field_address t_struct_aesctx [StructField _buf] ctx)) as P by entailer!.
+
+    change (0 * 32)%Z with 0.
+
+    rewrite isptr_offset_val_zero by assumption.
+
+    entailer!. }
+
+  { 
+
+    simple apply setkey_enc_loop_body_lemma; assumption.
+
+  }
+
+  clearbody Delta_specs.
+
+  
+
+  assert ((Nb * (Nr + 2) - Nk) = 7 * 8)%Z as E by reflexivity.
+
+  rewrite <- E.
+
+  rewrite key_expansion_final_eq. rewrite E.
+
+  change (60 - 7 * 8) with 4.
+
+  forget (KeyExpansion2 (key_bytes_to_key_words key_chars)) as R.
+
+  forward.
+
+  rewrite Vundef_is_Vint.
+
+  unfold_data_at 4%nat. cancel.
+
+  Fail idtac.  
+
+
+
+Admitted.
+

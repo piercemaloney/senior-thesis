@@ -1,0 +1,718 @@
+
+
+Require Import Metalib.Metatheory.
+
+Require Import Stlc.Definitions.
+
+Import StlcNotations.
+
+
+
+Require Import Stlc.Lemmas.
+
+
+
+Require Import Stlc.Lec1.
+
+
+
+Lemma append_assoc_demo : forall (E0 E1 E2 E3:ctx),
+
+  E0 ++ (E1 ++ E2) ++ E3 = E0 ++ E1 ++ E2 ++ E3.
+
+Proof.
+
+  intros.
+
+  auto. 
+
+  simpl_env.
+
+  reflexivity.
+
+Qed.
+
+
+
+Lemma simpl_env_demo : forall (x y:atom) (T1 T2:typ) (E F:ctx),
+
+   ([(x, T1)] ++ nil) ++ (y,T2) :: (nil ++ E) ++ F =
+
+   [(x,T1)] ++ [(y, T2)] ++ E ++ F.
+
+Proof.
+
+   intros.
+
+   
+
+   simpl_env.
+
+   reflexivity.
+
+Qed.
+
+
+
+Lemma binds_demo : forall (x:atom) (T:typ) (E F:ctx),
+
+  binds x T (E ++ [(x, T)] ++ F).
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Lemma dom_demo : forall (x y : atom) (T : typ),
+
+  dom [(x, T)] [=] singleton x.
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Lemma uniq_demo : forall (x y : atom) (T : typ),
+
+  x <> y -> uniq ([(x,T)] ++ [(y, T)]).
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Inductive typing_e : ctx -> exp -> typ -> Prop :=
+
+  | typing_e_var : forall E (x : atom) T,
+
+      uniq E ->
+
+      binds x T E ->
+
+      typing_e E (var_f x) T
+
+  | typing_e_abs : forall x E e T1 T2,
+
+      x `notin` dom E \u fv_exp e ->
+
+      typing_e ([(x, T1)] ++ E) (e ^ x) T2 ->
+
+      typing_e E (abs e) (typ_arrow T1 T2)
+
+  | typing_e_app : forall E e1 e2 T1 T2,
+
+      typing_e E e1 (typ_arrow T1 T2) ->
+
+      typing_e E e2 T1 ->
+
+      typing_e E (app e1 e2) T2.
+
+Hint Constructors typing_e.
+
+
+
+Lemma typing_weakening_0 : forall E F e T,
+
+  typing_e E e T ->
+
+  uniq (F ++ E) ->
+
+  typing_e (F ++ E) e T.
+
+Proof.
+
+  intros E F e T H J.
+
+  induction H; auto.
+
+  Case "typing_abs".
+
+    apply (typing_e_abs x).
+
+    
+
+Abort.
+
+
+
+Lemma typing_weakening_strengthened_0 : forall (E F G : ctx) e T,
+
+  typing_e (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing_e (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H J.
+
+  induction H.
+
+  Case "typing_var".
+
+    
+
+  Focus 2.
+
+  Case "typing_abs".
+
+    
+
+Abort.
+
+
+
+Lemma typing_weakening_strengthened_1 :  forall (E F G : ctx) e T,
+
+  typing_e (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing_e (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H.
+
+  remember (G ++ E) as E'.
+
+  generalize dependent G.
+
+  induction H; intros G0 Eq Uniq; subst.
+
+  - Case "typing_var". auto.
+
+  - Case "typing_abs".
+
+    eapply (typing_e_abs x).
+
+    
+
+Abort.
+
+
+
+Print typing_abs.
+
+
+
+Lemma typing_weakening_strengthened :  forall (E F G : ctx) e T,
+
+  typing (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H.
+
+  remember (G ++ E) as E'.
+
+  generalize dependent G.
+
+  induction H; intros G0 Eq Uniq; subst.
+
+ 
+
+  - Case "typing_var".
+
+    apply typing_var.
+
+      apply Uniq.
+
+      apply binds_weaken. auto.
+
+  - Case "typing_abs".
+
+    apply typing_abs with (L := dom (G0 ++ F ++ E) \u L).
+
+    intros x Frx.
+
+    rewrite_env (([(x, T1)] ++ G0) ++ F ++ E).
+
+    apply H0.
+
+      auto.
+
+      simpl_env. reflexivity.
+
+      simpl_env. apply uniq_push.
+
+        apply Uniq.
+
+        auto.
+
+  - Case "typing_app".
+
+    eapply typing_app.
+
+      eapply IHtyping1. reflexivity. apply Uniq.
+
+      eapply IHtyping2. reflexivity. apply Uniq.
+
+Qed. 
+
+
+
+Lemma typing_weakening : forall (E F : ctx) e T,
+
+    typing E e T ->
+
+    uniq (F ++ E) ->
+
+    typing (F ++ E) e T.
+
+Proof.
+
+  intros E F e T H J.
+
+  rewrite_env (nil ++ F ++ E).
+
+  apply typing_weakening_strengthened; auto.
+
+Qed.
+
+
+
+Lemma typing_subst_var_case : forall (E F : ctx) u S T (z x : atom),
+
+  binds x T (F ++ [(z,S)] ++ E) ->
+
+  uniq (F ++ [(z,S)] ++ E) ->
+
+  typing E u S ->
+
+  typing (F ++ E) ([z ~> u] (var_f x)) T.
+
+Proof.
+
+  intros E F u S T z x H J K.
+
+  simpl.
+
+ 
+
+  destruct (x == z).
+
+  Case "x = z".
+
+    subst.
+
+    assert (T = S).
+
+      eapply binds_mid_eq. apply H. apply J.
+
+    subst.
+
+    apply typing_weakening.
+
+      apply K.
+
+      eapply uniq_remove_mid. apply J.
+
+  Case "x <> z".
+
+    apply typing_var.
+
+      eapply uniq_remove_mid. apply J.
+
+      eapply binds_remove_mid. apply H. apply n.
+
+Qed. 
+
+
+
+Lemma typing_subst : forall (E F : ctx) e u S T (z : atom),
+
+  typing (F ++ [(z,S)] ++ E) e T ->
+
+  typing E u S ->
+
+  typing (F ++ E) ([z ~> u] e) T.
+
+Proof.
+
+
+
+  intros E F e u S T z He Hu.
+
+  remember (F ++ [(z,S)] ++ E) as E'.
+
+  generalize dependent F.
+
+  induction He.
+
+  - Case "typing_var".
+
+    intros F Eq.
+
+    subst.
+
+    eapply typing_subst_var_case. apply H0. apply H. apply Hu.
+
+  - Case "typing_abs".
+
+    intros F Eq.
+
+    subst.
+
+    simpl.
+
+    apply typing_abs with (L := {{z}} \u L).
+
+    intros y Fry.
+
+    rewrite subst_var.
+
+    rewrite_env (([(y,T1)] ++ F) ++ E).
+
+    apply H0.
+
+      auto.
+
+      simpl_env. reflexivity.
+
+    
+
+    auto.
+
+    eapply typing_to_lc_exp. apply Hu.
+
+  - Case "typing_app".
+
+    intros F Eq. subst. simpl. eapply typing_app.
+
+      apply IHHe1. reflexivity.
+
+      apply IHHe2. reflexivity.
+
+Qed. 
+
+
+
+Lemma typing_subst_simple : forall (E : ctx) e u S T (z : atom),
+
+  typing ([(z,S)] ++ E) e T ->
+
+  typing E u S ->
+
+  typing E ([z ~> u] e) T.
+
+Proof.
+
+
+
+  intros E e u S T z H J.
+
+  rewrite_env (nil ++ E).
+
+  eapply typing_subst.
+
+    simpl_env. apply H.
+
+    apply J.
+
+Qed. 
+
+
+
+Lemma preservation : forall (E : ctx) e e' T,
+
+  typing E e T ->
+
+  step e e' ->
+
+  typing E e' T.
+
+Proof.
+
+  intros E e e' T H.
+
+  generalize dependent e'.
+
+  induction H; intros e' J.
+
+
+
+  Case "typing_var".
+
+    inversion J.
+
+  Case "typing_abs".
+
+    inversion J.
+
+  Case "typing_app".
+
+    inversion J; subst; eauto.
+
+    SCase "step_beta".
+
+      inversion H; subst.
+
+      pick fresh y for (L \u fv_exp e0).
+
+      rewrite (subst_exp_intro y); auto.
+
+      eapply typing_subst_simple; auto.
+
+Qed. 
+
+
+
+Lemma progress : forall e T,
+
+  typing nil e T ->
+
+  is_value e \/ exists e', step e e'.
+
+Proof.
+
+  intros e T H.
+
+
+
+  assert (typing nil e T); auto.
+
+
+
+  remember (@nil (atom * typ)) as E.
+
+
+
+  induction H; subst.
+
+
+
+  - Case "typing_var".
+
+    inversion H1.
+
+  - Case "typing_abs".
+
+    left.
+
+    simpl. auto.
+
+  - Case "typing_app".
+
+    right.
+
+    destruct IHtyping1 as [V1 | [e1' Step1]]; auto.
+
+      + SCase "e1 is a value".
+
+        destruct e1; inversion V1; subst.
+
+        inversion H.
+
+        exists (open_exp_wrt_exp e1 e2); eauto using typing_to_lc_exp.
+
+      + SCase "e1 is not a value".
+
+        exists (app e1' e2).
+
+        apply step_app.
+
+          eapply typing_to_lc_exp; eauto.
+
+          assumption.
+
+Qed. 
+
+
+
+Ltac gather_atoms ::=
+
+  let A := gather_atoms_with (fun x : atoms => x) in
+
+  let B := gather_atoms_with (fun x : atom => singleton x) in
+
+  let C := gather_atoms_with (fun x : list (var * typ) => dom x) in
+
+  let D := gather_atoms_with (fun x : exp => fv_exp x) in
+
+  constr:(A `union` B `union` C `union` D).
+
+
+
+Lemma typing_uniq : forall E e T,
+
+  typing E e T -> uniq E.
+
+Proof.
+
+  intros E e T H.
+
+  induction H; auto.
+
+  - Case "typing_abs".
+
+    pick fresh x.
+
+    assert (uniq ([(x, T1)] ++ G)); auto.
+
+    solve_uniq.
+
+Qed.
+
+
+
+Lemma typing_rename : forall (x y : atom) E e T1 T2,
+
+  x `notin` fv_exp e ->
+
+  y `notin` dom E ->
+
+  typing ([(x, T1)] ++ E) (e ^ x) T2 ->
+
+  typing ([(y, T1)] ++ E) (e ^ y) T2.
+
+Proof.
+
+  intros x y E e T1 T2 Fr1 Fr2 H.
+
+  destruct (x == y).
+
+  - Case "x = y".
+
+    subst; eauto.
+
+  - Case "x <> y".
+
+    assert (J : uniq ([(x, T1)] ++ E)).
+
+      eapply typing_uniq; eauto.
+
+    assert (J' : uniq E).
+
+      inversion J; eauto.
+
+    rewrite (@subst_exp_intro x); eauto.
+
+    rewrite_env (nil ++ [(y, T1)] ++ E).
+
+    apply typing_subst with (S := T1).
+
+    simpl_env.
+
+    + SCase "(open x s) is well-typed".
+
+      apply typing_weakening_strengthened. eauto. auto.
+
+    + SCase "y is well-typed".
+
+      eapply typing_var; eauto.
+
+Qed.
+
+
+
+Lemma typing_abs_exists : forall E e T1 T2 (x : atom),
+
+      x `notin` dom E \u fv_exp e ->
+
+      typing ([(x,T1)] ++ E) (e ^ x) T2 ->
+
+      typing E (abs e) (typ_arrow T1 T2).
+
+Proof.
+
+  intros.
+
+  apply typing_abs with (L := dom E \u fv_exp e).
+
+  intros y Fr.
+
+  apply typing_rename with (x:=x); auto.
+
+Qed.
+
+
+
+Lemma exists_cofinite : forall E e T,
+
+    typing_e E e T -> typing E e T.
+
+Proof.
+
+  
+
+  intros.
+
+  induction H; eauto.
+
+  eapply typing_abs_exists with (x:=x); eauto.
+
+Qed. 
+
+
+
+Lemma cofinite_exists : forall G e T,
+
+    typing G e T -> typing_e G e T.
+
+Proof. 
+
+  intros. induction H; eauto.
+
+  pick fresh x.
+
+  eapply typing_e_abs with (x:=x); eauto.
+
+Qed. 
+
+
+
+Lemma fv_in_dom : forall G e T,
+
+    typing G e T -> fv_exp e [<=] dom G.
+
+Proof.
+
+  
+
+  intros G e T H.
+
+  induction H; simpl.
+
+  - Case "typing_var".
+
+    apply binds_In in H0.
+
+    fsetdec.
+
+  - Case "typing_abs".
+
+    pick fresh x.
+
+    assert (Fx : fv_exp (e ^ x) [<=] dom ([(x,T1)] ++ G))
+
+      by eauto.
+
+    simpl in Fx.
+
+    assert (Fy : fv_exp e [<=] fv_exp (e ^ x)) by
+
+        eapply fv_exp_open_exp_wrt_exp_lower.
+
+    fsetdec.
+
+  - Case "typing_app".
+
+    fsetdec.
+
+Qed. 
+

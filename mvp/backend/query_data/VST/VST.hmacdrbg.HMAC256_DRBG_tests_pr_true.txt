@@ -1,0 +1,841 @@
+Require Import Coqlib.
+
+Require Import List. Import ListNotations.
+(* List:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+
+Local Open Scope nat_scope.
+
+Theorem qam_count_gen : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S)(n : nat),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= n + (count x)) ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q * n + (count s).
+
+Local Open Scope rat_scope.
+
+Theorem evalDist_bind_event_le : 
+  forall (A : Set)(c : Comp A)(f : A -> Comp bool)(evta : A -> bool) (k1 k2 : Rat),
+    Pr[a <-$ c; ret (evta a)] <= k1 ->
+    (forall a, In a (getSupport c) -> evta a = false -> Pr[f a] <= k2) ->
+    Pr[a <-$ c; f a] <= k1 + k2.
+
+Theorem oc_eventProb : 
+  forall (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (S : Set)(eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (count : S -> nat)(evt : S -> bool)(s : S)(k : nat -> Rat) i,
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (i + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= i + (count s))%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k (i * n + (count s))%nat).
+
+Theorem oc_eventProb_0_1 : 
+  forall (S : Set)(count : S -> nat)(evt : S -> bool)(k : nat -> Rat)
+         (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (s : S),
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (1 + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= 1 + (count s))%nat ->
+      count s = 0%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k n).  
+
+Local Open Scope nat_scope.
+
+Theorem qam_count : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= 1 + (count x)) ->
+      count s = 0 ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q.
+
+Local Transparent evalDist.
+
+Section RndInList.
+  
+  Variable eta : nat.
+
+  Theorem RndInList_prob_h :
+    forall (ls : list (Bvector eta)),
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+
+  Theorem RndInList_prob :
+    forall (ls : list (Bvector eta))(q : nat),
+      length ls <= q ->
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= q / 2 ^ eta)%rat.
+  
+End RndInList.
+
+Local Open Scope rat_scope.
+
+Theorem RndNat_eq_any : 
+  forall (eta : nat)(x : Bvector eta),
+    Pr  [a0 <-$ { 0 , 1 }^eta; ret (eqb x a0) ] == 1 / 2^eta.
+
+Require Import FCF.CompFold.
+Local Opaque evalDist.
+
+Section FixedInRndList.
+  
+  Variable A : Set.
+  Variable eta : nat.
+
+  Theorem FixedInRndList_prob :
+    forall (ls : list A)(x : Bvector eta),
+      (Pr[lsR <-$ compMap _ (fun _ => {0, 1}^eta) ls; ret (if (in_dec (EqDec_dec _) x lsR) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+  
+End FixedInRndList.
+
+Section RndInAdaptive.
+
+  Variable A B C : Set.
+  
+  Local Open Scope rat_scope.
+
+  Theorem orb_prob : 
+    forall (A B : Set)(c : Comp A)(f : A -> Comp B) evt1 evt2 k1 k2,
+      Pr[x <-$ c; ret (evt1 x)] <= k1 ->
+      (forall a, In a (getSupport c) -> evt1 a = false -> Pr[y <-$ f a; ret (evt2 y)] <= k2) ->
+      Pr[x <-$ c; y <-$ f x; ret (evt1 x || evt2 y)] <= k1 + k2.
+
+  Theorem RndInAdaptive_prob : 
+    forall (c : OracleComp A B C)(q : nat),
+      queries_at_most c q ->
+      forall (S : Set)(evt : S -> bool)(eqd : EqDec S)(o : S -> A -> Comp (B * S))(k : Rat),
+        (forall a b, 
+          evt a = false ->
+          Pr[ d <-$ o a b; ret (evt (snd d))] <= k)->
+        (forall a b x y,
+          In (a, b) (getSupport (o x y)) -> evt x = true -> evt b = true) ->
+        forall (s : S),
+          evt s = false ->
+          Pr[ d <-$ c _ _ o s; ret (evt (snd d))] <= q / 1 * k.
+
+End RndInAdaptive. *)
+
+Require Import Coq.Strings.String.
+
+Require Import Coq.Strings.Ascii.
+
+Require Import sha.functional_prog.
+(* sha.functional_prog:
+Definition padlen (n: Z) : list Int.int :=
+    let p := n/4+3 
+    in let q := (p+15)/16*16 - p   
+      in zeros q ++ [Int.repr (n * 8 / Int.modulus); Int.repr (n * 8)].
+
+Fixpoint generate_and_pad' (n: list byte) len : list Int.int :=
+  match n with
+  | nil => bytes_to_Int (Byte.repr 128) Byte.zero Byte.zero Byte.zero :: padlen len
+  | [h1]=> bytes_to_Int h1 (Byte.repr 128) Byte.zero Byte.zero :: padlen (len+1)
+  | [h1; h2] => bytes_to_Int h1 h2 (Byte.repr 128) Byte.zero :: padlen (len+2)
+  | [h1; h2; h3] => bytes_to_Int h1 h2 h3 (Byte.repr 128) :: padlen (len+3)
+  | h1::h2::h3::h4::t => bytes_to_Int h1 h2 h3 h4 :: generate_and_pad' t (len+4)
+  end.
+
+Definition generate_and_pad_alt (n: list byte) : list Int.int :=
+   generate_and_pad' n 0.
+
+Definition Wnext (msg : list int) : int :=
+ match msg with
+ | x1::x2::x3::x4::x5::x6::x7::x8::x9::x10::x11::x12::x13::x14::x15::x16::_ =>
+   (Int.add (Int.add (sigma_1 x2) x7) (Int.add (sigma_0 x15) x16))
+ | _ => Int.zero  
+ end.
+
+Fixpoint generate_word (msg : list int) (n : nat) {struct n}: list int :=
+  match n with
+  |O   => msg
+  |S n' => generate_word (Wnext msg :: msg) n'
+  end.
+Arguments generate_word msg n : simpl never.
+Global Opaque generate_word. 
+Fixpoint rnd_64 (x: registers) (k w : list int) : registers :=
+  match k, w with
+  | k1::k', w1::w' => rnd_64 (rnd_function x k1 w1) k' w'
+  | _ , _ => x
+  end.
+Arguments rnd_64  x k w : simpl never.  
+
+Definition process_block (r: registers) (block: list int) : registers :=
+       (map2 Int.add r (rnd_64 r K256 (rev(generate_word block 48)))).
+
+Fixpoint grab_and_process_block (n: nat) (r: registers) (firstrev msg: list int) : registers * list int :=
+ match n, msg with
+  | O, _ => (process_block r firstrev, msg)
+  | S n', m1::msg' => grab_and_process_block n' r (m1::firstrev) msg'
+  | _, nil => (r,nil) 
+ end.
+
+Definition SHA_256' (str : list byte) : list byte :=
+    intlist_to_bytelist (process_msg init_registers (generate_and_pad_alt str)).
+
+Fixpoint bytelist_eq (al bl: list byte) : bool :=
+ match al, bl with
+ | nil, nil => true
+ | a::al', b::bl' => Byte.eq a b && bytelist_eq al' bl'
+ | _, _ => false
+  end.
+
+Definition hexdigit(a: Z) : Z :=
+ if Z.leb 48 a && Z.ltb a 58 then Z.sub a 48
+ else if Z.leb 65 a && Z.ltb a 71 then Z.sub a 55
+ else if Z.leb 97 a && Z.ltb a 103 then Z.sub a 87
+ else 0%Z.
+
+Fixpoint hexstring_to_bytelist (s: String.string): list byte  :=
+ match s with
+ | String.String a (String.String b r) => Byte.repr ((hexdigit (Z.of_N (Ascii.N_of_ascii a)) * 16
+                                         + hexdigit (Z.of_N (Ascii.N_of_ascii b))))
+                                          :: hexstring_to_bytelist r
+ | _ => nil
+ end.
+
+Section CHECKS.
+Import String.
+Definition check m h :=
+  bytelist_eq (SHA_256' (str_to_bytes m)) (hexstring_to_bytelist h) = true.
+
+Goal  check   "The quick brown fox jumps over the lazy dog"
+  "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592".
+
+Goal check "The Secure Hash Algorithm is a family of cryptographic hash functions published by the National Institute of Standards and Technology (NIST) as a U.S. Federal Information Processing Standard (FIPS)"
+End CHECKS.
+
+Require Import sha.common_lemmas.
+Require Import VST.msl.Coqlib2.
+
+Local Open Scope nat.
+
+Lemma length_rnd_64:
+  forall r k w, length r = 8 -> length (rnd_64 r k w) = 8.
+
+Lemma length_rnd_64_inv:
+  forall r k w, length (rnd_64 r k w) = 8 -> length r = 8.
+
+Lemma length_process_block:
+  forall r b, length r = 8 -> length (process_block r b) = 8.
+
+Lemma length_map2_add_rnd_64:
+ forall regs w,
+  length regs = 8 ->
+  length (map2 Int.add regs (rnd_64 regs K256 w)) = 8.
+
+Lemma grab_and_process_block_length:
+ forall n r firstr msg r' m',
+    length r = 8 ->
+    length msg >= n ->
+    grab_and_process_block n r firstr msg  = (r',m') ->
+    length r' = 8.
+
+Lemma length_process_msg:
+  forall b, length (process_msg init_registers b) = 8.
+
+Lemma process_msg_eq2:
+ forall regs hashed b,
+  length b = 16 ->
+ process_msg regs (b++hashed) =
+  process_msg (process_block regs (rev b)) hashed.
+
+Lemma rnd_64_S:
+  forall regs i b k w,
+    nth_error K256 i = Some k ->
+    nth_error b i = Some w ->
+    rnd_64 regs K256 (firstn (S i) b) =
+    rnd_function (rnd_64 regs K256 (firstn i b)) k w.
+
+Lemma Zlength_zeros:
+    forall n, (n>=0)%Z -> Zlength (zeros n) = n.
+
+Lemma length_zeros: forall n:Z, length (zeros n) = Z.to_nat n.
+
+Hint Rewrite length_zeros : norm.
+
+Local Open Scope Z.
+
+Lemma Zlength_padlen:
+ forall n,
+  n>=0 ->
+  Zlength (padlen n) = roundup (n/4+3) 16 - n/4 - 1.
+
+Lemma zeros_app:
+  forall n m, (n >= 0 -> m >=0 -> zeros n ++ zeros m = zeros (n+m))%Z.
+
+Lemma zeros_Zsucc:
+ forall n, n >= 0 -> zeros (Z.succ n) = Int.repr 0 :: zeros n.
+
+Lemma intlist_to_bytelist_zeros:
+  forall n:Z, intlist_to_bytelist (zeros n) = map Byte.repr (map Int.unsigned (zeros (4*n)%Z)).
+
+Definition padlen' (n: Z) : list Int.int :=
+     let q := (n+8)/64*16 + 15 - (n+8)/4   
+      in zeros q ++ [Int.repr (n * 8 / Int.modulus); Int.repr (n * 8)].
+
+Lemma padlen_eq: padlen=padlen'.
+
+Lemma length_generate_and_pad'':
+  forall (l: list byte) (k: Z),
+     k >= 0 ->
+     k + Zlength (generate_and_pad' l (k*4)) = roundup (((k*4+Zlength l)+12)/4) 16.
+
+Lemma length_generate_and_pad':
+  forall (l: list byte),
+     Zlength (generate_and_pad' l 0) = roundup ((Zlength l +12)/4) 16.
+
+Lemma roundup_ge:
+ forall a b,  b > 0 -> roundup a b >= a.
+
+Lemma generate_and_pad'_eq:
+ generate_and_pad = generate_and_pad_alt.
+
+Lemma roundup_divide:
+ forall a b, b > 0 ->  (b | roundup a b).
+
+Lemma length_generate_and_pad:
+  forall (l: list byte),
+     Zlength (generate_and_pad l) = roundup ((Zlength l +12)/4) 16.
+
+Transparent generate_word.
+
+Lemma generate_word_lemma1:
+  forall b n, length b = 16%nat ->
+   firstn 16 (rev (generate_word (rev b) n)) = b.
+
+Lemma length_generate_word: forall b n,
+  length (generate_word b n) = (length b + n)%nat.
+
+Lemma nth_generate_word_S:
+  forall k i n b',
+   nth (i+k) (generate_word b' (n+k)) = nth i (generate_word b' n).
+
+Lemma generate_word_small:
+  forall i b n,
+           length b = 16%nat ->
+           (i < length b)%nat ->
+           nth i (rev (generate_word (rev b) n)) = nth i b.
+
+Lemma generate_word_plus:
+  forall msg a b, (16 <= length msg)%nat ->
+         generate_word msg (a+b) = generate_word (generate_word msg a) b.
+
+Definition nthB (b: list int) (i: nat) (n: Z) :=
+  nth (Z.to_nat (Z.of_nat i - 16 + n)) (rev (generate_word (rev b) 48)) Int.zero.
+
+Lemma nth_rev_generate_word:
+ forall i b,
+   length b = 16%nat ->
+   (16 <= i < 64)%nat ->
+    nth i (rev (generate_word (rev b) 48)) Int.zero =
+
+Opaque generate_word.
+
+Definition c48 := 48%nat. Opaque c48.
+
+Lemma generate_word_W:
+ forall block n
+ (LB: length block = 16%nat),
+  0 <= n < 64 ->
+  nthi (rev (generate_word (rev block) 48)) n =
+  W (nthi block) n.
+
+Lemma process_block_hash_block:
+ forall regs block,
+   length regs = 8%nat ->
+   length block = 16%nat ->
+   process_block regs (rev block) = hash_block regs block.
+
+Lemma process_msg_hash_blocks:
+  forall regs blocks,
+    (16 | Zlength blocks) ->
+    length regs = 8%nat ->
+    process_msg regs blocks = hash_blocks regs blocks.
+
+Lemma SHA_256'_eq:  SHA_256' = SHA_256. *)
+
+Require Import HMAC256_DRBG_functional_prog.
+(* HMAC256_DRBG_functional_prog:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import sha.HMAC256_functional_prog.
+Require Import hmacdrbg.DRBG_functions.
+Require Import hmacdrbg.HMAC_DRBG_algorithms.
+
+Definition HMAC256_DRBG_update := HMAC_DRBG_update HMAC256.
+
+Definition HMAC256_DRBG_instantiate_algorithm := HMAC_DRBG_instantiate_algorithm HMAC256.
+
+Definition HMAC256_DRBG_instantiate_function := DRBG_instantiate_function HMAC256_DRBG_instantiate_algorithm.
+
+Definition HMAC256_DRBG_generate_algorithm := HMAC_DRBG_generate_algorithm HMAC256.
+
+Definition HMAC256_DRBG_generate_function := DRBG_generate_function HMAC256_DRBG_generate_algorithm.
+
+Definition HMAC256_DRBG_reseed_algorithm := HMAC_DRBG_reseed_algorithm HMAC256.
+
+Definition HMAC256_DRBG_reseed_function := DRBG_reseed_function HMAC256_DRBG_reseed_algorithm. *)
+
+Require Import entropy.
+(* entropy:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import Coq.Logic.FunctionalExtensionality.
+Require Import VST.floyd.functional_base.
+
+Require Import sha.ByteBitRelations. 
+
+Module Type ABSTRACT_ENTROPY.
+
+Parameter stream: Type.
+
+Inductive error_code: Type :=
+| catastrophic_error
+| generic_error
+.
+
+Inductive result X: Type: Type :=
+| success: X -> stream -> @result X
+| error : error_code -> stream -> @result X
+.
+
+Arguments success {X} _ _.
+Arguments error {X} _ _.
+
+Parameter get_bytes: nat -> stream -> result (list byte).
+Parameter get_bits: nat -> stream -> result (list bool).
+
+End ABSTRACT_ENTROPY.
+
+Module OPTIONAL_ENTROPY <: ABSTRACT_ENTROPY.
+
+Definition stream: Type := nat -> option bool.
+
+Inductive error_code: Type :=
+| catastrophic_error
+| generic_error
+.
+
+Inductive result X: Type: Type :=
+| success: X -> stream -> @result X
+| error : error_code -> stream -> @result X
+.
+
+Arguments success {X} _ _.
+Arguments error {X} _ _.
+
+Fixpoint get_bits (k: nat) (s: stream): result (list bool) :=
+  match k with
+    | O => success [] s
+    | S k' => match get_bits k' s with
+                | error e s' => error  e s'
+                | success b s' =>
+                  match s' O with
+                    | None => error catastrophic_error (fun i => match Nat.compare i k' with
+
+Definition get_bytes (k: nat) (s: stream): result (list byte) :=
+  match get_bits (8 * k)%nat s with
+    | success bits s' => success (bitsToBytes bits) s'
+    | error e s' => error e s'
+  end
+.
+
+End OPTIONAL_ENTROPY.
+
+Module ENTROPY := OPTIONAL_ENTROPY.
+
+Definition get_entropy (security_strength min_length max_length: Z) (prediction_resistance: bool) s :=
+           ENTROPY.get_bytes (Z.to_nat min_length) s. *)
+
+Require Import DRBG_state_handle.
+
+Require Import DRBG_generate_function.
+
+Require Import DRBG_instantiate_function.
+
+Require Import DRBG_reseed_function.
+
+
+
+Require Import sha.ByteBitRelations.
+(* sha.ByteBitRelations:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import Coq.ZArith.BinInt. 
+Require Import Coq.ZArith.Zcomplements. 
+Require Import compcert.lib.Integers.          
+Require Import Coq.Numbers.Natural.Peano.NPeano.
+
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Program.Tactics.
+Require Import sha.XorCorrespondence. 
+Require Import sha.Bruteforce.
+Require Import sha.general_lemmas.
+Require Import sha.hmac_pure_lemmas.
+
+Definition Blist := list bool.
+Open Scope Z_scope.
+
+Inductive InBlocks {A : Type} (n : nat) : list A -> Prop :=
+  | InBlocks_nil : InBlocks n []
+  | InBlocks_block : forall (front back full : list A),
+                   length front = n ->
+                   full = front ++ back ->
+                   InBlocks n back ->
+                   InBlocks n full.
+
+Lemma InBlocks_len : forall {A : Type} (l : list A) (n : nat),
+                       PeanoNat.Nat.divide (n) (length l) -> InBlocks n l.
+
+Inductive bytes_bits_lists : Blist -> list byte -> Prop :=
+  | eq_empty : bytes_bits_lists nil nil
+  | eq_cons : forall (bits : Blist) (bytes : list byte)
+                     (b0 b1 b2 b3 b4 b5 b6 b7 : bool) (b : byte),
+                bytes_bits_lists bits bytes ->
+                convertByteBits [b0; b1; b2; b3; b4; b5; b6; b7] b ->
+                bytes_bits_lists (b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: bits)
+                                 (b :: bytes).
+
+Definition div_mod (num : Z) (denom : Z) : bool * Z :=
+  (Z.gtb (num / denom) 0, num mod denom).
+
+Definition byteToBits (byte : byte) : Blist :=
+  let (b7, rem7) := div_mod (Byte.unsigned byte) 128 in
+  let (b6, rem6) := div_mod rem7 64 in
+  let (b5, rem5) := div_mod rem6 32 in
+  let (b4, rem4) := div_mod rem5 16 in
+  let (b3, rem3) := div_mod rem4 8 in
+  let (b2, rem2) := div_mod rem3 4 in
+  let (b1, rem1) := div_mod rem2 2 in
+  let (b0, rem0) := div_mod rem1 1 in
+  [b0; b1; b2; b3; b4; b5; b6; b7].
+
+Fixpoint bytesToBits (bytes : list byte) : Blist :=
+  match bytes with
+    | [] => []
+    | byte :: xs => byteToBits byte ++ bytesToBits xs
+  end.
+
+Definition bitsToByte (bits : Blist) : byte :=
+  Byte.repr 
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: nil =>
+      (1 * (asZ b0) + 2 * (asZ b1) + 4 * (asZ b2) + 8 * (asZ b3)
+      + 16 * (asZ b4) + 32 * (asZ b5) + 64 * (asZ b6) + 128 * (asZ b7))
+    | _ => -1                  
+  end.
+
+Fixpoint bitsToBytes (bits : Blist) : list byte :=
+  match bits with
+    | b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs =>
+      bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] :: bitsToBytes xs
+    | _ => []
+  end.
+
+Lemma byteToBits_length bt: length (byteToBits bt) = 8%nat.
+
+Lemma bytes_bits_length : forall (bits : Blist) (bytes : list byte),
+  bytes_bits_lists bits bytes -> length bits = (length bytes * 8)%nat.
+
+Lemma bytesToBits_app : forall (l1 l2 : list byte),
+                          bytesToBits (l1 ++ l2) = bytesToBits l1 ++ bytesToBits l2.
+
+Lemma bytesToBits_len : forall (l : list byte),
+                          length (bytesToBits l) = (length l * 8)%nat.
+
+Theorem byte_bit_byte_id : forall (b : byte),
+                                bitsToByte (byteToBits b) = b.
+
+Theorem bits_byte_bits_id : forall (b0 b1 b2 b3 b4 b5 b6 b7 : bool),
+                              [b0; b1; b2; b3; b4; b5; b6; b7] =
+                              byteToBits (bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7]).
+
+Theorem bytes_bits_bytes_id : forall (bytes : list byte),
+                                bitsToBytes (bytesToBits bytes) = bytes.
+
+Theorem bytes_bits_def_eq : forall (bytes : list byte),
+                              bytes_bits_lists (bytesToBits bytes) bytes.
+
+Theorem bytes_bits_comp_ind : forall (bits : Blist) (bytes : list byte),
+                               bits = bytesToBits bytes ->
+                               bytes_bits_lists bits bytes.
+
+Theorem bytes_bits_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bytes = bitsToBytes bits.
+
+Theorem bits_bytes_ind_comp : forall (bits : Blist) (bytes : list byte),
+                                 bytes_bits_lists bits bytes ->
+                                 bits = bytesToBits bytes.
+
+Lemma bitsToBytes_app : forall (l m : Blist),
+                          InBlocks 8 l ->
+                          bitsToBytes (l ++ m) = bitsToBytes l ++ bitsToBytes m.
+
+Lemma bitsToBytes_len_gen : forall (l : Blist) (n : nat),
+                          length l = (n * 8)%nat ->
+                          length (bitsToBytes l) = n.
+
+Lemma bitsToBytes_len : forall (l : Blist),
+                          length l = 512%nat ->
+                          Zlength (bitsToBytes l) = 64%Z.
+
+Lemma bits_bytes_bits_id : forall (l : Blist),
+                             InBlocks 8 l ->
+                             bytesToBits (bitsToBytes l) = l.
+
+Lemma bytes_bits_lists_append:
+  forall (l1 : Blist) (l2 : list byte) (m1 : Blist) (m2 : list byte),
+    bytes_bits_lists l1 l2
+    -> bytes_bits_lists m1 m2
+    -> bytes_bits_lists (l1 ++ m1) (l2 ++ m2).
+
+Lemma bytesToBits_nil_inv l: nil = bytesToBits l -> l = nil.
+
+Lemma bytesToBits_cons b l:
+      bytesToBits (b::l) = byteToBits b ++ bytesToBits l.
+
+Lemma byteToBits_injective: forall a b,
+      byteToBits a = byteToBits b ->
+      a = b.
+
+Lemma bytesToBits_injective: forall b1 b2, bytesToBits b1 = bytesToBits b2 ->
+       b1=b2.
+
+Lemma bitsToBytes_injective8 b1 b2 (B: bitsToBytes b1 = bitsToBytes b2)
+       (L1: PeanoNat.Nat.divide 8 (length b1))
+
+Lemma bitsToByte_cons: forall bits h t, (h::t) = bitsToBytes bits ->
+      exists b0, exists b1, exists b2, exists b3,
+      exists b4, exists b5, exists b6, exists b7, exists xs,
+      bits = b0 :: b1 :: b2 :: b3 :: b4 :: b5 :: b6 :: b7 :: xs /\
+      h = bitsToByte [b0; b1; b2; b3; b4; b5; b6; b7] /\
+      t = bitsToBytes xs.
+
+Definition intsToBits (l : list Int.int) : list bool :=
+  bytesToBits (intlist_to_bytelist l).
+
+Definition bitsToInts (l : Blist) : list Int.int :=
+  bytelist_to_intlist (bitsToBytes l). *)
+
+
+
+Definition stream_dummy (result: string) (n: nat) : option bool :=
+
+  let hex := bytesToBits (hexstring_to_Zlist result) in
+
+  if nth_ok n hex false then Some (nth n hex false)
+
+  else None.
+
+
+
+Definition get_nonce_dummy (result: string) (_: unit) := hexstring_to_Zlist result.
+
+
+
+Fixpoint DRBG_generate_check (state_handle: DRBG_state_handle) (internal_states: list (string * string * string * string)) (returned_bits: string) :=
+
+  match internal_states with
+
+    | [] => True
+
+    | (key, v, additional_input, entropy_input_reseed)::[] =>
+
+      let test_HMAC256_DRBG_reseed_function := HMAC256_DRBG_reseed_function 32 32 256 in
+
+      let test_HMAC256_DRBG_generate_function := HMAC256_DRBG_generate_function test_HMAC256_DRBG_reseed_function 1024 128 128 in
+
+      let key := hexstring_to_Zlist key in
+
+      let value := hexstring_to_Zlist v in
+
+      let additional_input := hexstring_to_Zlist additional_input in
+
+      let returned_bits := hexstring_to_Zlist returned_bits in
+
+      match test_HMAC256_DRBG_generate_function (stream_dummy entropy_input_reseed) state_handle 128 256 true additional_input with
+
+        | ENTROPY.success (returned_bits', ((value', key', _), _, _)) _ => listZ_eq value value' = true /\ listZ_eq key key' = true /\ listZ_eq returned_bits returned_bits' = true
+
+        | ENTROPY.error _ _ => False
+
+      end
+
+    | (key, v, additional_input, entropy_input_reseed)::tl =>
+
+      let test_HMAC256_DRBG_reseed_function := HMAC256_DRBG_reseed_function 32 32 256 in
+
+      let test_HMAC256_DRBG_generate_function := HMAC256_DRBG_generate_function test_HMAC256_DRBG_reseed_function 1024 128 128 in
+
+      let key := hexstring_to_Zlist key in
+
+      let value := hexstring_to_Zlist v in
+
+      let additional_input := hexstring_to_Zlist additional_input in
+
+      match test_HMAC256_DRBG_generate_function (stream_dummy entropy_input_reseed) state_handle 128 256 true additional_input with
+
+        | ENTROPY.success (_, ((value', key', x), y, z)) _ => listZ_eq value value' = true /\ listZ_eq key key' = true /\ DRBG_generate_check ((value', key', x), y, z) tl returned_bits
+
+        | ENTROPY.error _ _ => False
+
+      end
+
+  end.
+
+
+
+Definition DRBG_check (entropy_input nonce key value personalization_string: string) (internal_states: list (string * string * string * string)) (returned_bits: string) :=
+
+  let key := hexstring_to_Zlist key in
+
+  let value := hexstring_to_Zlist value in
+
+  let personalization_string := hexstring_to_Zlist personalization_string in
+
+  match HMAC256_DRBG_instantiate_function 32 32 (get_nonce_dummy nonce) 256 256 true (stream_dummy entropy_input) 256 true personalization_string with
+
+    | ENTROPY.success ((value', key', x), y, z) _ => listZ_eq value value' = true /\ listZ_eq key key' = true /\ DRBG_generate_check ((value', key', x), y, z) internal_states returned_bits
+
+    | _ => False
+
+  end.
+
+
+
+Lemma test0:
+
+  DRBG_check
+
+    "9969e54b4703ff31785b879a7e5c0eae0d3e309559e9fe96b0676d49d591ea4d"
+
+    "07d20d46d064757d3023cac2376127ab"
+
+    "c2d1fd328b9789a72097325a5623f1b23eed73ed2fdcb477e9a2dd10a96f9d27"
+
+    "cba657aa552473950ef85a02f228224514c648f01cdb2cd04aa773c25ca836f2"
+
+    ""
+
+    [
+
+      ("d89d68107440e91a57a841b688ad0fd1fbeb440d26b199bad639280ba809da2e"%string, "df85d42ae075f3560d00a653ecf4dba120a90dc4510245aaf77c799f488df76e"%string, ""%string, "c60f2999100f738c10f74792676a3fc4a262d13721798046e29a295181569f54"%string);
+
+      ("ee60a512e1383ffef37971a07a9754ceeb5b3d0aa640514e13e2a7359ec7157e"%string, "a964fd634f8f05a22719d37453ede555d6dd8fdf7beccf757e69c6fa782c5f16"%string, ""%string, "c11d4524c9071bd3096015fcf7bc24a607f22fa065c937658a2a77a8699089f4"%string)
+
+    ]
+
+    "abc015856094803a938dffd20da94843870ef935b82cfec17706b8f551b8385044235dd44b599f94b39be78dd476e0cf11309c995a7334e0a78b37bc9586235086fa3b637ba91cf8fb65efa22a589c137531aa7b2d4e2607aac27292b01c698e6e01ae679eb87c01a89c7422d4372d6d754ababb4bf896fcb1cd09d692d0283f"%string.
+
+  vm_compute. repeat (split;auto). Qed.
+
+
+
+Lemma test_with_personalization0:
+
+  DRBG_check
+
+    "f7b90c797a4a376cdd9f5c435f5985e77f36ec1df1145a12072cbb2a0da378fc"
+
+    "d95202986d45896e9f4a65f2f353fa35"
+
+    "628f0d947dca7e4171940799bfbc9b61c0ec7c2555a606c75940c37c9432bad0"
+
+    "2fbafb7afd31927f8f5ee0c4fcdb27c15db4c5dda3d40bc091bfdb782561df85"
+
+    "61535c5c045e784267fd0d85f2861778fa53c8e8586af67cf5c9f21a28ebb656"
+
+    [
+
+      ("b31f8c3d56139a901abc4dd953c43a3fc65cfcb7647061e4d9e2a7e31206a5f3"%string, "1ef1e9d5d8901b71c4f9cca6c68f320d5493f2fef1c71f5e58c5c83e144822f2"%string, ""%string, "130ab64f41a5d49d6a241e0260b4bb8a46a16c6ac9e234c84b5b26cdb518d459"%string);
+
+      ("da8e4563d0180619c92b29c3b8dd8f3508df3e8fa844bf331cfb0b1f4205df75"%string, "4fe4168ff2aa97bdc0235b4df3eed8bd377aa3805ff6cd9445efb6e287a71e80"%string, ""%string, "f7670e817ac061ac60439be60982492000dc5da8bc6636bdac8b1cab03198dfd"%string)
+
+    ]
+
+    "8df4e349f9ea43cc509ecb2b1124358cda2de1f5cc9315edca63610a413478d68b8bb49c2814c82ce571f6e0a6780fa21c4b570610ee0c04d3edb92124f580f962d741330200c19885ca716502223247b728d66fbbeb7c6cc25cfe9866b1450b346227c7663074c8b15d189f1c6edba172a53c733d67c1c69bd7aca7e62013cd"%string.
+
+  vm_compute. repeat (split;auto). Qed.
+
+
+
+Lemma test_with_additional_input0:
+
+  DRBG_check
+
+    "2cad88b2b6a06e703de46185ccb2ddcf5e0ee030995ebdf95cc4fbc38441f17f"
+
+    "32310770e04172c0cf91f6590cce44a4"
+
+    "bef6a1ebb29164bc4d7ae6ca2d5a02d619b91dd0d88147e7e87454898ce99338"
+
+    "6f78b5982fef43f09bd7096ecc3aa02a5c3a4dbf71e17341ff3814bbc5dcddd2"
+
+    ""
+
+    [
+
+      ("bc4186dc24c4b64d8c094c79c7605ae9a3ce6a9e6cdb071a766897c8df302e4c"%string, "5f1aa99b991e37d7ffa7e6779d36b8295976a26ff13efaf72fe90f30a2d16aff"%string, "ef6da5e6530e0d621749ab192e06327e995c3ac0c3963ab8c8cd2df2839ab5df"%string, "448bfbc5ce9e3b9da3e9642daecd994dfe373e75253e8eb585141224eca7ad7b"%string);
+
+      ("2afc9c4d27f850d0f982499199af67d0c20d324ebf9260fb021d377861ef257e"%string, "c5beeb04e4bfae254053c26d1ef0ff637da4873e7488fc08ab5660142a6311ae"%string, "44278b31ed853f0a510bd14650ac4b4971d8b426799a43511d016be68dedbb8d"%string, "afb57f69799c0b892b3015990e133698d543aa87829ace868e4a5e9525d62357"%string)
+
+    ]
+
+    "4c7dfbe509dc5a3ac26998723c6a44cad20b197fc86117c778d1568ab828923862885e97198f77a1cb45113f5d78726a0f120aec94afc45f57c8dcc1cb092b343480012858ef5bc559f57023442209326ec4a54d91ca3a77dfdf9e75f117cef50e6fd2dc9af6ddce8e6515b4a97357a97b6cd274f68a042fa41bbd7b7261b034"%string.
+
+  vm_compute. repeat (split;auto). Qed.
+
+
+
+Lemma test_with_additional_input_and_personalization0:
+
+  DRBG_check
+
+    "4294671d493dc085b5184607d7de2ff2b6aceb734a1b026f6cfee7c5a90f03da"
+
+    "d071544e599235d5eb38b64b551d2a6e"
+
+    "3ab4e27f331bf194cec5762baf84b7fb16e7cf81d69635c48b96febdfb809c18"
+
+    "7a232bc40bdd9c92ddaffbe76aa322ba1a47234d227060d8ac187e680780c02a"
+
+    "63bc769ae1d95a98bde870e4db7776297041d37c8a5c688d4e024b78d83f4d78"
+
+    [
+
+      ("6acd0c98e1f7340bd7ab4a594960b63357bd19b99471cc8ea34817af77259880"%string, "db7c92e4c55c43b370b81a6024f0e14675a86c9667412b10ce5d1ea76259c1e4"%string, "28848becd3f47696f124f4b14853a456156f69be583a7d4682cff8d44b39e1d3"%string, "db9b4790b62336fbb9a684b82947065393eeef8f57bd2477141ad17e776dac34"%string);
+
+      ("2bcafedb81361b2cf44555d3739fdff9dcd6315dd861bb640e812ddcb26045a5"%string, "48e842ba5cb7784211bdc0c19eedec0e23cdfa6c81ad56a7e993eee15a604e2e"%string, "8bfce0b7132661c3cd78175d83926f643e36f7608eec2c5dac3ddcbacc8c2182"%string, "4a9abe80f6f522f29878bedf8245b27940a76471006fb4a4110beb4decb6c341"%string)
+
+    ]
+
+    "e580dc969194b2b18a97478aef9d1a72390aff14562747bf080d741527a6655ce7fc135325b457483a9f9c70f91165a811cf4524b50d51199a0df3bd60d12abac27d0bf6618e6b114e05420352e23f3603dfe8a225dc19b3d1fff1dc245dc6b1df24c741744bec3f9437dbbf222df84881a457a589e7815ef132f686b760f012"%string.
+
+  vm_compute. repeat (split;auto). Qed.
+
+
+

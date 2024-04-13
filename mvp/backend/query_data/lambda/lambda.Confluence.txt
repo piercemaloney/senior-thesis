@@ -1,0 +1,771 @@
+
+
+Require Import Arith.
+
+Require Import Terms.
+(* Terms:
+Require Import Arith.
+Require Import Test.
+
+Inductive lambda : Set :=
+  | Ref : nat -> lambda
+  | Abs : lambda -> lambda
+  | App : lambda -> lambda -> lambda.
+
+Definition relocate (i k n : nat) :=
+  match test k i with
+  
+       | left _ => n + i
+    | _ => i
+  end.
+
+Fixpoint lift_rec (L : lambda) : nat -> nat -> lambda :=
+  fun k n : nat =>
+  match L with
+  | Ref i => Ref (relocate i k n)
+  | Abs M => Abs (lift_rec M (S k) n)
+  | App M N => App (lift_rec M k n) (lift_rec N k n)
+  end.
+
+Definition lift (n : nat) (N : lambda) := lift_rec N 0 n.
+
+Definition insert_Ref (N : lambda) (i k : nat) :=
+  match compare k i with
+  
+       | inleft (left _) => Ref (pred i)
+    | inleft _ => lift k N
+    | _ => Ref i
+  end.
+
+Fixpoint subst_rec (L : lambda) : lambda -> nat -> lambda :=
+  fun (N : lambda) (k : nat) =>
+  match L with
+  | Ref i => insert_Ref N i k
+  | Abs M => Abs (subst_rec M N (S k))
+  | App M M' => App (subst_rec M N k) (subst_rec M' N k)
+  end.
+
+Definition subst (N M : lambda) := subst_rec M N 0. *)
+
+Require Import Reduction.
+(* Reduction:
+Require Import Arith.
+Require Import Test.
+Require Import Terms.
+
+Inductive red1 : lambda -> lambda -> Prop :=
+  | beta : forall M N : lambda, red1 (App (Abs M) N) (subst N M)
+  | abs_red : forall M N : lambda, red1 M N -> red1 (Abs M) (Abs N)
+  | app_red_l :
+      forall M1 N1 : lambda,
+      red1 M1 N1 -> forall M2 : lambda, red1 (App M1 M2) (App N1 M2)
+  | app_red_r :
+      forall M2 N2 : lambda,
+      red1 M2 N2 -> forall M1 : lambda, red1 (App M1 M2) (App M1 N2).
+
+Inductive red : lambda -> lambda -> Prop :=
+  | one_step_red : forall M N : lambda, red1 M N -> red M N
+  | refl_red : forall M : lambda, red M M
+  | trans_red : forall M N P : lambda, red M N -> red N P -> red M P.
+
+Lemma red_abs : forall M M' : lambda, red M M' -> red (Abs M) (Abs M').
+
+Lemma red_appl :
+ forall M M' : lambda,
+ red M M' -> forall N : lambda, red (App M N) (App M' N).
+
+Lemma red_appr :
+ forall M M' : lambda,
+ red M M' -> forall N : lambda, red (App N M) (App N M').
+
+Lemma red_app :
+ forall M M' N N' : lambda, red M M' -> red N N' -> red (App M N) (App M' N').
+
+Lemma red_beta :
+ forall M M' N N' : lambda,
+ red M M' -> red N N' -> red (App (Abs M) N) (subst N' M').
+
+Inductive par_red1 : lambda -> lambda -> Prop :=
+  | par_beta :
+      forall M M' : lambda,
+      par_red1 M M' ->
+      forall N N' : lambda,
+      par_red1 N N' -> par_red1 (App (Abs M) N) (subst N' M')
+  | ref_par_red : forall n : nat, par_red1 (Ref n) (Ref n)
+  | abs_par_red :
+      forall M M' : lambda, par_red1 M M' -> par_red1 (Abs M) (Abs M')
+  | app_par_red :
+      forall M M' : lambda,
+      par_red1 M M' ->
+      forall N N' : lambda, par_red1 N N' -> par_red1 (App M N) (App M' N').
+
+Hint Resolve par_beta ref_par_red abs_par_red app_par_red.
+
+Lemma refl_par_red1 : forall M : lambda, par_red1 M M.
+
+Hint Resolve refl_par_red1.
+
+Lemma red1_par_red1 : forall M N : lambda, red1 M N -> par_red1 M N.
+
+Inductive par_red : lambda -> lambda -> Prop :=
+  | one_step_par_red : forall M N : lambda, par_red1 M N -> par_red M N
+  | trans_par_red :
+      forall M N P : lambda, par_red M N -> par_red N P -> par_red M P.
+
+Lemma red_par_red : forall M N : lambda, red M N -> par_red M N.
+
+Lemma par_red_red : forall M N : lambda, par_red M N -> red M N. *)
+
+Require Import Redexes.
+(* Redexes:
+Require Import Arith.
+Require Import Test.
+Require Import Terms.
+Require Import Reduction.
+
+Inductive redexes : Set :=
+  | Var : nat -> redexes
+  | Fun : redexes -> redexes
+  | Ap : bool -> redexes -> redexes -> redexes.
+
+Inductive sub : redexes -> redexes -> Prop :=
+  | Sub_Var : forall n : nat, sub (Var n) (Var n)
+  | Sub_Fun : forall U V : redexes, sub U V -> sub (Fun U) (Fun V)
+  | Sub_Ap1 :
+      forall U1 V1 : redexes,
+      sub U1 V1 ->
+      forall U2 V2 : redexes,
+      sub U2 V2 -> forall b : bool, sub (Ap false U1 U2) (Ap b V1 V2)
+  | Sub_Ap2 :
+      forall U1 V1 : redexes,
+      sub U1 V1 ->
+      forall U2 V2 : redexes,
+      sub U2 V2 -> forall b : bool, sub (Ap true U1 U2) (Ap true V1 V2).
+
+Definition bool_max (b b' : bool) :=
+  match b return bool with
+  | true => true
+  | false => b'
+  end.
+
+Lemma max_false : forall b : bool, bool_max b false = b.
+
+Inductive union : redexes -> redexes -> redexes -> Prop :=
+  | Union_Var : forall n : nat, union (Var n) (Var n) (Var n)
+  | Union_Fun :
+      forall U V W : redexes, union U V W -> union (Fun U) (Fun V) (Fun W)
+  | Union_Ap :
+      forall U1 V1 W1 : redexes,
+      union U1 V1 W1 ->
+      forall U2 V2 W2 : redexes,
+      union U2 V2 W2 ->
+      forall b1 b2 : bool,
+      union (Ap b1 U1 U2) (Ap b2 V1 V2) (Ap (bool_max b1 b2) W1 W2).
+
+Lemma union_l : forall U V W : redexes, union U V W -> sub U W.
+
+Lemma union_r : forall U V W : redexes, union U V W -> sub V W.
+
+Lemma bool_max_Sym : forall b b' : bool, bool_max b b' = bool_max b' b.
+
+Lemma union_sym : forall U V W : redexes, union U V W -> union V U W.
+
+Inductive comp : redexes -> redexes -> Prop :=
+  | Comp_Var : forall n : nat, comp (Var n) (Var n)
+  | Comp_Fun : forall U V : redexes, comp U V -> comp (Fun U) (Fun V)
+  | Comp_Ap :
+      forall U1 V1 : redexes,
+      comp U1 V1 ->
+      forall U2 V2 : redexes,
+      comp U2 V2 -> forall b1 b2 : bool, comp (Ap b1 U1 U2) (Ap b2 V1 V2).
+
+Hint Resolve Comp_Var Comp_Fun Comp_Ap.
+
+Lemma comp_refl : forall U : redexes, comp U U.
+
+Lemma comp_sym : forall U V : redexes, comp U V -> comp V U.
+
+Lemma comp_trans :
+ forall U V : redexes,
+ comp U V -> forall (W : redexes) (CVW : comp V W), comp U W.
+
+Lemma union_defined :
+ forall U V : redexes, comp U V -> exists W : redexes, union U V W.
+
+Fixpoint regular (U : redexes) : Prop :=
+  match U with
+  | Var n => True
+  | Fun V => regular V
+  | Ap true (Fun _ as V) W => regular V /\ regular W
+  | Ap true _ W => False
+  | Ap false V W => regular V /\ regular W
+  end.
+
+Lemma union_preserve_regular :
+ forall U V W : redexes, union U V W -> regular U -> regular V -> regular W. *)
+
+Require Import Test.
+(* Test:
+Require Import Arith.
+
+Definition test : forall n m : nat, {n <= m} + {n > m}.
+
+Definition le_lt : forall n m : nat, n <= m -> {n < m} + {n = m}.
+
+Definition compare : forall n m : nat, {n < m} + {n = m} + {n > m}. *)
+
+Require Import Marks.
+(* Marks:
+Require Import Arith.
+Require Import Terms.
+Require Import Reduction.
+Require Import Redexes.
+Require Import Test.
+
+Fixpoint mark (e : lambda) : redexes :=
+  match e with
+  | Ref n => Var n
+  | Abs M => Fun (mark M)
+  | App M N => Ap false (mark M) (mark N)
+  end. 
+
+Fixpoint unmark (e : redexes) : lambda :=
+  match e with
+  | Var n => Ref n
+  | Fun U => Abs (unmark U)
+  | Ap b U V => App (unmark U) (unmark V)
+  end.
+
+Lemma inverse : forall M : lambda, M = unmark (mark M).
+
+Lemma comp_unmark_eq : forall U V : redexes, comp U V -> unmark U = unmark V. *)
+
+Require Import Substitution.
+(* Substitution:
+Require Import Arith.
+Require Import Terms.
+Require Import Reduction.
+Require Import Redexes.
+Require Import Test.
+
+Fixpoint lift_rec_r (L : redexes) : nat -> nat -> redexes :=
+  fun k n : nat =>
+  match L with
+  | Var i => Var (relocate i k n)
+  | Fun M => Fun (lift_rec_r M (S k) n)
+  | Ap b M N => Ap b (lift_rec_r M k n) (lift_rec_r N k n)
+  end.
+
+Definition lift_r (n : nat) (N : redexes) := lift_rec_r N 0 n.
+
+Definition insert_Var (N : redexes) (i k : nat) :=
+  match compare k i with
+  
+       | inleft (left _) => Var (pred i)
+    | inleft _ => lift_r k N
+    | _ => Var i
+  end.
+
+Fixpoint subst_rec_r (L : redexes) : redexes -> nat -> redexes :=
+  fun (N : redexes) (k : nat) =>
+  match L with
+  | Var i => insert_Var N i k
+  | Fun M => Fun (subst_rec_r M N (S k))
+  | Ap b M M' => Ap b (subst_rec_r M N k) (subst_rec_r M' N k)
+  end.
+
+Definition subst_r (N M : redexes) := subst_rec_r M N 0.
+
+Lemma lift_le :
+ forall n i k : nat, k <= i -> lift_rec_r (Var i) k n = Var (n + i).
+
+Lemma lift_gt : forall n i k : nat, k > i -> lift_rec_r (Var i) k n = Var i.
+
+Lemma lift1 :
+ forall (U : redexes) (j i k : nat),
+ lift_rec_r (lift_rec_r U i j) (j + i) k = lift_rec_r U i (j + k).
+
+Lemma lift_lift_rec :
+ forall (U : redexes) (k p n i : nat),
+ i <= n ->
+ lift_rec_r (lift_rec_r U i p) (p + n) k = lift_rec_r (lift_rec_r U n k) i p.
+
+Lemma lift_lift :
+ forall (U : redexes) (k p n : nat),
+ lift_rec_r (lift_r p U) (p + n) k = lift_r p (lift_rec_r U n k).
+
+Lemma liftrecO : forall (U : redexes) (n : nat), lift_rec_r U n 0 = U.
+
+Lemma liftO : forall U : redexes, lift_r 0 U = U.
+
+Lemma lift_rec_lift_rec :
+ forall (U : redexes) (n p k i : nat),
+ k <= i + n ->
+ i <= k -> lift_rec_r (lift_rec_r U i n) k p = lift_rec_r U i (p + n).
+
+Lemma lift_rec_lift :
+ forall (U : redexes) (n p k i : nat),
+ k <= n -> lift_rec_r (lift_r n U) k p = lift_r (p + n) U.
+
+Lemma subst_eq :
+ forall (U : redexes) (n : nat), subst_rec_r (Var n) U n = lift_r n U.
+
+Lemma subst_gt :
+ forall (U : redexes) (n p : nat),
+ n > p -> subst_rec_r (Var n) U p = Var (pred n).
+
+Lemma subst_lt :
+ forall (U : redexes) (n p : nat), p > n -> subst_rec_r (Var n) U p = Var n.
+
+Lemma lift_rec_subst_rec :
+ forall (U V : redexes) (k p n : nat),
+ lift_rec_r (subst_rec_r V U p) (p + n) k =
+ subst_rec_r (lift_rec_r V (S (p + n)) k) (lift_rec_r U n k) p.
+
+Lemma lift_subst :
+ forall (U V : redexes) (k n : nat),
+ lift_rec_r (subst_r U V) n k =
+ subst_r (lift_rec_r U n k) (lift_rec_r V (S n) k).
+
+Lemma subst_rec_lift_rec1 :
+ forall (U V : redexes) (n p k : nat),
+ k <= n ->
+ subst_rec_r (lift_rec_r U k p) V (p + n) =
+ lift_rec_r (subst_rec_r U V n) k p.
+
+Lemma subst_rec_lift1 :
+ forall (U V : redexes) (n p : nat),
+ subst_rec_r (lift_r p U) V (p + n) = lift_r p (subst_rec_r U V n).
+
+Lemma subst_rec_lift_rec :
+ forall (U V : redexes) (p q n : nat),
+ q <= p + n ->
+ n <= q -> subst_rec_r (lift_rec_r U n (S p)) V q = lift_rec_r U n p.
+
+Lemma subst_rec_lift :
+ forall (U V : redexes) (p q : nat),
+ q <= p -> subst_rec_r (lift_r (S p) U) V q = lift_r p U.
+
+Lemma subst_rec_subst_rec :
+ forall (U V W : redexes) (n p : nat),
+ subst_rec_r (subst_rec_r V U p) W (p + n) =
+ subst_rec_r (subst_rec_r V W (S (p + n))) (subst_rec_r U W n) p.
+
+Lemma subst_rec_subst_0 :
+ forall (U V W : redexes) (n : nat),
+ subst_rec_r (subst_rec_r V U 0) W n =
+ subst_rec_r (subst_rec_r V W (S n)) (subst_rec_r U W n) 0.
+
+Lemma substitution :
+ forall (U V W : redexes) (n : nat),
+ subst_rec_r (subst_r U V) W n =
+ subst_r (subst_rec_r U W n) (subst_rec_r V W (S n)).
+
+Lemma lift_rec_preserve_comp :
+ forall U1 V1 : redexes,
+ comp U1 V1 -> forall n m : nat, comp (lift_rec_r U1 m n) (lift_rec_r V1 m n).
+
+Lemma subst_rec_preserve_comp :
+ forall U1 V1 U2 V2 : redexes,
+ comp U1 V1 ->
+ comp U2 V2 ->
+ forall n : nat, comp (subst_rec_r U1 U2 n) (subst_rec_r V1 V2 n).
+
+Lemma subst_preserve_comp :
+ forall U1 V1 U2 V2 : redexes,
+ comp U1 V1 -> comp U2 V2 -> comp (subst_r U2 U1) (subst_r V2 V1).
+
+Lemma lift_rec_preserve_regular :
+ forall U : redexes,
+ regular U -> forall n m : nat, regular (lift_rec_r U m n).
+
+Lemma subst_rec_preserve_regular :
+ forall U V : redexes,
+ regular U -> regular V -> forall n : nat, regular (subst_rec_r U V n).
+
+Lemma subst_preserve_regular :
+ forall U V : redexes, regular U -> regular V -> regular (subst_r U V). *)
+
+Require Import Residuals.
+(* Residuals:
+Require Import Arith.
+Require Import Terms.
+Require Import Reduction.
+Require Import Redexes.
+Require Import Test.
+Require Import Substitution.
+
+Inductive residuals : redexes -> redexes -> redexes -> Prop :=
+  | Res_Var : forall n : nat, residuals (Var n) (Var n) (Var n)
+  | Res_Fun :
+      forall U V W : redexes,
+      residuals U V W -> residuals (Fun U) (Fun V) (Fun W)
+  | Res_Ap :
+      forall U1 V1 W1 : redexes,
+      residuals U1 V1 W1 ->
+      forall U2 V2 W2 : redexes,
+      residuals U2 V2 W2 ->
+      forall b : bool, residuals (Ap b U1 U2) (Ap false V1 V2) (Ap b W1 W2)
+  | Res_redex :
+      forall U1 V1 W1 : redexes,
+      residuals U1 V1 W1 ->
+      forall U2 V2 W2 : redexes,
+      residuals U2 V2 W2 ->
+      forall b : bool,
+      residuals (Ap b (Fun U1) U2) (Ap true (Fun V1) V2) (subst_r W2 W1).
+
+Hint Resolve Res_Var Res_Fun Res_Ap Res_redex.
+
+Lemma residuals_function :
+ forall U V W : redexes,
+ residuals U V W -> forall (W' : redexes) (R : residuals U V W'), W' = W.
+
+Lemma residuals_lift_rec :
+ forall U1 U2 U3 : redexes,
+ residuals U1 U2 U3 ->
+ forall k n : nat,
+ residuals (lift_rec_r U1 n k) (lift_rec_r U2 n k) (lift_rec_r U3 n k).
+
+Lemma residuals_lift :
+ forall U1 U2 U3 : redexes,
+ residuals U1 U2 U3 ->
+ forall k : nat, residuals (lift_r k U1) (lift_r k U2) (lift_r k U3).
+Hint Resolve residuals_lift.
+
+Lemma residuals_subst_rec :
+ forall U1 U2 U3 V1 V2 V3 : redexes,
+ residuals U1 U2 U3 ->
+ residuals V1 V2 V3 ->
+ forall k : nat,
+ residuals (subst_rec_r U1 V1 k) (subst_rec_r U2 V2 k) (subst_rec_r U3 V3 k).
+Hint Resolve residuals_subst_rec.
+
+Theorem commutation :
+ forall U1 U2 U3 V1 V2 V3 : redexes,
+ residuals U1 U2 U3 ->
+ residuals V1 V2 V3 ->
+ residuals (subst_r V1 U1) (subst_r V2 U2) (subst_r V3 U3).
+
+Lemma residuals_comp : forall U V W : redexes, residuals U V W -> comp U V.
+
+Lemma preservation1 :
+ forall U V UV : redexes,
+ residuals U V UV ->
+ forall (T : redexes) (UVT : union U V T), residuals T V UV.
+
+Lemma preservation :
+ forall U V W UV : redexes,
+ union U V W -> residuals U V UV -> residuals W V UV.
+
+Lemma mutual_residuals_comp :
+ forall (W U UW : redexes) (RU : residuals U W UW) 
+   (V VW : redexes) (RV : residuals V W VW), comp UW VW.
+
+Lemma residuals_regular :
+ forall U V W : redexes, residuals U V W -> regular V.
+
+Lemma residuals_intro :
+ forall U V : redexes,
+ comp U V -> regular V -> exists W : redexes, residuals U V W.
+
+Lemma residuals_preserve_regular :
+ forall U V W : redexes, residuals U V W -> regular U -> regular W. *)
+
+Require Import Simulation.
+(* Simulation:
+Require Import Arith.
+Require Import Terms.
+Require Import Reduction.
+Require Import Redexes.
+Require Import Test.
+Require Import Marks.
+Require Import Substitution.
+Require Import Residuals.
+
+Lemma mark_lift_rec :
+ forall (M : lambda) (n k : nat),
+ lift_rec_r (mark M) k n = mark (lift_rec M k n).
+
+Lemma mark_lift :
+ forall (M : lambda) (n : nat), lift_r n (mark M) = mark (lift n M).
+
+Lemma mark_subst_rec :
+ forall (N M : lambda) (n : nat),
+ subst_rec_r (mark M) (mark N) n = mark (subst_rec M N n).
+
+Lemma mark_subst :
+ forall M N : lambda, subst_r (mark M) (mark N) = mark (subst M N).
+
+Lemma simulation :
+ forall M M' : lambda,
+ par_red1 M M' -> exists V : redexes, residuals (mark M) V (mark M').
+
+Lemma unmark_lift_rec :
+ forall (U : redexes) (n k : nat),
+ lift_rec (unmark U) k n = unmark (lift_rec_r U k n).
+
+Lemma unmark_lift :
+ forall (U : redexes) (n : nat), lift n (unmark U) = unmark (lift_r n U).
+
+Lemma unmark_subst_rec :
+ forall (V U : redexes) (n : nat),
+ subst_rec (unmark U) (unmark V) n = unmark (subst_rec_r U V n).
+
+Lemma unmark_subst :
+ forall U V : redexes, subst (unmark U) (unmark V) = unmark (subst_r U V).
+
+Lemma completeness :
+ forall U V W : redexes, residuals U V W -> par_red1 (unmark U) (unmark W).
+
+Definition reduction (M : lambda) (U : redexes) (N : lambda) :=
+  residuals (mark M) U (mark N).
+
+Lemma reduction_function :
+ forall (M N P : lambda) (U : redexes),
+ reduction M U N -> reduction M U P -> N = P. *)
+
+Require Import Cube.
+(* Cube:
+Require Import Arith.
+Require Import Terms.
+Require Import Reduction.
+Require Import Redexes.
+Require Import Test.
+Require Import Substitution.
+Require Import Residuals.
+
+Inductive compat : redexes -> redexes -> redexes -> Prop :=
+  | Compat_Var : forall n : nat, compat (Var n) (Var n) (Var n)
+  | Compat_Fun :
+      forall U V W : redexes, compat U V W -> compat (Fun U) (Fun V) (Fun W)
+  | Compat_Ap1 :
+      forall U1 V1 W1 : redexes,
+      compat U1 V1 W1 ->
+      forall U2 V2 W2 : redexes,
+      compat U2 V2 W2 ->
+      forall b : bool, compat (Ap false U1 U2) (Ap false V1 V2) (Ap b W1 W2)
+  | Compat_Ap2 :
+      forall U1 V1 W1 : redexes,
+      compat U1 V1 W1 ->
+      forall U2 V2 W2 : redexes,
+      compat U2 V2 W2 ->
+      forall b b' : bool,
+      compat (Ap true (Fun U1) U2) (Ap b (Fun V1) V2) (Ap b' (Fun W1) W2).
+
+Lemma compat_intro :
+ forall U W WU : redexes,
+ residuals W U WU ->
+ forall (V WV : redexes) (R2 : residuals W V WV) (S : sub V U), compat U V W.
+
+Lemma prism0 :
+ forall U V W : redexes,
+ compat U V W ->
+ forall (UV : redexes) (R1 : residuals U V UV) (WU WV : redexes)
+   (R2 : residuals W U WU) (R3 : residuals W V WV), 
+ residuals WV UV WU.
+
+Lemma prism1 :
+ forall U V W : redexes,
+ sub V U ->
+ forall UV : redexes,
+ residuals U V UV ->
+ forall WV : redexes,
+ residuals W V WV ->
+ forall WU : redexes, residuals W U WU -> residuals WV UV WU.
+
+Lemma prism2 :
+ forall U V W : redexes,
+ sub V U ->
+ regular U ->
+ forall UV : redexes,
+ residuals U V UV ->
+ forall WV : redexes,
+ residuals W V WV ->
+ forall WU : redexes, residuals WV UV WU -> residuals W U WU.
+
+Theorem prism :
+ forall U V W : redexes,
+ sub V U ->
+ forall UV : redexes,
+ residuals U V UV ->
+ forall WV : redexes,
+ residuals W V WV ->
+ forall WU : redexes, residuals W U WU <-> regular U /\ residuals WV UV WU.
+
+Lemma cube :
+ forall U V UV VU : redexes,
+ residuals U V UV ->
+ residuals V U VU ->
+ forall W WU WV WUV : redexes,
+ residuals W U WU ->
+ residuals WU VU WUV -> residuals W V WV -> residuals WV UV WUV.
+
+Lemma paving :
+ forall U V W WU WV : redexes,
+ residuals W U WU ->
+ residuals W V WV ->
+ exists UV : redexes,
+   (exists VU : redexes,
+      (exists WUV : redexes, residuals WU VU WUV /\ residuals WV UV WUV)). *)
+
+
+
+Definition confluence (A : Set) (R : A -> A -> Prop) :=
+
+  forall x y : A,
+
+  R x y -> forall z : A, R x z -> exists u : A, R y u /\ R z u.
+
+
+
+Lemma lemma1 : confluence lambda par_red -> confluence lambda red.
+
+Proof.
+
+unfold all, confluence in |- *; intros.
+
+cut (exists u : lambda, par_red y u /\ par_red z u).
+
+simple induction 1.
+
+intros u C; exists u; elim C; intros; split; apply par_red_red;
+
+ trivial with arith.
+
+apply H with x; apply red_par_red; trivial with arith.
+
+Qed.
+
+
+
+Definition strip :=
+
+  forall x y : lambda,
+
+  par_red x y ->
+
+  forall z : lambda,
+
+  par_red1 x z -> exists u : lambda, par_red1 y u /\ par_red z u.
+
+
+
+Lemma strip_lemma_r : confluence lambda par_red1 -> strip.
+
+Proof.
+
+unfold strip in |- *; simple induction 2; intros.
+
+elim H with M N z; trivial with arith.
+
+intros u C; exists u; elim C; intros; split; trivial with arith.
+
+apply one_step_par_red; trivial with arith.
+
+elim (H2 z H5); intros.
+
+elim H6; intros.
+
+elim (H4 x0 H7); intros.
+
+elim H9; intros.
+
+exists x1; split; trivial with arith.
+
+apply trans_par_red with x0; trivial with arith.
+
+Qed.
+
+
+
+Lemma strip_lemma_l : strip -> confluence lambda par_red.
+
+Proof.
+
+unfold confluence in |- *; simple induction 2; intros.
+
+elim (H M z H2 N H1).
+
+intros u C; exists u; elim C; intros; split; trivial with arith.
+
+apply one_step_par_red; trivial with arith.
+
+elim (H2 z H5); intros.
+
+elim H6; intros.
+
+elim (H4 x0 H7); intros.
+
+elim H9; intros.
+
+exists x1; split; trivial with arith.
+
+apply trans_par_red with x0; trivial with arith.
+
+Qed.
+
+
+
+Lemma lemma2 : confluence lambda par_red1 -> confluence lambda par_red.
+
+Proof.
+
+intro C; unfold confluence in |- *; intros.
+
+apply (strip_lemma_l (strip_lemma_r C) x); trivial with arith.
+
+Qed.
+
+
+
+Lemma parallel_moves : confluence lambda par_red1.
+
+Proof.
+
+red in |- *; intros M N R1 P R2.
+
+elim (simulation M N); trivial with arith.
+
+elim (simulation M P); trivial with arith.
+
+intros V RV U RU.  
+
+elim (paving U V (mark M) (mark N) (mark P)); trivial with arith.
+
+intros UV C1; elim C1.
+
+intros VU C2; elim C2.
+
+intros UVW C3; elim C3; intros P1 P2.
+
+exists (unmark UVW); split.
+
+rewrite (inverse N).
+
+apply Simulation.completeness with VU; trivial with arith.
+
+rewrite (inverse P).
+
+apply Simulation.completeness with UV; trivial with arith.
+
+Qed.
+
+
+
+Lemma confluence_parallel_reduction : confluence lambda par_red.
+
+Proof.
+
+apply lemma2; exact parallel_moves.
+
+Qed.
+
+
+
+Theorem confluence_beta_reduction : confluence lambda red.
+
+Proof.
+
+apply lemma1; exact confluence_parallel_reduction.
+
+Qed.

@@ -1,0 +1,2354 @@
+
+
+Require Import utils.
+(* utils:
+Require Import syntax.
+
+Definition valu (v : vari) :=
+  match v return nat with
+  | x n =>   n
+  end.
+
+Goal forall m n : nat, x m = x n :>vari -> m = n :>nat.
+intros m n Q.  
+replace m with (valu (x m)).
+rewrite Q.
+simpl in |- *; reflexivity.
+simpl in |- *; reflexivity.
+Save vari_nat.
+
+Definition Rator_ty (t : ty) :=
+  match t with
+  | nat_ty => t
+  | bool_ty => t
+  | arr t0 _ => t0
+  end.
+Definition Rand_ty (t : ty) :=
+  match t with
+  | nat_ty => t
+  | bool_ty => t
+  | arr _ t0 => t0
+  end.
+Goal
+forall s1 t1 s2 t2 : ty,
+arr s1 t1 = arr s2 t2 :>ty -> s1 = s2 :>ty /\ t1 = t2 :>ty.
+intros s1 t1 s2 t2 Q.
+split.
+change (Rator_ty (arr s1 t1) = Rator_ty (arr s2 t2) :>ty) in |- *.
+apply (f_equal Rator_ty). assumption.
+change (Rand_ty (arr s1 t1) = Rand_ty (arr s2 t2) :>ty) in |- *.
+apply (f_equal Rand_ty); assumption.
+Save subty_eq.
+
+Definition is_nat (t : ty) :=
+  match t with
+  | nat_ty => True
+  | bool_ty => False
+  | arr _ _ => False
+  end.
+Definition is_bool (t : ty) :=
+  match t with
+  | nat_ty => False
+  | bool_ty => True
+  | arr _ _ => False
+  end.
+Definition is_arr (t : ty) :=
+  match t with
+  | nat_ty => False
+  | bool_ty => False
+  | arr _ _ => True
+  end.
+
+Goal nat_ty <> bool_ty :>ty.
+red in |- *; intro H; change (is_nat bool_ty) in |- *; elim H; exact I.
+Save nat_not_bool.
+
+Goal forall t s : ty, nat_ty <> arr t s :>ty.
+red in |- *; intros t s H; change (is_nat (arr t s)) in |- *; elim H; exact I.
+Save nat_not_arr.
+
+Goal forall t s : ty, bool_ty <> arr t s :>ty.
+red in |- *; intros t s H; change (is_bool (arr t s)) in |- *; elim H;
+ exact I.
+Save bool_not_arr.
+
+	Goal forall m n : nat, m = n \/ m <> n.
+
+	simple induction m.
+	simple induction n.
+	left; reflexivity.
+	intros; right; apply O_S.
+	intros y H n; elim n.
+	right; red in |- *; intro; apply (O_S y); symmetry  in |- *; assumption.
+	intros y0 I.
+	elim (H y0); intro E. 
+	left; elim E; reflexivity.
+	right; red in |- *; intro.
+	apply E; apply eq_add_S; assumption.
+	Save Xmidnat.
+
+Goal forall v w : vari, v = w \/ v <> w.
+
+simple induction v.
+simple induction w.
+intro. 
+specialize (Xmidnat n n0).
+simple induction 1.
+intro eq; left; elim eq; reflexivity.
+intro neq; right; red in |- *; intro; apply neq.
+apply vari_nat; assumption.
+Save Xmidvar.
+
+Goal forall A B C : Prop, (IF A then B else C) -> A -> B.
+unfold IF_then_else in |- *; simple induction 1.
+simple induction 1; intros; assumption.
+simple induction 1; intros; absurd A; assumption.
+Save If_T.
+
+Goal forall A B C : Prop, (IF A then B else C) -> ~ A -> C.
+unfold IF_then_else in |- *; simple induction 1.
+simple induction 1; intros; absurd A; assumption.
+simple induction 1; intros; assumption.
+Save If_F.
+
+Goal forall A B C : Prop, A -> B -> IF A then B else C.
+unfold IF_then_else in |- *; intros.
+left; split; assumption.
+Save T_If.
+
+Goal forall A B C : Prop, ~ A -> C -> IF A then B else C.
+unfold IF_then_else in |- *; intros.
+right; split; assumption.
+Save F_If.
+
+Goal
+forall A B C D : Prop,
+(IF A then B else C) -> IF A then B else (IF A then D else C).
+
+unfold IF_then_else in |- *; simple induction 1.
+intro T; left; assumption.
+intro F; right; elim F; intros; split.
+assumption.
+right; split; assumption.
+Save IfA_IfAIfA.
+
+Goal forall A B C D : Prop, A \/ D /\ C -> (D -> A \/ B) -> A \/ B /\ C.
+
+intros A B C D A1 A2.
+elim A1.
+intro; left; assumption.
+simple induction 1; intros DH CH.
+specialize A2 with (1 := DH); induction A2.
+left; assumption.
+right; split; assumption.
+Save AABC_ABC. *)
+
+Require Import syntax.
+(* syntax:
+Inductive ty : Set :=
+  | nat_ty : ty 
+  | bool_ty : ty 
+  | arr : ty -> ty -> ty.   
+
+Inductive vari : Set :=
+    x : nat -> vari.
+
+Inductive tm : Set :=
+  | o : tm 
+  | ttt : tm 
+  | fff : tm 
+  | abs : vari -> ty -> tm -> tm 
+  | appl : tm -> tm -> tm 
+  | cond : tm -> tm -> tm -> tm 
+  | var : vari -> tm 
+  | succ : tm -> tm 
+  | prd : tm -> tm 
+  | is_o : tm -> tm 
+  | Fix : vari -> ty -> tm -> tm 
+  | clos : tm -> vari -> ty -> tm -> tm. *)
+
+Require Import environments.
+(* environments:
+Require Import syntax.
+
+Require Import List.
+
+Fixpoint member (A : Set) (b : A) (l : list A) {struct l} : Prop :=
+  match l with
+  | nil => False
+  | a :: m => a = b \/ member A b m
+  end.
+
+Definition VT := (vari * ty)%type.
+Definition ty_env := list VT.
+
+Definition VTT := (VT * tm)%type.
+Definition OS_env := list VTT.
+
+Definition mapsto (indx : vari) (val : ty) (l : list VT) :=
+  (fix F (l0 : list VT) : Prop :=
+     match l0 with
+     | nil => False
+     | v :: l1 => IF fst v = indx :>vari then snd v = val :>ty else F l1
+     end) l.
+ 
+Inductive config : Set :=
+    cfg : tm -> OS_env -> config.
+
+Definition cfgexp (c : config) := let (e, A) return tm := c in e.
+
+Definition cfgenv (c : config) := let (e, A) return OS_env := c in A.
+
+Definition TE_Dom (H : ty_env) :=
+  (fix F (l : list VT) : list vari :=
+     match l with
+     | nil => nil (A:=vari)
+     | v :: l0 => cons (fst v) (F l0)
+     end) H.
+ 
+Definition OS_Dom (A : OS_env) :=
+  (fix F (l : list VTT) : list vari :=
+     match l with
+     | nil => nil (A:=vari)
+     | v :: l0 => cons (fst (fst v)) (F l0)
+     end) A.
+ 
+Definition OS_Dom_ty (A : OS_env) :=
+  (fix F (l : list VTT) : list VT :=
+     match l with
+     | nil => nil (A:=VT)
+     | v :: l0 => cons (fst v) (F l0)
+     end) A. *)
+
+Require Import typecheck.
+(* typecheck:
+Require Import environments.
+Require Import List.
+
+Require Import syntax.
+
+Inductive TC : ty_env -> tm -> ty -> Prop :=
+  | TC_o : forall H : ty_env, TC H o nat_ty
+  | TC_ttt : forall H : ty_env, TC H ttt bool_ty
+  | TC_fff : forall H : ty_env, TC H fff bool_ty
+  | TC_succ :
+      forall (H : ty_env) (e : tm), TC H e nat_ty -> TC H (succ e) nat_ty
+  | TC_prd :
+      forall (H : ty_env) (e : tm), TC H e nat_ty -> TC H (prd e) nat_ty
+  | TC_is_o :
+      forall (H : ty_env) (e : tm), TC H e nat_ty -> TC H (is_o e) bool_ty
+  | TC_var :
+      forall (H : ty_env) (v : vari) (t : ty), mapsto v t H -> TC H (var v) t
+  | TC_appl :
+      forall (H : ty_env) (e e1 : tm) (s t : ty),
+      TC H e (arr s t) -> TC H e1 s -> TC H (appl e e1) t
+  | TC_abs :
+      forall (H : ty_env) (v : vari) (e : tm) (s t : ty),
+      TC ((v, s) :: H) e t -> TC H (abs v s e) (arr s t)
+  | TC_cond :
+      forall (H : ty_env) (e1 e2 e3 : tm) (t : ty),
+      TC H e1 bool_ty -> TC H e2 t -> TC H e3 t -> TC H (cond e1 e2 e3) t
+  | TC_fix :
+      forall (H : ty_env) (e : tm) (t : ty) (v : vari),
+      TC ((v, t) :: H) e t -> TC H (Fix v t e) t
+  | TC_clos :
+      forall (H : ty_env) (e e1 : tm) (s t : ty) (v : vari),
+      TC H e1 s -> TC ((v, s) :: H) e t -> TC H (clos e v s e1) t.
+                                
+Definition tc (H : ty_env) (e : tm) (t : ty) :=
+  match e return Prop with
+  | o =>
+      	 t = nat_ty
+       
+  | ttt => t = bool_ty
+       
+  | fff => t = bool_ty
+       
+  | abs v s e =>
+      exists r : ty, t = arr s r /\ TC ((v, s) :: H) e r
+       
+  | appl e1 e2 =>
+      exists s : ty, TC H e1 (arr s t) /\ TC H e2 s
+      
+  | cond e1 e2 e3 => TC H e1 bool_ty /\ TC H e2 t /\ TC H e3 t
+                                        	
+  | var v => mapsto v t H
+      	
+  | succ n => t = nat_ty /\ TC H n nat_ty
+              	
+  | prd n => t = nat_ty /\ TC H n nat_ty
+             	
+  | is_o n => t = bool_ty /\ TC H n nat_ty
+              
+  | Fix v s e1 => s = t /\ TC ((v, s) :: H) e1 t
+      
+  | clos e v s e1 => TC H e1 s /\ TC ((v, s) :: H) e t
+  end.
+
+Goal forall (H : ty_env) (e : tm) (t : ty), TC H e t -> tc H e t.
+simple induction 1; simpl in |- *; intros.
+reflexivity.
+reflexivity.
+reflexivity.
+split; reflexivity || assumption.
+split; reflexivity || assumption.
+split; reflexivity || assumption.
+assumption.
+exists s; split; assumption.
+exists t0; split; reflexivity || assumption.
+split; assumption || split; assumption.
+split; reflexivity || assumption.
+split; assumption.
+Save TC_tc.
+
+Goal forall (H : ty_env) (t : ty), TC H o t -> t = nat_ty.
+ intros H t HTC.  change (tc H o t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_o.
+
+Goal forall (H : ty_env) (t : ty), TC H ttt t -> t = bool_ty.
+ intros H t HTC.  change (tc H ttt t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_ttt.
+
+Goal forall (H : ty_env) (t : ty), TC H fff t -> t = bool_ty.
+ intros H t HTC.  change (tc H fff t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_fff.
+
+Goal
+forall (H : ty_env) (t : ty) (e0 : tm),
+TC H (prd e0) t -> t = nat_ty /\ TC H e0 nat_ty.
+ intros H t e0 HTC.  change (tc H (prd e0) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_prd.
+
+Goal
+forall (H : ty_env) (t : ty) (e0 : tm),
+TC H (succ e0) t -> t = nat_ty /\ TC H e0 nat_ty.
+ intros H t e0 HTC.  change (tc H (succ e0) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_succ.
+
+Goal
+forall (H : ty_env) (t : ty) (e0 : tm),
+TC H (is_o e0) t -> t = bool_ty /\ TC H e0 nat_ty.
+ intros H t e0 HTC.  change (tc H (is_o e0) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_is_o.
+
+Goal forall (H : ty_env) (t : ty) (v : vari), TC H (var v) t -> mapsto v t H.
+ intros H t v HTC.  change (tc H (var v) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_var.
+
+Goal
+forall (H : ty_env) (t : ty) (e1 e2 : tm),
+TC H (appl e1 e2) t -> exists s : ty, TC H e1 (arr s t) /\ TC H e2 s.
+ intros H t e1 e2 HTC.  change (tc H (appl e1 e2) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_appl.
+
+Goal
+forall (H : ty_env) (t s : ty) (v : vari) (e : tm),
+TC H (abs v s e) t -> exists r : ty, t = arr s r /\ TC ((v, s) :: H) e r.
+ intros H t s v e HTC.  change (tc H (abs v s e) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_abs.
+
+Goal
+forall (H : ty_env) (t : ty) (e1 e2 e3 : tm),
+TC H (cond e1 e2 e3) t -> TC H e1 bool_ty /\ TC H e2 t /\ TC H e3 t.
+ intros H t e1 e2 e3 HTC.  change (tc H (cond e1 e2 e3) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_cond.
+
+Goal
+forall (H : ty_env) (s t : ty) (e : tm) (v : vari),
+TC H (Fix v s e) t -> s = t /\ TC ((v, s) :: H) e t.
+ intros H s t e v HTC.  change (tc H (Fix v s e) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_fix.
+
+Goal
+forall (H : ty_env) (t s : ty) (e e1 : tm) (v : vari),
+TC H (clos e v s e1) t -> TC H e1 s /\ TC ((v, s) :: H) e t.
+ intros H t s e e1 v HTC.  change (tc H (clos e v s e1) t) in |- *.
+ apply TC_tc; assumption.
+Save inv_TC_clos. *)
+
+Require Import freevars.
+(* freevars:
+Require Import syntax.
+Require Import utils.
+
+Inductive FV (z : vari) : tm -> Prop :=
+  | FV_abs :
+      forall e : tm,
+      FV z e -> forall v : vari, z <> v -> forall t : ty, FV z (abs v t e)
+  | FV_fix :
+      forall e : tm,
+      FV z e -> forall v : vari, z <> v -> forall t : ty, FV z (Fix v t e)
+  | FV_appl1 : forall e_1 e_2 : tm, FV z e_1 -> FV z (appl e_1 e_2)
+  | FV_appl2 : forall e_1 e_2 : tm, FV z e_2 -> FV z (appl e_1 e_2)
+  | FV_cond1 : forall e_1 e_2 e_3 : tm, FV z e_1 -> FV z (cond e_1 e_2 e_3)
+  | FV_cond2 : forall e_1 e_2 e_3 : tm, FV z e_2 -> FV z (cond e_1 e_2 e_3)
+  | FV_cond3 : forall e_1 e_2 e_3 : tm, FV z e_3 -> FV z (cond e_1 e_2 e_3)
+  | FV_var : forall v : vari, z = v -> FV z (var v)
+  | FV_succ : forall e : tm, FV z e -> FV z (succ e)
+  | FV_prd : forall e : tm, FV z e -> FV z (prd e)
+  | FV_is_o : forall e : tm, FV z e -> FV z (is_o e)
+  | FV_closa :
+      forall (v : vari) (t : ty) (e e_1 : tm),
+      FV z e_1 -> FV z (clos e v t e_1)
+  | FV_closb :
+      forall (v : vari) (t : ty) (e e_1 : tm),
+      FV z e -> z <> v -> FV z (clos e v t e_1).
+
+Goal
+forall (x v : vari) (t : ty) (e : tm),
+~ FV x (abs v t e) -> x = v \/ ~ FV x e.
+intros.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_abs; assumption.
+Save notFV_abs.
+
+Goal
+forall (v : vari) (e1 e2 : tm), ~ FV v (appl e1 e2) -> ~ FV v e1 /\ ~ FV v e2.
+intros v e1 e2 N.
+split.
+red in |- *; intro; apply N; apply FV_appl1; assumption.
+red in |- *; intro; apply N; apply FV_appl2; assumption.
+Save notFV_appl.
+
+Goal
+forall (v : vari) (e1 e2 e3 : tm),
+~ FV v (cond e1 e2 e3) -> ~ FV v e1 /\ ~ FV v e2 /\ ~ FV v e3.
+intros v e1 e2 e3 N.
+split.
+red in |- *; intro; apply N; apply FV_cond1; assumption.
+split.
+red in |- *; intro; apply N; apply FV_cond2; assumption.
+red in |- *; intro; apply N; apply FV_cond3; assumption.
+Save notFV_cond.
+
+Goal forall v x : vari, ~ FV v (var x) -> v <> x.
+intros v x N.
+red in |- *; intro; apply N; apply FV_var; assumption.
+Save notFV_var.
+
+Goal forall (v : vari) (e : tm), ~ FV v (succ e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_succ; assumption.
+Save notFV_succ.
+
+Goal forall (v : vari) (e : tm), ~ FV v (prd e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_prd; assumption.
+Save notFV_prd.
+
+Goal forall (v : vari) (e : tm), ~ FV v (is_o e) -> ~ FV v e.
+intros v e N.
+red in |- *; intro; apply N; apply FV_is_o; assumption.
+Save notFV_is_o.
+
+Goal
+forall (x v : vari) (t : ty) (e : tm),
+~ FV x (Fix v t e) -> x = v \/ ~ FV x e.
+intros.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_fix; assumption.
+Save notFV_fix.
+
+Goal
+forall (x v : vari) (t : ty) (e a : tm),
+~ FV x (clos e v t a) -> ~ FV x a /\ (x = v \/ ~ FV x e).
+intros.
+split.
+red in |- *; intro; apply H; apply FV_closa; assumption.
+specialize (Xmidvar x v); simple induction 1; intro A.
+left; assumption.
+right; red in |- *; intro; apply H; apply FV_closb; assumption.
+Save notFV_clos.
+
+Definition fv (v : vari) (e : tm) :=
+  match e return Prop with
+  | o =>
+      	 False
+       
+  | ttt => False
+       
+  | fff => False
+       
+  | abs y s e => FV v e /\ v <> y
+                            
+  | appl e1 e2 => FV v e1 \/ FV v e2 
+                  
+  | cond e1 e2 e3 => FV v e1 \/ FV v e2 \/ FV v e3 
+                                	
+  | var y => v = y
+             	
+  | succ n => FV v n
+      	
+  | prd n => FV v n
+      	
+  | is_o n => FV v n
+      	
+  | Fix y s e => FV v e /\ v <> y
+                           
+  | clos e y s e1 => FV v e1 \/ FV v e /\ v <> y
+  end.
+
+Goal forall (v : vari) (e : tm), FV v e -> fv v e.
+
+simple induction 1; simpl in |- *; intros.
+split; assumption.
+split; assumption.
+left; assumption.
+right; assumption.
+left; assumption.
+right; left; assumption.
+right; right; assumption.
+assumption.
+assumption.
+assumption.
+assumption.
+left; assumption.
+right; split; assumption.
+Save FV_fv.
+
+Goal forall v : vari, ~ FV v o.
+intro v; red in |- *; intro F.
+change (fv v o) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_o.
+
+Goal forall v : vari, ~ FV v ttt.
+intro v; red in |- *; intro F.
+change (fv v ttt) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_ttt.
+
+Goal forall v : vari, ~ FV v fff.
+intro v; red in |- *; intro F.
+change (fv v fff) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_fff.
+
+Goal
+forall (v x : vari) (t : ty) (e : tm), FV v (abs x t e) -> FV v e /\ v <> x.
+intros v x t e F.
+change (fv v (abs x t e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_abs.
+
+Goal
+forall (v x : vari) (t : ty) (e : tm), FV v (Fix x t e) -> FV v e /\ v <> x.
+intros v x t e F.
+change (fv v (Fix x t e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_fix.
+
+Goal forall (v : vari) (e1 e2 : tm), FV v (appl e1 e2) -> FV v e1 \/ FV v e2.
+intros v e1 e2 F.
+change (fv v (appl e1 e2)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_appl.
+
+Goal
+forall (v : vari) (e1 e2 e3 : tm),
+FV v (cond e1 e2 e3) -> FV v e1 \/ FV v e2 \/ FV v e3.
+intros v e1 e2 e3 F.
+change (fv v (cond e1 e2 e3)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_cond.
+
+Goal forall v x : vari, FV v (var x) -> v = x.
+intros v x F.
+change (fv v (var x)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_var.
+
+Goal forall (v : vari) (e : tm), FV v (succ e) -> FV v e.
+intros v e F.
+change (fv v (succ e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_succ.
+
+Goal forall (v : vari) (e : tm), FV v (prd e) -> FV v e.
+intros v e F.
+change (fv v (prd e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_prd.
+
+Goal forall (v : vari) (e : tm), FV v (is_o e) -> FV v e.
+intros v e F.
+change (fv v (is_o e)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_is_o.
+
+Goal
+forall (v x : vari) (t : ty) (e a : tm),
+FV v (clos e x t a) -> FV v a \/ FV v e /\ v <> x.
+intros v x t e a F.
+change (fv v (clos e x t a)) in |- *.
+apply FV_fv; assumption.
+Save inv_FV_clos. *)
+
+Require Import List.
+
+Require Import ApTypes.
+(* ApTypes:
+Require Import TypeThms.
+
+Require Import List.
+Require Import syntax.
+Require Import environments.
+Require Import utils.
+Require Import freevars.
+Require Import typecheck.
+Require Import rename.
+Require Import OSrules.
+
+Goal
+forall (nv v : vari) (HF H0 : ty_env) (e : tm) (t s r : ty),
+nv = v \/
+~ FV nv e /\ ~ member vari v (TE_Dom HF) /\ ~ member vari nv (TE_Dom HF) ->
+TC ((v, t) :: HF ++ (v, s) :: H0) e r ->
+TC ((v, t) :: HF ++ (nv, s) :: H0) e r. 
+intros.
+elim H; intro B.
+rewrite B; assumption.
+change (TC (((v, t) :: HF) ++ (nv, s) :: H0) e r) in |- *.
+apply TEp_nfvExt with (((v, t) :: HF) ++ H0).
+change (TC (nil ++ (v, t) :: HF ++ H0) e r) in |- *.
+apply TEp_inv_eqExt with v s (nil ++ (v, t) :: HF ++ (v, s) :: H0).
+reflexivity.
+simpl in |- *; assumption.
+reflexivity.
+elim B; intros; assumption.
+reflexivity.
+Save ren_case1.
+
+Goal
+forall (nv v nx x : vari) (HF H0 : ty_env) (e1 e2 e3 : tm) (t s r : ty),
+v <> nx ->
+nx <> nv ->
+~ FV nx e1 ->
+~ FV nv e2 ->
+nv = v \/
+(nv = x \/ ~ FV nv e1) /\
+~ member vari v (TE_Dom HF) /\ ~ member vari nv (TE_Dom HF) ->
+(forall (HF H : ty_env) (s t : ty),
+ nx = x \/
+ ~ FV nx e1 /\ ~ member vari x (TE_Dom HF) /\ ~ member vari nx (TE_Dom HF) ->
+ TC (HF ++ (x, s) :: H) e1 t -> TC (HF ++ (nx, s) :: H) e2 t) ->
+(forall (HF H : ty_env) (s t : ty),
+ nv = v \/
+ ~ FV nv e2 /\ ~ member vari v (TE_Dom HF) /\ ~ member vari nv (TE_Dom HF) ->
+ TC (HF ++ (v, s) :: H) e2 t -> TC (HF ++ (nv, s) :: H) e3 t) ->
+TC ((x, t) :: HF ++ (v, s) :: H0) e1 r ->
+TC ((nx, t) :: HF ++ (nv, s) :: H0) e3 r. 
+intros.
+change (TC (((nx, t) :: HF) ++ (nv, s) :: H0) e3 r) in |- *.
+apply H6.
+elim H4; intro A.
+left; assumption.
+right; split.
+assumption.
+elim A; intros F M.
+elim M; intros Mv Mnv.
+split; simpl in |- *; unfold IF_then_else in |- *; red in |- *;
+ simple induction 1; intro N.
+apply H; symmetry  in |- *; assumption.
+apply Mv; assumption.
+apply H1; assumption.
+apply Mnv; assumption.
+change (TC (nil ++ (nx, t) :: HF ++ (v, s) :: H0) e2 r) in |- *.
+apply H5.
+right; split; assumption || split; simpl in |- *; red in |- *; intro;
+ assumption.
+simpl in |- *; assumption.
+Save ren_case2.
+
+Goal
+forall (nv v : vari) (H HF : ty_env) (s t : ty),
+nv = v \/
+nv <> v /\ ~ member vari v (TE_Dom HF) /\ ~ member vari nv (TE_Dom HF) ->
+mapsto v t (HF ++ (v, s) :: H) -> mapsto nv t (HF ++ (nv, s) :: H).
+simple induction 1; intro N.
+intro; rewrite N; assumption.
+generalize N; elim HF; simpl in |- *.
+intros A If.
+apply T_If.
+reflexivity.
+apply If_T with (v = v) (mapsto v t H).
+assumption.
+reflexivity.
+simple induction a; simpl in |- *.
+intros a0 b y IH A If.
+elim A; intro nvv; simple induction 1; intros a0v a0nv.
+apply F_If.
+red in |- *; intro; apply a0nv; left; assumption.
+apply IH.
+split.  assumption.
+split.
+red in |- *; intro; apply a0v; right; assumption.
+red in |- *; intro; apply a0nv; right; assumption.
+apply If_F with (a0 = v) (b = t).
+assumption.
+red in |- *; intro; apply a0v; left; assumption.
+Save ren_var1.
+
+Goal
+forall (nv v x : vari) (H HF : ty_env) (s t : ty),
+v <> x ->
+nv = v \/
+nv <> x /\ ~ member vari v (TE_Dom HF) /\ ~ member vari nv (TE_Dom HF) ->
+mapsto x t (HF ++ (v, s) :: H) -> mapsto x t (HF ++ (nv, s) :: H).
+intros nv v x H HF s t nvx.
+simple induction 1; intro A.
+intro; rewrite A; assumption.
+generalize A; elim HF; simpl in |- *.
+intros B If.
+apply F_If.
+elim B; intros; assumption.
+apply If_F with (v = x) (s = t); assumption.
+simple induction a; simpl in |- *.
+intros a0 b y IH B If.
+specialize (Xmidvar a0 x); simple induction 1; intro ax.
+apply T_If.
+assumption.
+apply If_T with (a0 = x) (mapsto x t (y ++ (v, s) :: H)); assumption.
+apply F_If.  assumption.
+apply IH.
+elim B; intro nx; simple induction 1; intros a0v a0nv.
+split. assumption.
+split.
+red in |- *; intro; apply a0v; right; assumption.
+red in |- *; intro; apply a0nv; right; assumption.
+apply If_F with (a0 = x) (b = t); assumption.
+Save ren_var2.
+
+Goal
+forall (nx x : vari) (e ne : tm),
+rename nx x e ne ->
+forall (HF H : ty_env) (s t : ty),
+nx = x \/
+~ FV nx e /\ ~ member vari x (TE_Dom HF) /\ ~ member vari nx (TE_Dom HF) ->
+TC (HF ++ (x, s) :: H) e t -> TC (HF ++ (nx, s) :: H) ne t.
+
+simple induction 1; intros.
+
+specialize inv_TC_o with (1 := H2).
+intro Q; rewrite Q; apply TC_o.
+
+specialize inv_TC_ttt with (1 := H2).
+intro Q; rewrite Q; apply TC_ttt.
+
+specialize inv_TC_fff with (1 := H2).
+intro Q; rewrite Q; apply TC_fff.
+
+specialize inv_TC_abs with (1 := H2).
+simple induction 1; simple induction 1; intros Q T.
+rewrite Q.
+apply TC_abs.
+apply ren_case1.
+specialize  AABC_ABC with (B := ~ FV nv e0) (1 := H1).
+intro AA; apply AA.
+intro; apply notFV_abs with t; assumption.
+assumption.
+
+specialize inv_TC_abs with (1 := H10).
+simple induction 1; simple induction 1; intros Q T.
+rewrite Q.
+apply TC_abs.
+apply ren_case2 with v x0 e1 e2.
+red in |- *; intro; apply H2; symmetry  in |- *; assumption.
+assumption.
+assumption.
+rewrite H0; apply RenNotFree with nx0 e1; assumption || elim H0; assumption.
+elim H9; intro S.
+left; assumption.
+right; elim S; intros F M; split.
+apply notFV_abs with t; assumption.
+assumption.
+assumption.
+assumption.
+assumption.
+
+specialize inv_TC_abs with (1 := H6).
+simple induction 1; simple induction 1; intros Q T.
+rewrite Q; apply TC_abs.
+change (TC (((x0, t) :: HF) ++ (nv, s) :: H4) ne0 x1) in |- *.
+apply H3.
+elim H5; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_abs; assumption.
+elim M; intros Mv Mnv.
+split; simpl in |- *; red in |- *; simple induction 1; intro A.
+apply H0; symmetry  in |- *; assumption.
+apply Mv; assumption.
+apply H1; symmetry  in |- *; assumption.
+apply Mnv; assumption.
+simpl in |- *; assumption.
+
+specialize inv_TC_appl with (1 := H6).
+simple induction 1; simple induction 1; intros T1 T2.
+apply TC_appl with x0.
+apply H1.
+elim H5; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_appl1; assumption.
+assumption.
+assumption.
+apply H3.
+elim H5; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_appl2; assumption.
+assumption.
+assumption.
+
+specialize inv_TC_cond with (1 := H8).
+simple induction 1; intro T1.
+simple induction 1; intros T2 T3.
+apply TC_cond.
+apply H1.
+elim H7; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_cond1; assumption.
+assumption.
+assumption.
+apply H3.
+elim H7; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_cond2; assumption.
+assumption.
+assumption.
+apply H5.
+elim H7; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_cond3; assumption.
+assumption.
+assumption.
+
+apply TC_var.
+specialize inv_TC_var with (1 := H2).
+intro; apply ren_var1 with v.
+elim H1; intro.
+left; assumption.
+right; elim H4; intros; split.
+apply notFV_var; assumption.
+assumption.
+assumption.
+
+apply TC_var.
+specialize inv_TC_var with (1 := H3).
+intro; apply ren_var2 with v.
+assumption.
+elim H2; intro A.
+left; assumption.
+right; elim A; intros F M; split.
+apply notFV_var; assumption.
+assumption.
+assumption.
+
+specialize inv_TC_succ with (1 := H4).
+simple induction 1; intros Q T; rewrite Q; apply TC_succ.
+apply H1.
+elim H3; intro A.
+left; assumption.
+right; elim A; intros F M.
+split; assumption || red in |- *; intro; apply F; apply FV_succ; assumption.
+assumption.
+
+specialize inv_TC_prd with (1 := H4).
+simple induction 1; intros Q T; rewrite Q; apply TC_prd.
+apply H1.
+elim H3; intro A.
+left; assumption.
+right; elim A; intros F M.
+split; assumption || red in |- *; intro; apply F; apply FV_prd; assumption.
+assumption.
+
+specialize inv_TC_is_o with (1 := H4).
+simple induction 1; intros Q T; rewrite Q; apply TC_is_o.
+apply H1. 
+elim H3; intro A.
+left; assumption.
+right; elim A; intros F M.
+split; assumption || red in |- *; intro; apply F; apply FV_is_o; assumption.
+assumption.
+
+specialize inv_TC_fix with (1 := H2).
+simple induction 1; intros Q T.
+elim Q.
+apply TC_fix.
+pattern t at 2 in |- *; rewrite Q.
+apply ren_case1.
+specialize  AABC_ABC with (1 := H1) (B := ~ FV nv e0).
+intro AA; apply AA.
+intro; apply notFV_fix with t; assumption.
+assumption.
+
+specialize inv_TC_fix with (1 := H10).
+simple induction 1; intros Q T.
+elim Q.
+apply TC_fix.
+pattern t at 2 in |- *; rewrite Q.
+apply ren_case2 with v x0 e1 e2.
+red in |- *; intro; apply H2; symmetry  in |- *; assumption.
+assumption.
+assumption.
+rewrite H0; apply RenNotFree with nx0 e1; assumption || elim H0; assumption.
+elim H9; intro S.
+left; assumption.
+right; elim S; intros F M; split.
+apply notFV_fix with t; assumption.
+assumption.
+assumption.
+assumption.
+assumption.
+
+specialize inv_TC_fix with (1 := H6).
+simple induction 1; intros Q T.
+elim Q; apply TC_fix.
+pattern t at 2 in |- *; rewrite Q.
+change (TC (((x0, t) :: HF) ++ (nv, s) :: H4) ne0 t0) in |- *.
+apply H3.
+elim H5; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_fix; assumption.
+elim M; intros Mv Mnv.
+split; simpl in |- *; red in |- *; simple induction 1; intro A.
+apply H0; symmetry  in |- *; assumption.
+apply Mv; assumption.
+apply H1; symmetry  in |- *; assumption.
+apply Mnv; assumption.
+simpl in |- *; assumption.
+
+specialize inv_TC_clos with (1 := H4).
+simple induction 1; intros Ta Tb.
+apply TC_clos.
+apply H1.
+elim H3; intro A.
+left; assumption.
+right; elim A; intros F M; split.
+red in |- *; intro; apply F; apply FV_closa; assumption.
+assumption.
+assumption.
+apply ren_case1.
+specialize  AABC_ABC with (1 := H3) (B := ~ FV nv e0).
+intro AA; apply AA.
+intro F; specialize notFV_clos with (1 := F).
+simple induction 1; intros; assumption.
+assumption.
+
+specialize inv_TC_clos with (1 := H12).
+simple induction 1; intros Ta Tb.
+apply TC_clos.
+apply H9.
+elim H11; intro A.
+left; assumption.
+right; elim A; intros F M; split.
+red in |- *; intro; apply F; apply FV_closa; assumption.
+assumption.
+assumption.
+apply ren_case2 with v x0 e0 e'.
+red in |- *; intro; apply H2; symmetry  in |- *; assumption.
+assumption.
+assumption.
+rewrite H0; apply RenNotFree with nx0 e0; assumption || elim H0; assumption.
+elim H11; intro S.
+left; assumption.
+right; split.
+left; assumption.
+elim S; intros; assumption.
+assumption.
+assumption.
+assumption.
+
+specialize inv_TC_clos with (1 := H8).
+simple induction 1; intros Ta Tb.
+apply TC_clos.
+apply H5.
+elim H7; intro A.
+left; assumption.
+right; elim A; intros F M; split.
+red in |- *; intro; apply F; apply FV_closa; assumption.
+assumption.
+assumption.
+change (TC (((x0, t) :: HF) ++ (nv, s) :: H6) ne0 t0) in |- *.
+apply H3.
+elim H7; intro N.
+left; assumption.
+right; elim N; intros F M; split.
+red in |- *; intro; apply F; apply FV_closb; assumption.
+elim M; intros Mv Mnv.
+split; simpl in |- *; red in |- *; simple induction 1; intro A.
+apply H0; symmetry  in |- *; assumption.
+apply Mv; assumption.
+apply H1; symmetry  in |- *; assumption.
+apply Mnv; assumption.
+simpl in |- *; assumption.
+Save TEp_RenExpGen.
+
+Goal
+forall (nx x : vari) (e ne : tm),
+rename nx x e ne ->
+nx = x \/ ~ FV nx e ->
+forall (H : ty_env) (s t : ty),
+TC ((x, s) :: H) e t -> TC ((nx, s) :: H) ne t.
+intros.
+change (TC (nil ++ (nx, s) :: H1) ne t) in |- *.
+apply TEp_RenExpGen with x e.
+assumption.
+elim H0; intro N.
+left; assumption.
+right; simpl in |- *; split.
+assumption.
+split; red in |- *; intro; assumption.
+simpl in |- *; assumption.
+Save TEp_RenExp.
+
+Goal
+forall (a e ne : tm) (A : OS_env) (n : vari) (t : ty),
+Ap a e A ne n t ->
+(forall x : vari, FV x e -> member vari x (OS_Dom A)) ->
+forall (H : ty_env) (r s : ty),
+TC H e (arr r s) -> TC ((n, t) :: H) ne s /\ r = t.
+
+simple induction 1; intros.
+specialize inv_TC_abs with (1 := H4).
+simple induction 1; simple induction 1; intros Ar Te.
+specialize subty_eq with (1 := Ar); simple induction 1; intros Q1 Q2.
+split.  rewrite Q2.
+apply TEp_RenExp with v e0.
+assumption.
+specialize (Xmidvar nv v); simple induction 1; intro N.
+left; assumption.
+right; red in |- *; intro F; apply H0; apply H2; apply FV_abs; assumption.
+assumption.
+assumption.
+specialize inv_TC_clos with (1 := H4).
+simple induction 1; intros T1 T0.
+elim H1 with ((v, s) :: H3) r s0.
+intros T Q.
+specialize (ApNewVar a e0 ne0 (OScons v s e1 A0) n0 t0) with (1 := H0);
+ intro M.
+split.
+apply TC_clos.
+change (TC (nil ++ (n0, t0) :: H3) e1 s) in |- *.
+apply TEp_nfvExt with H3.
+assumption.
+red in |- *; intro; apply M; simpl in |- *.
+right; apply H2; apply FV_closa; assumption.
+simpl in |- *; reflexivity.
+change (TC (nil ++ (v, s) :: (n0, t0) :: H3) ne0 s0) in |- *.
+apply TEp_swap with (nil ++ (n0, t0) :: (v, s) :: H3).
+red in |- *; intro; apply M.
+simpl in |- *; left; assumption.
+simpl in |- *; assumption.
+reflexivity.
+assumption.
+intros x F; simpl in |- *.
+specialize (Xmidvar x v); simple induction 1; intro N.
+left; symmetry  in |- *; assumption.
+right; apply H2; apply FV_closb; assumption.
+assumption.
+Save TEp_Ap. *)
+
+Require Import NF.
+(* NF:
+Require Import syntax.
+
+Inductive F : tm -> Prop :=
+  | F_abs : forall (v : vari) (s : ty) (e : tm), F (abs v s e)
+  | F_clos : forall (e e1 : tm) (v : vari) (s : ty), F e -> F (clos e v s e1).
+Inductive Sno : tm -> Prop :=
+  | Sno_o : Sno o
+  | Sno_s : forall e : tm, Sno e -> Sno (succ e).
+
+Inductive NF : tm -> Prop :=
+  | NF_ttt : NF ttt
+  | NF_fff : NF fff
+  | NF_Sno : forall e : tm, Sno e -> NF e
+  | NF_F : forall e : tm, F e -> NF e.
+
+Definition NFsucc (e : tm) :=
+  match e return Prop with
+  | o =>
+        True
+       
+  | ttt => True
+       
+  | fff => True
+       
+  | abs v s e => True
+       
+  | appl e1 e2 => True
+      
+  | cond e1 e2 e3 => True
+       
+  | var v => True
+       
+  | succ n => Sno (succ n)
+       
+  | prd n => True
+       
+  | is_o n => True
+       
+  | Fix v s e => True
+      
+  | clos e v s e1 => True
+  end.
+
+Goal forall e : tm, NF (succ e) -> Sno (succ e).
+intros e HNF.  change (NFsucc (succ e)) in |- *.
+elim HNF; simpl in |- *; intros; exact I || elim H; simpl in |- *; intros;
+ exact I || apply Sno_s; assumption.
+Save inv_NF_Sno.
+
+Definition SnoSucc (e : tm) :=
+  match e return Prop with
+  | o =>
+        True
+       
+  | ttt => True
+       
+  | fff => True
+       
+  | abs v s e => True
+       
+  | appl e1 e2 => True
+       
+  | cond e1 e2 e3 => True
+       
+  | var v => True
+       
+  | succ n => Sno n
+       
+  | prd n => True
+       
+  | is_o n => True
+       
+  | Fix v s e => True
+       
+  | clos e v s e1 => True
+  end.
+
+Goal forall e : tm, Sno (succ e) -> Sno e.
+intros e HSno. change (SnoSucc (succ e)) in |- *.
+elim HSno; simpl in |- *; intros; exact I || assumption.
+Save inv_Sno_s. *)
+
+Require Import valid.
+(* valid:
+Require Import syntax.
+Require Import List.
+Require Import utils.
+Require Import environments.
+
+Require Import typecheck.
+
+Inductive valid_env : OS_env -> Prop :=
+  | valid_nil : valid_env nil
+  | valid_cons :
+      forall (v : vari) (t : ty) (e : tm) (A : OS_env),
+      TC (OS_Dom_ty A) e t -> valid_env A -> valid_env ((v, t, e) :: A).
+
+Inductive valid_config (c : config) : Prop :=
+    valid_cfg :
+      valid_env (cfgenv c) ->
+      forall t : ty, TC (OS_Dom_ty (cfgenv c)) (cfgexp c) t -> valid_config c.
+
+Definition valid_c (A : OS_env) :=
+  match A return Prop with
+  | nil =>
+        True
+       
+  | vtt :: A' => valid_env A' /\ TC (OS_Dom_ty A') (snd vtt) (snd (fst vtt))
+  end.
+
+Goal
+forall (v : vari) (t : ty) (e : tm) (A : OS_env),
+valid_env ((v, t, e) :: A) -> valid_env A /\ TC (OS_Dom_ty A) e t.
+
+intros v t e A H.
+change (valid_c ((v, t, e) :: A)) in |- *.
+elim H; simpl in |- *; exact I || intros; split; assumption.
+Save inv_valid_cons. *)
+
+Require Import OSrules.
+(* OSrules:
+Require Import List.
+Require Import syntax.
+Require Import environments.
+
+Require Import typecheck.
+
+Require Import rename.
+
+Definition OScons (v : vari) (t : ty) (e : tm) (A : OS_env) := (v, t, e) :: A.
+
+Inductive Ap (a : tm) : tm -> OS_env -> tm -> vari -> ty -> Prop :=
+  | Ap_abs :
+      forall (nv v : vari) (t : ty) (e ne : tm) (A : OS_env),
+      ~ member vari nv (OS_Dom A) ->
+      rename nv v e ne -> Ap a (abs v t e) A ne nv t
+  | Ap_clos :
+      forall (n v : vari) (s t : ty) (e ne e1 : tm) (A : OS_env),
+      Ap a e (OScons v s e1 A) ne n t ->
+      Ap a (clos e v s e1) A (clos ne v s e1) n t.
+
+Goal
+forall (a fun_ b : tm) (A : OS_env) (n : vari) (t : ty),
+Ap a fun_ A b n t -> ~ member vari n (OS_Dom A).
+
+   simple induction 1; intros.
+   assumption.
+   red in |- *; intro; apply H1; simpl in |- *.
+   right; assumption.
+Save ApNewVar.
+
+Inductive OSred : config -> config -> Prop :=
+  | OS_C0 : forall A : OS_env, OSred (cfg o A) (cfg o A)
+  | OS_CT : forall A : OS_env, OSred (cfg ttt A) (cfg ttt A)
+  | OS_CF : forall A : OS_env, OSred (cfg fff A) (cfg fff A)
+  | OS_L :
+      forall (A : OS_env) (e : tm) (t : ty) (x : vari),
+      OSred (cfg (abs x t e) A) (cfg (abs x t e) A)
+  | OS_P0 :
+      forall (A A' : OS_env) (e : tm),
+      OSred (cfg e A) (cfg o A') -> OSred (cfg (prd e) A) (cfg o A')
+  | OS_P :
+      forall (A A' : OS_env) (e e1 : tm),
+      OSred (cfg e A) (cfg (succ e1) A') -> OSred (cfg (prd e) A) (cfg e1 A')
+  | OS_ZT :
+      forall (A A' : OS_env) (e : tm),
+      OSred (cfg e A) (cfg o A') -> OSred (cfg (is_o e) A) (cfg ttt A')
+  | OS_ZF :
+      forall (A A' : OS_env) (e e1 : tm),
+      OSred (cfg e A) (cfg (succ e1) A') ->
+      OSred (cfg (is_o e) A) (cfg fff A')
+  | OS_S :
+      forall (A A' : OS_env) (e e1 : tm),
+      OSred (cfg e A) (cfg e1 A') ->
+      OSred (cfg (succ e) A) (cfg (succ e1) A')
+  | OS_Var1 :
+      forall (A A' : OS_env) (e en : tm) (t : ty) (x : vari),
+      ~ member vari x (OS_Dom A) ->
+      OSred (cfg e A) (cfg en A') ->
+      OSred (cfg (var x) (OScons x t e A)) (cfg en (OScons x t en A'))
+  | OS_Var2 :
+      forall (A A' : OS_env) (e en : tm) (t : ty) (x y : vari),
+      x <> y ->
+      ~ member vari x (OS_Dom A) ->
+      OSred (cfg (var y) A) (cfg en A') ->
+      OSred (cfg (var y) (OScons x t e A)) (cfg en (OScons x t e A'))
+  | OS_Appl :
+      forall (A A' A'' : OS_env) (e1 e2 en en' enf : tm) (n : vari) (t : ty),
+      OSred (cfg e1 A) (cfg en A') ->
+      Ap e2 en A en' n t ->
+      OSred (cfg (clos en' n t e2) A') (cfg enf A'') ->
+      OSred (cfg (appl e1 e2) A) (cfg enf A'')
+  | OS_IfTrue :
+      forall (A A' A'' : OS_env) (e1 e2 e3 en : tm),
+      OSred (cfg e1 A) (cfg ttt A') ->
+      OSred (cfg e2 A') (cfg en A'') ->
+      OSred (cfg (cond e1 e2 e3) A) (cfg en A'')
+  | OS_IfFalse :
+      forall (A A' A'' : OS_env) (e1 e2 e3 en : tm),
+      OSred (cfg e1 A) (cfg fff A') ->
+      OSred (cfg e3 A') (cfg en A'') ->
+      OSred (cfg (cond e1 e2 e3) A) (cfg en A'')
+  | OS_Fix :
+      forall (A A' : OS_env) (e e' en : tm) (x nx : vari) (t : ty),
+      ~ member vari nx (OS_Dom A) ->
+      rename nx x e e' ->
+      OSred (cfg (clos e' nx t (Fix x t e)) A) (cfg en A') ->
+      OSred (cfg (Fix x t e) A) (cfg en A')
+  | OS_CL :
+      forall (A A' : OS_env) (e e1 en e1' : tm) (x : vari) (t : ty),
+      OSred (cfg e (OScons x t e1 A)) (cfg en (OScons x t e1' A')) ->
+      forall s : ty,
+      TC (OS_Dom_ty (OScons x t e1 A)) en s ->
+      ~ (s = nat_ty \/ s = bool_ty) ->
+      OSred (cfg (clos e x t e1) A) (cfg (clos en x t e1') A')
+  | OS_CL' :
+      forall (A A' : OS_env) (e e1 en e1' : tm) (x : vari) (t : ty),
+      OSred (cfg e (OScons x t e1 A)) (cfg en (OScons x t e1' A')) ->
+      forall s : ty,
+      TC (OS_Dom_ty (OScons x t e1 A)) en s ->
+      s = nat_ty \/ s = bool_ty -> OSred (cfg (clos e x t e1) A) (cfg en A'). *)
+
+Require Import envprops.
+(* envprops:
+Require Import syntax.
+Require Import List.
+Require Import utils.
+Require Import freevars.
+Require Import typecheck.
+
+Require Import environments.
+
+Require Import OSrules.
+
+Goal forall A : OS_env, TE_Dom (OS_Dom_ty A) = OS_Dom A.
+   simple induction A; intros.
+   simpl in |- *; reflexivity.
+   simpl in |- *; elim H; reflexivity.
+Save TEDomDomty_OSDom.
+
+Goal
+forall (v : vari) (t : ty) (H : ty_env),
+mapsto v t H -> member vari v (TE_Dom H).
+
+simple induction H; simpl in |- *.
+intro; assumption.
+intros; elim H1; intro.
+left; elim H2; intros; assumption.
+right; elim H2; intro; exact H0.
+Save vtinH_vinDomH.
+
+Goal
+forall (H : ty_env) (e : tm) (t : ty),
+TC H e t -> forall v : vari, FV v e -> member vari v (TE_Dom H).
+
+simple induction 1; simpl in |- *; intros.
+absurd (FV v o).    apply inv_FV_o.    assumption.
+absurd (FV v ttt).  apply inv_FV_ttt.  assumption.
+absurd (FV v fff).  apply inv_FV_fff.  assumption.
+apply H3.  apply inv_FV_succ; assumption.
+apply H3.  apply inv_FV_prd; assumption.
+apply H3.  apply inv_FV_is_o; assumption.
+specialize inv_FV_var with (1 := H3); intro Q.
+rewrite Q; apply vtinH_vinDomH with t0; assumption.
+specialize inv_FV_appl with (1 := H6).
+simple induction 1; intro F.
+apply H3; assumption.
+apply H5; assumption.
+specialize inv_FV_abs with (1 := H4); simple induction 1; intros.
+elim (H3 v0).
+intro; absurd (v0 = v); assumption || symmetry  in |- *; assumption.
+intro; assumption.
+assumption.
+specialize inv_FV_cond with (1 := H8); simple induction 1.
+intro; apply H3; assumption.
+simple induction 1; intro.
+apply H5; assumption.
+apply H7; assumption.
+specialize inv_FV_fix with (1 := H4); simple induction 1; intros.
+elim (H3 v0).
+intro; absurd (v0 = v); assumption || symmetry  in |- *; assumption.
+intro; assumption.
+assumption.
+specialize inv_FV_clos with (1 := H6); simple induction 1; intros.
+apply H3; assumption.
+elim H8; intros.
+elim (H5 v0).
+intro; absurd (v0 = v); assumption || symmetry  in |- *; assumption.
+intro; assumption.
+assumption.
+Save TCHet_FVeinDomH.
+
+Goal
+forall c c' : config,
+OSred c c' -> OS_Dom_ty (cfgenv c) = OS_Dom_ty (cfgenv c').
+
+   simple induction 1; simpl in |- *; intros.
+   reflexivity.  reflexivity.  reflexivity.  reflexivity.
+   assumption.  assumption.  assumption.  assumption.  assumption.
+   elim H2; reflexivity.
+   elim H3; reflexivity.
+   transitivity (OS_Dom_ty A'); assumption.
+   transitivity (OS_Dom_ty A'); assumption.
+   transitivity (OS_Dom_ty A'); assumption.
+   assumption.
+   replace (OS_Dom_ty A) with (tail ((x, t) :: OS_Dom_ty A)).
+   replace (OS_Dom_ty A') with (tail ((x, t) :: OS_Dom_ty A')).
+   apply (f_equal (tail (A:=VT))); assumption.
+   simpl in |- *; reflexivity.
+   simpl in |- *; reflexivity.
+   replace (OS_Dom_ty A) with (tail ((x, t) :: OS_Dom_ty A)).
+   replace (OS_Dom_ty A') with (tail ((x, t) :: OS_Dom_ty A')).
+   apply (f_equal (tail (A:=VT))); assumption.
+   simpl in |- *; reflexivity.
+   simpl in |- *; reflexivity.
+Save dom_pres. *)
+
+Require Import rename.
+(* rename:
+Require Import syntax.
+Require Import freevars.
+
+Inductive rename : vari -> vari -> tm -> tm -> Prop :=
+  | ren_o : forall nv v : vari, rename nv v o o
+  | ren_ttt : forall nv v : vari, rename nv v ttt ttt
+  | ren_fff : forall nv v : vari, rename nv v fff fff
+  | ren_abs1 :
+      forall (nv v : vari) (t : ty) (e : tm),
+      rename nv v (abs v t e) (abs v t e)
+  | ren_abs2 :
+      forall (nv v x nx : vari) (t : ty) (e1 e2 e3 : tm),
+      nv = x ->
+      ~ FV nx e1 ->
+      nx <> v ->
+      nx <> nv ->
+      rename nx x e1 e2 ->
+      rename nv v e2 e3 -> rename nv v (abs x t e1) (abs nx t e3)
+  | ren_abs3 :
+      forall (nv v x : vari) (t : ty) (e ne : tm),
+      v <> x ->
+      nv <> x -> rename nv v e ne -> rename nv v (abs x t e) (abs x t ne)
+  | ren_appl :
+      forall (nv v : vari) (e1 e2 ne1 ne2 : tm),
+      rename nv v e1 ne1 ->
+      rename nv v e2 ne2 -> rename nv v (appl e1 e2) (appl ne1 ne2)
+  | ren_cond :
+      forall (nv v : vari) (e1 ne1 e2 ne2 e3 ne3 : tm),
+      rename nv v e1 ne1 ->
+      rename nv v e2 ne2 ->
+      rename nv v e3 ne3 -> rename nv v (cond e1 e2 e3) (cond ne1 ne2 ne3)
+  | ren_var_eq : forall nv v : vari, rename nv v (var v) (var nv)
+  | ren_var_not_eq :
+      forall nv v x : vari, v <> x -> rename nv v (var x) (var x)
+  | ren_succ :
+      forall (nv v : vari) (e ne : tm),
+      rename nv v e ne -> rename nv v (succ e) (succ ne)
+  | ren_prd :
+      forall (nv v : vari) (e ne : tm),
+      rename nv v e ne -> rename nv v (prd e) (prd ne)
+  | ren_is_o :
+      forall (nv v : vari) (e ne : tm),
+      rename nv v e ne -> rename nv v (is_o e) (is_o ne)
+  | ren_fix1 :
+      forall (nv v : vari) (t : ty) (e : tm),
+      rename nv v (Fix v t e) (Fix v t e)
+  | ren_fix2 :
+      forall (nv v x nx : vari) (t : ty) (e1 e2 e3 : tm),
+      nv = x ->
+      ~ FV nx e1 ->
+      nx <> v ->
+      nx <> nv ->
+      rename nx x e1 e2 ->
+      rename nv v e2 e3 -> rename nv v (Fix x t e1) (Fix nx t e3)
+  | ren_fix3 :
+      forall (nv v x : vari) (t : ty) (e ne : tm),
+      v <> x ->
+      nv <> x -> rename nv v e ne -> rename nv v (Fix x t e) (Fix x t ne)
+  | ren_clos1 :
+      forall (nv v : vari) (t : ty) (e a na : tm),
+      rename nv v a na -> rename nv v (clos e v t a) (clos e v t na)
+  | ren_clos2 :
+      forall (nv v x nx : vari) (t : ty) (e e' ne a na : tm),
+      nv = x ->
+      ~ FV nx e ->
+      nx <> v ->
+      nx <> nv ->
+      rename nx x e e' ->
+      rename nv v e' ne ->
+      rename nv v a na -> rename nv v (clos e x t a) (clos ne nx t na)
+  | ren_clos3 :
+      forall (nv v x : vari) (t : ty) (e ne a na : tm),
+      v <> x ->
+      nv <> x ->
+      rename nv v e ne ->
+      rename nv v a na -> rename nv v (clos e x t a) (clos ne x t na).
+
+Goal
+forall (nx x : vari) (e ne : tm), rename nx x e ne -> nx <> x -> ~ FV x ne.
+
+   simple induction 1; simpl in |- *; intros.
+   apply inv_FV_o.
+   apply inv_FV_ttt.
+   apply inv_FV_fff.
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F);
+    simple induction 1; intros Fe N.
+   apply N; reflexivity.
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F).
+   simple induction 1; intros Fe3 N.
+   red in H7; apply H7; assumption.
+   red in |- *; intro F; specialize inv_FV_abs with (1 := F).
+   simple induction 1; intros Fe N.
+   red in H3; apply H3; assumption.
+   red in |- *; intro F; specialize inv_FV_appl with (1 := F);
+    simple induction 1.
+   apply H1; assumption.
+   apply H3; assumption.
+   red in |- *; intro F; specialize inv_FV_cond with (1 := F);
+    simple induction 1. apply H1; assumption.
+   simple induction 1.
+   apply H3; assumption.
+   apply H5; assumption.
+   red in |- *; intro F; specialize inv_FV_var with (1 := F).
+   intro; apply H0; symmetry  in |- *; assumption.
+   red in |- *; intro F; specialize inv_FV_var with (1 := F).  assumption.
+   red in |- *; intro F; specialize inv_FV_succ with (1 := F).
+   apply H1; assumption.
+   red in |- *; intro F; specialize inv_FV_prd with (1 := F); apply H1;
+    assumption.
+   red in |- *; intro F; specialize inv_FV_is_o with (1 := F); apply H1;
+    assumption.
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F);
+    simple induction 1; intros Fe N.
+   apply N; reflexivity.
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F).
+   simple induction 1; intros Fe3 N.
+   red in H7; apply H7; assumption.
+   red in |- *; intro F; specialize inv_FV_fix with (1 := F).
+   simple induction 1; intros Fe N.
+   red in H3; apply H3; assumption.
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+   simple induction 1. apply H1; assumption.
+   simple induction 1; intros Fe N.
+   apply N; reflexivity.
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+   simple induction 1.  apply H9; assumption.
+   simple induction 1; intros Fe3 N.
+   red in H7; apply H7; assumption.
+   red in |- *; intro F; specialize inv_FV_clos with (1 := F).
+   simple induction 1.  apply H5; assumption.
+   simple induction 1; intros Fe N.
+   red in H3; apply H3; assumption.
+Save RenNotFree. *)
+
+Require Import NFprops.
+(* NFprops:
+Require Import NF.
+Require Import List.
+Require Import syntax.
+Require Import typecheck.
+Require Import environments.
+Require Import freevars.
+Require Import utils.
+
+Goal forall e : tm, F e -> forall H : ty_env, ~ TC H e nat_ty.
+   simple induction 1; intros.
+   red in |- *; intro.
+   specialize inv_TC_abs with (1 := H1).
+   simple induction 1; simple induction 1; intros Q T.
+   generalize Q; exact (nat_not_arr s x).
+   red in |- *; intro.
+   specialize inv_TC_clos with (1 := H3).
+   simple induction 1; intros T1 T0.
+   red in H1; apply H1 with ((v, s) :: H2); assumption.
+Save Fe_not_nat.
+
+Goal forall e : tm, F e -> forall H : ty_env, ~ TC H e bool_ty.
+   simple induction 1; intros.
+   red in |- *; intro.
+   specialize inv_TC_abs with (1 := H1).
+   simple induction 1; simple induction 1; intros Q T.
+   generalize Q; exact (bool_not_arr s x).
+   red in |- *; intro.
+   specialize inv_TC_clos with (1 := H3).
+   simple induction 1; intros T1 T0.
+   red in H1; apply H1 with ((v, s) :: H2); assumption.
+Save Fe_not_bool.
+
+Goal
+forall e : tm,
+NF e ->
+forall (H : ty_env) (t : ty),
+TC H e t -> ~ (t = nat_ty \/ t = bool_ty) -> F e.
+ simple induction 1; simpl in |- *; intros.
+ elim H2; right.
+ apply (inv_TC_ttt H0); assumption.
+ elim H2; right.
+ apply (inv_TC_fff H0); assumption.
+ elim H3; left.
+ generalize H2.
+ elim H0.
+ exact (inv_TC_o H1 t).
+ intros.
+ specialize inv_TC_succ with (1 := H6).
+ simple induction 1; intros; assumption.
+ assumption.
+Save NFe_Fe.
+
+Goal
+forall e : tm,
+NF e -> forall H : ty_env, TC H e bool_ty -> e = ttt \/ e = fff.
+simple induction 1; intros.
+left; reflexivity.
+right; reflexivity.
+generalize H2; elim H0; intros.
+specialize inv_TC_o with (1 := H3); intro Q.
+absurd (nat_ty = bool_ty).
+exact nat_not_bool.
+symmetry  in |- *; assumption.
+specialize inv_TC_succ with (1 := H5); simple induction 1; intros Q T.
+absurd (nat_ty = bool_ty).
+exact nat_not_bool.
+symmetry  in |- *; assumption.
+absurd (TC H1 e0 bool_ty).
+apply Fe_not_bool; assumption.
+assumption.
+Save NFebool_TF.
+
+Goal forall e : tm, NF e -> forall H : ty_env, TC H e nat_ty -> Sno e.
+
+   simple induction 1; intros.
+   specialize inv_TC_ttt with (1 := H1); intro Q.
+   absurd (nat_ty = bool_ty); assumption || exact nat_not_bool.
+   specialize inv_TC_fff with (1 := H1); intro Q.
+   absurd (nat_ty = bool_ty); assumption || exact nat_not_bool.
+   assumption.
+   absurd (TC H1 e0 nat_ty).
+   apply Fe_not_nat.
+   assumption.
+   assumption.
+Save NFenat_Snoe.
+
+Goal forall e : tm, Sno e -> forall v : vari, ~ FV v e.
+  simple induction 1; intros.
+  apply inv_FV_o.
+  red in |- *; intro.
+  red in H1; apply H1 with v.
+  apply inv_FV_succ; assumption.
+Save Snoe_notFVe. *)
+
+Require Import TypeThms.
+(* TypeThms:
+Require Import List.
+Require Import syntax.
+Require Import environments.
+Require Import freevars.
+Require Import utils.
+
+Require Import typecheck.
+
+Require Import mapsto.
+
+Goal
+forall (v x : vari) (r s t : ty) (H H1 : ty_env) (e : tm),
+v = x ->
+TC H1 e t ->
+forall HF HM : ty_env,
+H1 = HF ++ (v, r) :: HM ++ H -> TC (HF ++ (v, r) :: HM ++ (x, s) :: H) e t. 
+
+   simple induction 2; simpl in |- *; intros.
+   apply TC_o.
+   apply TC_ttt.
+   apply TC_fff.
+   apply TC_succ.
+   apply H5; assumption.
+   apply TC_prd.
+   apply H5; assumption.
+   apply TC_is_o.
+   apply H5; assumption.
+   apply TC_var.
+   elim H0; apply Mp_eqExt.
+   elim H5; assumption.
+   apply TC_appl with s0.
+   apply H5; assumption.
+   apply H7; assumption.
+   apply TC_abs.
+   change (TC (((v0, s0) :: HF) ++ (v, r) :: HM ++ (x, s) :: H) e0 t0)
+    in |- *.
+   apply H5; rewrite H6; simpl in |- *; reflexivity.
+   apply TC_cond.
+   apply H5; assumption.
+   apply H7; assumption.
+   apply H9; assumption.
+   apply TC_fix.
+   change (TC (((v0, t0) :: HF) ++ (v, r) :: HM ++ (x, s) :: H) e0 t0)
+    in |- *.
+   apply H5; rewrite H6; simpl in |- *; reflexivity.
+   apply TC_clos.
+   apply H5; assumption.
+   change (TC (((v0, s0) :: HF) ++ (v, r) :: HM ++ (x, s) :: H) e0 t0)
+    in |- *.
+   apply H7; rewrite H8; simpl in |- *; reflexivity.
+Save TEp_eqExt.
+
+Goal
+forall (v x : vari) (r s t : ty) (H H1 : ty_env) (e : tm),
+v = x ->
+TC H1 e t ->
+forall HF HM : ty_env,
+H1 = HF ++ (v, r) :: HM ++ (x, s) :: H -> TC (HF ++ (v, r) :: HM ++ H) e t.
+
+   simple induction 2; intros.
+   apply TC_o.
+   apply TC_ttt.
+   apply TC_fff.
+   apply TC_succ; apply H5; assumption.
+   apply TC_prd; apply H5; assumption.
+   apply TC_is_o; apply H5; assumption.
+   apply TC_var.
+   apply Mp_inv_eqExt with x s; assumption || elim H5; assumption.
+   apply TC_appl with s0.
+   apply H5; assumption.
+   apply H7; assumption.
+   apply TC_abs.
+   change (TC (((v0, s0) :: HF) ++ (v, r) :: HM ++ H) e0 t0) in |- *.
+   apply H5.
+   simpl in |- *; elim H6; reflexivity.
+   apply TC_cond.
+   apply H5; assumption.
+   apply H7; assumption.
+   apply H9; assumption.
+   apply TC_fix.
+   change (TC (((v0, t0) :: HF) ++ (v, r) :: HM ++ H) e0 t0) in |- *.
+   apply H5.
+   simpl in |- *; elim H6; reflexivity.
+   apply TC_clos.
+   apply H5; assumption.
+   change (TC (((v0, s0) :: HF) ++ (v, r) :: HM ++ H) e0 t0) in |- *.
+   apply H7.
+   simpl in |- *; elim H8; reflexivity.
+Save TEp_inv_eqExt.
+   
+Goal
+forall (H : ty_env) (e : tm) (t : ty) (x : vari) (s : ty),
+TC H e t ->
+~ FV x e ->
+forall H1 H2 : ty_env, H = H1 ++ H2 -> TC (H1 ++ (x, s) :: H2) e t.
+
+simple induction 1; simpl in |- *; intros.
+apply TC_o.
+apply TC_ttt.
+apply TC_fff.
+apply TC_succ.
+apply H3; assumption || apply notFV_succ; assumption.
+apply TC_prd.
+apply H3; assumption || apply notFV_prd; assumption.
+apply TC_is_o.
+apply H3; assumption || apply notFV_is_o; assumption.
+apply TC_var.
+simpl in |- *; specialize notFV_var with (1 := H3); intro NQ.
+apply Mp_nfvExt.
+red in |- *; intro; apply NQ; symmetry  in |- *; assumption.
+elim H6; assumption.
+apply TC_appl with s0.
+apply H3; assumption || specialize notFV_appl with (1 := H6);
+ simple induction 1; intros; assumption.
+apply H5; assumption || specialize notFV_appl with (1 := H6);
+ simple induction 1; intros; assumption.
+apply TC_abs.
+specialize (Xmidvar x v); simple induction 1.
+intro xv; rewrite xv.
+change (TC (nil ++ (v, s0) :: H5 ++ (v, s) :: H6) e0 t0) in |- *.
+apply TEp_eqExt with (nil ++ (v, s0) :: H5 ++ H6). 
+reflexivity.
+simpl in |- *; elim H7; assumption.
+reflexivity.
+intro nxv. 
+change (TC (((v, s0) :: H5) ++ (x, s) :: H6) e0 t0) in |- *.
+apply H3.
+specialize notFV_abs with (1 := H4).
+simple induction 1; intro P.
+absurd (x = v); assumption.
+assumption.
+rewrite H7; simpl in |- *; reflexivity.
+apply TC_cond.
+apply H3; assumption || red in |- *; intro; apply H8; apply FV_cond1;
+ assumption.
+apply H5; assumption || red in |- *; intro; apply H8; apply FV_cond2;
+ assumption.
+apply H7; assumption || red in |- *; intro; apply H8; apply FV_cond3;
+ assumption.
+apply TC_fix.
+specialize (Xmidvar x v); simple induction 1.
+intro xv; rewrite xv.
+change (TC (nil ++ (v, t0) :: H5 ++ (v, s) :: H6) e0 t0) in |- *.
+apply TEp_eqExt with (nil ++ (v, t0) :: H5 ++ H6). 
+reflexivity.
+simpl in |- *; elim H7; assumption.
+reflexivity.
+intro nxv. 
+change (TC (((v, t0) :: H5) ++ (x, s) :: H6) e0 t0) in |- *.
+apply H3.
+specialize notFV_fix with (1 := H4).
+simple induction 1; intro P.
+absurd (x = v); assumption.
+assumption.
+rewrite H7; simpl in |- *; reflexivity.
+
+apply TC_clos.
+apply H3; assumption || red in |- *; intro; apply H6; apply FV_closa;
+ assumption.
+specialize (Xmidvar x v); simple induction 1.
+intro xv; rewrite xv.
+change (TC (nil ++ (v, s0) :: H7 ++ (v, s) :: H8) e0 t0) in |- *.
+apply TEp_eqExt with (nil ++ (v, s0) :: H7 ++ H8). 
+reflexivity.
+simpl in |- *; elim H9; assumption.
+reflexivity.
+intro nxv. 
+change (TC (((v, s0) :: H7) ++ (x, s) :: H8) e0 t0) in |- *.
+apply H5.
+specialize notFV_clos with (1 := H6).
+simple induction 1; intro; simple induction 1; intro P.
+absurd (x = v); assumption.
+assumption.
+rewrite H9; simpl in |- *; reflexivity.
+Save TEp_nfvExt.
+
+   Goal
+forall (H1 H : ty_env) (e : tm) (t : ty) (x : vari) (s : ty),
+TC H1 e t ->
+forall HF : ty_env, H1 = HF ++ (x, s) :: H -> ~ FV x e -> TC (HF ++ H) e t.
+
+   simple induction 1; intros.
+   apply TC_o.
+   apply TC_ttt.
+   apply TC_fff.
+   apply TC_succ; apply H4; assumption || red in |- *; intro; apply H6;
+    apply FV_succ; assumption.
+   apply TC_prd; apply H4; assumption || red in |- *; intro; apply H6;
+    apply FV_prd; assumption.
+   apply TC_is_o; apply H4; assumption || red in |- *; intro; apply H6;
+    apply FV_is_o; assumption.
+   apply TC_var.
+   apply Mp_inv_nfvExt with x s.
+   red in |- *; intro; apply H5; apply FV_var; symmetry  in |- *; assumption.
+   elim H4; assumption.
+   apply TC_appl with s0.
+   apply H4; assumption || red in |- *; intro; apply H8; apply FV_appl1;
+    assumption.
+   apply H6; assumption || red in |- *; intro; apply H8; apply FV_appl2;
+    assumption.
+   apply TC_abs.
+   change (TC (((v, s0) :: HF) ++ H) e0 t0) in |- *.
+   specialize (Xmidvar v x); simple induction 1; intros.
+   simpl in |- *; change (TC (nil ++ (v, s0) :: HF ++ H) e0 t0) in |- *.
+   apply TEp_inv_eqExt with x s (nil ++ (v, s0) :: HF ++ (x, s) :: H).
+   assumption.
+   elim H5; assumption.
+   reflexivity.
+   apply H4.  
+   simpl in |- *; elim H5; reflexivity.
+   red in |- *; intro; apply H6; apply FV_abs; assumption || red in |- *;
+    intro; apply H8; symmetry  in |- *; assumption.
+   apply TC_cond.
+   apply H4; assumption || red in |- *; intro; apply H10; apply FV_cond1;
+    assumption.
+   apply H6; assumption || red in |- *; intro; apply H10; apply FV_cond2;
+    assumption.
+   apply H8; assumption || red in |- *; intro; apply H10; apply FV_cond3;
+    assumption.
+   apply TC_fix.
+   specialize (Xmidvar v x); simple induction 1; intros.
+   change (TC (nil ++ (v, t0) :: HF ++ H) e0 t0) in |- *.
+   apply TEp_inv_eqExt with x s (nil ++ (v, t0) :: HF ++ (x, s) :: H).
+   assumption.
+   elim H5; assumption.
+   reflexivity.
+   change (TC (((v, t0) :: HF) ++ H) e0 t0) in |- *.
+   apply H4.  
+   simpl in |- *; elim H5; reflexivity.
+   red in |- *; intro; apply H6; apply FV_fix; assumption || red in |- *;
+    intro; apply H8; symmetry  in |- *; assumption.
+   apply TC_clos.
+   apply H4; assumption || red in |- *; intro; apply H8; apply FV_closa;
+    assumption. 
+   specialize (Xmidvar x v); simple induction 1; intros.
+   change (TC (nil ++ (v, s0) :: HF ++ H) e0 t0) in |- *.
+   apply TEp_inv_eqExt with x s (nil ++ (v, s0) :: HF ++ (x, s) :: H).
+   symmetry  in |- *; assumption.
+   elim H7; assumption.
+   reflexivity.
+   change (TC (((v, s0) :: HF) ++ H) e0 t0) in |- *.
+   apply H6.
+   simpl in |- *; elim H7; reflexivity.
+   red in |- *; intro; apply H8; apply FV_closb; assumption.
+Save TEp_inv_nfvExt.
+   
+Goal
+forall v x : vari,
+v <> x ->
+forall (r s t : ty) (e : tm) (H1 HB : ty_env),
+TC H1 e r ->
+forall HF : ty_env,
+H1 = HF ++ (x, s) :: (v, t) :: HB -> TC (HF ++ (v, t) :: (x, s) :: HB) e r.
+
+   simple induction 2; simpl in |- *; intros.
+   apply TC_o.
+   apply TC_ttt.
+   apply TC_fff.
+   apply TC_succ; apply (H4 HF); assumption.
+   apply TC_prd; apply (H4 HF); assumption.
+   apply TC_is_o; apply (H4 HF); assumption.
+   apply TC_var; apply Mp_swap.
+   red in |- *; intro; apply H; symmetry  in |- *; assumption.
+   elim H4; assumption.
+   apply TC_appl with s0.
+   apply (H4 HF); assumption.
+   apply H6; assumption.
+   apply TC_abs.
+   change (TC (((v0, s0) :: HF) ++ (v, t) :: (x, s) :: HB) e0 t0) in |- *.
+   apply (H4 ((v0, s0) :: HF)); simpl in |- *.
+   elim H5; reflexivity.
+   apply TC_cond.
+   apply (H4 HF); assumption.
+   apply (H6 HF); assumption.
+   apply (H8 HF); assumption.
+   apply TC_fix.
+   change (TC (((v0, t0) :: HF) ++ (v, t) :: (x, s) :: HB) e0 t0) in |- *.
+   apply (H4 ((v0, t0) :: HF)); simpl in |- *.
+   elim H5; reflexivity.
+   apply TC_clos.
+   apply (H4 HF); assumption.
+   change (TC (((v0, s0) :: HF) ++ (v, t) :: (x, s) :: HB) e0 t0) in |- *.
+   apply (H6 ((v0, s0) :: HF)); simpl in |- *.
+   elim H7; reflexivity.
+Save TEp_swap. *)
+
+
+
+Goal
+
+forall c c' : config,
+
+OSred c c' ->
+
+valid_env (cfgenv c) ->
+
+forall t : ty,
+
+TC (OS_Dom_ty (cfgenv c)) (cfgexp c) t ->
+
+valid_env (cfgenv c') /\
+
+TC (OS_Dom_ty (cfgenv c')) (cfgexp c') t /\ NF (cfgexp c'). 
+
+
+
+simple induction 1; simpl in |- *; intros.
+
+
+
+split. assumption.  split. assumption.  apply NF_Sno; apply Sno_o.
+
+split. assumption.  split. assumption.  apply NF_ttt.
+
+split. assumption.  split. assumption.  apply NF_fff.
+
+split. assumption.  split. assumption.  apply NF_F; apply F_abs.
+
+
+
+specialize inv_TC_prd with (1 := H3); simple induction 1; intros Q T.
+
+apply H1. assumption.
+
+rewrite Q; assumption.
+
+
+
+specialize inv_TC_prd with (1 := H3); simple induction 1; intros Q T.
+
+elim H1 with t. intro V; simple induction 1; intros Ts Nf.
+
+split. assumption.
+
+split.
+
+specialize inv_TC_succ with (1 := Ts); simple induction 1; intros.
+
+rewrite Q; assumption.
+
+apply NF_Sno; apply inv_Sno_s; apply inv_NF_Sno; assumption.
+
+assumption.
+
+rewrite Q; assumption.
+
+
+
+specialize inv_TC_is_o with (1 := H3); simple induction 1; intros Q T.
+
+elim H1 with nat_ty. intro V; simple induction 1; intros Tc Nf.
+
+split. assumption.
+
+split. rewrite Q; apply TC_ttt.
+
+apply NF_ttt.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_is_o with (1 := H3); simple induction 1; intros Q T.
+
+elim H1 with nat_ty. intro V; simple induction 1; intros Tc Nf.
+
+split. assumption.
+
+split. rewrite Q; apply TC_fff.
+
+apply NF_fff.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_succ with (1 := H3); simple induction 1; intros Q T.
+
+elim H1 with nat_ty. intro V; simple induction 1; intros Te1 Nf.
+
+split. assumption.
+
+split. rewrite Q; apply TC_succ; assumption.
+
+apply NF_Sno; apply Sno_s; apply NFenat_Snoe with (OS_Dom_ty A'); assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_var with (1 := H4); simpl in |- *; intro M.
+
+specialize  If_T with (1 := M); intro T.
+
+cut (x = x). intro R; specialize T with (1 := R); rename T into Q.
+
+unfold OScons in H3.
+
+specialize inv_valid_cons with (1 := H3); simple induction 1; intros V Te.
+
+elim H2 with t. intro V'; simple induction 1; intros Ten NFen.
+
+split. unfold OScons in |- *; apply valid_cons; assumption.
+
+split. change (TC (nil ++ (x, t) :: OS_Dom_ty A') en t0) in |- *.
+
+apply TEp_nfvExt with (OS_Dom_ty A').
+
+elim Q; assumption.
+
+red in |- *; intro F; apply H0.
+
+elim (TEDomDomty_OSDom A).
+
+apply TCHet_FVeinDomH with en t.
+
+replace (OS_Dom_ty A) with (OS_Dom_ty A').  assumption.
+
+symmetry  in |- *; apply (dom_pres (cfg e A) (cfg en A')).
+
+assumption.
+
+assumption.
+
+reflexivity.
+
+assumption.
+
+assumption.
+
+assumption.
+
+reflexivity.
+
+
+
+specialize inv_TC_var with (1 := H5); simpl in |- *; intro M.
+
+specialize If_F with (1 := M) (2 := H0); intro M1.
+
+unfold OScons in H4.
+
+specialize inv_valid_cons with (1 := H4); simple induction 1; intros V Te.
+
+elim H3 with t0. intro V'; simple induction 1; intros Ten NFen.
+
+specialize dom_pres with (1 := H2); simpl in |- *; intro QA.
+
+split. unfold OScons in |- *; apply valid_cons.
+
+elim QA; assumption.
+
+assumption.
+
+split. change (TC (nil ++ (x, t) :: OS_Dom_ty A') en t0) in |- *.
+
+apply TEp_nfvExt with (OS_Dom_ty A').
+
+assumption.
+
+red in |- *; intro F.
+
+apply H1.
+
+elim (TEDomDomty_OSDom A).
+
+apply TCHet_FVeinDomH with en t0.
+
+rewrite QA; assumption.
+
+assumption.
+
+reflexivity.
+
+assumption.
+
+assumption.
+
+apply TC_var; assumption.
+
+
+
+specialize inv_TC_appl with (1 := H6); simple induction 1; simple induction 1;
+
+ intros T1 T2.
+
+specialize dom_pres with (1 := H0); simpl in |- *; intro Q1.
+
+specialize dom_pres with (1 := H3); simpl in |- *; intro Q2.
+
+specialize 
+
+ TEp_Ap
+
+   with (a := e2) (e := en) (ne := en') (A := A) (n := n) (t := t) (1 := H2).
+
+intro Ap.
+
+elim H1 with (arr x t0). intro V'; simple induction 1; intros Ten NFen.
+
+elim Ap with (OS_Dom_ty A') x t0. intros Ten' XT.
+
+apply H4.
+
+assumption.
+
+apply TC_clos.
+
+elim XT; elim Q1; assumption.
+
+assumption.
+
+specialize
+
+ ApNewVar
+
+  with (a := e2) (fun_ := en) (b := en') (A := A) (n := n) (t := t) (1 := H2);
+
+ intros M x0 F.
+
+elim (TEDomDomty_OSDom A).
+
+apply TCHet_FVeinDomH with en (arr x t0).
+
+rewrite Q1; assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_cond with (1 := H5).
+
+simple induction 1; intro T1; simple induction 1; intros T2 T3.
+
+elim H1 with bool_ty. intro V'; simple induction 1; intros Tt NFt.
+
+apply H3.  assumption.
+
+specialize dom_pres with (1 := H0); simpl in |- *; intro Q1.
+
+elim Q1; assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_cond with (1 := H5).
+
+simple induction 1; intro T1; simple induction 1; intros T2 T3.
+
+elim H1 with bool_ty. intro V'; simple induction 1; intros Tf NFf.
+
+apply H3.  assumption.
+
+specialize dom_pres with (1 := H0); simpl in |- *; intro Q1.
+
+elim Q1; assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_fix with (1 := H5).
+
+simple induction 1; intros Q Te.
+
+apply H3.  assumption.
+
+apply TC_clos.
+
+pattern t at 2 in |- *; rewrite Q; assumption.
+
+apply TEp_RenExp with x e.  assumption.
+
+specialize (Xmidvar nx x); simple induction 1; intro N.
+
+left; assumption.
+
+right; red in |- *; intro F; apply H0.
+
+elim (TEDomDomty_OSDom A).
+
+specialize TCHet_FVeinDomH with (1 := Te) (2 := F).
+
+simpl in |- *; simple induction 1; intro R.
+
+absurd (nx = x); assumption || symmetry  in |- *; assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_clos with (1 := H5); simple induction 1; intros T1 Te.
+
+elim H1 with t0. intro VxA'; simple induction 1; intros Ten Fen.
+
+unfold OScons in VxA'; specialize inv_valid_cons with (1 := VxA').
+
+simple induction 1; intros V' T'.
+
+split.  assumption.
+
+split. apply TC_clos.
+
+assumption.
+
+assumption.
+
+apply NF_F; apply F_clos; apply NFe_Fe with ((x, t) :: OS_Dom_ty A) s;
+
+ assumption.
+
+unfold OScons in |- *; apply valid_cons.
+
+assumption.
+
+assumption.
+
+assumption.
+
+
+
+specialize inv_TC_clos with (1 := H5); simple induction 1; intros T1 Te.
+
+elim H1 with t0. intro VxA'; simple induction 1; intros Ten NFen.
+
+unfold OScons in VxA'; specialize inv_valid_cons with (1 := VxA').
+
+simple induction 1; intros V' T'.
+
+split.  assumption.
+
+split.  change (TC (nil ++ OS_Dom_ty A') en t0) in |- *.
+
+apply TEp_inv_nfvExt with (nil ++ (x, t) :: OS_Dom_ty A') x t.
+
+simpl in |- *; assumption.
+
+reflexivity.
+
+elim H3; intro Q.
+
+apply Snoe_notFVe.
+
+apply NFenat_Snoe with ((x, t) :: OS_Dom_ty A).
+
+assumption.
+
+elim Q; assumption.
+
+specialize 
+
+ NFebool_TF with (e := en) (1 := NFen) (H := (x, t) :: OS_Dom_ty A).
+
+simple induction 1.
+
+intro T; rewrite T; apply inv_FV_ttt.
+
+intro F; rewrite F; apply inv_FV_fff.
+
+elim Q; assumption.
+
+assumption.
+
+unfold OScons in |- *; apply valid_cons; assumption.
+
+assumption.
+
+Save subjr_NF.
+
+
+
+Goal
+
+forall (e e' : tm) (A A' : OS_env),
+
+OSred (cfg e A) (cfg e' A') ->
+
+valid_env A -> forall t : ty, TC (OS_Dom_ty A) e t -> TC (OS_Dom_ty A') e' t.
+
+
+
+intros.
+
+specialize (subjr_NF (cfg e A) (cfg e' A')) with (1 := H) (2 := H0) (3 := H1).
+
+simpl in |- *; simple induction 1; intro; simple induction 1; intros;
+
+ assumption.
+
+Save subjr_red.
+
+
+
+Goal
+
+forall (e e' : tm) (A A' : OS_env),
+
+OSred (cfg e A) (cfg e' A') -> valid_config (cfg e A) -> NF e'. 
+
+
+
+intros e e' A A' R VC.
+
+elim VC; simpl in |- *; intros V t T.
+
+specialize (subjr_NF (cfg e A) (cfg e' A')) with (1 := R) (2 := V) (3 := T).
+
+simpl in |- *; simple induction 1; intro; simple induction 1; intros;
+
+ assumption.
+
+Save NormalForms.
+

@@ -1,0 +1,1523 @@
+
+
+Require Import String.
+
+Require Import Coqlib.
+
+Require Import Decidableplus.
+(* Decidableplus:
+Program Definition Decidable_eq {A: Type} (eqdec: forall (x y: A), {x=y} + {x<>y}) (x y: A) : Decidable (eq x y) := {|
+  Decidable_witness := proj_sumbool (eqdec x y)
+|}. *)
+
+Require Import Maps.
+
+Require Import AST.
+
+Require Import Integers.
+
+Require Import Op.
+(* Op:
+Require Import BoolEqual.
+Require Import Coqlib.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+Require Import Values.
+Require Import Memory.
+Require Import Globalenvs.
+Require Import Events.
+
+Set Implicit Arguments.
+
+Inductive condition : Type :=
+  | Ccomp (c: comparison)      
+  | Ccompu (c: comparison)     
+  | Ccompimm (c: comparison) (n: int) 
+  | Ccompuimm (c: comparison) (n: int)  
+  | Ccompl (c: comparison)      
+  | Ccomplu (c: comparison)     
+  | Ccomplimm (c: comparison) (n: int64) 
+  | Ccompluimm (c: comparison) (n: int64)  
+  | Ccompf (c: comparison)     
+  | Cnotcompf (c: comparison)  
+  | Ccompfs (c: comparison)    
+  | Cnotcompfs (c: comparison) 
+  | Cmaskzero (n: int)         
+  | Cmasknotzero (n: int).     
+
+Inductive addressing: Type :=
+  | Aindexed: Z -> addressing       
+  | Aindexed2: Z -> addressing      
+  | Ascaled: Z -> Z -> addressing   
+  | Aindexed2scaled: Z -> Z -> addressing
+                                    
+  | Aglobal: ident -> ptrofs -> addressing 
+  | Abased: ident -> ptrofs -> addressing  
+  | Abasedscaled: Z -> ident -> ptrofs -> addressing  
+  | Ainstack: ptrofs -> addressing. 
+
+Inductive operation : Type :=
+  | Omove                    
+  | Ointconst (n: int)       
+  | Olongconst (n: int64)    
+  | Ofloatconst (n: float)   
+  | Osingleconst (n: float32)
+  | Oindirectsymbol (id: ident) 
+
+  | Ocast8signed             
+  | Ocast8unsigned           
+  | Ocast16signed            
+  | Ocast16unsigned          
+  | Oneg                     
+  | Osub                     
+  | Omul                     
+  | Omulimm (n: int)         
+  | Omulhs                   
+  | Omulhu                   
+  | Odiv                     
+  | Odivu                    
+  | Omod                     
+  | Omodu                    
+  | Oand                     
+  | Oandimm (n: int)         
+  | Oor                      
+  | Oorimm (n: int)          
+  | Oxor                     
+  | Oxorimm (n: int)         
+  | Onot                     
+  | Oshl                     
+  | Oshlimm (n: int)         
+  | Oshr                     
+  | Oshrimm (n: int)         
+  | Oshrximm (n: int)        
+  | Oshru                    
+  | Oshruimm (n: int)        
+  | Ororimm (n: int)         
+  | Oshldimm (n: int)        
+  | Olea (a: addressing)     
+
+  | Omakelong                
+  | Olowlong                 
+  | Ohighlong                
+  | Ocast32signed            
+  | Ocast32unsigned          
+  | Onegl                    
+  | Oaddlimm (n: int64)      
+  | Osubl                    
+  | Omull                    
+  | Omullimm (n: int64)      
+  | Omullhs                  
+  | Omullhu                  
+  | Odivl                    
+  | Odivlu                   
+  | Omodl                    
+  | Omodlu                   
+  | Oandl                    
+  | Oandlimm (n: int64)      
+  | Oorl                     
+  | Oorlimm (n: int64)       
+  | Oxorl                    
+  | Oxorlimm (n: int64)      
+  | Onotl                    
+  | Oshll                    
+  | Oshllimm (n: int)        
+  | Oshrl                    
+  | Oshrlimm (n: int)        
+  | Oshrxlimm (n: int)       
+  | Oshrlu                   
+  | Oshrluimm (n: int)       
+  | Ororlimm (n: int)        
+  | Oleal (a: addressing)    
+
+  | Onegf                    
+  | Oabsf                    
+  | Oaddf                    
+  | Osubf                    
+  | Omulf                    
+  | Odivf                    
+  | Onegfs                   
+  | Oabsfs                   
+  | Oaddfs                   
+  | Osubfs                   
+  | Omulfs                   
+  | Odivfs                   
+  | Osingleoffloat           
+  | Ofloatofsingle           
+
+  | Ointoffloat              
+  | Ofloatofint              
+  | Ointofsingle             
+  | Osingleofint             
+  | Olongoffloat             
+  | Ofloatoflong             
+  | Olongofsingle            
+  | Osingleoflong            
+
+  | Ocmp (cond: condition).  
+
+Definition eq_condition (x y: condition) : {x=y} + {x<>y}.
+
+Definition eq_addressing (x y: addressing) : {x=y} + {x<>y}.
+
+Definition beq_operation: forall (x y: operation), bool.
+
+Definition eq_operation: forall (x y: operation), {x=y} + {x<>y}.
+
+Global Opaque eq_condition eq_addressing eq_operation.
+
+Definition offset_in_range (n: Z) : bool := zle Int.min_signed n && zle n Int.max_signed.
+
+Definition addressing_valid (a: addressing) : bool :=
+  if Archi.ptr64 then
+    match a with
+    | Aindexed n => offset_in_range n
+    | Aindexed2 n => offset_in_range n
+    | Ascaled sc ofs => offset_in_range ofs
+    | Aindexed2scaled sc ofs => offset_in_range ofs
+    | Aglobal s ofs => true
+    | Abased s ofs => true
+    | Abasedscaled sc s ofs => true
+    | Ainstack ofs => offset_in_range (Ptrofs.signed ofs)
+    end
+  else true.
+  
+Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool :=
+  match cond, vl with
+  | Ccomp c, v1 :: v2 :: nil => Val.cmp_bool c v1 v2
+  | Ccompu c, v1 :: v2 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 v2
+  | Ccompimm c n, v1 :: nil => Val.cmp_bool c v1 (Vint n)
+  | Ccompuimm c n, v1 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 (Vint n)
+  | Ccompl c, v1 :: v2 :: nil => Val.cmpl_bool c v1 v2
+  | Ccomplu c, v1 :: v2 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 v2
+  | Ccomplimm c n, v1 :: nil => Val.cmpl_bool c v1 (Vlong n)
+  | Ccompluimm c n, v1 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 (Vlong n)
+  | Ccompf c, v1 :: v2 :: nil => Val.cmpf_bool c v1 v2
+  | Cnotcompf c, v1 :: v2 :: nil => option_map negb (Val.cmpf_bool c v1 v2)
+  | Ccompfs c, v1 :: v2 :: nil => Val.cmpfs_bool c v1 v2
+  | Cnotcompfs c, v1 :: v2 :: nil => option_map negb (Val.cmpfs_bool c v1 v2)
+  | Cmaskzero n, v1 :: nil => Val.maskzero_bool v1 n
+  | Cmasknotzero n, v1 :: nil => option_map negb (Val.maskzero_bool v1 n)
+  | _, _ => None
+  end.
+
+Definition eval_addressing32
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  match addr, vl with
+  | Aindexed n, v1::nil =>
+      Some (Val.add v1 (Vint (Int.repr n)))
+  | Aindexed2 n, v1::v2::nil =>
+      Some (Val.add (Val.add v1 v2) (Vint (Int.repr n)))
+  | Ascaled sc ofs, v1::nil =>
+      Some (Val.add (Val.mul v1 (Vint (Int.repr sc))) (Vint (Int.repr ofs)))
+  | Aindexed2scaled sc ofs, v1::v2::nil =>
+      Some(Val.add v1 (Val.add (Val.mul v2 (Vint (Int.repr sc))) (Vint (Int.repr ofs))))
+  | Aglobal s ofs, nil =>
+      if Archi.ptr64 then None else Some (Genv.symbol_address genv s ofs)
+  | Abased s ofs, v1::nil =>
+      if Archi.ptr64 then None else Some (Val.add (Genv.symbol_address genv s ofs) v1)
+  | Abasedscaled sc s ofs, v1::nil =>
+      if Archi.ptr64 then None else Some (Val.add (Genv.symbol_address genv s ofs) (Val.mul v1 (Vint (Int.repr sc))))
+  | Ainstack ofs, nil =>
+      if Archi.ptr64 then None else Some(Val.offset_ptr sp ofs)
+  | _, _ => None
+  end.
+
+Definition eval_addressing64
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  match addr, vl with
+  | Aindexed n, v1::nil =>
+      Some (Val.addl v1 (Vlong (Int64.repr n)))
+  | Aindexed2 n, v1::v2::nil =>
+      Some (Val.addl (Val.addl v1 v2) (Vlong (Int64.repr n)))
+  | Ascaled sc ofs, v1::nil =>
+      Some (Val.addl (Val.mull v1 (Vlong (Int64.repr sc))) (Vlong (Int64.repr ofs)))
+  | Aindexed2scaled sc ofs, v1::v2::nil =>
+      Some(Val.addl v1 (Val.addl (Val.mull v2 (Vlong (Int64.repr sc))) (Vlong (Int64.repr ofs))))
+  | Aglobal s ofs, nil =>
+      if Archi.ptr64 then Some (Genv.symbol_address genv s ofs) else None
+  | Ainstack ofs, nil =>
+      if Archi.ptr64 then Some(Val.offset_ptr sp ofs) else None
+  | _, _ => None
+  end.
+
+Definition eval_addressing
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  if Archi.ptr64
+  then eval_addressing64 genv sp addr vl
+  else eval_addressing32 genv sp addr vl.
+
+Definition eval_operation
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (op: operation) (vl: list val) (m: mem): option val :=
+  match op, vl with
+  | Omove, v1::nil => Some v1
+  | Ointconst n, nil => Some (Vint n)
+  | Olongconst n, nil => Some (Vlong n)
+  | Ofloatconst n, nil => Some (Vfloat n)
+  | Osingleconst n, nil => Some (Vsingle n)
+  | Oindirectsymbol id, nil => Some (Genv.symbol_address genv id Ptrofs.zero)
+  | Ocast8signed, v1 :: nil => Some (Val.sign_ext 8 v1)
+  | Ocast8unsigned, v1 :: nil => Some (Val.zero_ext 8 v1)
+  | Ocast16signed, v1 :: nil => Some (Val.sign_ext 16 v1)
+  | Ocast16unsigned, v1 :: nil => Some (Val.zero_ext 16 v1)
+  | Oneg, v1::nil => Some (Val.neg v1)
+  | Osub, v1::v2::nil => Some (Val.sub v1 v2)
+  | Omul, v1::v2::nil => Some (Val.mul v1 v2)
+  | Omulimm n, v1::nil => Some (Val.mul v1 (Vint n))
+  | Omulhs, v1::v2::nil => Some (Val.mulhs v1 v2)
+  | Omulhu, v1::v2::nil => Some (Val.mulhu v1 v2)
+  | Odiv, v1::v2::nil => Val.divs v1 v2
+  | Odivu, v1::v2::nil => Val.divu v1 v2
+  | Omod, v1::v2::nil => Val.mods v1 v2
+  | Omodu, v1::v2::nil => Val.modu v1 v2
+  | Oand, v1::v2::nil => Some(Val.and v1 v2)
+  | Oandimm n, v1::nil => Some (Val.and v1 (Vint n))
+  | Oor, v1::v2::nil => Some(Val.or v1 v2)
+  | Oorimm n, v1::nil => Some (Val.or v1 (Vint n))
+  | Oxor, v1::v2::nil => Some(Val.xor v1 v2)
+  | Oxorimm n, v1::nil => Some (Val.xor v1 (Vint n))
+  | Onot, v1::nil => Some(Val.notint v1)
+  | Oshl, v1::v2::nil => Some (Val.shl v1 v2)
+  | Oshlimm n, v1::nil => Some (Val.shl v1 (Vint n))
+  | Oshr, v1::v2::nil => Some (Val.shr v1 v2)
+  | Oshrimm n, v1::nil => Some (Val.shr v1 (Vint n))
+  | Oshrximm n, v1::nil => Val.shrx v1 (Vint n)
+  | Oshru, v1::v2::nil => Some (Val.shru v1 v2)
+  | Oshruimm n, v1::nil => Some (Val.shru v1 (Vint n))
+  | Ororimm n, v1::nil => Some (Val.ror v1 (Vint n))
+  | Oshldimm n, v1::v2::nil => Some (Val.or (Val.shl v1 (Vint n))
+                                            (Val.shru v2 (Vint (Int.sub Int.iwordsize n))))
+  | Olea addr, _ => eval_addressing32 genv sp addr vl
+  | Omakelong, v1::v2::nil => Some(Val.longofwords v1 v2)
+  | Olowlong, v1::nil => Some(Val.loword v1)
+  | Ohighlong, v1::nil => Some(Val.hiword v1)
+  | Ocast32signed, v1 :: nil => Some (Val.longofint v1)
+  | Ocast32unsigned, v1 :: nil => Some (Val.longofintu v1)
+  | Onegl, v1::nil => Some (Val.negl v1)
+  | Oaddlimm n, v1::nil => Some (Val.addl v1 (Vlong n))
+  | Osubl, v1::v2::nil => Some (Val.subl v1 v2)
+  | Omull, v1::v2::nil => Some (Val.mull v1 v2)
+  | Omullimm n, v1::nil => Some (Val.mull v1 (Vlong n))
+  | Omullhs, v1::v2::nil => Some (Val.mullhs v1 v2)
+  | Omullhu, v1::v2::nil => Some (Val.mullhu v1 v2)
+  | Odivl, v1::v2::nil => Val.divls v1 v2
+  | Odivlu, v1::v2::nil => Val.divlu v1 v2
+  | Omodl, v1::v2::nil => Val.modls v1 v2
+  | Omodlu, v1::v2::nil => Val.modlu v1 v2
+  | Oandl, v1::v2::nil => Some(Val.andl v1 v2)
+  | Oandlimm n, v1::nil => Some (Val.andl v1 (Vlong n))
+  | Oorl, v1::v2::nil => Some(Val.orl v1 v2)
+  | Oorlimm n, v1::nil => Some (Val.orl v1 (Vlong n))
+  | Oxorl, v1::v2::nil => Some(Val.xorl v1 v2)
+  | Oxorlimm n, v1::nil => Some (Val.xorl v1 (Vlong n))
+  | Onotl, v1::nil => Some(Val.notl v1)
+  | Oshll, v1::v2::nil => Some (Val.shll v1 v2)
+  | Oshllimm n, v1::nil => Some (Val.shll v1 (Vint n))
+  | Oshrl, v1::v2::nil => Some (Val.shrl v1 v2)
+  | Oshrlimm n, v1::nil => Some (Val.shrl v1 (Vint n))
+  | Oshrxlimm n, v1::nil => Val.shrxl v1 (Vint n)
+  | Oshrlu, v1::v2::nil => Some (Val.shrlu v1 v2)
+  | Oshrluimm n, v1::nil => Some (Val.shrlu v1 (Vint n))
+  | Ororlimm n, v1::nil => Some (Val.rorl v1 (Vint n))
+  | Oleal addr, _ => eval_addressing64 genv sp addr vl
+  | Onegf, v1::nil => Some(Val.negf v1)
+  | Oabsf, v1::nil => Some(Val.absf v1)
+  | Oaddf, v1::v2::nil => Some(Val.addf v1 v2)
+  | Osubf, v1::v2::nil => Some(Val.subf v1 v2)
+  | Omulf, v1::v2::nil => Some(Val.mulf v1 v2)
+  | Odivf, v1::v2::nil => Some(Val.divf v1 v2)
+  | Onegfs, v1::nil => Some(Val.negfs v1)
+  | Oabsfs, v1::nil => Some(Val.absfs v1)
+  | Oaddfs, v1::v2::nil => Some(Val.addfs v1 v2)
+  | Osubfs, v1::v2::nil => Some(Val.subfs v1 v2)
+  | Omulfs, v1::v2::nil => Some(Val.mulfs v1 v2)
+  | Odivfs, v1::v2::nil => Some(Val.divfs v1 v2)
+  | Osingleoffloat, v1::nil => Some(Val.singleoffloat v1)
+  | Ofloatofsingle, v1::nil => Some(Val.floatofsingle v1)
+  | Ointoffloat, v1::nil => Val.intoffloat v1
+  | Ofloatofint, v1::nil => Val.floatofint v1
+  | Ointofsingle, v1::nil => Val.intofsingle v1
+  | Osingleofint, v1::nil => Val.singleofint v1
+  | Olongoffloat, v1::nil => Val.longoffloat v1
+  | Ofloatoflong, v1::nil => Val.floatoflong v1
+  | Olongofsingle, v1::nil => Val.longofsingle v1
+  | Osingleoflong, v1::nil => Val.singleoflong v1
+  | Ocmp c, _ => Some(Val.of_optbool (eval_condition c vl m))
+  | _, _ => None
+  end.
+
+Remark eval_addressing_Aglobal:
+  forall (F V: Type) (genv: Genv.t F V) sp id ofs,
+
+Remark eval_addressing_Ainstack:
+  forall (F V: Type) (genv: Genv.t F V) sp ofs,
+
+Remark eval_addressing_Ainstack_inv:
+  forall (F V: Type) (genv: Genv.t F V) sp ofs vl v,
+
+Ltac FuncInv :=
+  match goal with
+  | H: (match ?x with nil => _ | _ :: _ => _ end = Some _) |- _ =>
+      destruct x; simpl in H; FuncInv
+  | H: (match ?v with Vundef => _ | Vint _ => _ | Vfloat _ => _ | Vptr _ _ => _ end = Some _) |- _ =>
+      destruct v; simpl in H; FuncInv
+  | H: (if Archi.ptr64 then _ else _) = Some _ |- _ =>
+      destruct Archi.ptr64 eqn:?; FuncInv
+  | H: (Some _ = Some _) |- _ =>
+      injection H; intros; clear H; FuncInv
+  | H: (None = Some _) |- _ =>
+      discriminate H
+  | _ =>
+      idtac
+  end.
+
+Definition type_of_condition (c: condition) : list typ :=
+  match c with
+  | Ccomp _ => Tint :: Tint :: nil
+  | Ccompu _ => Tint :: Tint :: nil
+  | Ccompimm _ _ => Tint :: nil
+  | Ccompuimm _ _ => Tint :: nil
+  | Ccompl _ => Tlong :: Tlong :: nil
+  | Ccomplu _ => Tlong :: Tlong :: nil
+  | Ccomplimm _ _ => Tlong :: nil
+  | Ccompluimm _ _ => Tlong :: nil
+  | Ccompf _ => Tfloat :: Tfloat :: nil
+  | Cnotcompf _ => Tfloat :: Tfloat :: nil
+  | Ccompfs _ => Tsingle :: Tsingle :: nil
+  | Cnotcompfs _ => Tsingle :: Tsingle :: nil
+  | Cmaskzero _ => Tint :: nil
+  | Cmasknotzero _ => Tint :: nil
+  end.
+
+Definition type_of_addressing_gen (tyA: typ) (addr: addressing): list typ :=
+  match addr with
+  | Aindexed _ => tyA :: nil
+  | Aindexed2 _ => tyA :: tyA :: nil
+  | Ascaled _ _ => tyA :: nil
+  | Aindexed2scaled _ _ => tyA :: tyA :: nil
+  | Aglobal _ _ => nil
+  | Abased _ _ => tyA :: nil
+  | Abasedscaled _ _ _ => tyA :: nil
+  | Ainstack _ => nil
+  end.
+
+Definition type_of_addressing := type_of_addressing_gen Tptr.
+Definition type_of_addressing32 := type_of_addressing_gen Tint.
+Definition type_of_addressing64 := type_of_addressing_gen Tlong.
+
+Definition type_of_operation (op: operation) : list typ * typ :=
+  match op with
+  | Omove => (nil, Tint)   
+  | Ointconst _ => (nil, Tint)
+  | Olongconst _ => (nil, Tlong)
+  | Ofloatconst f => (nil, Tfloat)
+  | Osingleconst f => (nil, Tsingle)
+  | Oindirectsymbol _ => (nil, Tptr)
+  | Ocast8signed => (Tint :: nil, Tint)
+  | Ocast8unsigned => (Tint :: nil, Tint)
+  | Ocast16signed => (Tint :: nil, Tint)
+  | Ocast16unsigned => (Tint :: nil, Tint)
+  | Oneg => (Tint :: nil, Tint)
+  | Osub => (Tint :: Tint :: nil, Tint)
+  | Omul => (Tint :: Tint :: nil, Tint)
+  | Omulimm _ => (Tint :: nil, Tint)
+  | Omulhs => (Tint :: Tint :: nil, Tint)
+  | Omulhu => (Tint :: Tint :: nil, Tint)
+  | Odiv => (Tint :: Tint :: nil, Tint)
+  | Odivu => (Tint :: Tint :: nil, Tint)
+  | Omod => (Tint :: Tint :: nil, Tint)
+  | Omodu => (Tint :: Tint :: nil, Tint)
+  | Oand => (Tint :: Tint :: nil, Tint)
+  | Oandimm _ => (Tint :: nil, Tint)
+  | Oor => (Tint :: Tint :: nil, Tint)
+  | Oorimm _ => (Tint :: nil, Tint)
+  | Oxor => (Tint :: Tint :: nil, Tint)
+  | Oxorimm _ => (Tint :: nil, Tint)
+  | Onot => (Tint :: nil, Tint)
+  | Oshl => (Tint :: Tint :: nil, Tint)
+  | Oshlimm _ => (Tint :: nil, Tint)
+  | Oshr => (Tint :: Tint :: nil, Tint)
+  | Oshrimm _ => (Tint :: nil, Tint)
+  | Oshrximm _ => (Tint :: nil, Tint)
+  | Oshru => (Tint :: Tint :: nil, Tint)
+  | Oshruimm _ => (Tint :: nil, Tint)
+  | Ororimm _ => (Tint :: nil, Tint)
+  | Oshldimm _ => (Tint :: Tint :: nil, Tint)
+  | Olea addr => (type_of_addressing32 addr, Tint)
+  | Omakelong => (Tint :: Tint :: nil, Tlong)
+  | Olowlong => (Tlong :: nil, Tint)
+  | Ohighlong => (Tlong :: nil, Tint)
+  | Ocast32signed => (Tint :: nil, Tlong)
+  | Ocast32unsigned => (Tint :: nil, Tlong)
+  | Onegl => (Tlong :: nil, Tlong)
+  | Oaddlimm _ => (Tlong :: nil, Tlong)
+  | Osubl => (Tlong :: Tlong :: nil, Tlong)
+  | Omull => (Tlong :: Tlong :: nil, Tlong)
+  | Omullimm _ => (Tlong :: nil, Tlong)
+  | Omullhs => (Tlong :: Tlong :: nil, Tlong)
+  | Omullhu => (Tlong :: Tlong :: nil, Tlong)
+  | Odivl => (Tlong :: Tlong :: nil, Tlong)
+  | Odivlu => (Tlong :: Tlong :: nil, Tlong)
+  | Omodl => (Tlong :: Tlong :: nil, Tlong)
+  | Omodlu => (Tlong :: Tlong :: nil, Tlong)
+  | Oandl => (Tlong :: Tlong :: nil, Tlong)
+  | Oandlimm _ => (Tlong :: nil, Tlong)
+  | Oorl => (Tlong :: Tlong :: nil, Tlong)
+  | Oorlimm _ => (Tlong :: nil, Tlong)
+  | Oxorl => (Tlong :: Tlong :: nil, Tlong)
+  | Oxorlimm _ => (Tlong :: nil, Tlong)
+  | Onotl => (Tlong :: nil, Tlong)
+  | Oshll => (Tlong :: Tint :: nil, Tlong)
+  | Oshllimm _ => (Tlong :: nil, Tlong)
+  | Oshrl => (Tlong :: Tint :: nil, Tlong)
+  | Oshrlimm _ => (Tlong :: nil, Tlong)
+  | Oshrxlimm _ => (Tlong :: nil, Tlong)
+  | Oshrlu => (Tlong :: Tint :: nil, Tlong)
+  | Oshrluimm _ => (Tlong :: nil, Tlong)
+  | Ororlimm _ => (Tlong :: nil, Tlong)
+  | Oleal addr => (type_of_addressing64 addr, Tlong)
+  | Onegf => (Tfloat :: nil, Tfloat)
+  | Oabsf => (Tfloat :: nil, Tfloat)
+  | Oaddf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Osubf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Omulf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Odivf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Onegfs => (Tsingle :: nil, Tsingle)
+  | Oabsfs => (Tsingle :: nil, Tsingle)
+  | Oaddfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Osubfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Omulfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Odivfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Osingleoffloat => (Tfloat :: nil, Tsingle)
+  | Ofloatofsingle => (Tsingle :: nil, Tfloat)
+  | Ointoffloat => (Tfloat :: nil, Tint)
+  | Ofloatofint => (Tint :: nil, Tfloat)
+  | Ointofsingle => (Tsingle :: nil, Tint)
+  | Osingleofint => (Tint :: nil, Tsingle)
+  | Olongoffloat => (Tfloat :: nil, Tlong)
+  | Ofloatoflong => (Tlong :: nil, Tfloat)
+  | Olongofsingle => (Tsingle :: nil, Tlong)
+  | Osingleoflong => (Tlong :: nil, Tsingle)
+  | Ocmp c => (type_of_condition c, Tint)
+  end.
+
+Section SOUNDNESS.
+
+Variable A V: Type.
+Variable genv: Genv.t A V.
+
+Remark type_add:
+  forall v1 v2, Val.has_type (Val.add v1 v2) Tint.
+
+Remark type_addl:
+  forall v1 v2, Val.has_type (Val.addl v1 v2) Tlong.
+
+Lemma type_of_addressing64_sound:
+  forall addr vl sp v,
+  eval_addressing64 genv sp addr vl = Some v ->
+  Val.has_type v Tlong.
+
+Lemma type_of_addressing32_sound:
+  forall addr vl sp v,
+  eval_addressing32 genv sp addr vl = Some v ->
+  Val.has_type v Tint.
+
+Corollary type_of_addressing_sound:
+  forall addr vl sp v,
+  eval_addressing genv sp addr vl = Some v ->
+  Val.has_type v Tptr.
+
+Lemma type_of_operation_sound:
+  forall op vl sp v m,
+  op <> Omove ->
+  eval_operation genv sp op vl m = Some v ->
+  Val.has_type v (snd (type_of_operation op)).
+
+End SOUNDNESS.
+
+Definition is_move_operation
+    (A: Type) (op: operation) (args: list A) : option A :=
+  match op, args with
+  | Omove, arg :: nil => Some arg
+  | _, _ => None
+  end.
+
+Lemma is_move_operation_correct:
+  forall (A: Type) (op: operation) (args: list A) (a: A),
+  is_move_operation op args = Some a ->
+  op = Omove /\ args = a :: nil.
+
+Definition negate_condition (cond: condition): condition :=
+  match cond with
+  | Ccomp c => Ccomp(negate_comparison c)
+  | Ccompu c => Ccompu(negate_comparison c)
+  | Ccompimm c n => Ccompimm (negate_comparison c) n
+  | Ccompuimm c n => Ccompuimm (negate_comparison c) n
+  | Ccompl c => Ccompl(negate_comparison c)
+  | Ccomplu c => Ccomplu(negate_comparison c)
+  | Ccomplimm c n => Ccomplimm (negate_comparison c) n
+  | Ccompluimm c n => Ccompluimm (negate_comparison c) n
+  | Ccompf c => Cnotcompf c
+  | Cnotcompf c => Ccompf c
+  | Ccompfs c => Cnotcompfs c
+  | Cnotcompfs c => Ccompfs c
+  | Cmaskzero n => Cmasknotzero n
+  | Cmasknotzero n => Cmaskzero n
+  end.
+
+Lemma eval_negate_condition:
+  forall cond vl m,
+  eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m).
+
+Definition shift_stack_addressing (delta: Z) (addr: addressing) :=
+  match addr with
+  | Ainstack ofs => Ainstack (Ptrofs.add ofs (Ptrofs.repr delta))
+  | _ => addr
+  end.
+
+Definition shift_stack_operation (delta: Z) (op: operation) :=
+  match op with
+  | Olea  addr => Olea  (shift_stack_addressing delta addr)
+  | Oleal addr => Oleal (shift_stack_addressing delta addr)
+  | _ => op
+  end.
+
+Lemma type_shift_stack_addressing:
+  forall delta addr, type_of_addressing (shift_stack_addressing delta addr) = type_of_addressing addr.
+
+Lemma type_shift_stack_operation:
+  forall delta op, type_of_operation (shift_stack_operation delta op) = type_of_operation op.
+
+Lemma eval_shift_stack_addressing32:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_addressing64:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_addressing:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_operation:
+  forall F V (ge: Genv.t F V) sp op vl m delta,
+
+Definition offset_addressing_total (addr: addressing) (delta: Z) : addressing :=
+  match addr with
+  | Aindexed n => Aindexed (n + delta)
+  | Aindexed2 n => Aindexed2 (n + delta)
+  | Ascaled sc n => Ascaled sc (n + delta)
+  | Aindexed2scaled sc n => Aindexed2scaled sc (n + delta)
+  | Aglobal s n => Aglobal s (Ptrofs.add n (Ptrofs.repr delta))
+  | Abased s n => Abased s (Ptrofs.add n (Ptrofs.repr delta))
+  | Abasedscaled sc s n => Abasedscaled sc s (Ptrofs.add n (Ptrofs.repr delta))
+  | Ainstack n => Ainstack (Ptrofs.add n (Ptrofs.repr delta))
+  end.
+
+Definition offset_addressing (addr: addressing) (delta: Z) : option addressing :=
+  let addr' := offset_addressing_total addr delta in
+  if addressing_valid addr' then Some addr' else None.
+
+Lemma eval_offset_addressing_total_32:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta v,
+
+Lemma eval_offset_addressing_total_64:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta v,
+
+Lemma eval_offset_addressing:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta addr' v,
+
+Definition is_trivial_op (op: operation) : bool :=
+  match op with
+  | Omove => true
+  | Ointconst _ => true
+  | Olongconst _ => true
+  | Olea (Aglobal _ _) => true
+  | Olea (Ainstack _) => true
+  | Oleal (Aglobal _ _) => true
+  | Oleal (Ainstack _) => true
+  | _ => false
+  end.
+
+Definition op_depends_on_memory (op: operation) : bool :=
+  match op with
+  | Ocmp (Ccompu _) => negb Archi.ptr64
+  | Ocmp (Ccompuimm _ _) => negb Archi.ptr64
+  | Ocmp (Ccomplu _) => Archi.ptr64
+  | Ocmp (Ccompluimm _ _) => Archi.ptr64
+  | _ => false
+  end.
+
+Lemma op_depends_on_memory_correct:
+  forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2,
+
+Definition globals_addressing (addr: addressing) : list ident :=
+  match addr with
+  | Aglobal s n => s :: nil
+  | Abased s n => s :: nil
+  | Abasedscaled sc s n => s :: nil
+  | _ => nil
+  end.
+
+Definition globals_operation (op: operation) : list ident :=
+  match op with
+  | Oindirectsymbol s => s :: nil
+  | Olea addr => globals_addressing addr
+  | Oleal addr => globals_addressing addr
+  | _ => nil
+  end.
+
+Section GENV_TRANSF.
+
+Variable F1 F2 V1 V2: Type.
+Variable ge1: Genv.t F1 V1.
+Variable ge2: Genv.t F2 V2.
+Hypothesis agree_on_symbols:
+  forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
+
+Lemma eval_addressing32_preserved:
+  forall sp addr vl,
+  eval_addressing32 ge2 sp addr vl = eval_addressing32 ge1 sp addr vl.
+
+Lemma eval_addressing64_preserved:
+  forall sp addr vl,
+  eval_addressing64 ge2 sp addr vl = eval_addressing64 ge1 sp addr vl.
+
+Lemma eval_addressing_preserved:
+  forall sp addr vl,
+  eval_addressing ge2 sp addr vl = eval_addressing ge1 sp addr vl.
+
+Lemma eval_operation_preserved:
+  forall sp op vl m,
+  eval_operation ge2 sp op vl m = eval_operation ge1 sp op vl m.
+
+End GENV_TRANSF.
+
+Section EVAL_COMPAT.
+
+Variable F1 F2 V1 V2: Type.
+Variable ge1: Genv.t F1 V1.
+Variable ge2: Genv.t F2 V2.
+Variable f: meminj.
+
+Variable m1: mem.
+Variable m2: mem.
+
+Hypothesis valid_pointer_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_pointer_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_pointer_no_overflow:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
+
+Hypothesis valid_different_pointers_inj:
+  forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  b1 <> b2 ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
+  Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true ->
+  f b1 = Some (b1', delta1) ->
+  f b2 = Some (b2', delta2) ->
+  b1' <> b2' \/
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
+
+Ltac InvInject :=
+  match goal with
+  | [ H: Val.inject _ (Vint _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject _ (Vfloat _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject _ (Vptr _ _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject_list _ nil _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject_list _ (_ :: _) _ |- _ ] =>
+      inv H; InvInject
+  | _ => idtac
+  end.
+
+Lemma eval_condition_inj:
+  forall cond vl1 vl2 b,
+  Val.inject_list f vl1 vl2 ->
+
+Ltac TrivialExists :=
+  match goal with
+  | [ |- exists v2, Some ?v1 = Some v2 /\ Val.inject _ _ v2 ] =>
+      exists v1; split; auto
+  | _ => idtac
+  end.
+
+Lemma eval_addressing32_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_addressing64_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_addressing_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_operation_inj:
+  forall op sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_operation op) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+End EVAL_COMPAT.
+
+Section EVAL_LESSDEF.
+
+Variable F V: Type.
+Variable genv: Genv.t F V.
+
+Remark valid_pointer_extends:
+  forall m1 m2, Mem.extends m1 m2 ->
+
+Remark weak_valid_pointer_extends:
+  forall m1 m2, Mem.extends m1 m2 ->
+
+Remark weak_valid_pointer_no_overflow_extends:
+  forall m1 b1 ofs b2 delta,
+  Some(b1, 0) = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+
+Remark valid_different_pointers_extends:
+  forall m1 b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  b1 <> b2 ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
+
+Lemma eval_condition_lessdef:
+  forall cond vl1 vl2 b m1 m2,
+  Val.lessdef_list vl1 vl2 ->
+
+Lemma eval_operation_lessdef:
+  forall sp op vl1 vl2 v1 m1 m2,
+  Val.lessdef_list vl1 vl2 ->
+
+Lemma eval_addressing_lessdef:
+  forall sp addr vl1 vl2 v1,
+  Val.lessdef_list vl1 vl2 ->
+
+End EVAL_LESSDEF.
+
+Section EVAL_INJECT.
+
+Variable F V: Type.
+Variable genv: Genv.t F V.
+Variable f: meminj.
+Hypothesis globals: meminj_preserves_globals genv f.
+Variable sp1: block.
+Variable sp2: block.
+Variable delta: Z.
+Hypothesis sp_inj: f sp1 = Some(sp2, delta).
+
+Remark symbol_address_inject:
+  forall id ofs, Val.inject f (Genv.symbol_address genv id ofs) (Genv.symbol_address genv id ofs).
+
+Lemma eval_condition_inject:
+  forall cond vl1 vl2 b m1 m2,
+  Val.inject_list f vl1 vl2 ->
+
+Lemma eval_addressing_inject:
+  forall addr vl1 vl2 v1,
+  Val.inject_list f vl1 vl2 ->
+
+Lemma eval_operation_inject:
+  forall op vl1 vl2 v1 m1 m2,
+  Val.inject_list f vl1 vl2 ->
+
+End EVAL_INJECT.
+
+Definition builtin_arg_ok_1
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match c, ba with
+  | OK_all, _ => true
+  | OK_const, (BA_int _ | BA_long _ | BA_float _ | BA_single _) => true
+  | OK_addrstack, BA_addrstack _ => true
+  | OK_addressing, BA_addrstack _ => true
+  | OK_addressing, BA_addrglobal _ _ => true
+  | OK_addressing, BA_addptr (BA _) (BA_int _ | BA_long _) => true
+  | _, _ => false
+  end.
+
+Definition builtin_arg_ok
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match ba with
+  | (BA _ | BA_splitlong (BA _) (BA _)) => true
+  | _ => builtin_arg_ok_1 ba c
+  end. *)
+
+
+
+Inductive mreg: Type :=
+
+  
+
+  | AX | BX | CX | DX | SI | DI | BP
+
+  | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15  
+
+  
+
+  | X0 | X1 | X2 | X3 | X4 | X5 | X6 | X7
+
+  | X8 | X9 | X10 | X11 | X12 | X13 | X14 | X15  
+
+  
+
+  | FP0.
+
+
+
+Lemma mreg_eq: forall (r1 r2: mreg), {r1 = r2} + {r1 <> r2}.
+
+Proof. decide equality. Defined.
+
+Global Opaque mreg_eq.
+
+
+
+Definition all_mregs :=
+
+     AX :: BX :: CX :: DX :: SI :: DI :: BP
+
+  :: R8 :: R9 :: R10 :: R11 :: R12 :: R13 :: R14 :: R15
+
+  :: X0 :: X1 :: X2 :: X3 :: X4 :: X5 :: X6 :: X7
+
+  :: X8 :: X9 :: X10 :: X11 :: X12 :: X13 :: X14 :: X15
+
+  :: FP0 :: nil.
+
+
+
+Lemma all_mregs_complete:
+
+  forall (r: mreg), In r all_mregs.
+
+Proof.
+
+  assert (forall r, proj_sumbool (In_dec mreg_eq r all_mregs) = true) by (destruct r; reflexivity).
+
+  intros. specialize (H r). InvBooleans. auto.
+
+Qed.
+
+
+
+Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
+
+
+
+Instance Finite_mreg : Finite mreg := {
+
+  Finite_elements := all_mregs;
+
+  Finite_elements_spec := all_mregs_complete
+
+}.
+
+
+
+Definition mreg_type (r: mreg): typ :=
+
+  match r with
+
+  | AX | BX | CX | DX | SI | DI | BP => if Archi.ptr64 then Tany64 else Tany32
+
+  | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15 => Tany64
+
+  | X0 | X1 | X2 | X3 | X4 | X5 | X6 | X7 => Tany64
+
+  | X8 | X9 | X10 | X11 | X12 | X13 | X14 | X15 => Tany64
+
+  | FP0 => Tany64
+
+  end.
+
+
+
+Local Open Scope positive_scope.
+
+
+
+Module IndexedMreg <: INDEXED_TYPE.
+
+  Definition t := mreg.
+
+  Definition eq := mreg_eq.
+
+  Definition index (r: mreg): positive :=
+
+    match r with
+
+    | AX => 1 | BX => 2 | CX => 3 | DX => 4 | SI => 5 | DI => 6 | BP => 7
+
+    | R8 => 8 | R9 => 9 | R10 => 10 | R11 => 11 | R12 => 12 | R13 => 13 | R14 => 14 | R15 => 15
+
+    | X0 => 16 | X1 => 17 | X2 => 18 | X3 => 19 | X4 => 20 | X5 => 21 | X6 => 22 | X7 => 23
+
+    | X8 => 24 | X9 => 25 | X10 => 26 | X11 => 27 | X12 => 28 | X13 => 29 | X14 => 30 | X15 => 31
+
+    | FP0 => 32
+
+    end.
+
+  Lemma index_inj:
+
+    forall r1 r2, index r1 = index r2 -> r1 = r2.
+
+  Proof.
+
+    decide_goal.
+
+  Qed.
+
+End IndexedMreg.
+
+
+
+Definition is_stack_reg (r: mreg) : bool :=
+
+  match r with FP0 => true | _ => false end.
+
+
+
+Local Open Scope string_scope.
+
+
+
+Definition register_names :=
+
+  ("RAX", AX) :: ("RBX", BX) :: ("RCX", CX) :: ("RDX", DX) ::
+
+  ("RSI", SI) :: ("RDI", DI) :: ("RBP", BP) ::
+
+  ("EAX", AX) :: ("EBX", BX) :: ("ECX", CX) :: ("EDX", DX) ::
+
+  ("ESI", SI) :: ("EDI", DI) :: ("EBP", BP) ::
+
+  ("R8", R8) :: ("R9", R9) :: ("R10", R10) :: ("R11", R11) ::
+
+  ("R12", R12) :: ("R13", R13) :: ("R14", R14) :: ("R15", R15) ::
+
+  ("XMM0", X0) :: ("XMM1", X1) :: ("XMM2", X2) :: ("XMM3", X3) ::
+
+  ("XMM4", X4) :: ("XMM5", X5) :: ("XMM6", X6) :: ("XMM7", X7) ::
+
+  ("XMM8", X8) :: ("XMM9", X9) :: ("XMM10", X10) :: ("XMM11", X11) ::
+
+  ("XMM12", X12) :: ("XMM13", X13) :: ("XMM14", X14) :: ("XMM15", X15) ::
+
+  ("ST0", FP0) :: nil.
+
+
+
+Definition register_by_name (s: string) : option mreg :=
+
+  let fix assoc (l: list (string * mreg)) : option mreg :=
+
+    match l with
+
+    | nil => None
+
+    | (s1, r1) :: l' => if string_dec s s1 then Some r1 else assoc l'
+
+    end
+
+  in assoc register_names.
+
+
+
+Definition destroyed_by_op (op: operation): list mreg :=
+
+  match op with
+
+  | Ocast8signed | Ocast8unsigned => AX :: nil
+
+  | Omulhs => AX :: DX :: nil
+
+  | Omulhu => AX :: DX :: nil
+
+  | Odiv => AX :: DX :: nil
+
+  | Odivu => AX :: DX :: nil
+
+  | Omod => AX :: DX :: nil
+
+  | Omodu => AX :: DX :: nil
+
+  | Oshrximm _ => CX :: nil
+
+  | Omullhs => AX :: DX :: nil
+
+  | Omullhu => AX :: DX :: nil
+
+  | Odivl => AX :: DX :: nil
+
+  | Odivlu => AX :: DX :: nil
+
+  | Omodl => AX :: DX :: nil
+
+  | Omodlu => AX :: DX :: nil
+
+  | Oshrxlimm _ => DX :: nil
+
+  | Ocmp _ => AX :: CX :: nil
+
+  | _ => nil
+
+  end.
+
+
+
+Definition destroyed_by_load (chunk: memory_chunk) (addr: addressing): list mreg :=
+
+  nil.
+
+
+
+Definition destroyed_by_store (chunk: memory_chunk) (addr: addressing): list mreg :=
+
+  match chunk with
+
+  | Mint8signed | Mint8unsigned => if Archi.ptr64 then nil else AX :: CX :: nil
+
+  | _ => nil
+
+  end.
+
+
+
+Definition destroyed_by_cond (cond: condition): list mreg :=
+
+  nil.
+
+
+
+Definition destroyed_by_jumptable: list mreg :=
+
+  AX :: DX :: nil.
+
+
+
+Fixpoint destroyed_by_clobber (cl: list string): list mreg :=
+
+  match cl with
+
+  | nil => nil
+
+  | c1 :: cl =>
+
+      match register_by_name c1 with
+
+      | Some r => r :: destroyed_by_clobber cl
+
+      | None   => destroyed_by_clobber cl
+
+      end
+
+  end.
+
+
+
+Definition destroyed_by_builtin (ef: external_function): list mreg :=
+
+  match ef with
+
+  | EF_memcpy sz al =>
+
+      if zle sz 32 then CX :: X7 :: nil else CX :: SI :: DI :: nil
+
+  | EF_vstore (Mint8unsigned|Mint8signed) =>
+
+      if Archi.ptr64 then nil else AX :: CX :: nil
+
+  | EF_builtin name sg =>
+
+      if string_dec name "__builtin_va_start" then AX :: nil
+
+      else if string_dec name "__builtin_write16_reversed"
+
+           || string_dec name "__builtin_write32_reversed"
+
+      then CX :: DX :: nil
+
+      else nil
+
+  | EF_inline_asm txt sg clob => destroyed_by_clobber clob
+
+  | _ => nil
+
+  end.
+
+
+
+Definition destroyed_at_function_entry: list mreg :=
+
+  
+
+  AX :: FP0 :: nil.
+
+
+
+Definition destroyed_by_setstack (ty: typ): list mreg :=
+
+  match ty with
+
+  | Tfloat | Tsingle => FP0 :: nil
+
+  | _ => nil
+
+  end.
+
+
+
+Definition destroyed_at_indirect_call: list mreg :=
+
+  AX :: nil.
+
+
+
+Definition temp_for_parent_frame: mreg :=
+
+  AX.
+
+
+
+Definition mregs_for_operation (op: operation): list (option mreg) * option mreg :=
+
+  match op with
+
+  | Omulhs => (Some AX :: None :: nil, Some DX)
+
+  | Omulhu => (Some AX :: None :: nil, Some DX)
+
+  | Odiv => (Some AX :: Some CX :: nil, Some AX)
+
+  | Odivu => (Some AX :: Some CX :: nil, Some AX)
+
+  | Omod => (Some AX :: Some CX :: nil, Some DX)
+
+  | Omodu => (Some AX :: Some CX :: nil, Some DX)
+
+  | Oshl => (None :: Some CX :: nil, None)
+
+  | Oshr => (None :: Some CX :: nil, None)
+
+  | Oshru => (None :: Some CX :: nil, None)
+
+  | Oshrximm _ => (Some AX :: nil, Some AX)
+
+  | Omullhs => (Some AX :: None :: nil, Some DX)
+
+  | Omullhu => (Some AX :: None :: nil, Some DX)
+
+  | Odivl => (Some AX :: Some CX :: nil, Some AX)
+
+  | Odivlu => (Some AX :: Some CX :: nil, Some AX)
+
+  | Omodl => (Some AX :: Some CX :: nil, Some DX)
+
+  | Omodlu => (Some AX :: Some CX :: nil, Some DX)
+
+  | Oshll => (None :: Some CX :: nil, None)
+
+  | Oshrl => (None :: Some CX :: nil, None)
+
+  | Oshrlu => (None :: Some CX :: nil, None)
+
+  | Oshrxlimm _ => (Some AX :: nil, Some AX)
+
+  | _ => (nil, None)
+
+  end.
+
+
+
+Definition mregs_for_builtin (ef: external_function): list (option mreg) * list (option mreg) :=
+
+  match ef with
+
+  | EF_memcpy sz al =>
+
+     if zle sz 32 then (Some AX :: Some DX :: nil, nil) else (Some DI :: Some SI :: nil, nil)
+
+  | EF_builtin name sg =>
+
+     if string_dec name "__builtin_negl" then
+
+       (Some DX :: Some AX :: nil, Some DX :: Some AX :: nil)
+
+     else if string_dec name "__builtin_addl"
+
+          || string_dec name "__builtin_subl" then
+
+       (Some DX :: Some AX :: Some CX :: Some BX :: nil, Some DX :: Some AX :: nil)
+
+     else if string_dec name "__builtin_mull" then
+
+       (Some AX :: Some DX :: nil, Some DX :: Some AX :: nil)
+
+     else if string_dec name "__builtin_va_start" then
+
+       (Some DX :: nil, nil)
+
+     else if (negb Archi.ptr64) && string_dec name "__builtin_bswap64" then
+
+       (Some AX :: Some DX :: nil, Some DX :: Some AX :: nil)
+
+     else
+
+       (nil, nil)
+
+  | _ => (nil, nil)
+
+  end.
+
+
+
+Global Opaque
+
+    destroyed_by_op destroyed_by_load destroyed_by_store
+
+    destroyed_by_cond destroyed_by_jumptable destroyed_by_builtin
+
+    destroyed_by_setstack destroyed_at_function_entry temp_for_parent_frame
+
+    mregs_for_operation mregs_for_builtin.
+
+
+
+Definition two_address_op (op: operation) : bool :=
+
+  match op with
+
+  | Omove => false
+
+  | Ointconst _ => false
+
+  | Olongconst _ => false
+
+  | Ofloatconst _ => false
+
+  | Osingleconst _ => false
+
+  | Oindirectsymbol _ => false
+
+  | Ocast8signed => false
+
+  | Ocast8unsigned => false
+
+  | Ocast16signed => false
+
+  | Ocast16unsigned => false
+
+  | Oneg => true
+
+  | Osub => true
+
+  | Omul => true
+
+  | Omulimm _ => true
+
+  | Omulhs => false
+
+  | Omulhu => false
+
+  | Odiv => false
+
+  | Odivu => false
+
+  | Omod => false
+
+  | Omodu => false
+
+  | Oand => true
+
+  | Oandimm _ => true
+
+  | Oor => true
+
+  | Oorimm _ => true
+
+  | Oxor => true
+
+  | Oxorimm _ => true
+
+  | Onot => true
+
+  | Oshl => true
+
+  | Oshlimm _ => true
+
+  | Oshr => true
+
+  | Oshrimm _ => true
+
+  | Oshrximm _ => false
+
+  | Oshru => true
+
+  | Oshruimm _ => true
+
+  | Ororimm _ => true
+
+  | Oshldimm _ => true
+
+  | Olea addr => false
+
+  | Omakelong => true
+
+  | Olowlong => true
+
+  | Ohighlong => true
+
+  | Ocast32signed => false
+
+  | Ocast32unsigned => false
+
+  | Onegl => true
+
+  | Oaddlimm _ => true
+
+  | Osubl => true
+
+  | Omull => true
+
+  | Omullimm _ => true
+
+  | Omullhs => false
+
+  | Omullhu => false
+
+  | Odivl => false
+
+  | Odivlu => false
+
+  | Omodl => false
+
+  | Omodlu => false
+
+  | Oandl => true
+
+  | Oandlimm _ => true
+
+  | Oorl => true
+
+  | Oorlimm _ => true
+
+  | Oxorl => true
+
+  | Oxorlimm _ => true
+
+  | Onotl => true
+
+  | Oshll => true
+
+  | Oshllimm _ => true
+
+  | Oshrl => true
+
+  | Oshrlimm _ => true
+
+  | Oshrxlimm _ => false
+
+  | Oshrlu => true
+
+  | Oshrluimm _ => true
+
+  | Ororlimm _ => true
+
+  | Oleal addr => false
+
+  | Onegf => true
+
+  | Oabsf => true
+
+  | Oaddf => true
+
+  | Osubf => true
+
+  | Omulf => true
+
+  | Odivf => true
+
+  | Onegfs => true
+
+  | Oabsfs => true
+
+  | Oaddfs => true
+
+  | Osubfs => true
+
+  | Omulfs => true
+
+  | Odivfs => true
+
+  | Osingleoffloat => false
+
+  | Ofloatofsingle => false
+
+  | Ointoffloat => false
+
+  | Ofloatofint => false
+
+  | Ointofsingle => false
+
+  | Osingleofint => false
+
+  | Olongoffloat => false
+
+  | Ofloatoflong => false
+
+  | Olongofsingle => false
+
+  | Osingleoflong => false
+
+  | Ocmp c => false
+
+  end.
+
+
+
+Definition builtin_constraints (ef: external_function) :
+
+                                       list builtin_arg_constraint :=
+
+  match ef with
+
+  | EF_vload _ => OK_addressing :: nil
+
+  | EF_vstore _ => OK_addressing :: OK_default :: nil
+
+  | EF_memcpy _ _ => OK_addrstack :: OK_addrstack :: nil
+
+  | EF_annot kind txt targs => map (fun _ => OK_all) targs
+
+  | EF_debug kind txt targs => map (fun _ => OK_all) targs
+
+  | _ => nil
+
+  end.
+

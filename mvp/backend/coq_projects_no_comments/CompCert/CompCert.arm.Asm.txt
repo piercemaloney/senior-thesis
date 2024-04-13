@@ -1,0 +1,1705 @@
+
+
+Require Import Coqlib.
+
+Require Import Maps.
+
+Require Import AST.
+
+Require Import Integers.
+
+Require Import Floats.
+
+Require Import Values.
+
+Require Import Memory.
+
+Require Import Events.
+
+Require Import Globalenvs.
+
+Require Import Smallstep.
+
+Require Import Locations.
+
+Require Stacklayout.
+
+Require Import Conventions.
+
+
+
+Inductive ireg: Type :=
+
+  | IR0: ireg  | IR1: ireg  | IR2: ireg  | IR3: ireg
+
+  | IR4: ireg  | IR5: ireg  | IR6: ireg  | IR7: ireg
+
+  | IR8: ireg  | IR9: ireg  | IR10: ireg | IR11: ireg
+
+  | IR12: ireg | IR13: ireg | IR14: ireg.
+
+
+
+Inductive freg: Type :=
+
+  | FR0: freg  | FR1: freg  | FR2: freg  | FR3: freg
+
+  | FR4: freg  | FR5: freg  | FR6: freg  | FR7: freg
+
+  | FR8: freg  | FR9: freg  | FR10: freg  | FR11: freg
+
+  | FR12: freg  | FR13: freg  | FR14: freg  | FR15: freg.
+
+
+
+Inductive sreg: Type :=
+
+  | SR0: sreg  | SR1: sreg  | SR2: sreg  | SR3: sreg
+
+  | SR4: sreg  | SR5: sreg  | SR6: sreg  | SR7: sreg
+
+  | SR8: sreg  | SR9: sreg  | SR10: sreg  | SR11: sreg
+
+  | SR12: sreg  | SR13: sreg  | SR14: sreg  | SR15: sreg
+
+  | SR16: sreg  | SR17: sreg  | SR18: sreg  | SR19: sreg
+
+  | SR20: sreg  | SR21: sreg  | SR22: sreg  | SR23: sreg
+
+  | SR24: sreg  | SR25: sreg  | SR26: sreg  | SR27: sreg
+
+  | SR28: sreg  | SR29: sreg  | SR30: sreg  | SR31: sreg.
+
+
+
+Lemma ireg_eq: forall (x y: ireg), {x=y} + {x<>y}.
+
+Proof. decide equality. Defined.
+
+
+
+Lemma freg_eq: forall (x y: freg), {x=y} + {x<>y}.
+
+Proof. decide equality. Defined.
+
+
+
+Inductive crbit: Type :=
+
+  | CN: crbit    
+
+  | CZ: crbit    
+
+  | CC: crbit    
+
+  | CV: crbit.   
+
+
+
+Lemma crbit_eq: forall (x y: crbit), {x=y} + {x<>y}.
+
+Proof. decide equality. Defined.
+
+
+
+Inductive preg: Type :=
+
+  | IR: ireg -> preg                    
+
+  | FR: freg -> preg                    
+
+  | CR: crbit -> preg                   
+
+  | PC: preg.                           
+
+
+
+Coercion IR: ireg >-> preg.
+
+Coercion FR: freg >-> preg.
+
+Coercion CR: crbit >-> preg.
+
+
+
+Lemma preg_eq: forall (x y: preg), {x=y} + {x<>y}.
+
+Proof. decide equality. apply ireg_eq. apply freg_eq. apply crbit_eq. Defined.
+
+
+
+Module PregEq.
+
+  Definition t := preg.
+
+  Definition eq := preg_eq.
+
+End PregEq.
+
+
+
+Module Pregmap := EMap(PregEq).
+
+
+
+Notation "'SP'" := IR13 (only parsing) : asm.
+
+Notation "'RA'" := IR14 (only parsing) : asm.
+
+
+
+Definition label := positive.
+
+
+
+Inductive shift_op : Type :=
+
+  | SOimm: int -> shift_op
+
+  | SOreg: ireg -> shift_op
+
+  | SOlsl: ireg -> int -> shift_op
+
+  | SOlsr: ireg -> int -> shift_op
+
+  | SOasr: ireg -> int -> shift_op
+
+  | SOror: ireg -> int -> shift_op.
+
+
+
+Inductive testcond : Type :=
+
+  | TCeq: testcond    
+
+  | TCne: testcond    
+
+  | TChs: testcond    
+
+  | TClo: testcond    
+
+  | TCmi: testcond    
+
+  | TCpl: testcond    
+
+  | TChi: testcond    
+
+  | TCls: testcond    
+
+  | TCge: testcond    
+
+  | TClt: testcond    
+
+  | TCgt: testcond    
+
+  | TCle: testcond.   
+
+
+
+Inductive code_constant: Type :=
+
+| Float32 : label -> float32 -> code_constant
+
+| Float64 : label -> float -> code_constant
+
+| Symbol : label -> ident -> ptrofs -> code_constant.
+
+
+
+Inductive instruction : Type :=
+
+  
+
+  | Padd: ireg -> ireg -> shift_op -> instruction 
+
+  | Pand: ireg -> ireg -> shift_op -> instruction 
+
+  | Pasr: ireg -> ireg -> ireg -> instruction     
+
+  | Pb: label -> instruction                      
+
+  | Pbc: testcond -> label -> instruction            
+
+  | Pbsymb: ident -> signature -> instruction                  
+
+  | Pbreg: ireg -> signature -> instruction                    
+
+  | Pblsymb: ident -> signature -> instruction                 
+
+  | Pblreg: ireg -> signature -> instruction                   
+
+  | Pbic: ireg -> ireg -> shift_op -> instruction 
+
+  | Pcmp: ireg -> shift_op -> instruction         
+
+  | Pcmn: ireg -> shift_op -> instruction         
+
+  | Peor: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldr: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldr_a: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldrb: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldrh: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldrsb: ireg -> ireg -> shift_op -> instruction 
+
+  | Pldrsh: ireg -> ireg -> shift_op -> instruction 
+
+  | Plsl: ireg -> ireg -> ireg -> instruction       
+
+  | Plsr: ireg -> ireg -> ireg -> instruction       
+
+  | Pmla: ireg -> ireg -> ireg -> ireg -> instruction      
+
+  | Pmov: ireg -> shift_op -> instruction          
+
+  | Pmovw: ireg -> int -> instruction              
+
+  | Pmovt: ireg -> int -> instruction              
+
+  | Pmul: ireg -> ireg -> ireg -> instruction      
+
+  | Pmvn: ireg -> shift_op -> instruction          
+
+  | Porr: ireg -> ireg -> shift_op -> instruction  
+
+  | Ppush: list ireg -> instruction 
+
+  | Prsb: ireg -> ireg -> shift_op -> instruction  
+
+  | Psbfx: ireg -> ireg -> int -> int -> instruction 
+
+  | Pstr: ireg -> ireg -> shift_op -> instruction 
+
+  | Pstr_a: ireg -> ireg -> shift_op -> instruction 
+
+  | Pstrb: ireg -> ireg -> shift_op -> instruction 
+
+  | Pstrh: ireg -> ireg -> shift_op -> instruction 
+
+  | Psdiv: instruction                              
+
+  | Psmull: ireg -> ireg -> ireg -> ireg -> instruction 
+
+  | Psub: ireg -> ireg -> shift_op -> instruction  
+
+  | Pudiv: instruction                             
+
+  | Pumull: ireg -> ireg -> ireg -> ireg -> instruction 
+
+  
+
+  | Pfcpyd: freg -> freg -> instruction             
+
+  | Pfabsd: freg -> freg -> instruction             
+
+  | Pfnegd: freg -> freg -> instruction             
+
+  | Pfaddd: freg -> freg -> freg -> instruction     
+
+  | Pfdivd: freg -> freg -> freg -> instruction     
+
+  | Pfmuld: freg -> freg -> freg -> instruction     
+
+  | Pfsubd: freg -> freg -> freg -> instruction     
+
+  | Pflid: freg -> float -> instruction             
+
+  | Pfcmpd: freg -> freg -> instruction             
+
+  | Pfcmpzd: freg -> instruction                    
+
+  | Pfsitod: freg -> ireg -> instruction            
+
+  | Pfuitod: freg -> ireg -> instruction            
+
+  | Pftosizd: ireg -> freg -> instruction           
+
+  | Pftouizd: ireg -> freg -> instruction           
+
+  | Pfabss: freg -> freg -> instruction             
+
+  | Pfnegs: freg -> freg -> instruction             
+
+  | Pfadds: freg -> freg -> freg -> instruction     
+
+  | Pfdivs: freg -> freg -> freg -> instruction     
+
+  | Pfmuls: freg -> freg -> freg -> instruction     
+
+  | Pfsubs: freg -> freg -> freg -> instruction     
+
+  | Pflis: freg -> float32 -> instruction           
+
+  | Pfcmps: freg -> freg -> instruction             
+
+  | Pfcmpzs: freg -> instruction                    
+
+  | Pfsitos: freg -> ireg -> instruction            
+
+  | Pfuitos: freg -> ireg -> instruction            
+
+  | Pftosizs: ireg -> freg -> instruction           
+
+  | Pftouizs: ireg -> freg -> instruction           
+
+  | Pfcvtsd: freg -> freg -> instruction            
+
+  | Pfcvtds: freg -> freg -> instruction            
+
+  | Pfldd: freg -> ireg -> int -> instruction       
+
+  | Pfldd_a: freg -> ireg -> int -> instruction     
+
+  | Pflds: freg -> ireg -> int -> instruction       
+
+  | Pfstd: freg -> ireg -> int -> instruction       
+
+  | Pfstd_a: freg -> ireg -> int -> instruction     
+
+  | Pfsts: freg -> ireg -> int -> instruction       
+
+
+
+  | Pallocframe: Z -> ptrofs -> instruction         
+
+  | Pfreeframe: Z -> ptrofs -> instruction          
+
+  | Plabel: label -> instruction                    
+
+  | Ploadsymbol: ireg -> ident -> ptrofs -> instruction 
+
+  | Pmovite: testcond -> ireg -> shift_op -> shift_op -> instruction 
+
+  | Pbtbl: ireg -> list label -> instruction       
+
+  | Pbuiltin: external_function -> list (builtin_arg preg) -> builtin_res preg -> instruction 
+
+  | Padc: ireg -> ireg -> shift_op -> instruction     
+
+  | Pcfi_adjust: int -> instruction                   
+
+  | Pcfi_rel_offset: int -> instruction               
+
+  | Pclz: ireg -> ireg -> instruction                 
+
+  | Pfsqrt: freg -> freg -> instruction               
+
+  | Prev: ireg -> ireg -> instruction                 
+
+  | Prev16: ireg -> ireg -> instruction               
+
+  | Prsc: ireg -> ireg -> shift_op -> instruction     
+
+  | Psbc: ireg -> ireg -> shift_op -> instruction     
+
+  | Pnop : instruction                                
+
+  
+
+  | Padds: ireg -> ireg -> shift_op -> instruction    
+
+  | Psubs: ireg -> ireg -> shift_op -> instruction    
+
+  | Prsbs: ireg -> ireg -> shift_op -> instruction    
+
+  | Pdmb: instruction                                 
+
+  | Pdsb: instruction                                 
+
+  | Pisb: instruction                                 
+
+  | Pbne: label -> instruction                        
+
+  | Pldr_p: ireg -> ireg -> shift_op -> instruction   
+
+  | Pldrb_p: ireg -> ireg -> shift_op -> instruction  
+
+  | Pldrh_p: ireg -> ireg -> shift_op -> instruction  
+
+  | Pstr_p: ireg -> ireg -> shift_op -> instruction   
+
+  | Pstrb_p: ireg -> ireg -> shift_op -> instruction  
+
+  | Pstrh_p: ireg -> ireg -> shift_op -> instruction  
+
+
+
+  | Pfcpy_fs: freg -> sreg -> instruction            
+
+  | Pfcpy_sf: sreg -> freg -> instruction            
+
+  | Pfcpy_fii: freg -> ireg -> ireg -> instruction    
+
+  | Pfcpy_fi: freg -> ireg -> instruction            
+
+  | Pfcpy_iif: ireg -> ireg -> freg -> instruction    
+
+  | Pfcpy_if: ireg -> freg -> instruction            
+
+
+
+  | Pconstants: list code_constant -> instruction   
+
+  | Ploadsymbol_imm: ireg -> ident -> ptrofs -> instruction 
+
+  | Pflid_lbl: freg -> label -> float -> instruction 
+
+  | Pflis_lbl: freg -> label -> float32 -> instruction 
+
+  | Pflid_imm: freg -> float -> instruction          
+
+  | Pflis_imm: freg -> float32 -> instruction        
+
+  | Ploadsymbol_lbl: ireg -> label -> ident -> ptrofs -> instruction. 
+
+
+
+Definition code := list instruction.
+
+Record function : Type := mkfunction { fn_sig: signature; fn_code: code }.
+
+Definition fundef := AST.fundef function.
+
+Definition program := AST.program fundef unit.
+
+
+
+Definition regset := Pregmap.t val.
+
+Definition genv := Genv.t fundef unit.
+
+
+
+Notation "a # b" := (a b) (at level 1, only parsing) : asm.
+
+Notation "a # b <- c" := (Pregmap.set b c a) (at level 1, b at next level) : asm.
+
+
+
+Open Scope asm.
+
+
+
+Fixpoint undef_regs (l: list preg) (rs: regset) : regset :=
+
+  match l with
+
+  | nil => rs
+
+  | r :: l' => undef_regs l' (rs#r <- Vundef)
+
+  end.
+
+
+
+Definition undef_flags (rs: regset) : regset :=
+
+  fun r => match r with CR _ => Vundef | _ => rs r end.
+
+
+
+Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
+
+  match p with
+
+  | One r => rs#r <- v
+
+  | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
+
+  end.
+
+
+
+Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
+
+  match res with
+
+  | BR r => rs#r <- v
+
+  | BR_none => rs
+
+  | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
+
+  end.
+
+
+
+Section RELSEM.
+
+
+
+Fixpoint find_instr (pos: Z) (c: code) {struct c} : option instruction :=
+
+  match c with
+
+  | nil => None
+
+  | i :: il => if zeq pos 0 then Some i else find_instr (pos - 1) il
+
+  end.
+
+
+
+Definition is_label (lbl: label) (instr: instruction) : bool :=
+
+  match instr with
+
+  | Plabel lbl' => if peq lbl lbl' then true else false
+
+  | _ => false
+
+  end.
+
+
+
+Lemma is_label_correct:
+
+  forall lbl instr,
+
+  if is_label lbl instr then instr = Plabel lbl else instr <> Plabel lbl.
+
+Proof.
+
+  intros.  destruct instr; simpl; try discriminate.
+
+  case (peq lbl l); intro; congruence.
+
+Qed.
+
+
+
+Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
+
+  match c with
+
+  | nil => None
+
+  | instr :: c' =>
+
+      if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
+
+  end.
+
+
+
+Variable ge: genv.
+
+
+
+Inductive outcome: Type :=
+
+  | Next: regset -> mem -> outcome
+
+  | Stuck: outcome.
+
+
+
+Definition nextinstr (rs: regset) :=
+
+  rs#PC <- (Val.offset_ptr rs#PC Ptrofs.one).
+
+
+
+Definition nextinstr_nf (rs: regset) :=
+
+  nextinstr (undef_flags rs).
+
+
+
+Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
+
+  match label_pos lbl 0 (fn_code f) with
+
+  | None => Stuck
+
+  | Some pos =>
+
+      match rs#PC with
+
+      | Vptr b ofs => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+
+      | _ => Stuck
+
+    end
+
+  end.
+
+
+
+Definition eval_shift_op (so: shift_op) (rs: regset) :=
+
+  match so with
+
+  | SOimm n => Vint n
+
+  | SOreg r => rs r
+
+  | SOlsl r n => Val.shl (rs r) (Vint n)
+
+  | SOlsr r n => Val.shru (rs r) (Vint n)
+
+  | SOasr r n => Val.shr (rs r) (Vint n)
+
+  | SOror r n => Val.ror (rs r) (Vint n)
+
+  end.
+
+
+
+Definition exec_load (chunk: memory_chunk) (addr: val) (r: preg)
+
+                     (rs: regset) (m: mem) :=
+
+  match Mem.loadv chunk m addr with
+
+  | None => Stuck
+
+  | Some v => Next (nextinstr (rs#r <- v)) m
+
+  end.
+
+
+
+Definition exec_store (chunk: memory_chunk) (addr: val) (r: preg)
+
+                      (rs: regset) (m: mem) :=
+
+  match Mem.storev chunk m addr (rs r) with
+
+  | None => Stuck
+
+  | Some m' => Next (nextinstr rs) m'
+
+  end.
+
+
+
+Definition compare_int (rs: regset) (v1 v2: val) (m: mem) :=
+
+  rs#CN <- (Val.negative (Val.sub v1 v2))
+
+    #CZ <- (Val.cmpu (Mem.valid_pointer m) Ceq v1 v2)
+
+    #CC <- (Val.cmpu (Mem.valid_pointer m) Cge v1 v2)
+
+    #CV <- (Val.sub_overflow v1 v2).
+
+
+
+Definition compare_float (rs: regset) (v1 v2: val) :=
+
+  match v1, v2 with
+
+  | Vfloat f1, Vfloat f2 =>
+
+      rs#CN <- (Val.of_bool (Float.cmp Clt f1 f2))
+
+        #CZ <- (Val.of_bool (Float.cmp Ceq f1 f2))
+
+        #CC <- (Val.of_bool (negb (Float.cmp Clt f1 f2)))
+
+        #CV <- (Val.of_bool (negb (Float.cmp Ceq f1 f2 || Float.cmp Clt f1 f2 || Float.cmp Cgt f1 f2)))
+
+  | _, _ =>
+
+      rs#CN <- Vundef
+
+        #CZ <- Vundef
+
+        #CC <- Vundef
+
+        #CV <- Vundef
+
+  end.
+
+
+
+Definition compare_float32 (rs: regset) (v1 v2: val) :=
+
+  match v1, v2 with
+
+  | Vsingle f1, Vsingle f2 =>
+
+      rs#CN <- (Val.of_bool (Float32.cmp Clt f1 f2))
+
+        #CZ <- (Val.of_bool (Float32.cmp Ceq f1 f2))
+
+        #CC <- (Val.of_bool (negb (Float32.cmp Clt f1 f2)))
+
+        #CV <- (Val.of_bool (negb (Float32.cmp Ceq f1 f2 || Float32.cmp Clt f1 f2 || Float32.cmp Cgt f1 f2)))
+
+  | _, _ =>
+
+      rs#CN <- Vundef
+
+        #CZ <- Vundef
+
+        #CC <- Vundef
+
+        #CV <- Vundef
+
+  end.
+
+
+
+Definition eval_testcond (c: testcond) (rs: regset) : option bool :=
+
+  match c with
+
+  | TCeq =>                             
+
+      match rs CZ with
+
+      | Vint n => Some (Int.eq n Int.one)
+
+      | _ => None
+
+      end
+
+  | TCne =>                             
+
+      match rs CZ with
+
+      | Vint n => Some (Int.eq n Int.zero)
+
+      | _ => None
+
+      end
+
+  | TClo =>                             
+
+      match rs CC with
+
+      | Vint n => Some (Int.eq n Int.zero)
+
+      | _ => None
+
+      end
+
+  | TCls =>                             
+
+      match rs CC, rs CZ with
+
+      | Vint c, Vint z => Some (Int.eq c Int.zero || Int.eq z Int.one)
+
+      | _, _ => None
+
+      end
+
+  | TChs =>                             
+
+      match rs CC with
+
+      | Vint n => Some (Int.eq n Int.one)
+
+      | _ => None
+
+      end
+
+  | TChi =>                             
+
+      match rs CC, rs CZ with
+
+      | Vint c, Vint z => Some (Int.eq c Int.one && Int.eq z Int.zero)
+
+      | _, _ => None
+
+      end
+
+  | TClt =>                             
+
+      match rs CV, rs CN with
+
+      | Vint o, Vint s => Some (Int.eq (Int.xor o s) Int.one)
+
+      | _, _ => None
+
+      end
+
+  | TCle =>                             
+
+      match rs CV, rs CN, rs CZ with
+
+      | Vint o, Vint s, Vint z => Some (Int.eq (Int.xor o s) Int.one || Int.eq z Int.one)
+
+      | _, _, _ => None
+
+      end
+
+  | TCge =>                             
+
+      match rs CV, rs CN with
+
+      | Vint o, Vint s => Some (Int.eq (Int.xor o s) Int.zero)
+
+      | _, _ => None
+
+      end
+
+  | TCgt =>                             
+
+      match rs CV, rs CN, rs CZ with
+
+      | Vint o, Vint s, Vint z => Some (Int.eq (Int.xor o s) Int.zero && Int.eq z Int.zero)
+
+      | _, _, _ => None
+
+      end
+
+  | TCpl =>                             
+
+      match rs CN with
+
+      | Vint n => Some (Int.eq n Int.zero)
+
+      | _ => None
+
+      end
+
+  | TCmi =>                             
+
+      match rs CN with
+
+      | Vint n => Some (Int.eq n Int.one)
+
+      | _ => None
+
+      end
+
+  end.
+
+
+
+Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+
+  match i with
+
+  | Padd r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.add rs#r2 (eval_shift_op so rs)))) m
+
+  | Pand r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.and rs#r2 (eval_shift_op so rs)))) m
+
+  | Pasr r1 r2 r3 =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.shr rs#r2 rs#r3))) m
+
+  | Pb lbl =>
+
+      goto_label f lbl rs m
+
+  | Pbc cond lbl =>
+
+      match eval_testcond cond rs with
+
+      | Some true => goto_label f lbl rs m
+
+      | Some false => Next (nextinstr rs) m
+
+      | None => Stuck
+
+      end
+
+  | Pbsymb id sg =>
+
+      Next (rs#PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
+
+  | Pbreg r sg =>
+
+      Next (rs#PC <- (rs#r)) m
+
+  | Pblsymb id sg =>
+
+      Next (rs#IR14 <- (Val.add rs#PC Vone) #PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
+
+  | Pblreg r sg =>
+
+      Next (rs#IR14 <- (Val.add rs#PC Vone) #PC <- (rs#r)) m
+
+  | Pbic r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.and rs#r2 (Val.notint (eval_shift_op so rs))))) m
+
+  | Pcmp r1 so =>
+
+      Next (nextinstr (compare_int rs rs#r1 (eval_shift_op so rs) m)) m
+
+  | Pcmn r1 so =>
+
+      Next (nextinstr (compare_int rs rs#r1 (Val.neg (eval_shift_op so rs)) m)) m
+
+  | Peor r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.xor rs#r2 (eval_shift_op so rs)))) m
+
+  | Pldr r1 r2 sa =>
+
+      exec_load Mint32 (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pldr_a r1 r2 sa =>
+
+      exec_load Many32 (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pldrb r1 r2 sa =>
+
+      exec_load Mint8unsigned (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pldrh r1 r2 sa =>
+
+      exec_load Mint16unsigned (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pldrsb r1 r2 sa =>
+
+      exec_load Mint8signed (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pldrsh r1 r2 sa =>
+
+      exec_load Mint16signed (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Plsl r1 r2 r3 =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.shl rs#r2 rs#r3))) m
+
+  | Plsr r1 r2 r3 =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.shru rs#r2 rs#r3))) m
+
+  | Pmla r1 r2 r3 r4 =>
+
+      Next (nextinstr (rs#r1 <- (Val.add (Val.mul rs#r2 rs#r3) rs#r4))) m
+
+  | Pmov r1 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (eval_shift_op so rs))) m
+
+  | Pmovw r n =>
+
+      Next (nextinstr (rs#r <- (Vint n))) m
+
+  | Pmovt r n =>
+
+      Next (nextinstr (rs#r <- (Val.or (Val.and rs#r (Vint (Int.repr 65535)))
+
+                                       (Vint (Int.shl n (Int.repr 16)))))) m
+
+  | Pmul r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.mul rs#r2 rs#r3))) m
+
+  | Pmvn r1 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.notint (eval_shift_op so rs)))) m
+
+  | Porr r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.or rs#r2 (eval_shift_op so rs)))) m
+
+  | Prsb r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.sub (eval_shift_op so rs) rs#r2))) m
+
+  | Pstr r1 r2 sa =>
+
+      exec_store Mint32 (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pstr_a r1 r2 sa =>
+
+      exec_store Many32 (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pstrb r1 r2 sa =>
+
+      exec_store Mint8unsigned (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Pstrh r1 r2 sa =>
+
+      exec_store Mint16unsigned (Val.add rs#r2 (eval_shift_op sa rs)) r1 rs m
+
+  | Psdiv =>
+
+      match Val.divs rs#IR0 rs#IR1 with
+
+      | Some v => Next (nextinstr (rs#IR0 <- v
+
+                                     #IR1 <- Vundef #IR2 <- Vundef
+
+                                     #IR3 <- Vundef #IR12 <- Vundef)) m
+
+      | None => Stuck
+
+      end
+
+  | Psbfx r1 r2 lsb sz =>
+
+      Next (nextinstr (rs#r1 <- (Val.sign_ext (Int.unsigned sz) (Val.shru rs#r2 (Vint lsb))))) m
+
+  | Psmull rdl rdh r1 r2 =>
+
+      Next (nextinstr (rs#rdl <- (Val.mul rs#r1 rs#r2)
+
+                         #rdh <- (Val.mulhs rs#r1 rs#r2))) m
+
+  | Psub r1 r2 so =>
+
+      Next (nextinstr_nf (rs#r1 <- (Val.sub rs#r2 (eval_shift_op so rs)))) m
+
+  | Pudiv =>
+
+      match Val.divu rs#IR0 rs#IR1 with
+
+      | Some v => Next (nextinstr (rs#IR0 <- v
+
+                                     #IR1 <- Vundef #IR2 <- Vundef
+
+                                     #IR3 <- Vundef #IR12 <- Vundef)) m
+
+      | None => Stuck
+
+      end
+
+  | Pumull rdl rdh r1 r2 =>
+
+      Next (nextinstr (rs#rdl <- (Val.mul rs#r1 rs#r2)
+
+                         #rdh <- (Val.mulhu rs#r1 rs#r2))) m
+
+  
+
+  | Pfcpyd r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (rs#r2))) m
+
+  | Pfabsd r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.absf rs#r2))) m
+
+  | Pfnegd r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.negf rs#r2))) m
+
+  | Pfaddd r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.addf rs#r2 rs#r3))) m
+
+  | Pfdivd r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.divf rs#r2 rs#r3))) m
+
+  | Pfmuld r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.mulf rs#r2 rs#r3))) m
+
+  | Pfsubd r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.subf rs#r2 rs#r3))) m
+
+  | Pflid r1 f =>
+
+      Next (nextinstr (rs#r1 <- (Vfloat f))) m
+
+  | Pfcmpd r1 r2 =>
+
+      Next (nextinstr (compare_float rs rs#r1 rs#r2)) m
+
+  | Pfcmpzd r1 =>
+
+      Next (nextinstr (compare_float rs rs#r1 (Vfloat Float.zero))) m
+
+  | Pfsitod r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.maketotal (Val.floatofint rs#r2)))) m
+
+  | Pfuitod r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.maketotal (Val.floatofintu rs#r2)))) m
+
+  | Pftosizd r1 r2 =>
+
+      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intoffloat rs#r2)))) m
+
+  | Pftouizd r1 r2 =>
+
+      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intuoffloat rs#r2)))) m
+
+  | Pfabss r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.absfs rs#r2))) m
+
+  | Pfnegs r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.negfs rs#r2))) m
+
+  | Pfadds r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.addfs rs#r2 rs#r3))) m
+
+  | Pfdivs r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.divfs rs#r2 rs#r3))) m
+
+  | Pfmuls r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.mulfs rs#r2 rs#r3))) m
+
+  | Pfsubs r1 r2 r3 =>
+
+      Next (nextinstr (rs#r1 <- (Val.subfs rs#r2 rs#r3))) m
+
+  | Pflis r1 f =>
+
+      Next (nextinstr (rs#r1 <- (Vsingle f))) m
+
+  | Pfcmps r1 r2 =>
+
+      Next (nextinstr (compare_float32 rs rs#r1 rs#r2)) m
+
+  | Pfcmpzs r1 =>
+
+      Next (nextinstr (compare_float32 rs rs#r1 (Vsingle Float32.zero))) m
+
+  | Pfsitos r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.maketotal (Val.singleofint rs#r2)))) m
+
+  | Pfuitos r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.maketotal (Val.singleofintu rs#r2)))) m
+
+  | Pftosizs r1 r2 =>
+
+      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intofsingle rs#r2)))) m
+
+  | Pftouizs r1 r2 =>
+
+      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intuofsingle rs#r2)))) m
+
+  | Pfcvtsd r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.singleoffloat rs#r2))) m
+
+  | Pfcvtds r1 r2 =>
+
+      Next (nextinstr (rs#r1 <- (Val.floatofsingle rs#r2))) m
+
+  | Pfldd r1 r2 n =>
+
+      exec_load Mfloat64 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  | Pfldd_a r1 r2 n =>
+
+      exec_load Many64 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  | Pflds r1 r2 n =>
+
+      exec_load Mfloat32 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  | Pfstd r1 r2 n =>
+
+      exec_store Mfloat64 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  | Pfstd_a r1 r2 n =>
+
+      exec_store Many64 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  | Pfsts r1 r2 n =>
+
+      exec_store Mfloat32 (Val.add rs#r2 (Vint n)) r1 rs m
+
+  
+
+  | Pallocframe sz pos =>
+
+      let (m1, stk) := Mem.alloc m 0 sz in
+
+      let sp := (Vptr stk Ptrofs.zero) in
+
+      match Mem.storev Mint32 m1 (Val.offset_ptr sp pos) rs#IR13 with
+
+      | None => Stuck
+
+      | Some m2 => Next (nextinstr (rs #IR12 <- (rs#IR13) #IR13 <- sp)) m2
+
+      end
+
+  | Pfreeframe sz pos =>
+
+      match Mem.loadv Mint32 m (Val.offset_ptr rs#IR13 pos) with
+
+      | None => Stuck
+
+      | Some v =>
+
+          match rs#IR13 with
+
+          | Vptr stk ofs =>
+
+              match Mem.free m stk 0 sz with
+
+              | None => Stuck
+
+              | Some m' => Next (nextinstr (rs#IR13 <- v)) m'
+
+              end
+
+          | _ => Stuck
+
+          end
+
+      end
+
+  | Plabel lbl =>
+
+      Next (nextinstr rs) m
+
+  | Ploadsymbol r1 lbl ofs =>
+
+      Next (nextinstr (rs#r1 <- (Genv.symbol_address ge lbl ofs))) m
+
+  | Pmovite cond r1 ifso ifnot =>
+
+      let v :=
+
+        match eval_testcond cond rs with
+
+        | Some true => eval_shift_op ifso rs
+
+        | Some false => eval_shift_op ifnot rs
+
+        | None => Vundef
+
+        end in
+
+      Next (nextinstr (rs#r1 <- v)) m
+
+  | Pbtbl r tbl =>
+
+      match rs#r with
+
+      | Vint n =>
+
+          match list_nth_z tbl (Int.unsigned n) with
+
+          | None => Stuck
+
+          | Some lbl => goto_label f lbl (rs#IR14 <- Vundef) m
+
+          end
+
+      | _ => Stuck
+
+      end
+
+  | Pcfi_rel_offset ofs =>
+
+      Next (nextinstr rs) m
+
+  | Pbuiltin ef args res => Stuck    
+
+  
+  | Ppush _
+
+  | Padc _ _ _
+
+  | Pcfi_adjust _
+
+  | Pclz _ _
+
+  | Prev _ _
+
+  | Prev16 _ _
+
+  | Pfsqrt _ _
+
+  | Prsc _ _ _
+
+  | Psbc _ _ _
+
+  | Pnop
+
+  | Padds _ _ _
+
+  | Psubs _ _ _
+
+  | Prsbs _ _ _
+
+  | Pdmb
+
+  | Pdsb
+
+  | Pisb
+
+  | Pbne _
+
+  | Pldr_p _ _ _
+
+  | Pldrb_p _ _ _
+
+  | Pldrh_p _ _ _
+
+  | Pstr_p _ _ _
+
+  | Pstrb_p _ _ _
+
+  | Pstrh_p _ _ _
+
+  | Pfcpy_fs _ _
+
+  | Pfcpy_sf _ _
+
+  | Pfcpy_fii _ _ _
+
+  | Pfcpy_fi _ _
+
+  | Pfcpy_iif _ _ _
+
+  | Pfcpy_if _ _
+
+  | Pconstants _
+
+  | Ploadsymbol_imm _ _ _
+
+  | Pflid_lbl _ _ _
+
+  | Pflis_lbl _ _ _
+
+  | Pflid_imm _ _
+
+  | Pflis_imm _ _
+
+  | Ploadsymbol_lbl _ _ _ _
+
+    =>
+
+    Stuck
+
+  end.
+
+
+
+Definition preg_of (r: mreg) : preg :=
+
+  match r with
+
+  | R0 => IR0 | R1 => IR1 | R2 => IR2 | R3 => IR3
+
+  | R4 => IR4 | R5 => IR5 | R6 => IR6 | R7 => IR7
+
+  | R8 => IR8 | R9 => IR9 | R10 => IR10 | R11 => IR11
+
+  | R12 => IR12
+
+  | F0 => FR0 | F1 => FR1 | F2 => FR2 | F3 => FR3
+
+  | F4 => FR4 | F5 => FR5 | F6 => FR6 | F7 => FR7
+
+  | F8 => FR8 | F9 => FR9 | F10 => FR10 | F11 => FR11
+
+  | F12 => FR12 | F13 => FR13 | F14 => FR14 | F15 => FR15
+
+  end.
+
+
+
+Definition undef_caller_save_regs (rs: regset) : regset :=
+
+  fun r =>
+
+    if preg_eq r SP
+
+    || In_dec preg_eq r (List.map preg_of (List.filter is_callee_save all_mregs))
+
+    then rs r
+
+    else Vundef.
+
+
+
+Inductive extcall_arg (rs: regset) (m: mem): loc -> val -> Prop :=
+
+  | extcall_arg_reg: forall r,
+
+      extcall_arg rs m (R r) (rs (preg_of r))
+
+  | extcall_arg_stack: forall ofs ty bofs v,
+
+      bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
+
+      Mem.loadv (chunk_of_type ty) m
+
+                (Val.offset_ptr (rs (IR IR13)) (Ptrofs.repr bofs)) = Some v ->
+
+      extcall_arg rs m (S Outgoing ofs ty) v.
+
+
+
+Inductive extcall_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
+
+  | extcall_arg_one: forall l v,
+
+      extcall_arg rs m l v ->
+
+      extcall_arg_pair rs m (One l) v
+
+  | extcall_arg_twolong: forall hi lo vhi vlo,
+
+      extcall_arg rs m hi vhi ->
+
+      extcall_arg rs m lo vlo ->
+
+      extcall_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+
+
+
+Definition extcall_arguments
+
+    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
+
+  list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
+
+
+
+Definition loc_external_result (sg: signature) : rpair preg :=
+
+  map_rpair preg_of (loc_result sg).
+
+
+
+Inductive state: Type :=
+
+  | State: regset -> mem -> state.
+
+
+
+Inductive step: state -> trace -> state -> Prop :=
+
+  | exec_step_internal:
+
+      forall b ofs f i rs m rs' m',
+
+      rs PC = Vptr b ofs ->
+
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+
+      exec_instr f i rs m = Next rs' m' ->
+
+      step (State rs m) E0 (State rs' m')
+
+  | exec_step_builtin:
+
+      forall b ofs f ef args res rs m vargs t vres rs' m',
+
+      rs PC = Vptr b ofs ->
+
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+
+      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
+
+      eval_builtin_args ge rs (rs SP) m args vargs ->
+
+      external_call ef ge vargs m t vres m' ->
+
+      rs' = nextinstr
+
+              (set_res res vres
+
+                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+
+      step (State rs m) t (State rs' m')
+
+  | exec_step_external:
+
+      forall b ef args res rs m t rs' m',
+
+      rs PC = Vptr b Ptrofs.zero ->
+
+      Genv.find_funct_ptr ge b = Some (External ef) ->
+
+      external_call ef ge args m t res m' ->
+
+      extcall_arguments rs m (ef_sig ef) args ->
+
+      rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs IR14) ->
+
+      step (State rs m) t (State rs' m').
+
+
+
+End RELSEM.
+
+
+
+Inductive initial_state (p: program): state -> Prop :=
+
+  | initial_state_intro: forall m0,
+
+      let ge := Genv.globalenv p in
+
+      let rs0 :=
+
+        (Pregmap.init Vundef)
+
+        # PC <- (Genv.symbol_address ge p.(prog_main) Ptrofs.zero)
+
+        # IR14 <- Vzero
+
+        # IR13 <- Vzero in
+
+      Genv.init_mem p = Some m0 ->
+
+      initial_state p (State rs0 m0).
+
+
+
+Inductive final_state: state -> int -> Prop :=
+
+  | final_state_intro: forall rs m r,
+
+      rs#PC = Vzero ->
+
+      rs#IR0 = Vint r ->
+
+      final_state (State rs m) r.
+
+
+
+Definition semantics (p: program) :=
+
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+
+
+Remark extcall_arguments_determ:
+
+  forall rs m sg args1 args2,
+
+  extcall_arguments rs m sg args1 -> extcall_arguments rs m sg args2 -> args1 = args2.
+
+Proof.
+
+  intros until m.
+
+  assert (A: forall l v1 v2,
+
+             extcall_arg rs m l v1 -> extcall_arg rs m l v2 -> v1 = v2).
+
+  { intros. inv H; inv H0; congruence. }
+
+  assert (B: forall p v1 v2,
+
+             extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
+
+  { intros. inv H; inv H0.
+
+    eapply A; eauto.
+
+    f_equal; eapply A; eauto. }
+
+  assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->
+
+             forall vl2, list_forall2 (extcall_arg_pair rs m) ll vl2 -> vl1 = vl2).
+
+  {
+
+    induction 1; intros vl2 EA; inv EA.
+
+    auto.
+
+    f_equal; eauto. }
+
+  intros. eapply C; eauto.
+
+Qed.
+
+
+
+Lemma semantics_determinate: forall p, determinate (semantics p).
+
+Proof.
+
+Ltac Equalities :=
+
+  match goal with
+
+  | [ H1: ?a = ?b, H2: ?a = ?c |- _ ] =>
+
+      rewrite H1 in H2; inv H2; Equalities
+
+  | _ => idtac
+
+  end.
+
+  intros; constructor; simpl; intros.
+
+
+
+  inv H; inv H0; Equalities.
+
+  split. constructor. auto.
+
+  discriminate.
+
+  discriminate.
+
+  assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+
+  exploit external_call_determ. eexact H5. eexact H11. intros [A B].
+
+  split. auto. intros. destruct B; auto. subst. auto.
+
+  assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
+
+  exploit external_call_determ. eexact H3. eexact H8. intros [A B].
+
+  split. auto. intros. destruct B; auto. subst. auto.
+
+
+
+  red; intros; inv H; simpl.
+
+  omega.
+
+  inv H3; eapply external_call_trace_length; eauto.
+
+  eapply external_call_trace_length; eauto.
+
+
+
+  inv H; inv H0. f_equal. congruence.
+
+
+
+  inv H. unfold Vzero in H0. red; intros; red; intros. inv H; congruence.
+
+
+
+  inv H; inv H0. congruence.
+
+Qed.
+
+
+
+Definition data_preg (r: preg) : bool :=
+
+  match r with
+
+  | IR IR14 => false
+
+  | IR _ => true
+
+  | FR _ => true
+
+  | CR _ => false
+
+  | PC => false
+
+  end.
+
+
+

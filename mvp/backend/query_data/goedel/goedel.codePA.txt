@@ -1,0 +1,5553 @@
+Require Import Ensembles.
+
+Require Import Coq.Lists.List.
+
+Require Import primRec.
+(* primRec:
+Require Import Arith.
+Require Import Peano_dec.
+Require Import Compare_dec.
+Require Import Coq.Lists.List.
+Require Import Eqdep_dec.
+Require Import extEqualNat.
+Require Vector.
+Require Import misc.
+Require Export Bool.
+Require Export EqNat.
+Require Import Even.
+Require Import Max.
+
+Inductive PrimRec : nat -> Set :=
+  | succFunc : PrimRec 1
+  | zeroFunc : PrimRec 0
+  | projFunc : forall n m : nat, m < n -> PrimRec n
+  | composeFunc :
+      forall (n m : nat) (g : PrimRecs n m) (h : PrimRec m), PrimRec n
+  | primRecFunc :
+      forall (n : nat) (g : PrimRec n) (h : PrimRec (S (S n))), PrimRec (S n)
+with PrimRecs : nat -> nat -> Set :=
+  | PRnil : forall n : nat, PrimRecs n 0
+  | PRcons : forall n m : nat, PrimRec n -> PrimRecs n m -> PrimRecs n (S m).
+
+Scheme PrimRec_PrimRecs_rec := Induction for PrimRec
+  Sort Set
+  with PrimRecs_PrimRec_rec := Induction for PrimRecs 
+  Sort Set.
+
+Scheme PrimRec_PrimRecs_ind := Induction for PrimRec
+  Sort Prop
+  with PrimRecs_PrimRec_ind := Induction for PrimRecs 
+  Sort Prop.
+
+Fixpoint evalConstFunc (n m : nat) {struct n} : naryFunc n :=
+  match n return (naryFunc n) with
+  | O => m
+  | S n' => fun _ => evalConstFunc n' m
+  end.
+
+Fixpoint evalProjFunc (n : nat) : forall m : nat, m < n -> naryFunc n :=
+  match n return (forall m : nat, m < n -> naryFunc n) with
+  | O => fun (m : nat) (l : m < 0) => False_rec _ (lt_n_O _ l)
+  | S n' =>
+      fun (m : nat) (l : m < S n') =>
+      match eq_nat_dec m n' with
+      | left _ => fun a : nat => evalConstFunc _ a
+      | right l1 =>
+          fun _ =>
+          evalProjFunc n' m
+            match le_lt_or_eq _ _ (lt_n_Sm_le _ _ l) with
+            | or_introl l2 => l2
+            | or_intror l2 => False_ind _ (l1 l2)
+            end
+      end
+  end.
+
+Lemma evalProjFuncInd :
+ forall (n m : nat) (p1 p2 : m < n),
+ evalProjFunc n m p1 = evalProjFunc n m p2.
+
+Fixpoint evalList (m : nat) (l : Vector.t nat m) {struct l} :
+ naryFunc m -> nat :=
+  match l in (Vector.t _ m) return (naryFunc m -> nat) with
+  | Vector.nil => fun x : naryFunc 0 => x
+  | Vector.cons a n l' => fun x : naryFunc (S n) => evalList n l' (x a)
+  end.
+
+Fixpoint evalOneParamList (n m a : nat) (l : Vector.t (naryFunc (S n)) m)
+ {struct l} : Vector.t (naryFunc n) m :=
+  match l in (Vector.t _ m) return (Vector.t (naryFunc n) m) with
+  | Vector.nil  => Vector.nil  (naryFunc n)
+  | Vector.cons f m' l' => Vector.cons _ (f a) m' (evalOneParamList n m' a l')
+  end.
+
+Fixpoint evalComposeFunc (n : nat) :
+ forall m : nat, Vector.t (naryFunc n) m -> naryFunc m -> naryFunc n :=
+  match
+    n
+    return
+      (forall m : nat, Vector.t (naryFunc n) m -> naryFunc m -> naryFunc n)
+  with
+  | O => evalList
+  | S n' =>
+      fun (m : nat) (l : Vector.t (naryFunc (S n')) m) 
+        (f : naryFunc m) (a : nat) =>
+      evalComposeFunc n' m (evalOneParamList _ _ a l) f
+  end.
+
+Fixpoint compose2 (n : nat) : naryFunc n -> naryFunc (S n) -> naryFunc n :=
+  match n return (naryFunc n -> naryFunc (S n) -> naryFunc n) with
+  | O => fun (a : nat) (g : nat -> nat) => g a
+  | S n' =>
+      fun (f : naryFunc (S n')) (g : naryFunc (S (S n'))) (a : nat) =>
+      compose2 n' (f a) (fun x : nat => g x a)
+  end.
+
+Fixpoint evalPrimRecFunc (n : nat) (g : naryFunc n) 
+ (h : naryFunc (S (S n))) (a : nat) {struct a} : naryFunc n :=
+  match a with
+  | O => g
+  | S a' => compose2 _ (evalPrimRecFunc n g h a') (h a')
+  end.
+
+Fixpoint evalPrimRec (n : nat) (f : PrimRec n) {struct f} : 
+ naryFunc n :=
+  match f in (PrimRec n) return (naryFunc n) with
+  | succFunc => S
+  | zeroFunc => 0
+  | projFunc n m pf => evalProjFunc n m pf
+  | composeFunc n m l f =>
+      evalComposeFunc n m (evalPrimRecs _ _ l) (evalPrimRec _ f)
+  | primRecFunc n g h =>
+      evalPrimRecFunc n (evalPrimRec _ g) (evalPrimRec _ h)
+  end
+ 
+ with evalPrimRecs (n m : nat) (fs : PrimRecs n m) {struct fs} :
+ Vector.t (naryFunc n) m :=
+  match fs in (PrimRecs n m) return (Vector.t (naryFunc n) m) with
+  | PRnil a => Vector.nil  (naryFunc a)
+  | PRcons a b g gs => Vector.cons _ (evalPrimRec _ g) _ (evalPrimRecs _ _ gs)
+  end.
+
+Definition extEqualVectorGeneral (n m : nat) (l : Vector.t (naryFunc n) m) :
+
+Definition extEqualVector n: forall m (l l' : Vector.t (naryFunc n) m), Prop.
+
+Lemma extEqualVectorRefl :
+ forall (n m : nat) (l : Vector.t (naryFunc n) m), extEqualVector n m l l.
+
+Lemma extEqualOneParamList :
+ forall (n m : nat) (l1 l2 : Vector.t (naryFunc (S n)) m) (c : nat),
+
+Lemma extEqualCompose :
+ forall (n m : nat) (l1 l2 : Vector.t (naryFunc n) m) (f1 f2 : naryFunc m),
+
+Lemma extEqualCompose2 :
+ forall (n : nat) (f1 f2 : naryFunc n),
+ extEqual n f1 f2 ->
+ forall g1 g2 : naryFunc (S n),
+ extEqual (S n) g1 g2 -> extEqual n (compose2 n f1 g1) (compose2 n f2 g2).
+
+Lemma extEqualPrimRec :
+ forall (n : nat) (g1 g2 : naryFunc n) (h1 h2 : naryFunc (S (S n))),
+ extEqual n g1 g2 ->
+ extEqual (S (S n)) h1 h2 ->
+ extEqual (S n) (evalPrimRecFunc n g1 h1) (evalPrimRecFunc n g2 h2).
+
+Definition isPR (n : nat) (f : naryFunc n) : Set :=
+  {p : PrimRec n | extEqual n (evalPrimRec _ p) f}.
+
+Definition isPRrel (n : nat) (R : naryRel n) : Set :=
+  isPR n (charFunction n R).
+
+Lemma succIsPR : isPR 1 S.
+
+Lemma const0_NIsPR : forall n : nat, isPR 0 n.
+
+Lemma const1_NIsPR : forall n : nat, isPR 1 (fun _ => n).
+
+Lemma idIsPR : isPR 1 (fun x : nat => x).
+
+Lemma pi1_2IsPR : isPR 2 (fun a b : nat => a).
+
+Lemma pi2_2IsPR : isPR 2 (fun a b : nat => b).
+
+Lemma pi1_3IsPR : isPR 3 (fun a b c : nat => a).
+
+Lemma pi2_3IsPR : isPR 3 (fun a b c : nat => b).
+
+Lemma pi3_3IsPR : isPR 3 (fun a b c : nat => c).
+
+Lemma pi1_4IsPR : isPR 4 (fun a b c d : nat => a).
+
+Lemma pi2_4IsPR : isPR 4 (fun a b c d : nat => b).
+
+Lemma pi3_4IsPR : isPR 4 (fun a b c d : nat => c).
+
+Lemma pi4_4IsPR : isPR 4 (fun a b c d : nat => d).
+
+Lemma filter01IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun a b : nat => g b).
+
+Lemma filter10IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun a b : nat => g a).
+
+Lemma filter100IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g a).
+
+Lemma filter010IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g b).
+
+Lemma filter001IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g c).
+
+Lemma filter011IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g b c).
+
+Lemma filter110IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g a b).
+
+Lemma filter101IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g a c).
+
+Lemma filter0011IsPR :
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun a b c d : nat => g c d).
+
+Lemma filter1000IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 4 (fun a b c d : nat => g a).
+
+Lemma filter1011IsPR :
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 4 (fun a b c d : nat => g a c d).
+
+Lemma filter1100IsPR :
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun a b c d : nat => g a b).
+
+Lemma compose1_1IsPR :
+ forall f : nat -> nat,
+ isPR 1 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 1 (fun x : nat => g (f x)).
+
+Lemma compose1_2IsPR :
+ forall f : nat -> nat,
+ isPR 1 f ->
+ forall f' : nat -> nat,
+ isPR 1 f' ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 1 (fun x : nat => g (f x) (f' x)).
+
+Lemma compose1_3IsPR :
+ forall f1 : nat -> nat,
+ isPR 1 f1 ->
+ forall f2 : nat -> nat,
+ isPR 1 f2 ->
+ forall f3 : nat -> nat,
+ isPR 1 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 1 (fun x : nat => g (f1 x) (f2 x) (f3 x)).
+
+Lemma compose2_1IsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun x y : nat => g (f x y)).
+
+Lemma compose2_2IsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g ->
+ forall h : nat -> nat -> nat,
+ isPR 2 h -> isPR 2 (fun x y : nat => h (f x y) (g x y)).
+
+Lemma compose2_3IsPR :
+ forall f1 : nat -> nat -> nat,
+ isPR 2 f1 ->
+ forall f2 : nat -> nat -> nat,
+ isPR 2 f2 ->
+ forall f3 : nat -> nat -> nat,
+ isPR 2 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 2 (fun x y : nat => g (f1 x y) (f2 x y) (f3 x y)).
+
+Lemma compose2_4IsPR :
+ forall f1 : nat -> nat -> nat,
+ isPR 2 f1 ->
+ forall f2 : nat -> nat -> nat,
+ isPR 2 f2 ->
+ forall f3 : nat -> nat -> nat,
+ isPR 2 f3 ->
+ forall f4 : nat -> nat -> nat,
+ isPR 2 f4 ->
+ forall g : nat -> nat -> nat -> nat -> nat,
+ isPR 4 g -> isPR 2 (fun x y : nat => g (f1 x y) (f2 x y) (f3 x y) (f4 x y)).
+
+Lemma compose3_1IsPR :
+ forall f : nat -> nat -> nat -> nat,
+ isPR 3 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun x y z : nat => g (f x y z)).
+
+Lemma compose3_2IsPR :
+ forall f1 : nat -> nat -> nat -> nat,
+ isPR 3 f1 ->
+ forall f2 : nat -> nat -> nat -> nat,
+ isPR 3 f2 ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 3 (fun x y z : nat => g (f1 x y z) (f2 x y z)).
+
+Lemma compose3_3IsPR :
+ forall f1 : nat -> nat -> nat -> nat,
+ isPR 3 f1 ->
+ forall f2 : nat -> nat -> nat -> nat,
+ isPR 3 f2 ->
+ forall f3 : nat -> nat -> nat -> nat,
+ isPR 3 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 3 (fun x y z : nat => g (f1 x y z) (f2 x y z) (f3 x y z)).
+
+Lemma compose4_2IsPR :
+ forall f1 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f1 ->
+ forall f2 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f2 ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun w x y z : nat => g (f1 w x y z) (f2 w x y z)).
+
+Lemma compose4_3IsPR :
+ forall f1 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f1 ->
+ forall f2 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f2 ->
+ forall f3 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g ->
+ isPR 4 (fun w x y z : nat => g (f1 w x y z) (f2 w x y z) (f3 w x y z)).
+
+Lemma swapIsPR :
+ forall f : nat -> nat -> nat, isPR 2 f -> isPR 2 (fun x y : nat => f y x).
+
+Lemma indIsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat,
+ isPR 1
+   (fun a : nat => nat_rec (fun n : nat => nat) g (fun x y : nat => f x y) a).
+
+Lemma ind1ParamIsPR :
+ forall f : nat -> nat -> nat -> nat,
+ isPR 3 f ->
+ forall g : nat -> nat,
+ isPR 1 g ->
+ isPR 2
+   (fun a b : nat =>
+    nat_rec (fun n : nat => nat) (g b) (fun x y : nat => f x y b) a).
+
+Lemma ind2ParamIsPR :
+ forall f : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g ->
+ isPR 3
+   (fun a b c : nat =>
+    nat_rec (fun n : nat => nat) (g b c) (fun x y : nat => f x y b c) a).
+
+Lemma plusIndIsPR : isPR 3 (fun n fn b : nat => S fn).
+
+Lemma plusIsPR : isPR 2 plus.
+
+Lemma multIndIsPR : isPR 3 (fun n fn b : nat => fn + b).
+
+Lemma multIsPR : isPR 2 mult.
+
+Lemma predIsPR : isPR 1 pred.
+
+Lemma minusIndIsPR : isPR 3 (fun n fn b : nat => pred fn).
+
+Lemma minusIsPR : isPR 2 minus.
+
+Definition notZero (a : nat) :=
+  nat_rec (fun n : nat => nat) 0 (fun x y : nat => 1) a.
+
+Lemma notZeroIsPR : isPR 1 notZero.
+
+Definition ltBool (a b : nat) : bool.
+
+Lemma ltBoolTrue : forall a b : nat, ltBool a b = true -> a < b.
+
+Lemma ltBoolFalse : forall a b : nat, ltBool a b = false -> ~ a < b.
+
+Lemma ltIsPR : isPRrel 2 ltBool.
+
+Lemma maxIsPR : isPR 2 max.
+
+Lemma gtIsPR : isPRrel 2 (fun a b : nat => ltBool b a).
+
+Remark replaceCompose2 :
+ forall (n : nat) (a b a' b' : naryFunc n) (c c' : naryFunc 2),
+ extEqual n a a' ->
+ extEqual n b b' ->
+ extEqual 2 c c' ->
+ extEqual n
+   (evalComposeFunc _ _ (Vector.cons _ a _ (Vector.cons _ b _ (Vector.nil  (naryFunc n)))) c)
+
+Definition orRel (n : nat) (R S : naryRel n) : naryRel n.
+
+Lemma orRelPR :
+ forall (n : nat) (R R' : naryRel n),
+ isPRrel n R -> isPRrel n R' -> isPRrel n (orRel n R R').
+
+Definition andRel (n : nat) (R S : naryRel n) : naryRel n.
+
+Lemma andRelPR :
+ forall (n : nat) (R R' : naryRel n),
+ isPRrel n R -> isPRrel n R' -> isPRrel n (andRel n R R').
+
+Definition notRel (n : nat) (R : naryRel n) : naryRel n.
+
+Lemma notRelPR :
+ forall (n : nat) (R : naryRel n), isPRrel n R -> isPRrel n (notRel n R).
+
+Fixpoint bodd (n : nat) : bool :=
+  match n with
+  | O => false
+  | S n' => negb (bodd n')
+  end.
+
+Lemma boddIsPR : isPRrel 1 bodd.
+
+Lemma beq_nat_not_refl : forall a b : nat, a <> b -> beq_nat a b = false.
+
+Lemma neqIsPR : isPRrel 2 (fun a b : nat => negb (beq_nat a b)).
+
+Lemma eqIsPR : isPRrel 2 beq_nat.
+
+Definition leBool (a b : nat) : bool.
+
+Lemma leIsPR : isPRrel 2 leBool.
+
+Section Ignore_Params.
+
+Fixpoint ignoreParams (n m : nat) (f : naryFunc n) {struct m} :
+ naryFunc (m + n) :=
+  match m return (naryFunc (m + n)) with
+  | O => f
+  | S x => fun _ => ignoreParams n x f
+  end.
+
+Definition projectionListPR (n m : nat) (p : m <= n) : PrimRecs n m.
+
+Definition projectionList (n m : nat) (p : m <= n) : 
+  Vector.t (naryFunc n) m := evalPrimRecs n m (projectionListPR n m p).
+
+Lemma projectionListInd :
+ forall (n m : nat) (p1 p2 : m <= n),
+ projectionList n m p1 = projectionList n m p2.
+
+Lemma projectionListApplyParam :
+ forall (m n c : nat) (p1 : m <= n) (p2 : m <= S n),
+ extEqualVector _ _ (projectionList n m p1)
+   (evalOneParamList n m c (projectionList (S n) m p2)).
+
+Lemma projectionListId :
+ forall (n : nat) (f : naryFunc n) (p : n <= n),
+ extEqual n f (evalComposeFunc n n (projectionList n n p) f).
+
+Lemma ignoreParamsIsPR :
+ forall (n m : nat) (f : naryFunc n), isPR _ f -> isPR _ (ignoreParams n m f).
+
+End Ignore_Params.
+
+Lemma reduce1stCompose :
+ forall (c n m : nat) (v : Vector.t (naryFunc n) m) (g : naryFunc (S m)),
+
+Lemma reduce2ndCompose :
+ forall (c n m : nat) (v : Vector.t (naryFunc n) m) (n0 : naryFunc n)
+
+Lemma evalPrimRecParam :
+ forall (n c d : nat) (g : naryFunc (S n)) (h : naryFunc (S (S (S n)))),
+ extEqual _ (evalPrimRecFunc n (g d) (fun x y : nat => h x y d) c)
+   (evalPrimRecFunc (S n) g h c d).
+
+Lemma compose2IsPR :
+ forall (n : nat) (f : naryFunc n) (p : isPR n f) (g : naryFunc (S n))
+   (q : isPR (S n) g), isPR n (compose2 n f g).
+
+Lemma compose1_NIsPR :
+ forall (n : nat) (g : naryFunc (S n)),
+ isPR (S n) g ->
+ forall f : naryFunc 1, isPR 1 f -> isPR (S n) (fun x : nat => g (f x)).
+
+Definition switchPR : naryFunc 3. 
+
+Lemma switchIsPR : isPR 3 switchPR.
+
+Fixpoint boundedSearchHelp (P : naryRel 1) (b : nat) {struct b} : nat :=
+  match b with
+  | O => 0
+  | S b' =>
+      match eq_nat_dec (boundedSearchHelp P b') b' with
+      | left _ => match P b' with
+                  | true => b'
+                  | false => S b'
+                  end
+      | right _ => boundedSearchHelp P b'
+      end
+  end.
+   
+Definition boundedSearch (P : naryRel 2) (b : nat) : nat :=
+  boundedSearchHelp (P b) b.
+
+Lemma boundedSearch1 :
+ forall (P : naryRel 2) (b x : nat), x < boundedSearch P b -> P b x = false.
+
+Lemma boundedSearch2 :
+ forall (P : naryRel 2) (b : nat),
+ boundedSearch P b = b \/ P b (boundedSearch P b) = true.
+
+Lemma boundSearchIsPR :
+ forall P : naryRel 2,
+ isPRrel 2 P -> isPR 1 (fun b : nat => boundedSearch P b).
+
+Definition iterate (g : nat -> nat) :=
+  nat_rec (fun _ => nat -> nat) (fun x : nat => x)
+    (fun (_ : nat) (rec : nat -> nat) (x : nat) => g (rec x)).
+
+Lemma iterateIsPR :
+ forall g : nat -> nat, isPR 1 g -> forall n : nat, isPR 1 (iterate g n). *)
+
+Require Import cPair.
+(* cPair:
+Require Import Arith.
+Require Import Coq.Lists.List.
+Require Import extEqualNat.
+Require Import primRec.
+Require Vector.
+Require Import Div2.
+
+Definition sumToN (n : nat) :=
+  nat_rec (fun _ => nat) 0 (fun x y : nat => S x + y) n.
+
+Lemma sumToN1 : forall n : nat, n <= sumToN n.
+
+Lemma sumToN2 : forall b a : nat, a <= b -> sumToN a <= sumToN b.
+
+Lemma sumToNIsPR : isPR 1 sumToN.
+
+Definition cPair (a b : nat) := a + sumToN (a + b).
+
+Lemma cPairIsPR : isPR 2 cPair.
+
+Section CPair_Injectivity.
+
+Remark cPairInjHelp :
+ forall a b c d : nat, cPair a b = cPair c d -> a + b = c + d.
+
+Lemma cPairInj1 : forall a b c d : nat, cPair a b = cPair c d -> a = c.
+
+Lemma cPairInj2 : forall a b c d : nat, cPair a b = cPair c d -> b = d.
+
+End CPair_Injectivity.
+
+Section CPair_projections.
+
+Let searchXY (a : nat) :=
+  boundedSearch (fun a y : nat => ltBool a (sumToN (S y))) a.
+
+Definition cPairPi1 (a : nat) := a - sumToN (searchXY a).
+Definition cPairPi2 (a : nat) := searchXY a - cPairPi1 a.
+
+Lemma cPairProjectionsHelp :
+ forall a b : nat, b < sumToN (S a) -> sumToN a <= b -> searchXY b = a.
+
+Lemma cPairProjections : forall a : nat, cPair (cPairPi1 a) (cPairPi2 a) = a.
+
+Remark searchXYIsPR : isPR 1 searchXY.
+
+Lemma cPairPi1IsPR : isPR 1 cPairPi1.
+
+Lemma cPairPi2IsPR : isPR 1 cPairPi2.
+
+Lemma cPairProjections1 : forall a b : nat, cPairPi1 (cPair a b) = a.
+
+Lemma cPairProjections2 : forall a b : nat, cPairPi2 (cPair a b) = b.
+
+End CPair_projections.
+
+Section CPair_Order.
+
+Lemma cPairLe1 : forall a b : nat, a <= cPair a b.
+
+Lemma cPairLe1A : forall a : nat, cPairPi1 a <= a.
+
+Lemma cPairLe2 : forall a b : nat, b <= cPair a b.
+
+Lemma cPairLe2A : forall a : nat, cPairPi2 a <= a.
+
+Lemma cPairLe3 :
+ forall a b c d : nat, a <= b -> c <= d -> cPair a c <= cPair b d.
+
+Lemma cPairLt1 : forall a b : nat, a < cPair a (S b).
+
+Lemma cPairLt2 : forall a b : nat, b < cPair (S a) b.
+
+End CPair_Order.
+
+Section code_nat_list.
+
+Fixpoint codeList (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => S (cPair n (codeList l'))
+  end.
+
+Lemma codeListInj : forall l m : list nat, codeList l = codeList m -> l = m.
+
+Definition codeNth (n m : nat) : nat.
+
+Let drop (n : nat) : forall (l : list nat), list nat.
+
+Lemma codeNthCorrect :
+ forall (n : nat) (l : list nat), codeNth n (codeList l) = nth n l 0.
+
+Lemma codeNthIsPR : isPR 2 codeNth.
+
+End code_nat_list.
+
+Section Strong_Recursion.
+
+Definition evalStrongRecHelp (n : nat) (f : naryFunc (S (S n))) :
+  naryFunc (S n) :=
+  evalPrimRecFunc n (evalComposeFunc n 0 (Vector.nil _) (codeList nil))
+    (evalComposeFunc (S (S n)) 2
+       (Vector.cons _ f _
+          (Vector.cons _ (evalProjFunc (S (S n)) n (lt_S _ _ (lt_n_Sn _))) _
+             (Vector.nil _))) (fun a b : nat => S (cPair a b))).
+
+Definition evalStrongRec (n : nat) (f : naryFunc (S (S n))) :
+  naryFunc (S n) :=
+  evalComposeFunc (S n) 1
+    (Vector.cons _ (fun z : nat => evalStrongRecHelp n f (S z)) _ (Vector.nil _))
+    (fun z : nat => cPairPi1 (pred z)).
+
+Lemma evalStrongRecIsPR :
+ forall (n : nat) (f : naryFunc (S (S n))),
+ isPR _ f -> isPR _ (evalStrongRec n f).
+
+Lemma computeEvalStrongRecHelp :
+ forall (n : nat) (f : naryFunc (S (S n))) (c : nat),
+ evalStrongRecHelp n f (S c) =
+ compose2 n (evalStrongRecHelp n f c)
+   (fun a0 : nat =>
+    evalComposeFunc n 2
+      (Vector.cons (naryFunc n) (f c a0) 1
+
+Let listValues (f : naryFunc 2) (n : nat) : list nat.
+
+Lemma evalStrongRecHelp1 :
+ forall (f : naryFunc 2) (n m : nat),
+ m < n -> codeNth (n - S m) (evalStrongRecHelp _ f n) = evalStrongRec _ f m.
+
+Lemma evalStrongRecHelpParam :
+ forall (a n c : nat) (f : naryFunc (S (S (S a)))),
+ extEqual a (evalStrongRecHelp (S a) f n c)
+   (evalStrongRecHelp a (fun x y : nat => f x y c) n).
+
+Lemma evalStrongRecHelp2 :
+ forall (a : nat) (f : naryFunc (S (S a))) (n m : nat),
+ m < n ->
+ extEqual _
+   (evalComposeFunc _ 1 (Vector.cons _ (evalStrongRecHelp _ f n) 0 (Vector.nil _))
+
+Lemma callIsPR :
+ forall g : nat -> nat,
+ isPR 1 g -> isPR 2 (fun a recs : nat => codeNth (a - S (g a)) recs).
+
+End Strong_Recursion.
+
+Lemma div2IsPR : isPR 1 div2. *)
+
+Require Import Arith.
+
+Require Import folProp.
+(* folProp:
+Require Import Wf_nat.
+Require Import Max.
+Require Import Arith.
+Require Import Coq.Lists.List.
+Require Import ListExt.
+Require Import Peano_dec.
+
+Require Export fol.
+
+Section Fol_Properties.
+
+Variable L : Language.
+
+Notation Formula := (Formula L) (only parsing).
+Notation Formulas := (Formulas L) (only parsing).
+Notation System := (System L) (only parsing).
+Notation Term := (Term L) (only parsing).
+Notation Terms := (Terms L) (only parsing).
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let forallH := forallH L.
+Let lt_depth := lt_depth L.
+
+Section Free_Variables.
+
+Fixpoint freeVarTerm (s : fol.Term L) : list nat :=
+  match s with
+  | fol.var v => v :: nil
+  | fol.apply f ts => freeVarTerms (arity L (inr _ f)) ts
+  end
+ 
+ with freeVarTerms (n : nat) (ss : fol.Terms L n) {struct ss} : 
+ list nat :=
+  match ss with
+  | Tnil => nil (A:=nat)
+  | Tcons m t ts => freeVarTerm t ++ freeVarTerms m ts
+  end.
+
+Lemma freeVarTermApply :
+ forall (f : Functions L) (ts : fol.Terms L _),
+
+Fixpoint freeVarFormula (A : fol.Formula L) : list nat :=
+  match A with
+  | fol.equal t s => freeVarTerm t ++ freeVarTerm s
+  | fol.atomic r ts => freeVarTerms _ ts
+  | fol.impH A B => freeVarFormula A ++ freeVarFormula B
+  | fol.notH A => freeVarFormula A
+  | fol.forallH v A => list_remove _ eq_nat_dec v (freeVarFormula A)
+  end.
+
+Definition ClosedSystem (T : fol.System L) :=
+  forall (v : nat) (f : fol.Formula L),
+  mem _ T f -> ~ In v (freeVarFormula f).
+
+Definition closeList (l : list nat) (x : fol.Formula L) : 
+  fol.Formula L :=
+  list_rec (fun _ => fol.Formula L) x
+    (fun (a : nat) _ (rec : fol.Formula L) => forallH a rec) l.
+
+Definition close (x : fol.Formula L) : fol.Formula L :=
+  closeList (no_dup _ eq_nat_dec (freeVarFormula x)) x.
+
+Lemma freeVarClosedList1 :
+ forall (l : list nat) (v : nat) (x : fol.Formula L),
+
+Lemma freeVarClosedList2 :
+ forall (l : list nat) (v : nat) (x : fol.Formula L),
+
+Lemma freeVarClosed :
+ forall (x : fol.Formula L) (v : nat), ~ In v (freeVarFormula (close x)).
+
+Fixpoint freeVarListFormula (l : fol.Formulas L) : 
+ list nat :=
+  match l with
+  | nil => nil (A:=nat)
+  | f :: l => freeVarFormula f ++ freeVarListFormula l
+  end.
+
+Lemma freeVarListFormulaApp :
+ forall a b : fol.Formulas L,
+
+Lemma In_freeVarListFormula :
+ forall (v : nat) (f : fol.Formula L) (F : fol.Formulas L),
+
+Lemma In_freeVarListFormulaE :
+ forall (v : nat) (F : fol.Formulas L),
+
+Definition In_freeVarSys (v : nat) (T : fol.System L) :=
+  exists f : fol.Formula L, In v (freeVarFormula f) /\ mem _ T f.
+
+Lemma notInFreeVarSys :
+ forall x, ~ In_freeVarSys x (Ensembles.Empty_set (fol.Formula L)).
+
+End Free_Variables.
+
+Section Substitution.
+
+Fixpoint substituteTerm (s : fol.Term L) (x : nat) 
+ (t : fol.Term L) {struct s} : fol.Term L :=
+  match s with
+  | fol.var v =>
+      match eq_nat_dec x v with
+      | left _ => t
+      | right _ => var v
+      end
+  | fol.apply f ts => apply f (substituteTerms _ ts x t)
+  end
+ 
+ with substituteTerms (n : nat) (ss : fol.Terms L n) 
+ (x : nat) (t : fol.Term L) {struct ss} : fol.Terms L n :=
+  match ss in (fol.Terms _ n0) return (fol.Terms L n0) with
+  | Tnil => Tnil L
+  | Tcons m s ts =>
+      Tcons L m (substituteTerm s x t) (substituteTerms m ts x t)
+  end.
+
+Lemma subTermVar1 :
+ forall (v : nat) (s : fol.Term L), substituteTerm (var v) v s = s.
+
+Lemma subTermVar2 :
+ forall (v x : nat) (s : fol.Term L),
+
+Lemma subTermFunction :
+ forall (f : Functions L) (ts : fol.Terms L (arity L (inr _ f))) 
+
+Definition newVar (l : list nat) : nat := fold_right max 0 (map S l).
+
+Lemma newVar2 : forall (l : list nat) (n : nat), In n l -> n < newVar l.
+
+Lemma newVar1 : forall l : list nat, ~ In (newVar l) l.
+
+Definition substituteFormulaImp (f : fol.Formula L)
+  (frec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L f})
+  (g : fol.Formula L)
+  (grec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L g})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (impH f g)} :=
+  match frec p with
+  | exist f' prf1 =>
+      match grec p with
+      | exist g' prf2 =>
+          exist
+            (fun y : fol.Formula L =>
+             depth L y = S (max (depth L f) (depth L g))) 
+            (impH f' g')
+            (eq_ind_r
+               (fun n : nat =>
+                S (max n (depth L g')) = S (max (depth L f) (depth L g)))
+               (eq_ind_r
+                  (fun n : nat =>
+                   S (max (depth L f) n) = S (max (depth L f) (depth L g)))
+                  (refl_equal (S (max (depth L f) (depth L g)))) prf2) prf1)
+      end
+  end.
+
+Remark substituteFormulaImpNice :
+ forall (f g : fol.Formula L)
+
+Definition substituteFormulaNot (f : fol.Formula L)
+  (frec : nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L f})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (notH f)} :=
+  match frec p with
+  | exist f' prf1 =>
+      exist (fun y : fol.Formula L => depth L y = S (depth L f)) 
+        (notH f')
+        (eq_ind_r (fun n : nat => S n = S (depth L f))
+           (refl_equal (S (depth L f))) prf1)
+  end.
+
+Remark substituteFormulaNotNice :
+ forall (f : fol.Formula L)
+
+Definition substituteFormulaForall (n : nat) (f : fol.Formula L)
+  (frec : forall b : fol.Formula L,
+          lt_depth b (forallH n f) ->
+          nat * fol.Term L -> {y : fol.Formula L | depth L y = depth L b})
+  (p : nat * fol.Term L) :
+  {y : fol.Formula L | depth L y = depth L (forallH n f)} :=
+  match p with
+  | (v, s) =>
+      match eq_nat_dec n v with
+      | left _ =>
+          exist (fun y : fol.Formula L => depth L y = S (depth L f))
+            (forallH n f) (refl_equal (depth L (forallH n f)))
+      | right _ =>
+          match In_dec eq_nat_dec n (freeVarTerm s) with
+          | left _ =>
+              let nv := newVar (v :: freeVarTerm s ++ freeVarFormula f) in
+              match frec f (depthForall L f n) (n, var nv) with
+              | exist f' prf1 =>
+                  match
+                    frec f'
+                      (eqDepth L f' f (forallH n f) 
+                         (sym_eq prf1) (depthForall L f n)) p
+                  with
+                  | exist f'' prf2 =>
+                      exist
+                        (fun y : fol.Formula L => depth L y = S (depth L f))
+                        (forallH nv f'')
+                        (eq_ind_r (fun n : nat => S n = S (depth L f))
+                           (refl_equal (S (depth L f))) 
+                           (trans_eq prf2 prf1))
+                  end
+              end
+          | right _ =>
+              match frec f (depthForall L f n) p with
+              | exist f' prf1 =>
+                  exist (fun y : fol.Formula L => depth L y = S (depth L f))
+                    (forallH n f')
+                    (eq_ind_r (fun n : nat => S n = S (depth L f))
+                       (refl_equal (S (depth L f))) prf1)
+              end
+          end
+      end
+  end.
+
+Remark substituteFormulaForallNice :
+ forall (v : nat) (a : fol.Formula L)
+
+Definition substituteFormulaHelp (f : fol.Formula L) 
+
+Definition substituteFormula (f : fol.Formula L) (v : nat) 
+  (s : fol.Term L) : fol.Formula L := proj1_sig (substituteFormulaHelp f v s).
+
+Lemma subFormulaEqual :
+ forall (t1 t2 : fol.Term L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaRelation :
+ forall (r : Relations L) (ts : fol.Terms L (arity L (inl _ r))) 
+
+Lemma subFormulaImp :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaNot :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaForall :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Section Extensions.
+
+Let orH := orH L.
+Let andH := andH L.
+Let existH := existH L.
+Let iffH := iffH L.
+Let ifThenElseH := ifThenElseH L.
+
+Lemma subFormulaOr :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaAnd :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaExist :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Lemma subFormulaIff :
+ forall (f1 f2 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma subFormulaIfThenElse :
+ forall (f1 f2 f3 : fol.Formula L) (v : nat) (s : fol.Term L),
+
+End Extensions.
+
+Lemma subFormulaDepth :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Section Substitution_Properties.
+
+Lemma subTermId :
+ forall (t : fol.Term L) (v : nat), substituteTerm t v (var v) = t.
+
+Lemma subTermsId :
+ forall (n : nat) (ts : fol.Terms L n) (v : nat),
+
+Lemma subFormulaId :
+ forall (f : fol.Formula L) (v : nat), substituteFormula f v (var v) = f.
+
+Lemma subFormulaForall2 :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+Let existH := existH L.
+
+Lemma subFormulaExist2 :
+ forall (f : fol.Formula L) (x v : nat) (s : fol.Term L),
+
+End Substitution_Properties.
+
+End Substitution.
+ 
+Definition Sentence (f:Formula) := (forall v : nat, ~ In v (freeVarFormula f)).
+
+End Fol_Properties. *)
+
+Require Import code.
+(* code:
+Require Import Arith.
+Require Import fol.
+Require Import folProof.
+Require Import cPair.
+
+Section Code_Term_Formula_Proof.
+
+Variable L : Language.
+Variable codeF : Functions L -> nat.
+Variable codeR : Relations L -> nat.
+Hypothesis codeFInj : forall f g : Functions L, codeF f = codeF g -> f = g.
+Hypothesis codeRInj : forall R S : Relations L, codeR R = codeR S -> R = S.
+
+Let Formula := Formula L.
+Let Formulas := Formulas L.
+Let System := System L.
+Let Term := Term L.
+Let Terms := Terms L.
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let forallH := forallH L.
+Let orH := orH L.
+Let andH := andH L.
+Let existH := existH L.
+Let iffH := iffH L.
+Let ifThenElseH := ifThenElseH L.
+Let Prf := Prf L.
+Let SysPrf := SysPrf L.
+
+Fixpoint codeTerm (t : Term) : nat :=
+  match t with
+  | fol.var n => cPair 0 n
+  | fol.apply f ts => cPair (S (codeF f)) (codeTerms _ ts)
+  end
+ 
+ with codeTerms (n : nat) (ts : Terms n) {struct ts} : nat :=
+  match ts with
+  | Tnil => 0
+  | Tcons n t ss => S (cPair (codeTerm t) (codeTerms n ss))
+  end.
+
+Lemma codeTermInj : forall t s : Term, codeTerm t = codeTerm s -> t = s.
+
+Lemma codeTermsInj :
+ forall (n : nat) (ts ss : Terms n),
+ codeTerms n ts = codeTerms n ss -> ts = ss.
+
+Fixpoint codeFormula (f : Formula) : nat :=
+  match f with
+  | fol.equal t1 t2 => cPair 0 (cPair (codeTerm t1) (codeTerm t2))
+  | fol.impH f1 f2 => cPair 1 (cPair (codeFormula f1) (codeFormula f2))
+  | fol.notH f1 => cPair 2 (codeFormula f1)
+  | fol.forallH n f1 => cPair 3 (cPair n (codeFormula f1))
+  | fol.atomic R ts => cPair (4+(codeR R)) (codeTerms _ ts)
+  end.
+
+Lemma codeFormulaInj :
+ forall f g : Formula, codeFormula f = codeFormula g -> f = g.
+
+Fixpoint codePrf (Z : Formulas) (f : Formula) (prf : Prf Z f) {struct prf} :
+ nat :=
+  match prf with
+  | AXM A => cPair 0 (codeFormula A)
+  | MP Axm1 Axm2 A B rec1 rec2 =>
+      cPair 1
+        (cPair
+           (cPair (cPair 1 (cPair (codeFormula A) (codeFormula B)))
+              (codePrf _ _ rec1)) (cPair (codeFormula A) (codePrf _ _ rec2)))
+  | GEN Axm A v _ rec =>
+      cPair 2 (cPair v (cPair (codeFormula A) (codePrf _ _ rec)))
+  | IMP1 A B => cPair 3 (cPair (codeFormula A) (codeFormula B))
+  | IMP2 A B C =>
+      cPair 4 (cPair (codeFormula A) (cPair (codeFormula B) (codeFormula C)))
+  | CP A B => cPair 5 (cPair (codeFormula A) (codeFormula B))
+  | FA1 A v t => cPair 6 (cPair (codeFormula A) (cPair v (codeTerm t)))
+  | FA2 A v _ => cPair 7 (cPair (codeFormula A) v)
+  | FA3 A B v => cPair 8 (cPair (codeFormula A) (cPair (codeFormula B) v))
+  | EQ1 => cPair 9 0
+  | EQ2 => cPair 10 0
+  | EQ3 => cPair 11 0
+  | EQ4 r => cPair 12 (codeR r)
+  | EQ5 f => cPair 13 (codeF f)
+  end.
+
+Lemma codePrfInjAxm :
+ forall (a b : Formula) (A B : Formulas) (p : Prf A a) (q : Prf B b),
+ codePrf A a p = codePrf B b q -> A = B.
+
+Definition codeImp (a b : nat) := cPair 1 (cPair a b).
+
+Lemma codeImpCorrect :
+ forall a b : Formula,
+ codeImp (codeFormula a) (codeFormula b) = codeFormula (impH a b).
+
+Definition codeNot (a : nat) := cPair 2 a.
+
+Lemma codeNotCorrect :
+ forall a : Formula, codeNot (codeFormula a) = codeFormula (notH a).
+
+Definition codeForall (n a : nat) := cPair 3 (cPair n a).
+
+Lemma codeForallCorrect :
+ forall (n : nat) (a : Formula),
+ codeForall n (codeFormula a) = codeFormula (forallH n a).
+
+Definition codeOr (a b : nat) := codeImp (codeNot a) b.
+
+Lemma codeOrCorrect :
+ forall a b : Formula,
+ codeOr (codeFormula a) (codeFormula b) = codeFormula (orH a b).
+
+Definition codeAnd (a b : nat) := codeNot (codeOr (codeNot a) (codeNot b)).
+
+Lemma codeAndCorrect :
+ forall a b : Formula,
+ codeAnd (codeFormula a) (codeFormula b) = codeFormula (andH a b).
+
+Definition codeIff (a b : nat) := codeAnd (codeImp a b) (codeImp b a).
+
+Lemma codeIffCorrect :
+ forall a b : Formula,
+ codeIff (codeFormula a) (codeFormula b) = codeFormula (iffH a b).
+
+End Code_Term_Formula_Proof. *)
+
+Require Import codeList.
+(* codeList:
+Require Import primRec.
+Require Import cPair.
+Require Export Coq.Lists.List.
+Require Import ListExt.
+Require Import Arith.
+Require Vector.
+Require Import extEqualNat.
+
+Definition codeLength : nat -> nat :=
+  evalStrongRec 0
+    (fun n Hrecs : nat =>
+     switchPR n (S (codeNth (n - S (cPairPi2 (pred n))) Hrecs)) 0).
+
+Lemma codeLengthCorrect :
+ forall l : list nat, codeLength (codeList l) = length l.
+
+Lemma codeLengthIsPR : isPR 1 codeLength.
+
+Definition codeApp : nat -> nat -> nat :=
+  evalStrongRec 1
+    (fun n Hrecs p1 : nat =>
+     switchPR n
+       (S
+          (cPair (cPairPi1 (pred n))
+             (codeNth (n - S (cPairPi2 (pred n))) Hrecs))) p1).
+
+Lemma codeAppCorrect :
+ forall l1 l2 : list nat,
+ codeApp (codeList l1) (codeList l2) = codeList (l1 ++ l2).
+
+Lemma codeAppIsPR : isPR 2 codeApp.
+
+Definition codeListRemove (a l : nat) : nat :=
+  evalStrongRec 1
+    (fun n Hrecs p1 : nat =>
+     switchPR n
+       (switchPR (charFunction 2 beq_nat (cPairPi1 (pred n)) p1)
+          (codeNth (n - S (cPairPi2 (pred n))) Hrecs)
+          (S
+             (cPair (cPairPi1 (pred n))
+                (codeNth (n - S (cPairPi2 (pred n))) Hrecs)))) 
+       (codeList nil)) l a.
+
+Lemma codeListRemoveCorrect :
+ forall (a : nat) (l : list nat),
+ codeListRemove a (codeList l) = codeList (list_remove nat eq_nat_dec a l).
+
+Lemma codeListRemoveIsPR : isPR 2 codeListRemove.
+
+Definition codeIn (a l : nat) : nat :=
+  evalStrongRec 1
+    (fun n Hrecs p1 : nat =>
+     switchPR n
+       (switchPR (charFunction 2 beq_nat (cPairPi1 (pred n)) p1) 1
+          (codeNth (n - S (cPairPi2 (pred n))) Hrecs)) 0) l a.
+
+Lemma codeInCorrect :
+ forall (a : nat) (l : list nat),
+ codeIn a (codeList l) =
+ match In_dec eq_nat_dec a l with
+ | left _ => 1
+ | right _ => 0
+ end.
+
+Lemma codeInIsPR : isPR 2 codeIn.
+
+Definition codeNoDup : nat -> nat :=
+  evalStrongRec 0
+    (fun l recs : nat =>
+     switchPR l
+       (switchPR
+          (codeIn (cPairPi1 (pred l))
+             (codeNth (l - S (cPairPi2 (pred l))) recs))
+          (codeNth (l - S (cPairPi2 (pred l))) recs)
+          (S
+             (cPair (cPairPi1 (pred l))
+                (codeNth (l - S (cPairPi2 (pred l))) recs)))) 0).
+
+Lemma codeNoDupCorrect :
+ forall l : list nat,
+ codeNoDup (codeList l) = codeList (no_dup _ eq_nat_dec l).
+
+Lemma codeNoDupIsPR : isPR 1 codeNoDup. *)
+
+Require Import codeFreeVar.
+(* codeFreeVar:
+Require Import primRec.
+Require Import cPair.
+Require Import Coq.Lists.List.
+Require Import ListExt.
+Require Import Arith.
+Require Export codeList.
+Require Import folProp.
+Require Import code.
+
+Section Code_Free_Vars.
+
+Variable L : Language.
+Variable codeF : Functions L -> nat.
+Variable codeR : Relations L -> nat.
+
+Let Formula := Formula L.
+Let Formulas := Formulas L.
+Let System := System L.
+Let Term := Term L.
+Let Terms := Terms L.
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let forallH := forallH L.
+Let orH := orH L.
+Let andH := andH L.
+Let existH := existH L.
+Let iffH := iffH L.
+Let ifThenElseH := ifThenElseH L.
+
+Definition codeFreeVarTermTerms : nat -> nat :=
+  evalStrongRec 0
+    (fun t recs : nat =>
+     cPair
+       (switchPR (cPairPi1 t) (cPairPi2 (codeNth (t - S (cPairPi2 t)) recs))
+          (S (cPair (cPairPi2 t) 0)))
+       (switchPR t
+          (codeApp (cPairPi1 (codeNth (t - S (cPairPi1 (pred t))) recs))
+             (cPairPi2 (codeNth (t - S (cPairPi2 (pred t))) recs))) 0)).
+
+Definition codeFreeVarTerm (t : nat) : nat :=
+  cPairPi1 (codeFreeVarTermTerms t).
+
+Definition codeFreeVarTerms (t : nat) : nat :=
+  cPairPi2 (codeFreeVarTermTerms t).
+
+Lemma codeFreeVarTermCorrect :
+ forall t : Term,
+ codeFreeVarTerm (codeTerm L codeF t) = codeList (freeVarTerm L t).
+
+Lemma codeFreeVarTermsCorrect :
+ forall (n : nat) (ts : Terms n),
+ codeFreeVarTerms (codeTerms L codeF n ts) = codeList (freeVarTerms L n ts).
+
+Lemma codeFreeVarTermTermsIsPR : isPR 1 codeFreeVarTermTerms.
+
+Lemma codeFreeVarTermIsPR : isPR 1 codeFreeVarTerm.
+
+Lemma codeFreeVarTermsIsPR : isPR 1 codeFreeVarTerms.
+
+Definition codeFreeVarFormula : nat -> nat :=
+  evalStrongRec 0
+    (fun f recs : nat =>
+     switchPR (cPairPi1 f)
+       (switchPR (pred (cPairPi1 f))
+          (switchPR (pred (pred (cPairPi1 f)))
+             (switchPR (pred (pred (pred (cPairPi1 f))))
+                (codeFreeVarTerms (cPairPi2 f))
+                (codeListRemove (cPairPi1 (cPairPi2 f))
+                   (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)))
+             (codeNth (f - S (cPairPi2 f)) recs))
+          (codeApp (codeNth (f - S (cPairPi1 (cPairPi2 f))) recs)
+             (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)))
+       (codeApp (codeFreeVarTerm (cPairPi1 (cPairPi2 f)))
+          (codeFreeVarTerm (cPairPi2 (cPairPi2 f))))).
+
+Lemma codeFreeVarFormulaCorrect :
+ forall f : Formula,
+ codeFreeVarFormula (codeFormula L codeF codeR f) =
+ codeList (freeVarFormula L f).
+
+Lemma codeFreeVarFormulaIsPR : isPR 1 codeFreeVarFormula.
+
+Definition codeFreeVarListFormula : nat -> nat :=
+  evalStrongRec 0
+    (fun l recs : nat =>
+     switchPR l
+       (codeApp (codeFreeVarFormula (cPairPi1 (pred l)))
+          (codeNth (l - S (cPairPi2 (pred l))) recs)) 0).
+
+Lemma codeFreeVarListFormulaCorrect :
+ forall l : list Formula,
+ codeFreeVarListFormula (codeList (map (codeFormula L codeF codeR) l)) =
+ codeList (freeVarListFormula L l).
+
+Lemma codeFreeVarListFormulaIsPR : isPR 1 codeFreeVarListFormula.
+
+End Code_Free_Vars. *)
+
+Require Import extEqualNat.
+(* extEqualNat:
+Require Import Arith.
+
+Fixpoint naryFunc (n : nat) : Set :=
+  match n with
+  | O => nat
+  | S n => nat -> naryFunc n
+  end.
+
+Fixpoint naryRel (n : nat) : Set :=
+  match n with
+  | O => bool
+  | S n => nat -> naryRel n
+  end.
+
+Definition extEqual (n : nat) (a b : naryFunc n) : Prop.
+
+Lemma extEqualRefl : forall (n : nat) (a : naryFunc n), extEqual n a a.
+
+Lemma extEqualSym :
+ forall (n : nat) (a b : naryFunc n), extEqual n a b -> extEqual n b a.
+
+Lemma extEqualTrans :
+ forall (n : nat) (a b c : naryFunc n),
+ extEqual n a b -> extEqual n b c -> extEqual n a c.
+
+Fixpoint charFunction (n : nat) : naryRel n -> naryFunc n :=
+  match n return (naryRel n -> naryFunc n) with
+  | O => fun R : bool => match R with
+                         | true => 1
+                         | false => 0
+                         end
+  | S m => fun (R : naryRel (S m)) (a : nat) => charFunction m (R a)
+  end. *)
+
+Require Vector.
+
+Require Import prLogic.
+(* prLogic:
+Require Import primRec.
+Require Import code.
+Require Import Arith.
+Require Import cPair.
+
+Lemma codeForallIsPR : isPR 2 (fun a b : nat => cPair 3 (cPair a b)).
+
+Lemma codeNotIsPR : isPR 1 codeNot.
+
+Lemma codeImpIsPR : isPR 2 codeImp. *)
+
+
+
+Section close.
+
+
+
+Variable L : Language.
+
+Variable codeF : Functions L -> nat.
+
+Variable codeR : Relations L -> nat.
+
+
+
+Let Formula := Formula L.
+
+Let codeFormula := codeFormula L codeF codeR.
+
+
+
+Definition codeCloseList : nat -> nat -> nat :=
+
+  evalStrongRec 1
+
+    (fun l recs f : nat =>
+
+     switchPR l
+
+       (cPair 3
+
+          (cPair (cPairPi1 (pred l))
+
+             (codeNth (l - S (cPairPi2 (pred l))) recs))) f).
+
+    
+
+Lemma codeCloseListCorrect :
+
+ forall (l : list nat) (f : Formula),
+
+ codeCloseList (codeList l) (codeFormula f) = codeFormula (closeList L l f).
+
+Proof.
+
+intros.
+
+set
+
+ (g :=
+
+  fun l recs f : nat =>
+
+  switchPR l
+
+    (cPair 3
+
+       (cPair (cPairPi1 (pred l)) (codeNth (l - S (cPairPi2 (pred l))) recs)))
+
+    f) in *.
+
+induction l as [| a l Hrecl].
+
+simpl in |- *.
+
+unfold codeCloseList in |- *.
+
+unfold evalStrongRec in |- *.
+
+simpl in |- *.
+
+rewrite cPairProjections1.
+
+reflexivity.
+
+simpl in |- *.
+
+unfold codeCloseList in |- *.
+
+fold g in |- *.
+
+assert
+
+ (forall n m : nat,
+
+  m < n ->
+
+  extEqual 1
+
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 g n) 0 (Vector.nil _))
+
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 g m)).
+
+intros.
+
+apply (evalStrongRecHelp2 1). 
+
+assumption.
+
+simpl in H.
+
+unfold evalStrongRec in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+rewrite computeEvalStrongRecHelp.
+
+unfold compose2 in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+unfold g at 1 in |- *.
+
+rewrite H.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections1 || rewrite cPairProjections2.
+
+rewrite <- Hrecl.
+
+reflexivity.
+
+simpl in |- *.
+
+apply le_lt_n_Sm.
+
+apply cPairLe2A.
+
+Qed.
+
+
+
+Lemma codeCloseListIsPR : isPR 2 codeCloseList.
+
+Proof.
+
+intros.
+
+unfold codeCloseList in |- *.
+
+apply evalStrongRecIsPR.
+
+apply
+
+ compose3_3IsPR
+
+  with
+
+    (f1 := fun l recs f : nat => l)
+
+    (f2 := fun l recs f : nat =>
+
+           cPair 3
+
+             (cPair (cPairPi1 (pred l))
+
+                (codeNth (l - S (cPairPi2 (pred l))) recs)))
+
+    (f3 := fun l recs f : nat => f).
+
+apply pi1_3IsPR.
+
+apply
+
+ filter110IsPR
+
+  with
+
+    (g := fun l recs : nat =>
+
+          cPair 3
+
+            (cPair (cPairPi1 (pred l))
+
+               (codeNth (l - S (cPairPi2 (pred l))) recs))).
+
+apply
+
+ compose2_2IsPR
+
+  with
+
+    (f := fun l recs : nat => 3)
+
+    (g := fun l recs : nat =>
+
+          cPair (cPairPi1 (pred l))
+
+            (codeNth (l - S (cPairPi2 (pred l))) recs)).
+
+apply filter10IsPR with (g := fun _ : nat => 3).
+
+apply const1_NIsPR.
+
+apply
+
+ compose2_2IsPR
+
+  with
+
+    (f := fun l recs : nat => cPairPi1 (pred l))
+
+    (g := fun l recs : nat => codeNth (l - S (cPairPi2 (pred l))) recs).
+
+apply filter10IsPR with (g := fun l : nat => cPairPi1 (pred l)).
+
+apply compose1_1IsPR.
+
+apply predIsPR.
+
+apply cPairPi1IsPR.
+
+apply callIsPR with (g := fun l : nat => cPairPi2 (pred l)).
+
+apply compose1_1IsPR.
+
+apply predIsPR.
+
+apply cPairPi2IsPR.
+
+apply cPairIsPR.
+
+apply cPairIsPR.
+
+apply pi3_3IsPR.
+
+apply switchIsPR.
+
+Qed.
+
+
+
+Definition codeClose (f : nat) : nat :=
+
+  codeCloseList (codeNoDup (codeFreeVarFormula f)) f.
+
+
+
+Lemma codeCloseCorrect :
+
+ forall f : Formula, codeClose (codeFormula f) = codeFormula (close L f).
+
+Proof.
+
+intros.
+
+unfold close in |- *.
+
+unfold codeClose in |- *.
+
+unfold codeFormula in |- *.
+
+rewrite codeFreeVarFormulaCorrect.
+
+rewrite codeNoDupCorrect.
+
+apply codeCloseListCorrect.
+
+Qed.
+
+
+
+Lemma codeCloseIsPR : isPR 1 codeClose.
+
+Proof.
+
+unfold codeClose in |- *.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => codeNoDup (codeFreeVarFormula f))
+
+    (f' := fun f : nat => f).
+
+apply compose1_1IsPR.
+
+apply codeFreeVarFormulaIsPR.
+
+apply codeNoDupIsPR.
+
+apply idIsPR.
+
+apply codeCloseListIsPR.
+
+Qed.
+
+
+
+End close.
+
+
+
+Require Import PA.
+(* PA:
+Require Import Ensembles.
+Require Import Coq.Lists.List.
+Require Import primRec.
+Require Import cPair.
+Require Import Arith.
+Require Import folProp.
+Require Import code.
+Require Import codeList.
+Require Import codeFreeVar.
+Require Import extEqualNat.
+Require Vector.
+Require Import prLogic.
+
+Section close.
+
+Variable L : Language.
+Variable codeF : Functions L -> nat.
+Variable codeR : Relations L -> nat.
+
+Let Formula := Formula L.
+Let codeFormula := codeFormula L codeF codeR.
+
+Definition codeCloseList : nat -> nat -> nat :=
+  evalStrongRec 1
+    (fun l recs f : nat =>
+     switchPR l
+       (cPair 3
+          (cPair (cPairPi1 (pred l))
+             (codeNth (l - S (cPairPi2 (pred l))) recs))) f).
+    
+Lemma codeCloseListCorrect :
+ forall (l : list nat) (f : Formula),
+ codeCloseList (codeList l) (codeFormula f) = codeFormula (closeList L l f).
+
+Lemma codeCloseListIsPR : isPR 2 codeCloseList.
+
+Definition codeClose (f : nat) : nat :=
+  codeCloseList (codeNoDup (codeFreeVarFormula f)) f.
+
+Lemma codeCloseCorrect :
+ forall f : Formula, codeClose (codeFormula f) = codeFormula (close L f).
+
+Lemma codeCloseIsPR : isPR 1 codeClose.
+
+End close.
+
+Require Import PA.
+Require Import codeSubFormula.
+
+Section Code_PA.
+
+Let codeTerm := codeTerm LNT codeLNTFunction.
+Let codeFormula := codeFormula LNT codeLNTFunction codeLNTRelation.
+Let codeFormulaInj :=
+  codeFormulaInj LNT codeLNTFunction codeLNTRelation codeLNTFunctionInj
+    codeLNTRelationInj.
+
+Definition codeOpen : nat -> nat :=
+  evalStrongRec 0
+    (fun f recs : nat =>
+     switchPR (cPairPi1 f)
+       (switchPR (pred (cPairPi1 f))
+          (switchPR (pred (pred (cPairPi1 f)))
+             (switchPR (pred (pred (pred (cPairPi1 f)))) f
+                (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)) f) f) f).
+
+Lemma codeOpenCorrect :
+ forall f : Formula, codeOpen (codeFormula f) = codeFormula (open f).
+
+Lemma codeOpenIsPR : isPR 1 codeOpen.
+
+Definition codeInductionSchema (f : nat) : bool :=
+  let n :=
+    cPairPi1
+      (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeOpen f)))))) in
+  let g :=
+    cPairPi2
+      (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeOpen f)))))) in
+  beq_nat
+    (codeClose
+       (codeImp (codeSubFormula g n (codeTerm Zero))
+          (codeImp
+             (codeForall n
+                (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))))
+             (codeForall n g)))) f.
+
+Lemma codeInductionSchemaCorrect1 :
+ forall f : Formula,
+ InductionSchema f -> codeInductionSchema (codeFormula f) = true.
+
+Lemma codeInductionSchemaCorrect2 :
+ forall f : Formula,
+ codeInductionSchema (codeFormula f) = true -> InductionSchema f.
+
+Lemma codeInductionSchemaCorrect3 :
+ forall f : Formula,
+ ~ InductionSchema f -> codeInductionSchema (codeFormula f) = false.
+
+Lemma codeInductionSchemaIsPR : isPRrel 1 codeInductionSchema.
+
+Definition codePA : nat -> bool :=
+  orRel 1 (beq_nat (codeFormula PA6))
+    (orRel 1 (beq_nat (codeFormula PA5))
+       (orRel 1 (beq_nat (codeFormula PA4))
+          (orRel 1 (beq_nat (codeFormula PA3))
+             (orRel 1 (beq_nat (codeFormula PA2))
+                (orRel 1 (beq_nat (codeFormula PA1)) codeInductionSchema))))).
+
+Lemma codePAcorrect1 :
+ forall f : Formula,
+ codePA (codeFormula f) = true -> mem Formula PA f.
+
+Lemma codePAcorrect2 :
+ forall f : Formula,
+ ~ mem Formula PA f -> codePA (codeFormula f) = false.
+
+Lemma codePAcorrect3 :
+ forall f : Formula,
+ mem Formula PA f -> codePA (codeFormula f) = true.
+
+Lemma codePAIsPR : isPRrel 1 codePA.
+
+End Code_PA. *)
+
+Require Import codeSubFormula.
+(* codeSubFormula:
+Require Import primRec.
+Require Import cPair.
+Require Import Arith.
+Require Import folProp.
+Require Import code.
+Require Import extEqualNat.
+Require Vector.
+Require Import codeSubTerm.
+Require Import codeFreeVar.
+Require Import Max.
+
+Section Code_Substitute_Formula.
+
+Variable L : Language.
+Variable codeF : Functions L -> nat.
+Variable codeR : Relations L -> nat.
+
+Notation Formula := (Formula L) (only parsing).
+Notation Formulas := (Formulas L) (only parsing).
+Notation System := (System L) (only parsing).
+Notation Term := (Term L) (only parsing).
+Notation Terms := (Terms L) (only parsing).
+Let var := var L.
+Let apply := apply L.
+Let codeFormula := codeFormula L codeF codeR.
+Let codeTerm := codeTerm L codeF.
+
+Definition cTriple (a b c : nat) : nat := cPair a (cPair b c).
+
+Definition cTriplePi1 (n : nat) : nat := cPairPi1 n.
+
+Definition cTriplePi2 (n : nat) : nat := cPairPi1 (cPairPi2 n).
+
+Definition cTriplePi3 (n : nat) : nat := cPairPi2 (cPairPi2 n).
+
+Lemma cTripleIsPR : isPR 3 cTriple.
+
+Lemma cTriplePi1IsPR : isPR 1 cTriplePi1.
+
+Lemma cTriplePi2IsPR : isPR 1 cTriplePi2.
+
+Lemma cTriplePi3IsPR : isPR 1 cTriplePi3.
+
+Lemma cTripleProj1 : forall a b c : nat, cTriplePi1 (cTriple a b c) = a.
+
+Lemma cTripleProj2 : forall a b c : nat, cTriplePi2 (cTriple a b c) = b.
+
+Lemma cTripleProj3 : forall a b c : nat, cTriplePi3 (cTriple a b c) = c.
+
+Lemma cTripleProj :
+ forall a : nat, cTriple (cTriplePi1 a) (cTriplePi2 a) (cTriplePi3 a) = a.
+
+Definition codeNewVar (l : nat) : nat :=
+  evalStrongRec 0
+    (fun n Hrecs : nat =>
+     switchPR n
+       (max (S (cPairPi1 (pred n)))
+          (codeNth (n - S (cPairPi2 (pred n))) Hrecs)) 0) l.
+
+Lemma codeNewVarCorrect :
+ forall l : list nat, codeNewVar (codeList l) = newVar l.
+
+Lemma codeNewVarIsPR : isPR 1 codeNewVar.
+
+Definition checkSubFormulaTrace : nat -> nat :=
+  evalStrongRec 0
+    (fun trace recs : nat =>
+     let v := cTriplePi1 (cTriplePi1 trace) in
+     let s := cTriplePi2 (cTriplePi1 trace) in
+     let input := cTriplePi3 (cTriplePi1 trace) in
+     let output := cTriplePi2 trace in
+     let rest := cTriplePi3 trace in
+     let type := cPairPi1 input in
+     switchPR type
+       (switchPR (pred type)
+          (switchPR (pred (pred type))
+             (switchPR (pred (pred (pred type)))
+                (charFunction 2 beq_nat output
+                   (cPair type (codeSubTerms (cPairPi2 input) v s)))
+                (switchPR
+                   (charFunction 2 beq_nat v (cPairPi1 (cPairPi2 input)))
+                   (charFunction 2 beq_nat input output)
+                   (switchPR
+                      (codeIn (cPairPi1 (cPairPi2 input)) (codeFreeVarTerm s))
+                      (let nv :=
+                         codeNewVar
+                           (S
+                              (cPair v
+                                 (codeApp (codeFreeVarTerm s)
+                                    (codeFreeVarFormula
+                                       (cPairPi2 (cPairPi2 input)))))) in
+                       charFunction 0
+                         (beq_nat output
+                            (cPair 3 (cPair nv (cTriplePi2 (cPairPi2 rest)))) &&
+                          (beq_nat (cTriple v s (cTriplePi2 (cPairPi1 rest)))
+                             (cTriplePi1 (cPairPi2 rest)) &&
+                           beq_nat
+                             (cTriple (cPairPi1 (cPairPi2 input))
+                                (cPair 0 nv) (cPairPi2 (cPairPi2 input)))
+                             (cTriplePi1 (cPairPi1 rest)))) *
+                       (codeNth (trace - S (cPairPi1 rest)) recs *
+                        codeNth (trace - S (cPairPi2 rest)) recs))
+                      (charFunction 0
+                         (beq_nat output
+                            (cPair 3
+                               (cPair (cPairPi1 (cPairPi2 input))
+                                  (cTriplePi2 rest))) &&
+                          beq_nat (cTriple v s (cPairPi2 (cPairPi2 input)))
+                            (cTriplePi1 rest)) *
+                       codeNth (trace - S rest) recs))))
+             (charFunction 0
+                (beq_nat output (cPair 2 (cTriplePi2 rest)) &&
+                 beq_nat (cTriple v s (cPairPi2 input)) (cTriplePi1 rest)) *
+              codeNth (trace - S rest) recs))
+          (charFunction 0
+             (beq_nat output
+                (cPair 1
+                   (cPair (cTriplePi2 (cPairPi1 rest))
+                      (cTriplePi2 (cPairPi2 rest)))) &&
+              (beq_nat (cTriple v s (cPairPi1 (cPairPi2 input)))
+                 (cTriplePi1 (cPairPi1 rest)) &&
+               beq_nat (cTriple v s (cPairPi2 (cPairPi2 input)))
+                 (cTriplePi1 (cPairPi2 rest)))) *
+           (codeNth (trace - S (cPairPi1 rest)) recs *
+            codeNth (trace - S (cPairPi2 rest)) recs)))
+       (charFunction 2 beq_nat output
+          (cPair 0
+             (cPair (codeSubTerm (cPairPi1 (cPairPi2 input)) v s)
+                (codeSubTerm (cPairPi2 (cPairPi2 input)) v s))))).
+
+Definition makeTraceImp (f1 : fol.Formula L)
+  (f1rec : nat * fol.Term L -> nat) (f2 : fol.Formula L)
+  (f2rec : nat * fol.Term L -> nat) (p : nat * fol.Term L) : nat :=
+  let v := fst p in
+  let s := snd p in
+  cTriple (cTriple v (codeTerm s) (codeFormula (impH L f1 f2)))
+    (codeFormula (substituteFormula L (impH L f1 f2) v s))
+    (cPair (f1rec p) (f2rec p)).
+
+Definition makeTraceNot (f : fol.Formula L) (frec : nat * fol.Term L -> nat)
+  (p : nat * fol.Term L) : nat :=
+  let v := fst p in
+  let s := snd p in
+  cTriple (cTriple v (codeTerm s) (codeFormula (notH L f)))
+    (codeFormula (substituteFormula L (notH L f) v s)) 
+    (frec p).
+
+Definition makeTraceForall (n : nat) (f : fol.Formula L)
+
+Definition makeTrace : fol.Formula L -> nat * fol.Term L -> nat :=
+  Formula_depth_rec2 L (fun _ : fol.Formula L => nat * fol.Term L -> nat)
+    (fun (t t0 : fol.Term L) (p : nat * fol.Term L) =>
+     let v := fst p in
+     let s := snd p in
+     cTriple (cTriple v (codeTerm s) (codeFormula (equal L t t0)))
+       (codeFormula (substituteFormula L (equal L t t0) v s)) 0)
+    (fun (r : Relations L) t (p : nat * fol.Term L) =>
+     let v := fst p in
+     let s := snd p in
+     cTriple (cTriple v (codeTerm s) (codeFormula (atomic L r t)))
+       (codeFormula (substituteFormula L (atomic L r t) v s)) 0) makeTraceImp
+    makeTraceNot makeTraceForall.
+
+Lemma makeTraceImpNice :
+ forall (f2 g : fol.Formula L) (z1 z2 : nat * fol.Term L -> nat),
+
+Lemma makeTraceNotNice :
+ forall (f2 : fol.Formula L) (z1 z2 : nat * fol.Term L -> nat),
+
+Lemma makeTraceForallNice :
+ forall (v0 : nat) (a : fol.Formula L)
+
+Remark makeTrace1 :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Remark makeTrace2 :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma makeTraceCorrect :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+
+Lemma checkTraceCorrect :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L) (n m : nat),
+
+Lemma switch5IsPR :
+ forall (f1 f2 f3 f4 f5 : nat -> nat -> nat) (g : nat -> nat),
+ isPR 2 f1 ->
+ isPR 2 f2 ->
+ isPR 2 f3 ->
+ isPR 2 f4 ->
+ isPR 2 f5 ->
+ isPR 1 g ->
+ isPR 2
+   (fun n recs : nat =>
+    switchPR (g n)
+      (switchPR (pred (g n))
+         (switchPR (pred (pred (g n)))
+            (switchPR (pred (pred (pred (g n)))) (f1 n recs) (f2 n recs))
+            (f3 n recs)) (f4 n recs)) (f5 n recs)).
+
+Lemma checkTraceIsPR : isPR 1 checkSubFormulaTrace.
+
+Definition ReplaceTermTermsTerm : nat -> nat -> nat :=
+  evalStrongRec 1
+    (fun t recs s : nat =>
+     cPair
+       (switchPR (cPairPi1 t)
+          (cPair (cPairPi1 t) (cPairPi2 (codeNth (t - S (cPairPi2 t)) recs)))
+          (cPair 0 s))
+       (switchPR t
+          (S
+             (cPair (cPairPi1 (codeNth (t - S (cPairPi1 (pred t))) recs))
+                (cPairPi2 (codeNth (t - S (cPairPi2 (pred t))) recs)))) 0)).
+
+Remark ReplaceTermTermsTermIsPR : isPR 2 ReplaceTermTermsTerm.
+
+Definition ReplaceTermTerm (t s : nat) : nat :=
+  cPairPi1 (ReplaceTermTermsTerm t s).
+
+Definition ReplaceTermsTerm (t s : nat) : nat :=
+  cPairPi2 (ReplaceTermTermsTerm t s).
+
+Lemma ReplaceTermTermIsPR : isPR 2 ReplaceTermTerm.
+
+Lemma ReplaceTermsTermIsPR : isPR 2 ReplaceTermsTerm.
+
+Remark ReplaceTermTermsTermMonotone :
+ forall a s1 s2 : nat,
+ s1 <= s2 ->
+ ReplaceTermTerm a s1 <= ReplaceTermTerm a s2 /\
+ ReplaceTermsTerm a s1 <= ReplaceTermsTerm a s2.
+
+Lemma ReplaceTermTermMonotone :
+ forall a s1 s2 : nat,
+ s1 <= s2 -> ReplaceTermTerm a s1 <= ReplaceTermTerm a s2.
+
+Lemma ReplaceTermsTermMonotone :
+ forall a s1 s2 : nat,
+ s1 <= s2 -> ReplaceTermsTerm a s1 <= ReplaceTermsTerm a s2.
+
+Remark maxLemma :
+ forall a b c d : nat, a <= b -> c <= d -> max a c <= max b d.
+
+Remark maxLemma2 :
+ forall a b : list nat, fold_right max 0 a <= fold_right max 0 (a ++ b).
+Proof.
+intros.
+induction a as [| a a0 Hreca].
+apply le_O_n.
+simpl in |- *.
+apply maxLemma.
+
+Remark maxLemma3 :
+ forall a b : list nat, fold_right max 0 b <= fold_right max 0 (a ++ b).
+
+Remark maxApp :
+ forall a b : list nat,
+ {fold_right max 0 (a ++ b) = fold_right max 0 a} +
+ {fold_right max 0 (a ++ b) = fold_right max 0 b}.
+Proof.
+intros.
+induction a as [| a a0 Hreca].
+simpl in |- *.
+auto.
+simpl in |- *.
+induction (max_dec a (fold_right max 0 (a0 ++ b))).
+rewrite a1.
+left.
+symmetry  in |- *.
+apply max_l.
+apply le_trans with (max a (fold_right max 0 (a0 ++ b))).
+apply le_trans with (max a (fold_right max 0 a0)).
+apply le_max_r.
+apply maxLemma.
+apply le_n.
+apply maxLemma2.
+
+Lemma boundSubTerm :
+ forall (t : fol.Term L) (v : nat) (s : fol.Term L),
+ codeTerm (substituteTerm L t v s) <=
+ ReplaceTermTerm (codeTerm t)
+   (fold_right max 0 (codeTerm s :: freeVarTerm L t)).
+Proof.
+intro.
+unfold ReplaceTermTerm in |- *.
+unfold ReplaceTermsTerm in |- *.
+unfold ReplaceTermTermsTerm in |- *.
+set
+ (A :=
+  fun t0 recs s0 : nat =>
+  cPair
+    (switchPR (cPairPi1 t0)
+       (cPair (cPairPi1 t0) (cPairPi2 (codeNth (t0 - S (cPairPi2 t0)) recs)))
+       (cPair 0 s0))
+    (switchPR t0
+       (S
+          (cPair (cPairPi1 (codeNth (t0 - S (cPairPi1 (pred t0))) recs))
+             (cPairPi2 (codeNth (t0 - S (cPairPi2 (pred t0))) recs)))) 0))
+ in *.
+assert
+ (forall n m : nat,
+  m < n ->
+  extEqual 1
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 A n) 0 (Vector.nil _))
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 A m)).
+intros.
+apply (evalStrongRecHelp2 1). 
+assumption.
+simpl in H.
+elim t using
+ Term_Terms_ind
+  with
+    (P0 := fun (n : nat) (ts : fol.Terms L n) =>
+           forall (v : nat) (s : fol.Term L),
+           codeTerms L codeF n (substituteTerms L n ts v s) <=
+           ReplaceTermsTerm (codeTerms L codeF n ts)
+             (fold_right max 0 (codeTerm s :: freeVarTerms L n ts)));
+ simpl in |- *; intros; unfold evalStrongRec in |- *;
+ unfold evalComposeFunc, evalOneParamList, evalList in |- *;
+ repeat rewrite computeEvalStrongRecHelp; unfold compose2 in |- *;
+ unfold evalComposeFunc, evalOneParamList, evalList in |- *; 
+ simpl in |- *; repeat rewrite cPairProjections1.
+unfold A in |- *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+replace (codeTerm (fol.var L n)) with (cPair 0 n); [ idtac | reflexivity ].
+repeat rewrite cPairProjections1.
+simpl in |- *.
+induction (eq_nat_dec v n).
+eapply le_trans; [ idtac | apply cPairLe2 ].
+apply le_max_l.
+replace (codeTerm (fol.var L n)) with (cPair 0 n); [ idtac | reflexivity ].
+apply cPairLe3.
+apply le_n.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_l.
+unfold A in |- *.
+repeat rewrite cPairProjections1.
+replace (codeTerm (fol.apply L f t0)) with
+ (cPair (S (codeF f)) (codeTerms L codeF _ t0)); [ idtac | reflexivity ].
+repeat rewrite cPairProjections1.
+rewrite
+ H
+   with
+   (m := 
+     cPairPi2
+       (cPair (S (codeF f))
+          (codeTerms L codeF (arity L (inr (Relations L) f)) t0))).
+simpl in |- *.
+replace
+ (codeTerm
+    (fol.apply L f (substituteTerms L (arity L (inr (Relations L) f)) t0 v s)))
+ with
+ (cPair (S (codeF f))
+    (codeTerms L codeF _
+       (substituteTerms L (arity L (inr (Relations L) f)) t0 v s)));
+ [ idtac | reflexivity ].
+apply cPairLe3.
+apply le_n.
+unfold ReplaceTermsTerm in H0.
+unfold ReplaceTermTermsTerm in H0.
+fold A in H0.
+repeat rewrite cPairProjections2.
+apply (H0 v s).
+repeat rewrite cPairProjections2.
+apply cPairLt2.
+apply le_O_n.
+replace
+ (codeTerms L codeF (S n)
+    (Tcons L n (substituteTerm L t0 v s) (substituteTerms L n t1 v s))) with
+ (S
+    (cPair (codeTerm (substituteTerm L t0 v s))
+       (codeTerms L codeF n (substituteTerms L n t1 v s))));
+ [ idtac | reflexivity ].
+unfold ReplaceTermsTerm in |- *.
+unfold ReplaceTermsTerm in H1.
+unfold ReplaceTermTermsTerm in |- *.
+unfold ReplaceTermTermsTerm in H1.
+fold A in |- *.
+fold A in H1.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat rewrite cPairProjections2.
+repeat rewrite H.
+replace (codeTerms L codeF (S n) (Tcons L n t0 t1)) with
+ (S (cPair (codeTerm t0) (codeTerms L codeF n t1))); 
+ [ idtac | reflexivity ].
+simpl in |- *.
+repeat rewrite cPairProjections1.
+apply le_n_S.
+apply cPairLe3.
+eapply le_trans.
+apply H0.
+apply
+ (ReplaceTermTermMonotone (codeTerm t0)
+    (max (codeTerm s) (fold_right max 0 (freeVarTerm L t0)))
+    (max (codeTerm s)
+       (fold_right max 0 (freeVarTerms L (S n) (Tcons L n t0 t1))))).
+apply maxLemma.
+apply le_n.
+replace (freeVarTerms L (S n) (Tcons L n t0 t1)) with
+ (freeVarTerm L t0 ++ freeVarTerms L n t1); [ idtac | reflexivity ].
+apply maxLemma2.
+eapply le_trans.
+apply H1.
+repeat rewrite cPairProjections2.
+apply
+ (ReplaceTermsTermMonotone (codeTerms L codeF n t1)
+    (max (codeTerm s) (fold_right max 0 (freeVarTerms L n t1)))
+    (max (codeTerm s)
+       (fold_right max 0 (freeVarTerms L (S n) (Tcons L n t0 t1))))).
+apply maxLemma.
+apply le_n.
+replace (freeVarTerms L (S n) (Tcons L n t0 t1)) with
+ (freeVarTerm L t0 ++ freeVarTerms L n t1); [ idtac | reflexivity ].
+apply maxLemma3.
+
+Lemma boundSubTerms :
+ forall (n : nat) (ts : fol.Terms L n) (v : nat) (s : fol.Term L),
+ codeTerms L codeF n (substituteTerms L n ts v s) <=
+ ReplaceTermsTerm (codeTerms L codeF n ts)
+   (fold_right max 0 (codeTerm s :: freeVarTerms L n ts)).
+Proof.
+intros n ts.
+unfold ReplaceTermTerm in |- *.
+unfold ReplaceTermsTerm in |- *.
+unfold ReplaceTermTermsTerm in |- *.
+set
+ (A :=
+  fun t0 recs s0 : nat =>
+  cPair
+    (switchPR (cPairPi1 t0)
+       (cPair (cPairPi1 t0) (cPairPi2 (codeNth (t0 - S (cPairPi2 t0)) recs)))
+       (cPair 0 s0))
+    (switchPR t0
+       (S
+          (cPair (cPairPi1 (codeNth (t0 - S (cPairPi1 (pred t0))) recs))
+             (cPairPi2 (codeNth (t0 - S (cPairPi2 (pred t0))) recs)))) 0))
+ in *.
+assert
+ (forall n m : nat,
+  m < n ->
+  extEqual 1
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 A n) 0 (Vector.nil _))
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 A m)).
+intros.
+apply (evalStrongRecHelp2 1). 
+assumption.
+simpl in H.
+induction ts as [| n t ts Hrects]; simpl in |- *; intros.
+apply le_O_n.
+replace
+ (codeTerms L codeF (S n)
+    (Tcons L n (substituteTerm L t v s) (substituteTerms L n ts v s))) with
+ (S
+    (cPair (codeTerm (substituteTerm L t v s))
+       (codeTerms L codeF n (substituteTerms L n ts v s))));
+ [ idtac | reflexivity ].
+unfold evalStrongRec in |- *;
+ unfold evalComposeFunc, evalOneParamList, evalList in |- *;
+ repeat rewrite computeEvalStrongRecHelp; unfold compose2 in |- *;
+ unfold evalComposeFunc, evalOneParamList, evalList in |- *; 
+ simpl in |- *; repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat rewrite cPairProjections2.
+repeat rewrite H.
+replace (codeTerms L codeF (S n) (Tcons L n t ts)) with
+ (S (cPair (codeTerm t) (codeTerms L codeF n ts))); 
+ [ idtac | reflexivity ].
+simpl in |- *.
+repeat rewrite cPairProjections1.
+apply le_n_S.
+apply cPairLe3.
+eapply le_trans.
+apply boundSubTerm.
+apply
+ (ReplaceTermTermMonotone (codeTerm t)
+    (max (codeTerm s) (fold_right max 0 (freeVarTerm L t)))
+    (max (codeTerm s)
+       (fold_right max 0 (freeVarTerms L (S n) (Tcons L n t ts))))).
+apply maxLemma.
+apply le_n.
+replace (freeVarTerms L (S n) (Tcons L n t ts)) with
+ (freeVarTerm L t ++ freeVarTerms L n ts); [ idtac | reflexivity ].
+apply maxLemma2.
+eapply le_trans.
+apply Hrects.
+repeat rewrite cPairProjections2.
+apply
+ (ReplaceTermsTermMonotone (codeTerms L codeF n ts)
+    (max (codeTerm s) (fold_right max 0 (freeVarTerms L n ts)))
+    (max (codeTerm s)
+       (fold_right max 0 (freeVarTerms L (S n) (Tcons L n t ts))))).
+apply maxLemma.
+apply le_n.
+replace (freeVarTerms L (S n) (Tcons L n t ts)) with
+ (freeVarTerm L t ++ freeVarTerms L n ts); [ idtac | reflexivity ].
+apply maxLemma3.
+
+Lemma ReplaceTermTermSub :
+ forall (t : fol.Term L) (v w s2 : nat),
+
+Lemma ReplaceTermsTermSub :
+ forall (n : nat) (ts : fol.Terms L n) (v w s2 : nat),
+
+Definition ReplaceFormulaTerm : nat -> nat -> nat :=
+  evalStrongRec 1
+    (fun f recs s : nat =>
+     switchPR (cPairPi1 f)
+       (switchPR (pred (cPairPi1 f))
+          (switchPR (pred (pred (cPairPi1 f)))
+             (switchPR (pred (pred (pred (cPairPi1 f))))
+                (cPair (cPairPi1 f) (ReplaceTermsTerm (cPairPi2 f) s))
+                (cPair 3
+                   (cPair s (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs))))
+             (cPair 2 (codeNth (f - S (cPairPi2 f)) recs)))
+          (cPair 1
+             (cPair (codeNth (f - S (cPairPi1 (cPairPi2 f))) recs)
+                (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs))))
+       (cPair 0
+          (cPair (ReplaceTermTerm (cPairPi1 (cPairPi2 f)) s)
+             (ReplaceTermTerm (cPairPi2 (cPairPi2 f)) s)))).
+
+Lemma ReplaceFormulaTermIsPR : isPR 2 ReplaceFormulaTerm.
+
+Lemma ReplaceFormulaTermMonotone :
+ forall a s1 s2 : nat,
+ s1 <= s2 -> ReplaceFormulaTerm a s1 <= ReplaceFormulaTerm a s2.
+
+Fixpoint varFormula (f : fol.Formula L) : list nat :=
+  match f with
+  | equal t s => freeVarTerm L t ++ freeVarTerm L s
+  | atomic r ts => freeVarTerms L _ ts
+  | impH A B => varFormula A ++ varFormula B
+  | notH A => varFormula A
+  | forallH v A => v :: varFormula A
+  end.
+
+Lemma ReplaceFormulaTermSub :
+ forall (f : fol.Formula L) (v w s2 : nat),
+
+Remark codeTermFreeVar :
+ forall s : fol.Term L, fold_right max 0 (freeVarTerm L s) <= codeTerm s.
+
+Remark maxVarFreeVar :
+ forall f : fol.Formula L,
+ fold_right max 0 (freeVarFormula L f) <= fold_right max 0 (varFormula f).
+Proof.
+intros.
+induction f as [t t0| r t| f1 Hrecf1 f0 Hrecf0| f Hrecf| n f Hrecf];
+ simpl in |- *.
+apply le_n.
+apply le_n.
+induction (maxApp (freeVarFormula L f1) (freeVarFormula L f0)).
+rewrite a.
+eapply le_trans.
+apply Hrecf1.
+apply maxLemma2.
+rewrite b.
+eapply le_trans.
+apply Hrecf0.
+apply maxLemma3.
+assumption.
+apply le_trans with (fold_right max 0 (freeVarFormula L f)).
+clear Hrecf.
+induction (freeVarFormula L f).
+simpl in |- *.
+apply le_O_n.
+simpl in |- *.
+induction (eq_nat_dec a n).
+eapply le_trans.
+apply IHl.
+apply le_max_r.
+simpl in |- *.
+apply maxLemma.
+
+Remark maxSubTerm :
+ forall (t : fol.Term L) (v : nat) (s : fol.Term L),
+ fold_right max 0 (freeVarTerm L (substituteTerm L t v s)) <=
+ fold_right max 0 (freeVarTerm L s ++ freeVarTerm L t).
+Proof.
+intros.
+elim t using
+ Term_Terms_ind
+  with
+    (P0 := fun (n : nat) (ts : fol.Terms L n) =>
+           fold_right max 0 (freeVarTerms L n (substituteTerms L n ts v s)) <=
+           fold_right max 0 (freeVarTerm L s ++ freeVarTerms L n ts));
+ simpl in |- *; intros.
+induction (eq_nat_dec v n).
+apply maxLemma2.
+apply maxLemma3.
+apply H.
+apply le_O_n.
+replace
+ (freeVarTerms L (S n)
+    (Tcons L n (substituteTerm L t0 v s) (substituteTerms L n t1 v s))) with
+ (freeVarTerm L (substituteTerm L t0 v s) ++
+  freeVarTerms L n (substituteTerms L n t1 v s)).
+replace (freeVarTerms L (S n) (Tcons L n t0 t1)) with
+ (freeVarTerm L t0 ++ freeVarTerms L n t1).
+induction
+ (maxApp (freeVarTerm L (substituteTerm L t0 v s))
+    (freeVarTerms L n (substituteTerms L n t1 v s))).
+rewrite a.
+eapply le_trans.
+apply H.
+induction (maxApp (freeVarTerm L s) (freeVarTerm L t0)).
+rewrite a0.
+apply maxLemma2.
+rewrite b.
+apply
+ le_trans with (fold_right max 0 (freeVarTerm L t0 ++ freeVarTerms L n t1)).
+apply maxLemma2.
+apply maxLemma3.
+rewrite b.
+eapply le_trans.
+apply H0.
+induction (maxApp (freeVarTerm L s) (freeVarTerms L n t1)).
+rewrite a.
+apply maxLemma2.
+rewrite b0.
+apply
+ le_trans with (fold_right max 0 (freeVarTerm L t0 ++ freeVarTerms L n t1)).
+apply maxLemma3.
+apply maxLemma3.
+
+Remark maxSubTerms :
+ forall (n : nat) (ts : fol.Terms L n) (v : nat) (s : fol.Term L),
+ fold_right max 0 (freeVarTerms L n (substituteTerms L n ts v s)) <=
+ fold_right max 0 (freeVarTerm L s ++ freeVarTerms L n ts).
+Proof.
+intros.
+induction ts as [| n t ts Hrects]; simpl in |- *; intros.
+apply le_O_n.
+replace
+ (freeVarTerms L (S n)
+    (Tcons L n (substituteTerm L t v s) (substituteTerms L n ts v s))) with
+ (freeVarTerm L (substituteTerm L t v s) ++
+  freeVarTerms L n (substituteTerms L n ts v s)).
+replace (freeVarTerms L (S n) (Tcons L n t ts)) with
+ (freeVarTerm L t ++ freeVarTerms L n ts).
+induction
+ (maxApp (freeVarTerm L (substituteTerm L t v s))
+    (freeVarTerms L n (substituteTerms L n ts v s))).
+rewrite a.
+eapply le_trans.
+apply maxSubTerm.
+induction (maxApp (freeVarTerm L s) (freeVarTerm L t)).
+rewrite a0.
+apply maxLemma2.
+rewrite b.
+apply
+ le_trans with (fold_right max 0 (freeVarTerm L t ++ freeVarTerms L n ts)).
+apply maxLemma2.
+apply maxLemma3.
+rewrite b.
+eapply le_trans.
+apply Hrects.
+induction (maxApp (freeVarTerm L s) (freeVarTerms L n ts)).
+rewrite a.
+apply maxLemma2.
+rewrite b0.
+apply
+ le_trans with (fold_right max 0 (freeVarTerm L t ++ freeVarTerms L n ts)).
+apply maxLemma3.
+apply maxLemma3.
+
+Definition pow3 : nat -> nat :=
+  nat_rec (fun _ => nat) 1 (fun _ rec : nat => rec + (rec + rec)).
+
+Lemma pow3IsPR : isPR 1 pow3.
+
+Lemma pow3Monotone : forall a b : nat, a <= b -> pow3 a <= pow3 b.
+
+Lemma pow3Min : forall a : nat, 1 <= pow3 a.
+
+Remark mapListLemma :
+ forall l : list nat, fold_right max 0 (map S l) <= S (fold_right max 0 l).
+Proof.
+intros.
+induction l as [| a l Hrecl].
+simpl in |- *.
+auto.
+simpl in |- *.
+induction (fold_right max 0 (map S l)).
+apply le_n_S.
+apply le_max_l.
+apply le_n_S.
+apply maxLemma.
+
+Remark boundSubFormulaHelp2 :
+ forall (a : fol.Formula L) (v0 : nat) (s : fol.Term L),
+ newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a) <=
+ S
+   (fold_right max 0
+      (v0 :: fold_right max 0 (freeVarTerm L s) :: varFormula a)).
+intros.
+unfold newVar in |- *.
+apply
+ le_trans
+  with (S (fold_right max 0 (v0 :: freeVarTerm L s ++ freeVarFormula L a))).
+apply mapListLemma.
+apply le_n_S.
+simpl in |- *.
+apply maxLemma.
+
+Remark boundSubFormulaHelp1 :
+ forall (b a : fol.Formula L) (v0 v : nat) (s : fol.Term L),
+ fold_right max 0
+   (varFormula
+      (substituteFormula L b v
+         (fol.var L (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))))) <=
+ pow3 (depth L b) + pow3 (depth L b) +
+ max v0
+   (max (fold_right max 0 (freeVarTerm L s))
+      (max v
+         (max (fold_right max 0 (varFormula b))
+            (fold_right max 0 (varFormula a))))).
+Proof.
+intro.
+elim b using Formula_depth_ind2; intros;
+ set (nv := newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)) in *.
+simpl in |- *.
+apply le_S.
+induction
+ (maxApp (freeVarTerm L (substituteTerm L t v (fol.var L nv)))
+    (freeVarTerm L (substituteTerm L t0 v (fol.var L nv)))).
+rewrite a0.
+eapply le_trans.
+apply maxSubTerm.
+simpl in |- *.
+apply (max_case2 nv (fold_right max 0 (freeVarTerm L t))).
+eapply le_trans.
+apply (boundSubFormulaHelp2 a v0 s).
+apply le_n_S.
+simpl in |- *.
+repeat apply maxLemma; try apply le_n.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_r.
+apply le_S.
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+eapply le_trans; [ idtac | apply le_max_l ].
+apply maxLemma2.
+rewrite b0.
+eapply le_trans.
+apply maxSubTerm.
+simpl in |- *.
+apply (max_case2 nv (fold_right max 0 (freeVarTerm L t0))).
+eapply le_trans.
+apply (boundSubFormulaHelp2 a v0 s).
+ apply le_n_S.
+simpl in |- *.
+repeat apply maxLemma; try apply le_n.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_r.
+apply le_S.
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+eapply le_trans; [ idtac | apply le_max_l ].
+apply maxLemma3.
+eapply le_trans.
+simpl in |- *.
+apply maxSubTerms.
+simpl in |- *.
+apply le_S.
+apply
+ (max_case2 nv
+    (fold_right max 0 (freeVarTerms L (arity L (inl (Functions L) r)) t))).
+eapply le_trans.
+apply (boundSubFormulaHelp2 a v0 s).
+apply le_n_S.
+simpl in |- *.
+repeat apply maxLemma; try apply le_n.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_r.
+apply le_S.
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+eapply le_trans; [ idtac | apply le_max_l ].
+apply le_n.
+rewrite subFormulaImp.
+simpl in |- *.
+induction
+ (maxApp (varFormula (substituteFormula L f v (fol.var L nv)))
+    (varFormula (substituteFormula L f0 v (fol.var L nv)))).
+rewrite a0.
+eapply le_trans.
+apply (H a v0 v s).
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_l ].
+assert (pow3 (depth L f) <= pow3 (max (depth L f) (depth L f0))).
+apply pow3Monotone.
+apply le_max_l.
+apply plus_le_compat.
+assumption.
+eapply le_trans; [ idtac | apply le_plus_l ].
+assumption.
+repeat apply maxLemma; try apply le_n.
+apply maxLemma2.
+rewrite b0.
+eapply le_trans.
+apply (H0 a v0 v s).
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_l ].
+assert (pow3 (depth L f0) <= pow3 (max (depth L f) (depth L f0))).
+apply pow3Monotone.
+apply le_max_r.
+apply plus_le_compat.
+assumption.
+eapply le_trans; [ idtac | apply le_plus_l ].
+assumption.
+repeat apply maxLemma; try apply le_n.
+apply maxLemma3.
+rewrite subFormulaNot.
+eapply le_trans.
+apply (H a v0 v s).
+apply plus_le_compat.
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_plus_l ].
+apply le_plus_r.
+apply le_n.
+clear nv.
+rewrite subFormulaForall.
+induction (eq_nat_dec v v1).
+eapply le_trans; [ idtac | apply le_plus_r ].
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_max_l.
+induction
+ (In_dec eq_nat_dec v
+    (freeVarTerm L
+       (fol.var L (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))))).
+simpl in |- *.
+apply
+ (max_case2
+    (newVar
+       (v1
+        :: newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0)
+           :: freeVarFormula L a))
+    (fold_right max 0
+       (varFormula
+          (substituteFormula L
+             (substituteFormula L a v
+                (fol.var L
+                   (newVar
+                      (v1
+                       :: newVar
+                            (v0 :: freeVarTerm L s ++ freeVarFormula L a0)
+                          :: freeVarFormula L a)))) v1
+             (fol.var L
+                (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))))))).
+unfold newVar at 1 in |- *.
+eapply le_trans.
+apply mapListLemma.
+apply
+ le_trans
+  with
+    (1 + 1 +
+     max v0
+       (max (fold_right max 0 (freeVarTerm L s))
+          (max v1
+             (max (max v (fold_right max 0 (varFormula a)))
+                (fold_right max 0 (varFormula a0)))))).
+simpl in |- *.
+apply le_n_S.
+apply
+ (max_case2 v1
+    (max (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))
+       (fold_right max 0 (freeVarFormula L a)))).
+apply le_S.
+do 2 (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_max_l.
+apply
+ (max_case2 (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))
+    (fold_right max 0 (freeVarFormula L a))).
+eapply le_trans.
+apply boundSubFormulaHelp2.
+apply le_n_S.
+simpl in |- *.
+repeat apply maxLemma; try apply le_n.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_r.
+apply le_S.
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+eapply le_trans; [ idtac | apply le_max_l ].
+eapply le_trans.
+apply maxVarFreeVar.
+apply le_max_r.
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply plus_le_compat.
+apply pow3Min.
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply pow3Min.
+apply le_n.
+eapply le_trans.
+apply H.
+eapply eqDepth.
+symmetry  in |- *.
+apply subFormulaDepth.
+apply depthForall.
+rewrite subFormulaDepth.
+rewrite (plus_assoc (pow3 (depth L a)) (pow3 (depth L a)) (pow3 (depth L a))).
+repeat rewrite (plus_assoc_reverse (pow3 (depth L a) + pow3 (depth L a))).
+apply plus_le_compat.
+apply le_n.
+apply
+ (max_case2 v0
+    (max (fold_right max 0 (freeVarTerm L s))
+       (max v1
+          (max
+             (fold_right max 0
+                (varFormula
+                   (substituteFormula L a v
+                      (fol.var L
+                         (newVar
+                            (v1
+                             :: newVar
+                                  (v0
+                                   :: freeVarTerm L s ++ freeVarFormula L a0)
+                                :: freeVarFormula L a))))))
+             (fold_right max 0 (varFormula a0)))))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply le_max_l.
+apply
+ (max_case2 (fold_right max 0 (freeVarTerm L s))
+    (max v1
+       (max
+          (fold_right max 0
+             (varFormula
+                (substituteFormula L a v
+                   (fol.var L
+                      (newVar
+                         (v1
+                          :: newVar
+                               (v0 :: freeVarTerm L s ++ freeVarFormula L a0)
+                             :: freeVarFormula L a))))))
+          (fold_right max 0 (varFormula a0))))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+apply le_max_l.
+apply
+ (max_case2 v1
+    (max
+       (fold_right max 0
+          (varFormula
+             (substituteFormula L a v
+                (fol.var L
+                   (newVar
+                      (v1
+                       :: newVar
+                            (v0 :: freeVarTerm L s ++ freeVarFormula L a0)
+                          :: freeVarFormula L a))))))
+       (fold_right max 0 (varFormula a0)))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+do 2 (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_max_l.
+apply
+ (max_case2
+    (fold_right max 0
+       (varFormula
+          (substituteFormula L a v
+             (fol.var L
+                (newVar
+                   (v1
+                    :: newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0)
+                       :: freeVarFormula L a))))))
+    (fold_right max 0 (varFormula a0))).
+eapply le_trans.
+apply
+ H
+  with
+    (b := a)
+    (v := v)
+    (v0 := v1)
+    (a := a)
+    (s := var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))).
+apply depthForall.
+rewrite
+ (plus_comm (pow3 (depth L a))
+    (pow3 (depth L a) + pow3 (depth L a) + pow3 (depth L a)))
+ .
+repeat rewrite (plus_assoc_reverse (pow3 (depth L a) + pow3 (depth L a))).
+apply plus_le_compat.
+apply le_n.
+apply
+ (max_case2 v1
+    (max
+       (fold_right max 0
+          (freeVarTerm L
+             (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0)))))
+       (max v
+          (max (fold_right max 0 (varFormula a))
+             (fold_right max 0 (varFormula a)))))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+do 2 (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_max_l.
+apply
+ (max_case2
+    (fold_right max 0
+       (freeVarTerm L
+          (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0)))))
+    (max v
+       (max (fold_right max 0 (varFormula a))
+          (fold_right max 0 (varFormula a))))).
+simpl in |- *.
+apply (max_case2 (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0)) 0).
+eapply le_trans.
+apply boundSubFormulaHelp2.
+apply
+ le_trans
+  with
+    (1 +
+     max v0
+       (max (fold_right max 0 (freeVarTerm L s))
+          (max v1
+             (max (max v (fold_right max 0 (varFormula a)))
+                (fold_right max 0 (varFormula a0)))))).
+simpl in |- *.
+apply le_n_S.
+repeat apply maxLemma; try apply le_n.
+repeat (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_n.
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply pow3Min.
+apply le_n.
+apply le_O_n.
+eapply le_trans; [ idtac | apply le_plus_r ].
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+apply
+ (max_case2 v
+    (max (fold_right max 0 (varFormula a)) (fold_right max 0 (varFormula a)))).
+eapply le_trans; [ idtac | apply le_max_l ].
+apply le_max_l.
+apply
+ (max_case2 (fold_right max 0 (varFormula a))
+    (fold_right max 0 (varFormula a)));
+ (eapply le_trans; [ idtac | apply le_max_l ]; apply le_max_r).
+eapply le_trans; [ idtac | apply le_plus_r ].
+repeat (eapply le_trans; [ idtac | apply le_max_r ]).
+apply le_n.
+simpl in |- *.
+apply
+ (max_case2 v
+    (fold_right max 0
+       (varFormula
+          (substituteFormula L a v1
+             (fol.var L
+                (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a0))))))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+do 3 (eapply le_trans; [ idtac | apply le_max_r ]).
+eapply le_trans; [ idtac | apply le_max_l ].
+apply le_max_l.
+eapply le_trans.
+apply H.
+apply depthForall.
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply plus_le_compat.
+apply le_n.
+apply le_plus_l.
+repeat apply maxLemma; try apply le_n.
+
+Remark boundSubFormulaHelp :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+ codeFormula (substituteFormula L f v s) <=
+ ReplaceFormulaTerm (codeFormula f)
+   (max (codeTerm s)
+      (pow3 (depth L f) +
+       fold_right max 0 (v :: freeVarTerm L s ++ varFormula f))).
+Proof.
+intro.
+unfold ReplaceFormulaTerm in |- *.
+set
+ (A :=
+  fun f0 recs s0 : nat =>
+  switchPR (cPairPi1 f0)
+    (switchPR (pred (cPairPi1 f0))
+       (switchPR (pred (pred (cPairPi1 f0)))
+          (switchPR (pred (pred (pred (cPairPi1 f0))))
+             (cPair (cPairPi1 f0) (ReplaceTermsTerm (cPairPi2 f0) s0))
+             (cPair 3
+                (cPair s0 (codeNth (f0 - S (cPairPi2 (cPairPi2 f0))) recs))))
+          (cPair 2 (codeNth (f0 - S (cPairPi2 f0)) recs)))
+       (cPair 1
+          (cPair (codeNth (f0 - S (cPairPi1 (cPairPi2 f0))) recs)
+             (codeNth (f0 - S (cPairPi2 (cPairPi2 f0))) recs))))
+    (cPair 0
+       (cPair (ReplaceTermTerm (cPairPi1 (cPairPi2 f0)) s0)
+          (ReplaceTermTerm (cPairPi2 (cPairPi2 f0)) s0)))) 
+ in *.
+assert
+ (forall n m : nat,
+  m < n ->
+  extEqual 1
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 A n) 0 (Vector.nil _))
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 A m)).
+intros.
+apply (evalStrongRecHelp2 1). 
+assumption.
+simpl in H.
+elim f using Formula_depth_ind2; intros.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+set
+ (C :=
+  max (codeTerm s)
+    (pow3 (depth L (equal L t t0)) +
+     fold_right max 0 (v :: freeVarTerm L s ++ varFormula (equal L t t0))))
+ in *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply cPairLe3.
+apply
+ le_trans
+  with
+    (ReplaceTermTerm (codeTerm t)
+       (fold_right max 0 (codeTerm s :: freeVarTerm L t))).
+apply boundSubTerm.
+apply ReplaceTermTermMonotone.
+unfold C in |- *.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply le_S.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+apply maxLemma2.
+apply
+ le_trans
+  with
+    (ReplaceTermTerm (codeTerm t0)
+       (fold_right max 0 (codeTerm s :: freeVarTerm L t0))).
+apply boundSubTerm.
+apply ReplaceTermTermMonotone.
+unfold C in |- *.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply le_S.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+apply maxLemma3.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+set
+ (C :=
+  max (codeTerm s)
+    (pow3 (depth L (atomic L r t)) +
+     fold_right max 0 (v :: freeVarTerm L s ++ varFormula (atomic L r t))))
+ in *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply
+ le_trans
+  with
+    (ReplaceTermsTerm (codeTerms L codeF _ t)
+       (fold_right max 0 (codeTerm s :: freeVarTerms L _ t))).
+apply boundSubTerms.
+apply ReplaceTermsTermMonotone.
+unfold C in |- *.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply le_S.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply maxLemma3.
+rewrite subFormulaImp.
+set
+ (C :=
+  max (codeTerm s)
+    (pow3 (depth L (impH L f0 f1)) +
+     fold_right max 0 (v :: freeVarTerm L s ++ varFormula (impH L f0 f1))))
+ in *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite H with (m := codeFormula f0).
+rewrite H with (m := codeFormula f1).
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply cPairLe3.
+apply
+ le_trans
+  with
+    (evalStrongRec 1 A (codeFormula f0)
+       (max (codeTerm s)
+          (pow3 (depth L f0) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0)))).
+auto.
+apply ReplaceFormulaTermMonotone.
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_S.
+apply le_max_l.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+rewrite ass_app.
+apply maxLemma2.
+apply
+ le_trans
+  with
+    (evalStrongRec 1 A (codeFormula f1)
+       (max (codeTerm s)
+          (pow3 (depth L f1) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f1)))).
+auto.
+apply ReplaceFormulaTermMonotone.
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_S.
+apply le_max_r.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+induction (maxApp (freeVarTerm L s) (varFormula f1)).
+rewrite a.
+apply maxLemma2.
+rewrite b.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+apply maxLemma3.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe2.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe1.
+rewrite subFormulaNot.
+set
+ (C :=
+  max (codeTerm s)
+    (pow3 (depth L (notH L f0)) +
+     fold_right max 0 (v :: freeVarTerm L s ++ varFormula (notH L f0)))) 
+ in *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite H with (m := codeFormula f0).
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply
+ le_trans
+  with
+    (evalStrongRec 1 A (codeFormula f0)
+       (max (codeTerm s)
+          (pow3 (depth L f0) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0)))).
+auto.
+apply ReplaceFormulaTermMonotone.
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_n_Sn.
+apply le_n.
+apply cPairLt2.
+set
+ (C :=
+  max (codeTerm s)
+    (pow3 (depth L (forallH L v a)) +
+     fold_right max 0 (v0 :: freeVarTerm L s ++ varFormula (forallH L v a))))
+ in *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+repeat rewrite cPairProjections1.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite H with (m := codeFormula a).
+simpl in |- *.
+rewrite subFormulaForall.
+induction (eq_nat_dec v v0).
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply cPairLe3.
+unfold C in |- *.
+rewrite a0.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply le_plus_r ].
+simpl in |- *.
+apply le_max_l.
+apply le_trans with (codeFormula (substituteFormula L a 0 (var 0))).
+rewrite (subFormulaId L).
+apply le_n.
+apply
+ le_trans
+  with
+    (evalStrongRec 1 A (codeFormula a)
+       (max (codeTerm (var 0))
+          (pow3 (depth L a) +
+           fold_right max 0 (0 :: freeVarTerm L (var 0) ++ varFormula a)))).
+apply H0.
+apply depthForall.
+apply ReplaceFormulaTermMonotone.
+unfold C in |- *.
+apply maxLemma.
+apply le_O_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_n_Sn.
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply le_max_r.
+induction (In_dec eq_nat_dec v (freeVarTerm L s)).
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+set (nv := newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)) in *.
+apply cPairLe3.
+unfold C in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+simpl in |- *.
+apply
+ le_trans
+  with (1 + max v0 (fold_right max 0 (freeVarTerm L s ++ v :: varFormula a))).
+simpl in |- *.
+unfold nv in |- *.
+unfold newVar in |- *.
+eapply le_trans.
+apply mapListLemma.
+apply le_n_S.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+induction (maxApp (freeVarTerm L s) (freeVarFormula L a)).
+rewrite a1.
+apply maxLemma2.
+rewrite b0.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply maxVarFreeVar.
+apply plus_le_compat.
+eapply le_trans; [ idtac | apply le_plus_l ].
+apply pow3Min.
+apply le_n.
+set (B := substituteFormula L a v (fol.var L nv)) in *.
+apply
+ le_trans
+  with
+    (evalStrongRec 1 A (codeFormula B)
+       (max (codeTerm s)
+          (pow3 (depth L B) +
+           fold_right max 0 (v0 :: freeVarTerm L s ++ varFormula B)))).
+apply H0.
+unfold B in |- *.
+eapply eqDepth.
+symmetry  in |- *.
+apply subFormulaDepth.
+apply depthForall.
+unfold B at 1 in |- *.
+rewrite ReplaceFormulaTermSub.
+apply ReplaceFormulaTermMonotone.
+simpl in |- *.
+unfold B at 1 2 in |- *.
+rewrite subFormulaDepth.
+unfold C in |- *.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+rewrite plus_assoc_reverse.
+apply plus_le_compat_l.
+apply
+ (max_case2 v0
+    (fold_right max 0
+       (freeVarTerm L s ++
+        varFormula (substituteFormula L a v (fol.var L nv))))).
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply le_max_l.
+induction
+ (maxApp (freeVarTerm L s)
+    (varFormula (substituteFormula L a v (fol.var L nv)))).
+rewrite a1.
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+apply maxLemma2.
+rewrite b0; clear b0.
+clear H0 C B.
+unfold nv in |- *.
+clear nv.
+eapply le_trans.
+apply boundSubFormulaHelp1.
+apply plus_le_compat.
+apply le_n.
+repeat apply maxLemma.
+apply le_n.
+apply max_case2.
+apply maxLemma2.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply max_case2; apply le_n.
+simpl in |- *.
+apply cPairLe3.
+apply le_n.
+apply cPairLe3.
+unfold C in |- *.
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply le_max_l.
+eapply le_trans.
+apply H0.
+apply depthForall.
+apply ReplaceFormulaTermMonotone.
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply plus_le_compat.
+simpl in |- *.
+apply le_plus_l.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+induction (maxApp (freeVarTerm L s) (varFormula a)).
+rewrite a0.
+apply maxLemma2.
+rewrite b1.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+
+Definition boundComputation (d p1 p2 : nat) : nat :=
+  nat_rec (fun _ => nat) (cTriple p1 p2 0)
+    (fun _ rec : nat => cTriple p1 p2 (cPair rec rec)) d.
+
+Lemma boundComputationIsPR : isPR 3 boundComputation.
+
+Lemma boundComputationMonotone :
+ forall a1 a2 b1 b2 c1 c2 : nat,
+ a1 <= a2 ->
+ b1 <= b2 ->
+ c1 <= c2 -> boundComputation a1 b1 c1 <= boundComputation a2 b2 c2.
+
+Lemma boundMakeTrace :
+ forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+ let C :=
+   max (codeTerm s)
+     (cPair 0
+        (pow3 (depth L f) +
+         fold_right max 0 (v :: freeVarTerm L s ++ varFormula f))) in
+ makeTrace f (v, s) <=
+ boundComputation (depth L f)
+   (cTriple C C (ReplaceFormulaTerm (codeFormula f) C))
+   (ReplaceFormulaTerm (codeFormula f) C).
+Proof.
+set
+ (A :=
+  fun f2 recs s0 : nat =>
+  switchPR (cPairPi1 f2)
+    (switchPR (pred (cPairPi1 f2))
+       (switchPR (pred (pred (cPairPi1 f2)))
+          (switchPR (pred (pred (pred (cPairPi1 f2))))
+             (cPair (cPairPi1 f2) (ReplaceTermsTerm (cPairPi2 f2) s0))
+             (cPair 3
+                (cPair s0 (codeNth (f2 - S (cPairPi2 (cPairPi2 f2))) recs))))
+          (cPair 2 (codeNth (f2 - S (cPairPi2 f2)) recs)))
+       (cPair 1
+          (cPair (codeNth (f2 - S (cPairPi1 (cPairPi2 f2))) recs)
+             (codeNth (f2 - S (cPairPi2 (cPairPi2 f2))) recs))))
+    (cPair 0
+       (cPair (ReplaceTermTerm (cPairPi1 (cPairPi2 f2)) s0)
+          (ReplaceTermTerm (cPairPi2 (cPairPi2 f2)) s0)))) 
+ in *.
+assert
+ (E :
+  forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+  codeFormula (substituteFormula L f v s) <=
+  ReplaceFormulaTerm (codeFormula f)
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L f) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f))))).
+intros.
+eapply le_trans.
+apply boundSubFormulaHelp.
+apply ReplaceFormulaTermMonotone.
+apply maxLemma.
+apply le_n.
+apply cPairLe2.
+assert
+ (D :
+  forall n m : nat,
+  m < n ->
+  extEqual 1
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 A n) 0 (Vector.nil _))
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 A m)).
+intros.
+apply (evalStrongRecHelp2 1). 
+assumption.
+simpl in D.
+intro.
+assert (forall w v n s : nat, v <= max s (cPair 0 (w + max v n))).
+intros.
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply cPairLe2 ].
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply le_max_l.
+assert
+ (forall (f : fol.Formula L) (v : nat) (s : fol.Term L),
+  codeFormula f <=
+  ReplaceFormulaTerm (codeFormula f)
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L f) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f))))).
+intros.
+apply le_trans with (codeFormula (substituteFormula L f0 0 (var 0))).
+rewrite (subFormulaId L).
+apply le_n.
+eapply le_trans.
+apply E.
+apply ReplaceFormulaTermMonotone.
+apply maxLemma.
+apply le_O_n.
+apply cPairLe3.
+apply le_n.
+apply plus_le_compat.
+apply le_n.
+simpl in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply maxLemma3.
+elim f using Formula_depth_ind2; intros; simpl in |- *.
+unfold makeTrace in |- *.
+unfold Formula_depth_rec2 in |- *.
+unfold Formula_depth_rec in |- *.
+simpl in |- *.
+unfold cTriple in |- *.
+unfold C in |- *.
+simpl in |- *.
+repeat apply cPairLe3.
+apply
+ (H 1 v
+    (fold_right max 0
+       (freeVarTerm L s ++ freeVarTerm L t ++ freeVarTerm L t0)) 
+    (codeTerm s)).
+apply le_max_l.
+apply (H0 (equal L t t0) v s).
+apply (E (equal L t t0) v s).
+apply le_n.
+unfold makeTrace in |- *.
+unfold Formula_depth_rec2 in |- *.
+unfold Formula_depth_rec in |- *.
+simpl in |- *.
+unfold cTriple in |- *.
+unfold C in |- *.
+simpl in |- *.
+repeat apply cPairLe3.
+apply
+ (H 1 v
+    (fold_right max 0
+       (freeVarTerm L s ++ freeVarTerms L (arity L (inl (Functions L) r)) t))
+    (codeTerm s)).
+apply le_max_l.
+apply (H0 (atomic L r t) v s).
+apply (E (atomic L r t) v s).
+apply le_n.
+replace (makeTrace (impH L f0 f1) (v, s)) with
+ (cTriple (cTriple v (codeTerm s) (codeFormula (impH L f0 f1)))
+    (codeFormula (substituteFormula L (impH L f0 f1) v s))
+    (cPair (makeTrace f0 (v, s)) (makeTrace f1 (v, s)))).
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+unfold C in |- *; simpl in |- *. 
+apply
+ (H
+    (pow3 (max (depth L f0) (depth L f1)) +
+     (pow3 (max (depth L f0) (depth L f1)) +
+      pow3 (max (depth L f0) (depth L f1)))) v
+    (fold_right max 0 (freeVarTerm L s ++ varFormula f0 ++ varFormula f1))
+    (codeTerm s)).
+unfold C in |- *; simpl in |- *. 
+apply le_max_l.
+apply (H0 (impH L f0 f1) v s).
+apply (E (impH L f0 f1) v s).
+eapply le_trans.
+apply H1.
+assert
+ (max (codeTerm s)
+    (cPair 0
+       (pow3 (depth L f0) +
+        fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0))) <= C).
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply cPairLe3.
+apply le_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_S.
+apply le_max_l.
+simpl in |- *.
+apply max_case2.
+apply le_max_l.
+eapply le_trans; [ idtac | apply le_max_r ].
+induction (maxApp (freeVarTerm L s) (varFormula f0)).
+rewrite a.
+apply maxLemma2.
+rewrite b.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+apply maxLemma2.
+assert
+ (ReplaceFormulaTerm (codeFormula f0)
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L f0) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0)))) <=
+  ReplaceFormulaTerm (cPair 1 (cPair (codeFormula f0) (codeFormula f1))) C).
+unfold ReplaceFormulaTerm at 2 in |- *.
+fold A in |- *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite D with (m := codeFormula f0).
+simpl in |- *.
+eapply le_trans; [ idtac | apply cPairLe2 ].
+eapply le_trans; [ idtac | apply cPairLe1 ].
+apply ReplaceFormulaTermMonotone.
+apply H3.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe1.
+apply boundComputationMonotone.
+apply le_max_l.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+apply H3.
+apply H3.
+apply H4.
+apply H4.
+eapply le_trans.
+apply H2.
+assert
+ (max (codeTerm s)
+    (cPair 0
+       (pow3 (depth L f1) +
+        fold_right max 0 (v :: freeVarTerm L s ++ varFormula f1))) <= C).
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply cPairLe3.
+apply le_n.
+apply plus_le_compat.
+apply pow3Monotone.
+simpl in |- *.
+apply le_S.
+apply le_max_r.
+simpl in |- *.
+apply max_case2.
+apply le_max_l.
+eapply le_trans; [ idtac | apply le_max_r ].
+induction (maxApp (freeVarTerm L s) (varFormula f1)).
+rewrite a.
+apply maxLemma2.
+rewrite b.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+apply maxLemma3.
+assert
+ (ReplaceFormulaTerm (codeFormula f1)
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L f1) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f1)))) <=
+  ReplaceFormulaTerm (cPair 1 (cPair (codeFormula f0) (codeFormula f1))) C).
+unfold ReplaceFormulaTerm at 2 in |- *.
+fold A in |- *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite D with (m := codeFormula f1).
+simpl in |- *.
+eapply le_trans; [ idtac | apply cPairLe2 ].
+eapply le_trans; [ idtac | apply cPairLe2 ].
+apply ReplaceFormulaTermMonotone.
+apply H3.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe2.
+apply boundComputationMonotone.
+apply le_max_r.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+apply H3.
+apply H3.
+apply H4.
+apply H4.
+unfold makeTrace in |- *.
+rewrite
+ (Formula_depth_rec2_imp L)
+                            with
+                            (Q := 
+                              fun _ : fol.Formula L =>
+                              (nat * fol.Term L)%type)
+                           (P := fun _ : fol.Formula L => nat).
+unfold makeTraceImp at 1 in |- *.
+reflexivity.
+apply makeTraceImpNice.
+apply makeTraceNotNice.
+apply makeTraceForallNice.
+replace (makeTrace (notH L f0) (v, s)) with
+ (cTriple (cTriple v (codeTerm s) (codeFormula (notH L f0)))
+    (codeFormula (substituteFormula L (notH L f0) v s)) 
+    (makeTrace f0 (v, s))).
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+unfold C in |- *; simpl in |- *. 
+apply
+ (H (pow3 (depth L f0) + (pow3 (depth L f0) + pow3 (depth L f0))) v
+    (fold_right max 0 (freeVarTerm L s ++ varFormula f0)) 
+    (codeTerm s)).
+unfold C in |- *; simpl in |- *. 
+apply le_max_l.
+apply (H0 (notH L f0) v s).
+apply (E (notH L f0) v s).
+eapply le_trans.
+apply H1.
+assert
+ (max (codeTerm s)
+    (cPair 0
+       (pow3 (depth L f0) +
+        fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0))) <= C).
+unfold C in |- *; simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply cPairLe3.
+apply le_n.
+apply plus_le_compat.
+apply le_plus_l.
+apply le_n.
+assert
+ (ReplaceFormulaTerm (codeFormula f0)
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L f0) +
+           fold_right max 0 (v :: freeVarTerm L s ++ varFormula f0)))) <=
+  ReplaceFormulaTerm (cPair 2 (codeFormula f0)) C).
+unfold ReplaceFormulaTerm at 2 in |- *.
+fold A in |- *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite D with (m := codeFormula f0).
+simpl in |- *.
+eapply le_trans; [ idtac | apply cPairLe2 ].
+apply ReplaceFormulaTermMonotone.
+apply H2.
+apply cPairLt2.
+eapply le_trans; [ idtac | apply cPairLe1 ].
+apply boundComputationMonotone.
+apply le_n.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+apply H2.
+apply H2.
+apply H3.
+apply H3.
+unfold makeTrace in |- *.
+rewrite
+ (Formula_depth_rec2_not L)
+                            with
+                            (Q := 
+                              fun _ : fol.Formula L =>
+                              (nat * fol.Term L)%type)
+                           (P := fun _ : fol.Formula L => nat).
+unfold makeTraceNot at 1 in |- *.
+reflexivity.
+apply makeTraceImpNice.
+apply makeTraceNotNice.
+apply makeTraceForallNice.
+replace (makeTrace (forallH L v a) (v0, s)) with
+ (makeTraceForall v a (fun (b : fol.Formula L) _ => makeTrace b) (v0, s)).
+unfold makeTraceForall in |- *.
+simpl in |- *.
+induction (eq_nat_dec v v0); simpl in |- *.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+unfold C in |- *; simpl in |- *. 
+apply
+ (H (pow3 (depth L a) + (pow3 (depth L a) + pow3 (depth L a))) v0
+    (fold_right max 0 (freeVarTerm L s ++ v :: varFormula a)) 
+    (codeTerm s)).
+unfold C in |- *; simpl in |- *. 
+apply le_max_l.
+apply (H0 (forallH L v a) v0 s).
+apply (E (forallH L v a) v0 s).
+apply le_O_n.
+induction (In_dec eq_nat_dec v (freeVarTerm L s)); simpl in |- *.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+unfold C in |- *; simpl in |- *. 
+apply
+ (H (pow3 (depth L a) + (pow3 (depth L a) + pow3 (depth L a))) v0
+    (fold_right max 0 (freeVarTerm L s ++ v :: varFormula a)) 
+    (codeTerm s)).
+unfold C in |- *; simpl in |- *. 
+apply le_max_l.
+apply (H0 (forallH L v a) v0 s).
+apply (E (forallH L v a) v0 s).
+eapply le_trans.
+apply H1.
+apply depthForall.
+assert
+ (max (codeTerm (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))))
+    (cPair 0
+       (pow3 (depth L a) +
+        fold_right max 0
+          (v
+           :: freeVarTerm L
+                (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))) ++
+              varFormula a))) <= C).
+assert
+ (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a) <=
+  pow3 (depth L a) +
+  fold_right max 0 (v0 :: freeVarTerm L s ++ varFormula (forallH L v a))).
+apply
+ le_trans
+  with
+    (1 +
+     fold_right max 0
+       (v0 :: fold_right max 0 (freeVarTerm L s) :: varFormula a)).
+apply boundSubFormulaHelp2 with (a := a) (v0 := v0) (s := s).
+apply plus_le_compat.
+apply pow3Min.
+simpl in |- *.
+apply max_case2.
+apply le_max_l.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply max_case2.
+apply maxLemma2.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply le_max_r.
+apply max_case2.
+replace
+ (codeTerm (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)))) with
+ (cPair 0 (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)));
+ [ idtac | reflexivity ].
+unfold C in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply cPairLe3.
+apply le_n.
+eapply le_trans.
+apply H2.
+apply plus_le_compat_r.
+simpl in |- *.
+apply le_plus_l.
+unfold C in |- *.
+eapply le_trans; [ idtac | apply le_max_r ].
+apply cPairLe3.
+apply le_n.
+simpl in |- *.
+rewrite plus_assoc_reverse.
+apply plus_le_compat_l.
+apply max_case2.
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply le_max_l.
+apply max_case2.
+rewrite plus_assoc_reverse.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply H2.
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply le_max_r.
+assert
+ (ReplaceFormulaTerm (codeFormula a)
+    (max
+       (codeTerm (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))))
+       (cPair 0
+          (pow3 (depth L a) +
+           fold_right max 0
+             (v
+              :: freeVarTerm L
+                   (var
+                      (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))) ++
+                 varFormula a)))) <=
+  ReplaceFormulaTerm (cPair 3 (cPair v (codeFormula a))) C).
+unfold ReplaceFormulaTerm at 2 in |- *.
+fold A in |- *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite D with (m := codeFormula a).
+simpl in |- *.
+eapply le_trans; [ idtac | apply cPairLe2 ].
+eapply le_trans; [ idtac | apply cPairLe2 ].
+apply ReplaceFormulaTermMonotone.
+simpl in H2.
+apply H2.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe2.
+apply boundComputationMonotone.
+apply le_n.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+apply H2.
+apply H2.
+apply H3.
+apply H3.
+eapply le_trans.
+apply H1.
+eapply eqDepth.
+symmetry  in |- *.
+apply subFormulaDepth.
+apply depthForall.
+rewrite subFormulaDepth.
+assert
+ (max (codeTerm s)
+    (cPair 0
+       (pow3 (depth L a) +
+        fold_right max 0
+          (v0
+           :: freeVarTerm L s ++
+              varFormula
+                (substituteFormula L a v
+                   (var
+                      (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a))))))) <=
+  C).
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply cPairLe3.
+apply le_n.
+simpl in |- *.
+rewrite plus_assoc_reverse.
+apply plus_le_compat_l.
+apply max_case2.
+eapply le_trans; [ idtac | apply le_plus_r ].
+apply le_max_l.
+induction
+ (maxApp (freeVarTerm L s)
+    (varFormula
+       (substituteFormula L a v
+          (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)))))).
+rewrite a1.
+eapply le_trans; [ idtac | apply le_plus_r ].
+eapply le_trans; [ idtac | apply le_max_r ].
+apply maxLemma2.
+rewrite b0.
+clear b0.
+eapply le_trans.
+apply boundSubFormulaHelp1.
+apply plus_le_compat_l.
+apply maxLemma.
+apply le_n.
+apply max_case2.
+apply maxLemma2.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+apply max_case2; apply le_n.
+assert
+ (ReplaceFormulaTerm
+    (codeFormula
+       (substituteFormula L a v
+          (var (newVar (v0 :: freeVarTerm L s ++ freeVarFormula L a)))))
+    (max (codeTerm s)
+       (cPair 0
+          (pow3 (depth L a) +
+           fold_right max 0
+             (v0
+              :: freeVarTerm L s ++
+                 varFormula
+                   (substituteFormula L a v
+                      (var
+                         (newVar
+                            (v0 :: freeVarTerm L s ++ freeVarFormula L a)))))))) <=
+  ReplaceFormulaTerm (cPair 3 (cPair v (codeFormula a))) C).
+unfold ReplaceFormulaTerm at 2 in |- *.
+fold A in |- *.
+unfold evalStrongRec in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+repeat rewrite computeEvalStrongRecHelp.
+unfold compose2 in |- *.
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+simpl in |- *.
+unfold A at 1 in |- *.
+repeat first [ rewrite cPairProjections1 | rewrite cPairProjections2 ].
+rewrite D with (m := codeFormula a).
+simpl in |- *.
+eapply le_trans; [ idtac | apply cPairLe2 ].
+eapply le_trans; [ idtac | apply cPairLe2 ].
+rewrite ReplaceFormulaTermSub.
+apply ReplaceFormulaTermMonotone.
+apply H2.
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+apply cPairLe2.
+apply boundComputationMonotone.
+apply le_n.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+apply H2.
+apply H2.
+apply H3.
+apply H3.
+unfold cTriple in |- *.
+repeat apply cPairLe3.
+unfold C in |- *; simpl in |- *. 
+apply
+ (H (pow3 (depth L a) + (pow3 (depth L a) + pow3 (depth L a))) v0
+    (fold_right max 0 (freeVarTerm L s ++ v :: varFormula a)) 
+    (codeTerm s)).
+unfold C in |- *; simpl in |- *. 
+apply le_max_l.
+apply (H0 (forallH L v a) v0 s).
+apply (E (forallH L v a) v0 s).
+eapply le_trans.
+apply H1.
+apply depthForall.
+assert
+ (max (codeTerm s)
+    (cPair 0
+       (pow3 (depth L a) +
+        fold_right max 0 (v0 :: freeVarTerm L s ++ varFormula a))) <= C).
+unfold C in |- *.
+apply maxLemma.
+apply le_n.
+apply cPairLe3.
+apply le_n.
+apply plus_le_compat.
+simpl in |- *.
+apply le_plus_l.
+simpl in |- *.
+apply maxLemma.
+apply le_n.
+induction (maxApp (freeVarTerm L s) (varFormula a)).
+rewrite a0.
+apply maxLemma2.
+rewrite b1.
+eapply le_trans; [ idtac | apply maxLemma3 ].
+
+Definition codeSubFormula (f v s : nat) : nat :=
+  let C := cPair 0 (pow3 f + (v + (s + f))) in
+  cPairPi1
+    (boundedSearch
+       (fun p x : nat =>
+        ltBool 0 (checkSubFormulaTrace (cPair (cPairPi1 p) x)))
+       (cPair (cTriple v s f)
+          (S
+             (boundComputation f (cTriple C C (ReplaceFormulaTerm f C))
+                (ReplaceFormulaTerm f C))))).
+
+Lemma codeSubFormulaCorrect :
+ forall (f : Formula) (v : nat) (s : Term),
+ codeSubFormula (codeFormula f) v (codeTerm s) =
+ codeFormula (substituteFormula L f v s).
+
+Lemma codeSubFormulaIsPR : isPR 3 codeSubFormula.
+
+End Code_Substitute_Formula. *)
+
+
+
+Section Code_PA.
+
+
+
+Let codeTerm := codeTerm LNT codeLNTFunction.
+
+Let codeFormula := codeFormula LNT codeLNTFunction codeLNTRelation.
+
+Let codeFormulaInj :=
+
+  codeFormulaInj LNT codeLNTFunction codeLNTRelation codeLNTFunctionInj
+
+    codeLNTRelationInj.
+
+
+
+Definition codeOpen : nat -> nat :=
+
+  evalStrongRec 0
+
+    (fun f recs : nat =>
+
+     switchPR (cPairPi1 f)
+
+       (switchPR (pred (cPairPi1 f))
+
+          (switchPR (pred (pred (cPairPi1 f)))
+
+             (switchPR (pred (pred (pred (cPairPi1 f)))) f
+
+                (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)) f) f) f).
+
+
+
+Lemma codeOpenCorrect :
+
+ forall f : Formula, codeOpen (codeFormula f) = codeFormula (open f).
+
+Proof.
+
+intros.
+
+unfold codeOpen, open in |- *.
+
+set
+
+ (g :=
+
+  fun f recs : nat =>
+
+  switchPR (cPairPi1 f)
+
+    (switchPR (pred (cPairPi1 f))
+
+       (switchPR (pred (pred (cPairPi1 f)))
+
+          (switchPR (pred (pred (pred (cPairPi1 f)))) f
+
+             (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)) f) f) f) 
+
+ in *.
+
+induction f as [t t0| r t| f1 Hrecf1 f0 Hrecf0| f Hrecf| n f Hrecf];
+
+ simpl in |- *; unfold evalStrongRec in |- *.
+
+simpl in |- *; unfold g at 1 in |- *;
+
+ repeat rewrite cPairProjections1 || rewrite cPairProjections2; 
+
+ reflexivity.
+
+simpl in |- *; unfold g at 1 in |- *;
+
+ repeat rewrite cPairProjections1 || rewrite cPairProjections2; 
+
+ reflexivity.
+
+simpl in |- *; unfold g at 1 in |- *;
+
+ repeat rewrite cPairProjections1 || rewrite cPairProjections2; 
+
+ reflexivity.
+
+simpl in |- *; unfold g at 1 in |- *;
+
+ repeat rewrite cPairProjections1 || rewrite cPairProjections2; 
+
+ reflexivity.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+rewrite computeEvalStrongRecHelp.
+
+unfold compose2 in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+unfold g at 1 in |- *.
+
+repeat rewrite evalStrongRecHelp1.
+
+unfold pred in |- *.
+
+repeat rewrite cPairProjections1 || rewrite cPairProjections2.
+
+simpl in |- *.
+
+apply Hrecf.
+
+eapply le_lt_trans.
+
+apply cPairLe2A.
+
+rewrite cPairProjections2.
+
+apply cPairLt2.
+
+Qed.
+
+
+
+Lemma codeOpenIsPR : isPR 1 codeOpen.
+
+Proof.
+
+unfold codeOpen in |- *.
+
+apply evalStrongRecIsPR.
+
+apply
+
+ compose2_3IsPR
+
+  with
+
+    (f1 := fun f recs : nat => cPairPi1 f)
+
+    (f2 := fun f recs : nat =>
+
+           switchPR (pred (cPairPi1 f))
+
+             (switchPR (pred (pred (cPairPi1 f)))
+
+                (switchPR (pred (pred (pred (cPairPi1 f)))) f
+
+                   (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)) f) f)
+
+    (f3 := fun f recs : nat => f).
+
+apply filter10IsPR.
+
+apply cPairPi1IsPR.
+
+apply
+
+ compose2_3IsPR
+
+  with
+
+    (f1 := fun f recs : nat => pred (cPairPi1 f))
+
+    (f2 := fun f recs : nat =>
+
+           switchPR (pred (pred (cPairPi1 f)))
+
+             (switchPR (pred (pred (pred (cPairPi1 f)))) f
+
+                (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs)) f)
+
+    (f3 := fun f recs : nat => f).
+
+apply filter10IsPR with (g := fun f : nat => pred (cPairPi1 f)).
+
+apply compose1_1IsPR.
+
+apply cPairPi1IsPR.
+
+apply predIsPR.
+
+apply
+
+ compose2_3IsPR
+
+  with
+
+    (f1 := fun f recs : nat => pred (pred (cPairPi1 f)))
+
+    (f2 := fun f recs : nat =>
+
+           switchPR (pred (pred (pred (cPairPi1 f)))) f
+
+             (codeNth (f - S (cPairPi2 (cPairPi2 f))) recs))
+
+    (f3 := fun f recs : nat => f).
+
+apply filter10IsPR with (g := fun f : nat => pred (pred (cPairPi1 f))).
+
+apply compose1_1IsPR with (f := fun f : nat => pred (cPairPi1 f)).
+
+apply compose1_1IsPR.
+
+apply cPairPi1IsPR.
+
+apply predIsPR.
+
+apply predIsPR.
+
+apply
+
+ compose2_3IsPR
+
+  with
+
+    (f1 := fun f recs : nat => pred (pred (pred (cPairPi1 f))))
+
+    (f2 := fun f recs : nat => f)
+
+    (f3 := fun f recs : nat => codeNth (f - S (cPairPi2 (cPairPi2 f))) recs).
+
+apply filter10IsPR with (g := fun f : nat => pred (pred (pred (cPairPi1 f)))).
+
+apply compose1_1IsPR with (f := fun f : nat => pred (pred (cPairPi1 f))).
+
+apply compose1_1IsPR with (f := fun f : nat => pred (cPairPi1 f)).
+
+apply compose1_1IsPR.
+
+apply cPairPi1IsPR.
+
+apply predIsPR.
+
+apply predIsPR.
+
+apply predIsPR.
+
+apply pi1_2IsPR.
+
+apply callIsPR with (g := fun f : nat => cPairPi2 (cPairPi2 f)).
+
+apply compose1_1IsPR; apply cPairPi2IsPR.
+
+apply switchIsPR.
+
+apply pi1_2IsPR.
+
+apply switchIsPR.
+
+apply pi1_2IsPR.
+
+apply switchIsPR.
+
+apply pi1_2IsPR.
+
+apply switchIsPR.
+
+Qed.
+
+
+
+Definition codeInductionSchema (f : nat) : bool :=
+
+  let n :=
+
+    cPairPi1
+
+      (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeOpen f)))))) in
+
+  let g :=
+
+    cPairPi2
+
+      (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeOpen f)))))) in
+
+  beq_nat
+
+    (codeClose
+
+       (codeImp (codeSubFormula g n (codeTerm Zero))
+
+          (codeImp
+
+             (codeForall n
+
+                (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))))
+
+             (codeForall n g)))) f.
+
+
+
+Lemma codeInductionSchemaCorrect1 :
+
+ forall f : Formula,
+
+ InductionSchema f -> codeInductionSchema (codeFormula f) = true.
+
+Proof.
+
+intros.
+
+induction H as (x, H).
+
+induction H as (x0, H).
+
+unfold PA7 in H.
+
+rewrite H.
+
+clear H f.
+
+lazy beta delta [codeInductionSchema] in |- *.
+
+rewrite codeOpenCorrect.
+
+replace
+
+ (open
+
+    (close LNT
+
+       (impH (substituteFormula LNT x x0 Zero)
+
+          (impH
+
+             (forallH x0
+
+                (impH x (substituteFormula LNT x x0 (Succ (var x0)))))
+
+             (forallH x0 x))))) with
+
+ (impH (substituteFormula LNT x x0 Zero)
+
+    (impH (forallH x0 (impH x (substituteFormula LNT x x0 (Succ (var x0)))))
+
+       (forallH x0 x))).
+
+replace
+
+ (cPairPi1
+
+    (cPairPi2
+
+       (cPairPi2
+
+          (cPairPi2
+
+             (cPairPi2
+
+                (cPairPi2
+
+                   (codeFormula
+
+                      (impH (substituteFormula LNT x x0 Zero)
+
+                         (impH
+
+                            (forallH x0
+
+                               (impH x
+
+                                  (substituteFormula LNT x x0 (Succ (var x0)))))
+
+                            (forallH x0 x)))))))))) with x0.
+
+replace
+
+ (cPairPi2
+
+    (cPairPi2
+
+       (cPairPi2
+
+          (cPairPi2
+
+             (cPairPi2
+
+                (cPairPi2
+
+                   (codeFormula
+
+                      (impH (substituteFormula LNT x x0 Zero)
+
+                         (impH
+
+                            (forallH x0
+
+                               (impH x
+
+                                  (substituteFormula LNT x x0 (Succ (var x0)))))
+
+                            (forallH x0 x)))))))))) with 
+
+ (codeFormula x).
+
+cbv zeta in |- *.
+
+unfold codeFormula in |- *.
+
+rewrite <- codeCloseCorrect.
+
+replace
+
+ (codeClose
+
+    (codeImp
+
+       (codeSubFormula
+
+          (code.codeFormula LNT codeLNTFunction codeLNTRelation x) x0
+
+          (codeTerm Zero))
+
+       (codeImp
+
+          (codeForall x0
+
+             (codeImp
+
+                (code.codeFormula LNT codeLNTFunction codeLNTRelation x)
+
+                (codeSubFormula
+
+                   (code.codeFormula LNT codeLNTFunction codeLNTRelation x)
+
+                   x0 (codeTerm (Succ (var x0))))))
+
+          (codeForall x0
+
+             (code.codeFormula LNT codeLNTFunction codeLNTRelation x)))))
+
+ with
+
+ (codeClose
+
+    (code.codeFormula LNT codeLNTFunction codeLNTRelation
+
+       (impH (substituteFormula LNT x x0 Zero)
+
+          (impH
+
+             (forallH x0
+
+                (impH x (substituteFormula LNT x x0 (Succ (var x0)))))
+
+             (forallH x0 x))))).
+
+rewrite <- beq_nat_refl.
+
+reflexivity.
+
+simpl in |- *.
+
+unfold codeTerm in |- *.
+
+repeat rewrite codeSubFormulaCorrect.
+
+reflexivity.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections1 || rewrite cPairProjections2.
+
+reflexivity.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections1 || rewrite cPairProjections2.
+
+reflexivity.
+
+unfold close in |- *.
+
+induction
+
+ (ListExt.no_dup nat eq_nat_dec
+
+    (freeVarFormula LNT
+
+       (impH (substituteFormula LNT x x0 Zero)
+
+          (impH
+
+             (forallH x0
+
+                (impH x (substituteFormula LNT x x0 (Succ (var x0)))))
+
+             (forallH x0 x))))).
+
+reflexivity.
+
+simpl in |- *.
+
+assumption.
+
+Qed.
+
+
+
+Lemma codeInductionSchemaCorrect2 :
+
+ forall f : Formula,
+
+ codeInductionSchema (codeFormula f) = true -> InductionSchema f.
+
+Proof.
+
+intros.
+
+lazy beta delta [codeInductionSchema] in H.
+
+rewrite codeOpenCorrect in H.
+
+set
+
+ (n :=
+
+  cPairPi1
+
+    (cPairPi2
+
+       (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeFormula (open f))))))))
+
+ in *.
+
+set
+
+ (g :=
+
+  cPairPi2
+
+    (cPairPi2
+
+       (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeFormula (open f))))))))
+
+ in *.
+
+cbv zeta in H.
+
+induction
+
+ (eq_nat_dec
+
+    (codeImp (codeSubFormula g n (codeTerm Zero))
+
+       (codeImp
+
+          (codeForall n
+
+             (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))))
+
+          (codeForall n g))) (codeFormula (open f))).
+
+rewrite a in H.
+
+unfold codeFormula in H.
+
+rewrite codeCloseCorrect in H.
+
+fold codeFormula in H.
+
+induction (formula_dec LNT LNT_dec (close LNT (open f)) f).
+
+unfold codeImp at 1 in a.
+
+destruct (open f) as [t t0| r t| f0 f1| f0| n0 f0]; simpl in a;
+
+ try
+
+  match goal with
+
+  | h:(cPair ?X1 ?X2 = cPair ?X3 ?X4) |- _ =>
+
+      elimtype False; cut (X1 = X3);
+
+       [ discriminate | eapply cPairInj1; apply h ]
+
+  end.
+
+assert (codeSubFormula g n (codeTerm Zero) = codeFormula f0).
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply a.
+
+assert
+
+ (codeImp
+
+    (codeForall n (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))))
+
+    (codeForall n g) = codeFormula f1).
+
+eapply cPairInj2.
+
+eapply cPairInj2.
+
+apply a.
+
+clear a.
+
+Opaque cPairPi1.
+
+Opaque cPairPi2.
+
+unfold codeImp at 1 in H1.
+
+destruct f1 as [t t0| r t| f1 f2| f1| n0 f1]; simpl in H1;
+
+ try
+
+  match goal with
+
+  | h:(cPair ?X1 ?X2 = cPair ?X3 ?X4) |- _ =>
+
+      elimtype False; cut (X1 = X3);
+
+       [ discriminate | eapply cPairInj1; apply h ]
+
+  end.
+
+assert
+
+ (codeForall n (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))) =
+
+  codeFormula f1).
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply H1.
+
+assert (codeForall n g = codeFormula f2).
+
+eapply cPairInj2.
+
+eapply cPairInj2.
+
+apply H1.
+
+clear H1.
+
+unfold codeForall at 1 in H3.
+
+destruct f2 as [t t0| r t| f2 f3| f2| n0 f2]; simpl in H3;
+
+ try
+
+  match goal with
+
+  | h:(cPair ?X1 ?X2 = cPair ?X3 ?X4) |- _ =>
+
+      elimtype False; cut (X1 = X3);
+
+       [ discriminate | eapply cPairInj1; apply h ]
+
+  end.
+
+simpl in (value of n).
+
+simpl in (value of g).
+
+unfold InductionSchema in |- *.
+
+exists f2.
+
+exists n0.
+
+unfold PA7 in |- *.
+
+replace (substituteFormula LNT f2 n0 Zero) with f0.
+
+replace (forallH n0 (impH f2 (substituteFormula LNT f2 n0 (Succ (var n0)))))
+
+ with f1.
+
+symmetry  in |- *.
+
+apply a0.
+
+apply codeFormulaInj.
+
+simpl in |- *.
+
+rewrite <- codeSubFormulaCorrect.
+
+symmetry  in |- *.
+
+unfold n, g in H2.
+
+repeat rewrite cPairProjections1 in H2 || rewrite cPairProjections2 in H2.
+
+apply H2.
+
+apply codeFormulaInj.
+
+rewrite <- codeSubFormulaCorrect.
+
+symmetry  in |- *.
+
+unfold n, g in H0.
+
+repeat rewrite cPairProjections1 in H0 || rewrite cPairProjections2 in H0.
+
+apply H0.
+
+rewrite beq_nat_not_refl in H.
+
+discriminate H.
+
+unfold not in |- *; intros; apply b.
+
+apply codeFormulaInj.
+
+apply H0.
+
+rewrite beq_nat_not_refl in H.
+
+discriminate H.
+
+unfold not in |- *; intros; apply b.
+
+rewrite <- codeOpenCorrect.
+
+rewrite <- H0.
+
+unfold codeImp in |- *.
+
+generalize
+
+ (cPair (codeSubFormula g n (codeTerm Zero))
+
+    (cPair 1
+
+       (cPair
+
+          (codeForall n
+
+             (cPair 1
+
+                (cPair g (codeSubFormula g n (codeTerm (Succ (var n)))))))
+
+          (codeForall n g)))).
+
+intros.
+
+unfold codeClose in |- *.
+
+assert
+
+ (forall m : nat,
+
+  m <= codeNoDup (codeFreeVarFormula (cPair 1 n0)) ->
+
+  cPair 1 n0 = codeOpen (codeCloseList m (cPair 1 n0))).
+
+induction (codeNoDup (codeFreeVarFormula (cPair 1 n0))).
+
+intros.
+
+rewrite <- (le_n_O_eq _ H1).
+
+unfold codeCloseList in |- *.
+
+unfold evalStrongRec in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+simpl in |- *.
+
+rewrite cPairProjections1.
+
+unfold codeOpen in |- *.
+
+unfold evalStrongRec in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+rewrite computeEvalStrongRecHelp.
+
+unfold compose2 in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+repeat rewrite cPairProjections1.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections1.
+
+reflexivity.
+
+intros.
+
+induction (le_lt_or_eq _ _ H1).
+
+apply IHn1.
+
+apply lt_n_Sm_le.
+
+assumption.
+
+rewrite H2.
+
+unfold codeCloseList in |- *.
+
+set
+
+ (g0 :=
+
+  fun l recs f0 : nat =>
+
+  switchPR l
+
+    (cPair 3
+
+       (cPair (cPairPi1 (pred l)) (codeNth (l - S (cPairPi2 (pred l))) recs)))
+
+    f0) in *.
+
+unfold evalStrongRec in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+rewrite computeEvalStrongRecHelp.
+
+unfold compose2 in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+assert
+
+ (forall n m : nat,
+
+  m < n ->
+
+  extEqual 1
+
+    (evalComposeFunc 1 1 (Vector.cons _ (evalStrongRecHelp 1 g0 n) 0 (Vector.nil _))
+
+       (fun b : nat => codeNth (n - S m) b)) (evalStrongRec 1 g0 m)).
+
+intros.
+
+apply (evalStrongRecHelp2 1). 
+
+assumption.
+
+simpl in H3.
+
+unfold g0 at 1 in |- *.
+
+rewrite H3.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections1.
+
+unfold codeCloseList in IHn1.
+
+move g0 after IHn1; fold g0 in IHn1.
+
+set (A := evalStrongRec 1 g0 (cPairPi2 n1) (cPair 1 n0)) in *.
+
+unfold codeOpen in |- *.
+
+set
+
+ (g1 :=
+
+  fun f0 recs : nat =>
+
+  switchPR (cPairPi1 f0)
+
+    (switchPR (pred (cPairPi1 f0))
+
+       (switchPR (pred (pred (cPairPi1 f0)))
+
+          (switchPR (pred (pred (pred (cPairPi1 f0)))) f0
+
+             (codeNth (f0 - S (cPairPi2 (cPairPi2 f0))) recs)) f0) f0) f0)
+
+ in *.
+
+unfold evalStrongRec in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+rewrite computeEvalStrongRecHelp.
+
+unfold compose2 in |- *.
+
+unfold evalComposeFunc, evalOneParamList, evalList in |- *.
+
+unfold g1 at 1 in |- *.
+
+unfold pred at 1 in |- *.
+
+repeat rewrite cPairProjections1.
+
+repeat rewrite evalStrongRecHelp1.
+
+simpl in |- *.
+
+repeat rewrite cPairProjections2.
+
+unfold A in |- *.
+
+unfold codeOpen in IHn1.
+
+move g1 after IHn1; fold g1 in IHn1.
+
+apply IHn1.
+
+apply cPairLe2A.
+
+repeat rewrite cPairProjections2.
+
+eapply le_lt_trans; [ idtac | apply cPairLt2 ].
+
+apply cPairLe2.
+
+simpl in |- *.
+
+apply le_lt_n_Sm.
+
+apply cPairLe2A.
+
+apply H1.
+
+apply le_n.
+
+Qed.
+
+
+
+Lemma codeInductionSchemaCorrect3 :
+
+ forall f : Formula,
+
+ ~ InductionSchema f -> codeInductionSchema (codeFormula f) = false.
+
+Proof.
+
+intros.
+
+assert (forall x : bool, x = true \/ x = false).
+
+intros.
+
+induction x; auto.
+
+induction (H0 (codeInductionSchema (codeFormula f))).
+
+elim H.
+
+apply codeInductionSchemaCorrect2.
+
+assumption.
+
+assumption.
+
+Qed.
+
+
+
+Lemma codeInductionSchemaIsPR : isPRrel 1 codeInductionSchema.
+
+Proof.
+
+lazy beta delta [codeInductionSchema] in |- *.
+
+set
+
+ (A :=
+
+  fun f : nat =>
+
+  cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (cPairPi2 (codeOpen f)))))) 
+
+ in *.
+
+assert (isPR 1 A).
+
+unfold A in |- *.
+
+apply compose1_1IsPR with (g := iterate cPairPi2 5) (f := codeOpen).
+
+apply codeOpenIsPR.
+
+apply iterateIsPR.
+
+apply cPairPi2IsPR.
+
+assert
+
+ (isPRrel 1
+
+    (fun f : nat =>
+
+     let n := cPairPi1 (A f) in
+
+     let g := cPairPi2 (A f) in
+
+     beq_nat
+
+       (codeClose
+
+          (codeImp (codeSubFormula g n (codeTerm Zero))
+
+             (codeImp
+
+                (codeForall n
+
+                   (codeImp g (codeSubFormula g n (codeTerm (Succ (var n))))))
+
+                (codeForall n g)))) f)).
+
+unfold isPRrel in |- *.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (g := charFunction 2 beq_nat)
+
+    (f' := fun f : nat => f)
+
+    (f := fun f : nat =>
+
+          codeClose
+
+            (codeImp
+
+               (codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f))
+
+                  (codeTerm Zero))
+
+               (codeImp
+
+                  (codeForall (cPairPi1 (A f))
+
+                     (codeImp (cPairPi2 (A f))
+
+                        (codeSubFormula (cPairPi2 (A f)) 
+
+                           (cPairPi1 (A f))
+
+                           (codeTerm (Succ (var (cPairPi1 (A f))))))))
+
+                  (codeForall (cPairPi1 (A f)) (cPairPi2 (A f)))))).
+
+apply
+
+ compose1_1IsPR
+
+  with
+
+    (f := fun f : nat =>
+
+          codeImp
+
+            (codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f)) (codeTerm Zero))
+
+            (codeImp
+
+               (codeForall (cPairPi1 (A f))
+
+                  (codeImp (cPairPi2 (A f))
+
+                     (codeSubFormula (cPairPi2 (A f)) 
+
+                        (cPairPi1 (A f))
+
+                        (codeTerm (Succ (var (cPairPi1 (A f))))))))
+
+               (codeForall (cPairPi1 (A f)) (cPairPi2 (A f))))).
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat =>
+
+          codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f)) (codeTerm Zero))
+
+    (f' := fun f : nat =>
+
+           codeImp
+
+             (codeForall (cPairPi1 (A f))
+
+                (codeImp (cPairPi2 (A f))
+
+                   (codeSubFormula (cPairPi2 (A f)) 
+
+                      (cPairPi1 (A f))
+
+                      (codeTerm (Succ (var (cPairPi1 (A f))))))))
+
+             (codeForall (cPairPi1 (A f)) (cPairPi2 (A f)))).
+
+apply
+
+ compose1_3IsPR
+
+  with
+
+    (f1 := fun f : nat => cPairPi2 (A f))
+
+    (f2 := fun f : nat => cPairPi1 (A f))
+
+    (f3 := fun f : nat => codeTerm Zero).
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi2IsPR.
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi1IsPR.
+
+apply const1_NIsPR.
+
+apply codeSubFormulaIsPR.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat =>
+
+          codeForall (cPairPi1 (A f))
+
+            (codeImp (cPairPi2 (A f))
+
+               (codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f))
+
+                  (codeTerm (Succ (var (cPairPi1 (A f))))))))
+
+    (f' := fun f : nat => codeForall (cPairPi1 (A f)) (cPairPi2 (A f))).
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => cPairPi1 (A f))
+
+    (f' := fun f : nat =>
+
+           codeImp (cPairPi2 (A f))
+
+             (codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f))
+
+                (codeTerm (Succ (var (cPairPi1 (A f))))))).
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi1IsPR.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => cPairPi2 (A f))
+
+    (f' := fun f : nat =>
+
+           codeSubFormula (cPairPi2 (A f)) (cPairPi1 (A f))
+
+             (codeTerm (Succ (var (cPairPi1 (A f)))))).
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi2IsPR.
+
+apply
+
+ compose1_3IsPR
+
+  with
+
+    (f1 := fun f : nat => cPairPi2 (A f))
+
+    (f2 := fun f : nat => cPairPi1 (A f))
+
+    (f3 := fun f : nat => codeTerm (Succ (var (cPairPi1 (A f))))).
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi2IsPR.
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi1IsPR.
+
+assert
+
+ (isPR 1 (fun f : nat => cPair 3 (S (cPair (cPair 0 (cPairPi1 (A f))) 0)))).
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => 3)
+
+    (f' := fun f : nat => S (cPair (cPair 0 (cPairPi1 (A f))) 0)).
+
+apply const1_NIsPR.
+
+apply
+
+ compose1_1IsPR with (f := fun f : nat => cPair (cPair 0 (cPairPi1 (A f))) 0).
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => cPair 0 (cPairPi1 (A f)))
+
+    (f' := fun f : nat => 0).
+
+apply
+
+ compose1_2IsPR
+
+  with (f := fun f : nat => 0) (f' := fun f : nat => cPairPi1 (A f)).
+
+apply const1_NIsPR.
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi1IsPR.
+
+apply cPairIsPR.
+
+apply const1_NIsPR.
+
+apply cPairIsPR.
+
+apply succIsPR.
+
+apply cPairIsPR.
+
+induction H0 as (x, p).
+
+exists x.
+
+eapply extEqualTrans.
+
+apply p.
+
+simpl in |- *.
+
+intros.
+
+reflexivity.
+
+apply codeSubFormulaIsPR.
+
+apply codeImpIsPR.
+
+apply codeForallIsPR.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => cPairPi1 (A f))
+
+    (f' := fun f : nat => cPairPi2 (A f)).
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi1IsPR.
+
+apply compose1_1IsPR.
+
+assumption.
+
+apply cPairPi2IsPR.
+
+apply codeForallIsPR.
+
+apply codeImpIsPR.
+
+apply codeImpIsPR.
+
+apply codeCloseIsPR.
+
+apply idIsPR.
+
+apply eqIsPR.
+
+apply H0.
+
+Qed.
+
+
+
+Definition codePA : nat -> bool :=
+
+  orRel 1 (beq_nat (codeFormula PA6))
+
+    (orRel 1 (beq_nat (codeFormula PA5))
+
+       (orRel 1 (beq_nat (codeFormula PA4))
+
+          (orRel 1 (beq_nat (codeFormula PA3))
+
+             (orRel 1 (beq_nat (codeFormula PA2))
+
+                (orRel 1 (beq_nat (codeFormula PA1)) codeInductionSchema))))).
+
+
+
+Lemma codePAcorrect1 :
+
+ forall f : Formula,
+
+ codePA (codeFormula f) = true -> mem Formula PA f.
+
+Proof.
+
+intros.
+
+induction (PAdec f).
+
+assumption.
+
+unfold codePA in H.
+
+unfold orRel, nat_rec, nat_rect in H.
+
+unfold PA in |- *.
+
+induction (eq_nat_dec (codeFormula PA6) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA6.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+clear b.
+
+induction (eq_nat_dec (codeFormula PA5) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA5.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+clear b.
+
+induction (eq_nat_dec (codeFormula PA4) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA4.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+clear b.
+
+induction (eq_nat_dec (codeFormula PA3) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA3.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+clear b.
+
+induction (eq_nat_dec (codeFormula PA2) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA2.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+clear b.
+
+induction (eq_nat_dec (codeFormula PA1) (codeFormula f)).
+
+rewrite a in H.
+
+rewrite <- beq_nat_refl in H.
+
+replace f with PA1.
+
+right; constructor.
+
+eapply codeFormulaInj.
+
+apply a.
+
+left.
+
+rewrite beq_nat_not_refl in H.
+
+apply codeInductionSchemaCorrect2.
+
+simpl in H.
+
+assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+assumption.
+
+Qed.
+
+
+
+Lemma codePAcorrect2 :
+
+ forall f : Formula,
+
+ ~ mem Formula PA f -> codePA (codeFormula f) = false.
+
+Proof.
+
+intros.
+
+assert (forall x : bool, x = true \/ x = false).
+
+intros.
+
+induction x; auto.
+
+induction (H0 (codePA (codeFormula f))).
+
+elim H.
+
+apply codePAcorrect1.
+
+assumption.
+
+assumption.
+
+Qed.
+
+
+
+Lemma codePAcorrect3 :
+
+ forall f : Formula,
+
+ mem Formula PA f -> codePA (codeFormula f) = true.
+
+Proof.
+
+intros.
+
+unfold codePA in |- *.
+
+unfold orRel, nat_rec, nat_rect in |- *.
+
+do 6 try induction H.
+
+assert (codeInductionSchema (codeFormula x) = true).
+
+apply codeInductionSchemaCorrect1.
+
+apply H.
+
+rewrite H0.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+induction H.
+
+generalize (codeFormula PA1).
+
+intros.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+generalize (codeFormula PA2).
+
+intros.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+generalize (codeFormula PA3).
+
+intros.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+generalize (codeFormula PA4).
+
+intros.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+generalize (codeFormula PA5).
+
+intros.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+rewrite <- beq_nat_refl.
+
+repeat rewrite orb_true_b; repeat rewrite orb_b_true; reflexivity.
+
+Qed.
+
+
+
+Lemma codePAIsPR : isPRrel 1 codePA.
+
+Proof.
+
+unfold codePA in |- *.
+
+assert (forall n : nat, isPRrel 1 (beq_nat n)).
+
+intros.
+
+apply
+
+ compose1_2IsPR
+
+  with
+
+    (f := fun f : nat => n)
+
+    (f' := fun f : nat => f)
+
+    (g := charFunction 2 beq_nat).
+
+apply const1_NIsPR.
+
+apply idIsPR.
+
+apply eqIsPR.
+
+repeat apply orRelPR; try apply H.
+
+apply codeInductionSchemaIsPR.
+
+Qed.
+
+
+
+End Code_PA.
+

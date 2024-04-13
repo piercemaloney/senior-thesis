@@ -1,0 +1,500 @@
+
+
+Require Import VST.floyd.proofauto.
+
+
+
+Require Import VST.progs.list_dt. Import LsegSpecial.
+
+
+
+Require Import VST.progs.reverse.
+
+
+
+Instance CompSpecs : compspecs. make_compspecs prog. Defined.
+
+Definition Vprog : varspecs. mk_varspecs prog. Defined.
+
+
+
+Instance LS: listspec _list _tail (fun _ _ => emp).
+
+Proof. eapply mk_listspec; reflexivity. Defined.
+
+
+
+Definition sum_int := fold_right Int.add Int.zero.
+
+
+
+Definition t_struct_list := Tstruct _list noattr.
+
+
+
+Definition sumlist_spec :=
+
+ DECLARE _sumlist
+
+  WITH sh : share, contents : list int, p: val
+
+  PRE [ _p OF (tptr t_struct_list) ]
+
+     PROP(readable_share sh)
+
+     LOCAL (temp _p p)
+
+     SEP (lseg LS sh (map Vint contents) p nullval)
+
+  POST [ tuint ]
+
+     PROP()
+
+     LOCAL(temp ret_temp (Vint (sum_int contents)))
+
+     SEP (lseg LS sh (map Vint contents) p nullval).
+
+
+
+Definition reverse_spec :=
+
+ DECLARE _reverse
+
+  WITH sh : share, contents : list val, p: val
+
+  PRE  [ _p OF (tptr t_struct_list) ]
+
+     PROP (writable_share sh)
+
+     LOCAL (temp _p p)
+
+     SEP (lseg LS sh contents p nullval)
+
+  POST [ (tptr t_struct_list) ]
+
+    EX p:val,
+
+     PROP () LOCAL (temp ret_temp p)
+
+     SEP (lseg LS sh (rev contents) p nullval).
+
+
+
+Definition main_spec :=
+
+ DECLARE _main
+
+  WITH gv : globals
+
+  PRE  [] main_pre prog nil gv
+
+  POST [ tint ]
+
+     PROP() LOCAL (temp ret_temp (Vint (Int.repr (3+2+1)))) SEP(TT).
+
+
+
+Definition Gprog : funspecs :=   ltac:(with_library prog [
+
+    sumlist_spec; main_spec; reverse_spec]).
+
+
+
+Lemma list_cell_eq: forall sh i p ,
+
+   sepalg.nonidentity sh ->
+
+   field_compatible t_struct_list [] p ->
+
+   list_cell LS sh (Vint i) p =
+
+   field_at sh t_struct_list (DOT _head) (Vint i) p.
+
+Proof.
+
+  intros.
+
+  unfold list_cell, field_at; simpl.
+
+  rewrite !prop_true_andp by auto with field_compatible.
+
+  reflexivity.
+
+Qed.
+
+
+
+Definition sumlist_Inv (sh: share) (contents: list int) (p: val) : environ->mpred :=
+
+          (EX cts1: list int, EX cts2: list int, EX t: val,
+
+            PROP (contents = cts1++cts2)
+
+            LOCAL (temp _t t; temp _s (Vint (sum_int cts1)))
+
+            SEP ( lseg LS sh (map Vint cts1) p t ; lseg LS sh (map Vint cts2) t nullval)).
+
+
+
+Lemma sum_int_app:
+
+  forall a b, sum_int (a++b) = Int.add (sum_int a) (sum_int b).
+
+Proof.
+
+intros.
+
+induction a; simpl. rewrite Int.add_zero_l; auto.
+
+rewrite IHa. rewrite Int.add_assoc. auto.
+
+Qed.
+
+
+
+Lemma body_sumlist: semax_body Vprog Gprog f_sumlist sumlist_spec.
+
+Proof.
+
+
+
+start_function.
+
+forward.  
+
+forward.  
+
+forward_while (sumlist_Inv sh contents p).
+
+* 
+
+Exists (@nil int) contents p.
+
+entailer!. cancel.
+
+* 
+
+entailer!.
+
+* 
+
+focus_SEP 1; apply semax_lseg_nonnull; [ | intros h' r y ? ?].
+
+entailer!.
+
+destruct cts2; inversion H0; clear H0; subst_any.
+
+simpl. 
+
+assert_PROP (field_compatible t_struct_list nil t) as FC by entailer!.
+
+rewrite list_cell_eq by auto.
+
+forward.  
+
+forward.  
+
+forward.  
+
+Exists (cts1++[i],cts2,y).
+
+entailer.
+
+apply andp_right.
+
+apply prop_right.
+
+split.
+
+rewrite app_ass; reflexivity.
+
+ f_equal. rewrite sum_int_app. f_equal. simpl. apply Int.add_zero.
+
+rewrite map_app. simpl map.
+
+eapply derives_trans; [ | apply (lseg_cons_right_list LS) with (y:=t); auto].
+
+rewrite list_cell_eq by auto.
+
+cancel.
+
+* 
+
+forward.  
+
+destruct cts2; [| inversion H]. rewrite <- app_nil_end.
+
+entailer!.
+
+Qed.
+
+
+
+Definition reverse_Inv (sh: share) (contents: list val) : environ->mpred :=
+
+          (EX cts1: list val, EX cts2 : list val, EX w: val, EX v: val,
+
+            PROP (contents = rev cts1 ++ cts2)
+
+            LOCAL (temp _w w; temp _v v)
+
+            SEP (lseg LS sh cts1 w nullval;
+
+                   lseg LS sh cts2 v nullval)).
+
+
+
+Lemma body_reverse: semax_body Vprog Gprog f_reverse reverse_spec.
+
+Proof.
+
+start_function.
+
+forward.  
+
+forward.  
+
+forward_while (reverse_Inv sh contents).
+
+* 
+
+Exists (@nil val) contents nullval p.
+
+rewrite lseg_eq by (simpl; auto).
+
+entailer!.
+
+* 
+
+entailer!.
+
+* 
+
+focus_SEP 1; apply semax_lseg_nonnull;
+
+        [entailer | intros h r y ? ?; simpl].
+
+subst cts2.
+
+forward. 
+
+forward. 
+
+
+
+replace_SEP 2 (field_at sh t_struct_list (DOT _tail) w v) by entailer!.
+
+forward.  
+
+forward.  
+
+
+
+Exists (h::cts1,r,v,y).
+
+ simpl fst. simpl snd. simpl rev.
+
+entailer!.  
+
+ - rewrite app_ass. auto.
+
+ - rewrite (lseg_unroll _ sh (h::cts1)).
+
+    apply orp_right2.
+
+   unfold lseg_cons.
+
+   apply andp_right.
+
+   + apply prop_right.
+
+      destruct v; try contradiction; intro Hx; inv Hx.
+
+   + Exists h cts1 w.
+
+      entailer!.
+
+* 
+
+forward.  
+
+Exists w; entailer!.
+
+rewrite <- app_nil_end, rev_involutive.
+
+auto.
+
+Qed.
+
+
+
+Lemma setup_globals:
+
+ forall Delta gv,
+
+  PTree.get _three (glob_types Delta) = Some (tarray t_struct_list 3) ->
+
+  ENTAIL Delta, PROP  ()
+
+   LOCAL  (gvars gv)
+
+   SEP
+
+   (data_at Ews tuint (Vint (Int.repr 1)) (gv _three);
+
+    mapsto Ews (tptr t_struct_list) (offset_val 4 (gv _three))
+
+        (offset_val 8 (gv _three));
+
+   mapsto Ews tuint (offset_val 8 (gv _three)) (Vint (Int.repr 2));
+
+   mapsto Ews (tptr t_struct_list) (offset_val 12 (gv _three))
+
+       (offset_val 16 (gv _three));
+
+   mapsto Ews tuint (offset_val 16 (gv _three)) (Vint (Int.repr 3));
+
+   mapsto Ews tuint (offset_val 20 (gv _three)) (Vint (Int.repr 0)))
+
+  |-- PROP() LOCAL(gvars gv)
+
+        SEP (lseg LS Ews (map Vint (Int.repr 1 :: Int.repr 2 :: Int.repr 3 :: nil))
+
+                  (gv _three) nullval).
+
+Proof.
+
+  intros.
+
+  go_lowerx.
+
+  pose proof (gvars_denote_HP _ _ _ _ _ H2 H0 H).
+
+  rewrite !prop_true_andp by auto.
+
+  assert_PROP (size_compatible tuint (gv _three) /\ align_compatible tuint (gv _three)) by (entailer!; clear - H5; hnf in H5; intuition).
+
+  rewrite <- mapsto_data_at with (v := Vint(Int.repr 1)); try intuition. 
+
+  clear H0.
+
+  rewrite <- (sepcon_emp (mapsto _ _ (offset_val 20 _) _)).
+
+  assert (FC: field_compatible (tarray t_struct_list 3) [] (gv _three))
+
+    by auto with field_compatible.
+
+  match goal with |- ?A |-- _ => set (a:=A) end.
+
+  replace (gv _three) with (offset_val 0 (gv _three)) by normalize.
+
+  subst a.
+
+  rewrite (sepcon_emp (lseg _ _ _ _ _)).
+
+  rewrite sepcon_emp.
+
+  repeat
+
+  match goal with |- _ * (mapsto _ _ _ ?q * _) |-- lseg _ _ _ (offset_val ?n _) _ =>
+
+    assert (FC': field_compatible t_struct_list [] (offset_val n (gv _three)));
+
+      [apply (@field_compatible_nested_field CompSpecs (tarray t_struct_list 3)
+
+         [ArraySubsc (n/8)] (gv _three));
+
+       simpl;
+
+       unfold field_compatible in FC |- *; simpl in FC |- *;
+
+       assert (0 <= n/8 < 3) by (cbv [Z.div]; simpl; omega);
+
+       tauto
+
+      |];
+
+    apply @lseg_unroll_nonempty1 with q;
+
+      [destruct (gv _three); try contradiction; intro Hx; inv Hx | normalize; reflexivity | ];
+
+    rewrite list_cell_eq by auto;
+
+    do 2 (apply sepcon_derives;
+
+      [ unfold field_at; rewrite prop_true_andp by auto with field_compatible;
+
+        unfold data_at_rec, at_offset; simpl; normalize; try apply derives_refl | ]);
+
+    clear FC'
+
+    end.
+
+  rewrite mapsto_tuint_tptr_nullval; auto. apply derives_refl.
+
+  rewrite @lseg_nil_eq.
+
+  entailer!.
+
+Qed.
+
+
+
+Lemma body_main:  semax_body Vprog Gprog f_main main_spec.
+
+Proof.
+
+start_function.
+
+change (Tstruct _ _) with t_struct_list.
+
+fold noattr. fold (tptr t_struct_list).
+
+eapply semax_pre; [
+
+  eapply ENTAIL_trans; [ | apply (setup_globals Delta gv); auto ] | ].
+
+ entailer!.
+
+*
+
+forward_call 
+
+  (Ews, map Vint [Int.repr 1; Int.repr 2; Int.repr 3], gv _three).
+
+Intros r'.
+
+rewrite <- map_rev. simpl rev.
+
+forward_call  
+
+   (Ews, Int.repr 3 :: Int.repr 2 :: Int.repr 1 :: nil, r').
+
+forward.  
+
+Qed.
+
+
+
+Existing Instance NullExtension.Espec.
+
+
+
+Lemma prog_correct:
+
+  semax_prog prog Vprog Gprog.
+
+Proof.
+
+prove_semax_prog.
+
+semax_func_cons body_sumlist.
+
+semax_func_cons body_reverse.
+
+semax_func_cons body_main.
+
+Qed.
+
+
+

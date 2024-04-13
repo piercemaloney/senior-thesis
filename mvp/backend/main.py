@@ -2,7 +2,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from openai_api import call_openai_gpt3
+from openai_api import call_openai_gpt3, call_openai_gpt4
 from prompts import generate_prompt, vote_prompt
 
 from pydantic import BaseModel
@@ -77,35 +77,8 @@ async def generate_tactics(input_data: GenerateTacticsInput) -> dict:
     print(proposed_steps)
     return {"tactics": proposed_steps}
 
-
-
-@app.post("/generate_tactics_llemma_base")
-async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict:
-    # num_queries = 1  # Number of queries to generate tactics
-    # tactics = await asyncio.gather(*(generate_tactic_llemma_base(input_data) for _ in range(num_queries)))
-    # unique_tactics = list(set(tactics))  # Remove duplicates
-    
-    # First call without additional_bad_words_ids
-    first_call_result, generated_ids_first_call = await generate_tactic_llemma_base(input_data)
-    print(first_call_result)
-    print(generated_ids_first_call)
-    
-    # Second call with generated_ids from the first call as additional_bad_words_ids
-    second_call_result, generated_ids_second_call = await generate_tactic_llemma_base(input_data, additional_bad_words_ids=[generated_ids_first_call])
-    print(second_call_result)
-    print(generated_ids_second_call)
-
-    third_call_result, generated_ids_third_call = await generate_tactic_llemma_base(input_data, additional_bad_words_ids=generated_ids_first_call)
-    print(third_call_result)
-    print(generated_ids_third_call)
-    
-    # Combine results from both calls, ensuring uniqueness
-    tactics = list(set([first_call_result, second_call_result]))
-
-    print(tactics)
-    return {"tactics": tactics}
-
-async def generate_tactic_llemma_base(input_data: GenerateTacticsInput, additional_bad_words_ids: List[List[int]] = None):
+@app.post("/eval_llemma_base")
+async def eval_llemma_base(input_data: GenerateTacticsInput) -> dict:
     proof_step_eval_txt = input_data.inputs
     url = "https://r2lzy96rgluppigc.us-east-1.aws.endpoints.huggingface.cloud"
     headers = {
@@ -115,17 +88,73 @@ async def generate_tactic_llemma_base(input_data: GenerateTacticsInput, addition
     
     data = json.dumps({
         "inputs": proof_step_eval_txt,
-        "additional_bad_words_ids": additional_bad_words_ids  # Include additional bad words here
     })
     response = requests.request("POST", url, headers=headers, data=data)
     if response.status_code == 200:
         response_json = response.json()  # Parse the JSON response
         generated_text = response_json[0]['generated_text']
-        generated_ids = response_json[0]['generated_ids']
     else:
         raise HTTPException(status_code=response.status_code, detail=response.text)
-    # generated_text = generated_text.replace("\n", " ")  # Replace newline characters with spaces
-    return generated_text, generated_ids
+    print(generated_text)
+    eval_score = float(generated_text.replace('%', '').replace('.', '').strip()) / 100
+    return {"eval": eval_score}
+
+@app.post("/eval_gpt4")
+async def eval_gpt4(input_data: GenerateTacticsInput) -> dict:
+    proof_step_eval_txt = input_data.inputs
+    response = await call_openai_gpt4(proof_step_eval_txt)
+    print(response)
+    eval_score = float(response.strip().rstrip('.'))
+    return {"eval": eval_score}
+
+
+@app.post("/generate_tactics_llemma_base")
+async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict:
+    # num_queries = 1  # Number of queries to generate tactics
+    # tactics = await asyncio.gather(*(generate_tactic_llemma_base(input_data) for _ in range(num_queries)))
+    # unique_tactics = list(set(tactics))  # Remove duplicates
+    
+    # First call without additional_bad_words_ids
+    first_call_result, first_call_ids = await generate_tactic_llemma_base(input_data)
+
+    second_call_result, _ = await generate_tactic_llemma_base(input_data, additional_bad_words_ids=[first_call_ids])
+    
+    # Combine results from both calls, ensuring uniqueness
+    tactics = list(set([first_call_result, second_call_result]))
+
+    print(tactics)
+    return {"tactics": tactics}
+
+async def generate_tactic_llemma_base(input_data: GenerateTacticsInput, additional_bad_words_ids: List[List[int]] = []):
+    proof_step_generate_txt = input_data.inputs
+    
+    url = "https://r2lzy96rgluppigc.us-east-1.aws.endpoints.huggingface.cloud"
+    headers = {
+        "Authorization": f"Bearer {os.getenv('HF_TOKEN')}",
+        "Content-Type": "application/json",
+    }
+
+    # print(proof_step_generate_txt[-500:])
+    
+    data = json.dumps({
+        "inputs": proof_step_generate_txt,
+        "additional_bad_words_ids": additional_bad_words_ids,
+    })
+
+    response = requests.request("POST", url, headers=headers, data=data)
+    if response.status_code == 200:
+        response_json = response.json()  # Parse the JSON response
+        generated_text = response_json[0]['generated_text']
+    else:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    print(generated_text)
+    print(response_json[0]['generated_ids'])
+    
+    # Take out the newlines
+    generated_text_lines = generated_text.split('\n')
+    lines = [line.strip() for line in generated_text_lines if line.strip()]  # Process subsequent lines
+    generated_text = ' '.join(lines)  # Join all lines with a space (needed if \n separates logic)
+    return generated_text, response_json[0]['generated_ids']
 
 
 # @app.post("/evaluate")

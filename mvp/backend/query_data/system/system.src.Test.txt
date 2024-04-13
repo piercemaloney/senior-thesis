@@ -1,0 +1,392 @@
+
+
+Require Import Coq.Lists.List.
+
+Require Import Coq.NArith.NArith.
+
+Require Import Coq.Strings.String.
+
+Require Import ListString.All.
+
+Require Import Computation.
+(* Computation:
+Require Import Coq.Lists.List.
+Require Import Events.
+
+Import ListNotations.
+
+Module Signature.
+  Definition t := list Type.
+End Signature.
+
+Module Memory.
+  
+  Inductive t : Signature.t -> Type :=
+  | Nil : t []
+  | Cons : forall (A : Type) (sig : Signature.t), A -> t sig -> t (A :: sig).
+  
+  Definition head {A : Type} {sig : Signature.t} (mem : t (A :: sig)) : A :=
+    match mem with
+    | Cons _ _ x _ => x
+    end.
+  
+  Definition tail {A : Type} {sig : Signature.t} (mem : t (A :: sig)) : t sig :=
+    match mem with
+    | Cons _ _ _ mem => mem
+    end.
+End Memory.
+
+Module Ref.
+  Class C (A : Type) (sig : Signature.t) : Type := New {
+    read : Memory.t sig -> A;
+    write : Memory.t sig -> A -> Memory.t sig }.
+
+  Instance cons_left (A : Type) (sig : Signature.t) : C A (A :: sig) := {
+    read mem := Memory.head mem;
+    write mem x := Memory.Cons _ _ x (Memory.tail mem) }.
+
+  Instance cons_right (A B : Type) (sig : Signature.t) (I : C A sig)
+    : C A (B :: sig) := {
+    read mem := read (Memory.tail mem);
+    write mem x :=
+      Memory.Cons _ _ (Memory.head mem) (write (Memory.tail mem) x) }.
+End Ref.
+
+Module C.
+  
+  Inductive t (sig : Signature.t) : Type -> Type :=
+  | Ret : forall (A : Type), A -> t sig A
+  | Bind : forall (A B : Type), t sig A -> (A -> t sig B) -> t sig B
+  | Read : forall (A : Type), `{Ref.C A sig} -> t sig A
+    
+  | Write : forall (A : Type), `{Ref.C A sig} -> A -> t sig unit
+    
+  | Send : forall (A : Type) (command : Command.t), Command.request command ->
+    A -> (A -> Command.answer command -> t sig (option A)) -> t sig unit
+      | Exit : forall (A : Type), t sig A
+    .
+  
+  Arguments Ret {sig A} _.
+  Arguments Bind {sig A B} _ _.
+  Arguments Read {sig A} _.
+  Arguments Write {sig A} _.
+  Arguments Send {sig A} _ _ _ _.
+  Arguments Exit {sig A}.
+
+  Module Notations.
+    Notation "'let!' X ':=' A 'in' B" := (Bind A (fun X => B))
+      (at level 200, X ident, A at level 100, B at level 200).
+
+    Notation "'let!' X ':' T ':=' A 'in' B" := (Bind (A := T) A (fun X => B))
+      (at level 200, X ident, A at level 100, T at level 200, B at level 200).
+
+    Notation "'do!' A 'in' B" := (Bind A (fun _ => B))
+      (at level 200, B at level 200).
+  End Notations.
+End C. *)
+
+Require Import Events.
+(* Events:
+Require Import Coq.Lists.List.
+Require Import Coq.NArith.NArith.
+Require Import Coq.PArith.PArith.
+Require Import ListString.All.
+
+Import ListNotations.
+Local Open Scope type.
+
+Module ClientSocketId.
+  
+  Inductive t : Set :=
+  | New : N -> t.
+End ClientSocketId.
+
+Module Command.
+  
+  Inductive t : Set :=
+  | Log
+  | FileRead
+  | ServerSocketBind
+  | ClientSocketRead | ClientSocketWrite | ClientSocketClose
+  | Time.
+
+  Definition request (command : t) : Set :=
+    match command with
+    | Log => LString.t
+    | FileRead => LString.t
+    | ServerSocketBind => N
+    | ClientSocketRead => ClientSocketId.t
+    | ClientSocketWrite => ClientSocketId.t * LString.t
+    | ClientSocketClose => ClientSocketId.t
+    | Time => unit
+    end.
+
+  Definition answer (command : t) : Set :=
+    match command with
+    | Log => bool
+    | FileRead => option LString.t
+    | ServerSocketBind => option ClientSocketId.t
+    | ClientSocketRead => option LString.t
+    | ClientSocketWrite => bool
+    | ClientSocketClose => bool
+    | Time => N
+    end.
+
+  Definition eq_dec (command1 command2 : t) :
+    {command1 = command2} + {command1 <> command2}.
+End Command.
+
+Module Output.
+  
+  Record t : Set := New {
+    command : Command.t;
+    id : positive;
+    argument : Command.request command }.
+End Output.
+
+Module Input.
+  
+  Record t : Set := New {
+    command : Command.t;
+    id : positive;
+    argument : Command.answer command }.
+End Input. *)
+
+Require Import Extraction.
+
+Require Import StdLib.
+(* StdLib:
+Require Import Coq.Lists.List.
+Require Import Coq.NArith.NArith.
+Require Import ListString.All.
+Require Import Computation.
+Require Import Events.
+
+Import ListNotations.
+Import C.Notations.
+
+Module Log.
+  
+  Definition write {sig : Signature.t} (message : LString.t)
+    (handler : bool -> C.t sig unit) : C.t sig unit :=
+    C.Send Command.Log message tt (fun _ is_success =>
+      do! handler is_success in
+      C.Ret None).
+End Log.
+
+Module File.
+  
+  Definition read {sig : Signature.t} (file_name : LString.t)
+    (handler : option LString.t -> C.t sig unit) : C.t sig unit :=
+    C.Send Command.FileRead file_name tt (fun _ content =>
+      do! handler content in
+      C.Ret None).
+End File.
+
+Module ClientSocket.
+  
+  Definition read {sig : Signature.t} {A : Type} (id : ClientSocketId.t) (a : A)
+    (handler : A -> option LString.t -> C.t sig (option A)) : C.t sig unit :=
+    C.Send Command.ClientSocketRead id a handler.
+
+  Definition write {sig : Signature.t} (id : ClientSocketId.t) (data : LString.t)
+    (handler : bool -> C.t sig unit) : C.t sig unit :=
+    C.Send Command.ClientSocketWrite (id, data) tt (fun _ is_success =>
+      do! handler is_success in
+      C.Ret None).
+
+  Definition close {sig : Signature.t} (id : ClientSocketId.t)
+    (handler : bool -> C.t sig unit) : C.t sig unit :=
+    C.Send Command.ClientSocketClose id tt (fun _ is_success =>
+      do! handler is_success in
+      C.Ret None).
+End ClientSocket.
+
+Module ServerSocket.
+  
+  Definition bind {sig : Signature.t} (port : N)
+    (handler : option ClientSocketId.t -> C.t sig unit) : C.t sig unit :=
+    C.Send Command.ServerSocketBind port tt (fun _ client =>
+      do! handler client in
+      C.Ret (Some tt)).
+End ServerSocket.
+
+Module Time.
+  
+  Definition get {sig : Signature.t} (handler : N -> C.t sig unit)
+    : C.t sig unit :=
+    C.Send Command.Time tt tt (fun _ time =>
+      do! handler time in
+      C.Ret None).
+End Time. *)
+
+
+
+Import ListNotations.
+
+Import C.Notations.
+
+Local Open Scope string.
+
+
+
+Module DoNothing.
+
+  Definition program (argv : list LString.t) : C.t [] unit :=
+
+    C.Exit.
+
+
+
+  Definition test1 :
+
+    Run.run_on_inputs (program []) Memory.Nil [] = (true, []) :=
+
+    eq_refl.
+
+End DoNothing.
+
+
+
+Module HelloWorld.
+
+  Definition program (argv : list LString.t) : C.t [] unit :=
+
+    Log.write (LString.s "Hello") (fun _ =>
+
+    Log.write (LString.s "world!") (fun _ =>
+
+    C.Exit)).
+
+
+
+  Definition test1 : Run.run_on_inputs (program []) Memory.Nil [
+
+    Input.New Command.Log 1 true;
+
+    Input.New Command.Log 2 true ] =
+
+    (true, [
+
+      Output.New Command.Log 2 (LString.s "world!");
+
+      Output.New Command.Log 1 (LString.s "Hello") ]) :=
+
+    eq_refl.
+
+
+
+  Definition test2 : Run.run_on_inputs (program []) Memory.Nil [
+
+    Input.New Command.Log 2 true;
+
+    Input.New Command.Log 1 true ] =
+
+    (false, [
+
+      Output.New Command.Log 2 (LString.s "world!");
+
+      Output.New Command.Log 1 (LString.s "Hello") ]) :=
+
+    eq_refl.
+
+End HelloWorld.
+
+
+
+Module ReadFile.
+
+  Definition program (argv : list LString.t) : C.t [] unit :=
+
+    match argv with
+
+    | [_; file_name] =>
+
+      File.read file_name (fun content =>
+
+      let message := match content with
+
+        | None => (LString.s "Error: cannot read the file.")
+
+        | Some content => content
+
+        end in
+
+      Log.write message (fun _ => C.Exit))
+
+    | _ =>
+
+      Log.write (LString.s "One parameter (the file to read) expected.") (fun _ =>
+
+      C.Exit)
+
+    end.
+
+End ReadFile.
+
+
+
+Module EchoServer.
+
+  Definition port : N := 5 % N.
+
+
+
+  Definition program (argv : list LString.t) : C.t [] unit :=
+
+    ServerSocket.bind port (fun client_id =>
+
+      match client_id with
+
+      | None =>
+
+        do! Log.write (LString.s "Server socket failed.") (fun _ => C.Ret tt) in
+
+        C.Exit
+
+      | Some client_id =>
+
+        ClientSocket.read client_id tt (fun _ content =>
+
+        match content with
+
+        | None => C.Ret None
+
+        | Some content =>
+
+          do! ClientSocket.write client_id content (fun _ =>
+
+            Log.write content (fun _ => C.Ret tt)) in
+
+          C.Ret None
+
+        end)
+
+      end).
+
+End EchoServer.
+
+
+
+Definition do_nothing := Extraction.run Memory.Nil DoNothing.program.
+
+Extraction "extraction/doNothing" do_nothing.
+
+
+
+Definition hello_world := Extraction.run Memory.Nil HelloWorld.program.
+
+Extraction "extraction/helloWorld" hello_world.
+
+
+
+Definition read_file := Extraction.run Memory.Nil ReadFile.program.
+
+Extraction "extraction/readFile" read_file.
+
+
+
+Definition echo_server := Extraction.run Memory.Nil EchoServer.program.
+
+Extraction "extraction/echoServer" echo_server.
+

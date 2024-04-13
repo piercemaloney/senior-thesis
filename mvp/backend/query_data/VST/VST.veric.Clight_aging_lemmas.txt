@@ -1,0 +1,4178 @@
+Require Import compcert.common.Memory.
+(* compcert.common.Memory:
+Require Import Zwf.
+Require Import Axioms.
+Require Import Coqlib.
+Require Intv.
+Require Import Maps.
+Require Archi.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+Require Import Values.
+Require Export Memdata.
+Require Export Memtype.
+
+Local Unset Elimination Schemes.
+Local Unset Case Analysis Schemes.
+
+Local Notation "a # b" := (PMap.get b a) (at level 1).
+
+Module Mem <: MEM.
+
+Definition perm_order' (po: option permission) (p: permission) :=
+  match po with
+  | Some p' => perm_order p' p
+  | None => False
+ end.
+
+Definition perm_order'' (po1 po2: option permission) :=
+  match po1, po2 with
+  | Some p1, Some p2 => perm_order p1 p2
+  | _, None => True
+  | None, Some _ => False
+ end.
+
+Record mem' : Type := mkmem {
+  mem_contents: PMap.t (ZMap.t memval);  
+  mem_access: PMap.t (Z -> perm_kind -> option permission);
+                                         
+  nextblock: block;
+  access_max:
+    forall b ofs, perm_order'' (mem_access#b ofs Max) (mem_access#b ofs Cur);
+  nextblock_noaccess:
+    forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
+  contents_default:
+    forall b, fst mem_contents#b = Undef
+}.
+
+Definition mem := mem'.
+
+Lemma mkmem_ext:
+ forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2,
+  cont1=cont2 -> acc1=acc2 -> next1=next2 ->
+  mkmem cont1 acc1 next1 a1 b1 c1 = mkmem cont2 acc2 next2 a2 b2 c2.
+
+Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
+
+Theorem valid_not_valid_diff:
+  forall m b b', valid_block m b -> ~(valid_block m b') -> b <> b'.
+
+Local Hint Resolve valid_not_valid_diff: mem.
+
+Definition perm (m: mem) (b: block) (ofs: Z) (k: perm_kind) (p: permission) : Prop :=
+   perm_order' (m.(mem_access)#b ofs k) p.
+
+Theorem perm_implies:
+  forall m b ofs k p1 p2, perm m b ofs k p1 -> perm_order p1 p2 -> perm m b ofs k p2.
+
+Local Hint Resolve perm_implies: mem.
+
+Theorem perm_cur_max:
+  forall m b ofs p, perm m b ofs Cur p -> perm m b ofs Max p.
+
+Theorem perm_cur:
+  forall m b ofs k p, perm m b ofs Cur p -> perm m b ofs k p.
+
+Theorem perm_max:
+  forall m b ofs k p, perm m b ofs k p -> perm m b ofs Max p.
+
+Local Hint Resolve perm_cur perm_max: mem.
+
+Theorem perm_valid_block:
+  forall m b ofs k p, perm m b ofs k p -> valid_block m b.
+
+Local Hint Resolve perm_valid_block: mem.
+
+Remark perm_order_dec:
+  forall p1 p2, {perm_order p1 p2} + {~perm_order p1 p2}.
+
+Remark perm_order'_dec:
+  forall op p, {perm_order' op p} + {~perm_order' op p}.
+
+Theorem perm_dec:
+  forall m b ofs k p, {perm m b ofs k p} + {~ perm m b ofs k p}.
+
+Definition range_perm (m: mem) (b: block) (lo hi: Z) (k: perm_kind) (p: permission) : Prop :=
+  forall ofs, lo <= ofs < hi -> perm m b ofs k p.
+
+Theorem range_perm_implies:
+  forall m b lo hi k p1 p2,
+  range_perm m b lo hi k p1 -> perm_order p1 p2 -> range_perm m b lo hi k p2.
+
+Theorem range_perm_cur:
+  forall m b lo hi k p,
+  range_perm m b lo hi Cur p -> range_perm m b lo hi k p.
+
+Theorem range_perm_max:
+  forall m b lo hi k p,
+  range_perm m b lo hi k p -> range_perm m b lo hi Max p.
+
+Local Hint Resolve range_perm_implies range_perm_cur range_perm_max: mem.
+
+Lemma range_perm_dec:
+  forall m b lo hi k p, {range_perm m b lo hi k p} + {~ range_perm m b lo hi k p}.
+
+Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
+  range_perm m b ofs (ofs + size_chunk chunk) Cur p
+  /\ (align_chunk chunk | ofs).
+
+Theorem valid_access_implies:
+  forall m chunk b ofs p1 p2,
+  valid_access m chunk b ofs p1 -> perm_order p1 p2 ->
+  valid_access m chunk b ofs p2.
+
+Theorem valid_access_freeable_any:
+  forall m chunk b ofs p,
+  valid_access m chunk b ofs Freeable ->
+  valid_access m chunk b ofs p.
+
+Local Hint Resolve valid_access_implies: mem.
+
+Theorem valid_access_valid_block:
+  forall m chunk b ofs,
+  valid_access m chunk b ofs Nonempty ->
+  valid_block m b.
+
+Local Hint Resolve valid_access_valid_block: mem.
+
+Lemma valid_access_perm:
+  forall m chunk b ofs k p,
+  valid_access m chunk b ofs p ->
+  perm m b ofs k p.
+
+Lemma valid_access_compat:
+  forall m chunk1 chunk2 b ofs p,
+  size_chunk chunk1 = size_chunk chunk2 ->
+  align_chunk chunk2 <= align_chunk chunk1 ->
+  valid_access m chunk1 b ofs p->
+  valid_access m chunk2 b ofs p.
+
+Lemma valid_access_dec:
+  forall m chunk b ofs p,
+  {valid_access m chunk b ofs p} + {~ valid_access m chunk b ofs p}.
+
+Definition valid_pointer (m: mem) (b: block) (ofs: Z): bool :=
+  perm_dec m b ofs Cur Nonempty.
+
+Theorem valid_pointer_nonempty_perm:
+  forall m b ofs,
+  valid_pointer m b ofs = true <-> perm m b ofs Cur Nonempty.
+
+Theorem valid_pointer_valid_access:
+  forall m b ofs,
+  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty.
+
+Definition weak_valid_pointer (m: mem) (b: block) (ofs: Z) :=
+  valid_pointer m b ofs || valid_pointer m b (ofs - 1).
+
+Lemma weak_valid_pointer_spec:
+  forall m b ofs,
+  weak_valid_pointer m b ofs = true <->
+    valid_pointer m b ofs = true \/ valid_pointer m b (ofs - 1) = true.
+Lemma valid_pointer_implies:
+  forall m b ofs,
+  valid_pointer m b ofs = true -> weak_valid_pointer m b ofs = true.
+
+Program Definition empty: mem :=
+  mkmem (PMap.init (ZMap.init Undef))
+
+Program Definition alloc (m: mem) (lo hi: Z) :=
+  (mkmem (PMap.set m.(nextblock)
+
+Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
+  mkmem m.(mem_contents)
+
+Definition free (m: mem) (b: block) (lo hi: Z): option mem :=
+  if range_perm_dec m b lo hi Cur Freeable
+  then Some(unchecked_free m b lo hi)
+  else None.
+
+Fixpoint free_list (m: mem) (l: list (block * Z * Z)) {struct l}: option mem :=
+  match l with
+  | nil => Some m
+  | (b, lo, hi) :: l' =>
+      match free m b lo hi with
+      | None => None
+      | Some m' => free_list m' l'
+      end
+  end.
+
+Fixpoint getN (n: nat) (p: Z) (c: ZMap.t memval) {struct n}: list memval :=
+  match n with
+  | O => nil
+  | S n' => ZMap.get p c :: getN n' (p + 1) c
+  end.
+
+Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z): option val :=
+  if valid_access_dec m chunk b ofs Readable
+  then Some(decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)))
+  else None.
+
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) : option val :=
+  match addr with
+  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs)
+  | _ => None
+  end.
+
+Definition loadbytes (m: mem) (b: block) (ofs n: Z): option (list memval) :=
+  if range_perm_dec m b ofs (ofs + n) Cur Readable
+  then Some (getN (nat_of_Z n) ofs (m.(mem_contents)#b))
+  else None.
+
+Fixpoint setN (vl: list memval) (p: Z) (c: ZMap.t memval) {struct vl}: ZMap.t memval :=
+  match vl with
+  | nil => c
+  | v :: vl' => setN vl' (p + 1) (ZMap.set p v c)
+  end.
+
+Remark setN_other:
+  forall vl c p q,
+  (forall r, p <= r < p + Z.of_nat (length vl) -> r <> q) ->
+
+Remark setN_outside:
+  forall vl c p q,
+  q < p \/ q >= p + Z.of_nat (length vl) ->
+
+Remark getN_setN_same:
+  forall vl p c,
+  getN (length vl) p (setN vl p c) = vl.
+
+Remark getN_exten:
+  forall c1 c2 n p,
+  (forall i, p <= i < p + Z.of_nat n -> ZMap.get i c1 = ZMap.get i c2) ->
+
+Remark getN_setN_disjoint:
+  forall vl q c n p,
+  Intv.disjoint (p, p + Z.of_nat n) (q, q + Z.of_nat (length vl)) ->
+
+Remark getN_setN_outside:
+  forall vl q c n p,
+  p + Z.of_nat n <= q \/ q + Z.of_nat (length vl) <= p ->
+
+Remark setN_default:
+  forall vl q c, fst (setN vl q c) = fst c.
+
+Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val): option mem :=
+  if valid_access_dec m chunk b ofs Writable then
+    Some (mkmem (PMap.set b
+
+Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
+  match addr with
+  | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v
+  | _ => None
+  end.
+
+Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) : option mem :=
+  if range_perm_dec m b ofs (ofs + Z.of_nat (length bytes)) Cur Writable then
+
+Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): option mem :=
+  if range_perm_dec m b lo hi Cur Freeable then
+    Some (mkmem m.(mem_contents)
+
+Theorem nextblock_empty: nextblock empty = 1%positive.
+
+Theorem perm_empty: forall b ofs k p, ~perm empty b ofs k p.
+
+Theorem valid_access_empty: forall chunk b ofs p, ~valid_access empty chunk b ofs p.
+
+Theorem valid_access_load:
+  forall m chunk b ofs,
+  valid_access m chunk b ofs Readable ->
+  exists v, load chunk m b ofs = Some v.
+
+Theorem load_valid_access:
+  forall m chunk b ofs v,
+  load chunk m b ofs = Some v ->
+  valid_access m chunk b ofs Readable.
+
+Lemma load_result:
+  forall chunk m b ofs v,
+  load chunk m b ofs = Some v ->
+  v = decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)).
+
+Local Hint Resolve load_valid_access valid_access_load: mem.
+
+Theorem load_type:
+  forall m chunk b ofs v,
+  load chunk m b ofs = Some v ->
+  Val.has_type v (type_of_chunk chunk).
+
+Theorem load_cast:
+  forall m chunk b ofs v,
+  load chunk m b ofs = Some v ->
+  match chunk with
+  | Mint8signed => v = Val.sign_ext 8 v
+
+Theorem load_int8_signed_unsigned:
+  forall m b ofs,
+  load Mint8signed m b ofs = option_map (Val.sign_ext 8) (load Mint8unsigned m b ofs).
+
+Theorem load_int16_signed_unsigned:
+  forall m b ofs,
+  load Mint16signed m b ofs = option_map (Val.sign_ext 16) (load Mint16unsigned m b ofs).
+
+Theorem range_perm_loadbytes:
+  forall m b ofs len,
+  range_perm m b ofs (ofs + len) Cur Readable ->
+  exists bytes, loadbytes m b ofs len = Some bytes.
+
+Theorem loadbytes_range_perm:
+  forall m b ofs len bytes,
+  loadbytes m b ofs len = Some bytes ->
+  range_perm m b ofs (ofs + len) Cur Readable.
+
+Theorem loadbytes_load:
+  forall chunk m b ofs bytes,
+  loadbytes m b ofs (size_chunk chunk) = Some bytes ->
+  (align_chunk chunk | ofs) ->
+  load chunk m b ofs = Some(decode_val chunk bytes).
+
+Theorem load_loadbytes:
+  forall chunk m b ofs v,
+  load chunk m b ofs = Some v ->
+  exists bytes, loadbytes m b ofs (size_chunk chunk) = Some bytes
+             /\ v = decode_val chunk bytes.
+
+Lemma getN_length:
+  forall c n p, length (getN n p c) = n.
+
+Theorem loadbytes_length:
+  forall m b ofs n bytes,
+  loadbytes m b ofs n = Some bytes ->
+  length bytes = nat_of_Z n.
+
+Theorem loadbytes_empty:
+  forall m b ofs n,
+  n <= 0 -> loadbytes m b ofs n = Some nil.
+
+Lemma getN_concat:
+  forall c n1 n2 p,
+  getN (n1 + n2)%nat p c = getN n1 p c ++ getN n2 (p + Z.of_nat n1) c.
+
+Theorem loadbytes_concat:
+  forall m b ofs n1 n2 bytes1 bytes2,
+  loadbytes m b ofs n1 = Some bytes1 ->
+  loadbytes m b (ofs + n1) n2 = Some bytes2 ->
+  n1 >= 0 -> n2 >= 0 ->
+  loadbytes m b ofs (n1 + n2) = Some(bytes1 ++ bytes2).
+
+Theorem loadbytes_split:
+  forall m b ofs n1 n2 bytes,
+  loadbytes m b ofs (n1 + n2) = Some bytes ->
+  n1 >= 0 -> n2 >= 0 ->
+  exists bytes1, exists bytes2,
+     loadbytes m b ofs n1 = Some bytes1
+  /\ loadbytes m b (ofs + n1) n2 = Some bytes2
+  /\ bytes = bytes1 ++ bytes2.
+
+Theorem load_rep:
+ forall ch m1 m2 b ofs v1 v2,
+  (forall z, 0 <= z < size_chunk ch -> ZMap.get (ofs + z) m1.(mem_contents)#b = ZMap.get (ofs + z) m2.(mem_contents)#b) ->
+
+Theorem load_int64_split:
+  forall m b ofs v,
+  load Mint64 m b ofs = Some v -> Archi.ptr64 = false ->
+
+Lemma addressing_int64_split:
+  forall i,
+  Archi.ptr64 = false ->
+
+Theorem loadv_int64_split:
+  forall m a v,
+  loadv Mint64 m a = Some v -> Archi.ptr64 = false ->
+
+Theorem valid_access_store:
+  forall m1 chunk b ofs v,
+  valid_access m1 chunk b ofs Writable ->
+  { m2: mem | store chunk m1 b ofs v = Some m2 }.
+
+Local Hint Resolve valid_access_store: mem.
+
+Section STORE.
+Variable chunk: memory_chunk.
+Variable m1: mem.
+Variable b: block.
+Variable ofs: Z.
+Variable v: val.
+Variable m2: mem.
+Hypothesis STORE: store chunk m1 b ofs v = Some m2.
+
+Lemma store_access: mem_access m2 = mem_access m1.
+
+Lemma store_mem_contents:
+  mem_contents m2 = PMap.set b (setN (encode_val chunk v) ofs m1.(mem_contents)#b) m1.(mem_contents).
+
+Theorem perm_store_1:
+  forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p.
+
+Theorem perm_store_2:
+  forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
+
+Local Hint Resolve perm_store_1 perm_store_2: mem.
+
+Theorem nextblock_store:
+  nextblock m2 = nextblock m1.
+
+Theorem store_valid_block_1:
+  forall b', valid_block m1 b' -> valid_block m2 b'.
+
+Theorem store_valid_block_2:
+  forall b', valid_block m2 b' -> valid_block m1 b'.
+
+Local Hint Resolve store_valid_block_1 store_valid_block_2: mem.
+
+Theorem store_valid_access_1:
+  forall chunk' b' ofs' p,
+  valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
+
+Theorem store_valid_access_2:
+  forall chunk' b' ofs' p,
+  valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
+
+Theorem store_valid_access_3:
+  valid_access m1 chunk b ofs Writable.
+
+Local Hint Resolve store_valid_access_1 store_valid_access_2 store_valid_access_3: mem.
+
+Theorem load_store_similar:
+  forall chunk',
+  size_chunk chunk' = size_chunk chunk ->
+  align_chunk chunk' <= align_chunk chunk ->
+  exists v', load chunk' m2 b ofs = Some v' /\ decode_encode_val v chunk chunk' v'.
+
+Theorem load_store_similar_2:
+  forall chunk',
+  size_chunk chunk' = size_chunk chunk ->
+  align_chunk chunk' <= align_chunk chunk ->
+  type_of_chunk chunk' = type_of_chunk chunk ->
+  load chunk' m2 b ofs = Some (Val.load_result chunk' v).
+
+Theorem load_store_same:
+  load chunk m2 b ofs = Some (Val.load_result chunk v).
+
+Theorem load_store_other:
+  forall chunk' b' ofs',
+  b' <> b
+  \/ ofs' + size_chunk chunk' <= ofs
+  \/ ofs + size_chunk chunk <= ofs' ->
+  load chunk' m2 b' ofs' = load chunk' m1 b' ofs'.
+
+Theorem loadbytes_store_same:
+  loadbytes m2 b ofs (size_chunk chunk) = Some(encode_val chunk v).
+
+Theorem loadbytes_store_other:
+  forall b' ofs' n,
+  b' <> b
+  \/ n <= 0
+  \/ ofs' + n <= ofs
+  \/ ofs + size_chunk chunk <= ofs' ->
+  loadbytes m2 b' ofs' n = loadbytes m1 b' ofs' n.
+
+Lemma setN_in:
+  forall vl p q c,
+  p <= q < p + Z.of_nat (length vl) ->
+
+Lemma getN_in:
+  forall c q n p,
+  p <= q < p + Z.of_nat n ->
+
+End STORE.
+
+Local Hint Resolve perm_store_1 perm_store_2: mem.
+Local Hint Resolve store_valid_block_1 store_valid_block_2: mem.
+Local Hint Resolve store_valid_access_1 store_valid_access_2
+             store_valid_access_3: mem.
+
+Lemma load_store_overlap:
+  forall chunk m1 b ofs v m2 chunk' ofs' v',
+  store chunk m1 b ofs v = Some m2 ->
+  load chunk' m2 b ofs' = Some v' ->
+  ofs' + size_chunk chunk' > ofs ->
+  ofs + size_chunk chunk > ofs' ->
+  exists mv1 mvl mv1' mvl',
+      shape_encoding chunk v (mv1 :: mvl)
+  /\  shape_decoding chunk' (mv1' :: mvl') v'
+  /\  (   (ofs' = ofs /\ mv1' = mv1)
+       \/ (ofs' > ofs /\ In mv1' mvl)
+       \/ (ofs' < ofs /\ In mv1 mvl')).
+
+Definition compat_pointer_chunks (chunk1 chunk2: memory_chunk) : Prop :=
+  match chunk1, chunk2 with
+  | (Mint32 | Many32), (Mint32 | Many32) => True
+  | (Mint64 | Many64), (Mint64 | Many64) => True
+  | _, _ => False
+  end.
+
+Lemma compat_pointer_chunks_true:
+  forall chunk1 chunk2,
+  (chunk1 = Mint32 \/ chunk1 = Many32 \/ chunk1 = Mint64 \/ chunk1 = Many64) ->
+  (chunk2 = Mint32 \/ chunk2 = Many32 \/ chunk2 = Mint64 \/ chunk2 = Many64) ->
+  quantity_chunk chunk1 = quantity_chunk chunk2 ->
+  compat_pointer_chunks chunk1 chunk2.
+
+Theorem load_pointer_store:
+  forall chunk m1 b ofs v m2 chunk' b' ofs' v_b v_o,
+  store chunk m1 b ofs v = Some m2 ->
+  load chunk' m2 b' ofs' = Some(Vptr v_b v_o) ->
+  (v = Vptr v_b v_o /\ compat_pointer_chunks chunk chunk' /\ b' = b /\ ofs' = ofs)
+  \/ (b' <> b \/ ofs' + size_chunk chunk' <= ofs \/ ofs + size_chunk chunk <= ofs').
+
+Theorem load_store_pointer_overlap:
+  forall chunk m1 b ofs v_b v_o m2 chunk' ofs' v,
+  store chunk m1 b ofs (Vptr v_b v_o) = Some m2 ->
+  load chunk' m2 b ofs' = Some v ->
+  ofs' <> ofs ->
+  ofs' + size_chunk chunk' > ofs ->
+  ofs + size_chunk chunk > ofs' ->
+  v = Vundef.
+
+Theorem load_store_pointer_mismatch:
+  forall chunk m1 b ofs v_b v_o m2 chunk' v,
+  store chunk m1 b ofs (Vptr v_b v_o) = Some m2 ->
+  load chunk' m2 b ofs = Some v ->
+  ~compat_pointer_chunks chunk chunk' ->
+  v = Vundef.
+
+Lemma store_similar_chunks:
+  forall chunk1 chunk2 v1 v2 m b ofs,
+  encode_val chunk1 v1 = encode_val chunk2 v2 ->
+  align_chunk chunk1 = align_chunk chunk2 ->
+  store chunk1 m b ofs v1 = store chunk2 m b ofs v2.
+
+Theorem store_signed_unsigned_8:
+  forall m b ofs v,
+  store Mint8signed m b ofs v = store Mint8unsigned m b ofs v.
+
+Theorem store_signed_unsigned_16:
+  forall m b ofs v,
+  store Mint16signed m b ofs v = store Mint16unsigned m b ofs v.
+
+Theorem store_int8_zero_ext:
+  forall m b ofs n,
+  store Mint8unsigned m b ofs (Vint (Int.zero_ext 8 n)) =
+
+Theorem store_int8_sign_ext:
+  forall m b ofs n,
+  store Mint8signed m b ofs (Vint (Int.sign_ext 8 n)) =
+
+Theorem store_int16_zero_ext:
+  forall m b ofs n,
+  store Mint16unsigned m b ofs (Vint (Int.zero_ext 16 n)) =
+
+Theorem store_int16_sign_ext:
+  forall m b ofs n,
+  store Mint16signed m b ofs (Vint (Int.sign_ext 16 n)) =
+
+Theorem range_perm_storebytes:
+  forall m1 b ofs bytes,
+  range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable ->
+
+Theorem storebytes_store:
+  forall m1 b ofs chunk v m2,
+  storebytes m1 b ofs (encode_val chunk v) = Some m2 ->
+  (align_chunk chunk | ofs) ->
+  store chunk m1 b ofs v = Some m2.
+
+Theorem store_storebytes:
+  forall m1 b ofs chunk v m2,
+  store chunk m1 b ofs v = Some m2 ->
+  storebytes m1 b ofs (encode_val chunk v) = Some m2.
+
+Section STOREBYTES.
+Variable m1: mem.
+Variable b: block.
+Variable ofs: Z.
+Variable bytes: list memval.
+Variable m2: mem.
+Hypothesis STORE: storebytes m1 b ofs bytes = Some m2.
+
+Lemma storebytes_access: mem_access m2 = mem_access m1.
+
+Lemma storebytes_mem_contents:
+   mem_contents m2 = PMap.set b (setN bytes ofs m1.(mem_contents)#b) m1.(mem_contents).
+
+Theorem perm_storebytes_1:
+  forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p.
+
+Theorem perm_storebytes_2:
+  forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
+
+Local Hint Resolve perm_storebytes_1 perm_storebytes_2: mem.
+
+Theorem storebytes_valid_access_1:
+  forall chunk' b' ofs' p,
+  valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
+
+Theorem storebytes_valid_access_2:
+  forall chunk' b' ofs' p,
+  valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
+
+Local Hint Resolve storebytes_valid_access_1 storebytes_valid_access_2: mem.
+
+Theorem nextblock_storebytes:
+  nextblock m2 = nextblock m1.
+
+Theorem storebytes_valid_block_1:
+  forall b', valid_block m1 b' -> valid_block m2 b'.
+
+Theorem storebytes_valid_block_2:
+  forall b', valid_block m2 b' -> valid_block m1 b'.
+
+Local Hint Resolve storebytes_valid_block_1 storebytes_valid_block_2: mem.
+
+Theorem storebytes_range_perm:
+  range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable.
+
+Theorem loadbytes_storebytes_same:
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) = Some bytes.
+
+Theorem loadbytes_storebytes_disjoint:
+  forall b' ofs' len,
+  len >= 0 ->
+  b' <> b \/ Intv.disjoint (ofs', ofs' + len) (ofs, ofs + Z.of_nat (length bytes)) ->
+
+Theorem loadbytes_storebytes_other:
+  forall b' ofs' len,
+  len >= 0 ->
+  b' <> b
+  \/ ofs' + len <= ofs
+  \/ ofs + Z.of_nat (length bytes) <= ofs' ->
+
+Theorem load_storebytes_other:
+  forall chunk b' ofs',
+  b' <> b
+  \/ ofs' + size_chunk chunk <= ofs
+  \/ ofs + Z.of_nat (length bytes) <= ofs' ->
+
+End STOREBYTES.
+
+Lemma setN_concat:
+  forall bytes1 bytes2 ofs c,
+  setN (bytes1 ++ bytes2) ofs c = setN bytes2 (ofs + Z.of_nat (length bytes1)) (setN bytes1 ofs c).
+
+Theorem storebytes_concat:
+  forall m b ofs bytes1 m1 bytes2 m2,
+  storebytes m b ofs bytes1 = Some m1 ->
+  storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 = Some m2 ->
+
+Theorem storebytes_split:
+  forall m b ofs bytes1 bytes2 m2,
+  storebytes m b ofs (bytes1 ++ bytes2) = Some m2 ->
+  exists m1,
+     storebytes m b ofs bytes1 = Some m1
+  /\ storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 = Some m2.
+
+Theorem store_int64_split:
+  forall m b ofs v m',
+  store Mint64 m b ofs v = Some m' -> Archi.ptr64 = false ->
+
+Theorem storev_int64_split:
+  forall m a v m',
+  storev Mint64 m a v = Some m' -> Archi.ptr64 = false ->
+
+Section ALLOC.
+
+Variable m1: mem.
+Variables lo hi: Z.
+Variable m2: mem.
+Variable b: block.
+Hypothesis ALLOC: alloc m1 lo hi = (m2, b).
+
+Theorem nextblock_alloc:
+  nextblock m2 = Pos.succ (nextblock m1).
+
+Theorem alloc_result:
+  b = nextblock m1.
+
+Theorem valid_block_alloc:
+  forall b', valid_block m1 b' -> valid_block m2 b'.
+
+Theorem fresh_block_alloc:
+  ~(valid_block m1 b).
+
+Theorem valid_new_block:
+  valid_block m2 b.
+
+Local Hint Resolve valid_block_alloc fresh_block_alloc valid_new_block: mem.
+
+Theorem valid_block_alloc_inv:
+  forall b', valid_block m2 b' -> b' = b \/ valid_block m1 b'.
+
+Theorem perm_alloc_1:
+  forall b' ofs k p, perm m1 b' ofs k p -> perm m2 b' ofs k p.
+
+Theorem perm_alloc_2:
+  forall ofs k, lo <= ofs < hi -> perm m2 b ofs k Freeable.
+
+Theorem perm_alloc_inv:
+  forall b' ofs k p,
+  perm m2 b' ofs k p ->
+  if eq_block b' b then lo <= ofs < hi else perm m1 b' ofs k p.
+
+Theorem perm_alloc_3:
+  forall ofs k p, perm m2 b ofs k p -> lo <= ofs < hi.
+
+Theorem perm_alloc_4:
+  forall b' ofs k p, perm m2 b' ofs k p -> b' <> b -> perm m1 b' ofs k p.
+
+Local Hint Resolve perm_alloc_1 perm_alloc_2 perm_alloc_3 perm_alloc_4: mem.
+
+Theorem valid_access_alloc_other:
+  forall chunk b' ofs p,
+  valid_access m1 chunk b' ofs p ->
+  valid_access m2 chunk b' ofs p.
+
+Theorem valid_access_alloc_same:
+  forall chunk ofs,
+  lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
+  valid_access m2 chunk b ofs Freeable.
+
+Local Hint Resolve valid_access_alloc_other valid_access_alloc_same: mem.
+
+Theorem valid_access_alloc_inv:
+  forall chunk b' ofs p,
+  valid_access m2 chunk b' ofs p ->
+  if eq_block b' b
+  then lo <= ofs /\ ofs + size_chunk chunk <= hi /\ (align_chunk chunk | ofs)
+  else valid_access m1 chunk b' ofs p.
+
+Theorem load_alloc_unchanged:
+  forall chunk b' ofs,
+  valid_block m1 b' ->
+  load chunk m2 b' ofs = load chunk m1 b' ofs.
+
+Theorem load_alloc_other:
+  forall chunk b' ofs v,
+  load chunk m1 b' ofs = Some v ->
+  load chunk m2 b' ofs = Some v.
+
+Theorem load_alloc_same:
+  forall chunk ofs v,
+  load chunk m2 b ofs = Some v ->
+  v = Vundef.
+
+Theorem load_alloc_same':
+  forall chunk ofs,
+  lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
+  load chunk m2 b ofs = Some Vundef.
+
+Theorem loadbytes_alloc_unchanged:
+  forall b' ofs n,
+  valid_block m1 b' ->
+  loadbytes m2 b' ofs n = loadbytes m1 b' ofs n.
+
+Theorem loadbytes_alloc_same:
+  forall n ofs bytes byte,
+  loadbytes m2 b ofs n = Some bytes ->
+  In byte bytes -> byte = Undef.
+
+End ALLOC.
+
+Local Hint Resolve valid_block_alloc fresh_block_alloc valid_new_block: mem.
+Local Hint Resolve valid_access_alloc_other valid_access_alloc_same: mem.
+
+Theorem range_perm_free:
+  forall m1 b lo hi,
+  range_perm m1 b lo hi Cur Freeable ->
+  { m2: mem | free m1 b lo hi = Some m2 }.
+
+Section FREE.
+
+Variable m1: mem.
+Variable bf: block.
+Variables lo hi: Z.
+Variable m2: mem.
+Hypothesis FREE: free m1 bf lo hi = Some m2.
+
+Theorem free_range_perm:
+  range_perm m1 bf lo hi Cur Freeable.
+
+Lemma free_result:
+  m2 = unchecked_free m1 bf lo hi.
+
+Theorem nextblock_free:
+  nextblock m2 = nextblock m1.
+
+Theorem valid_block_free_1:
+  forall b, valid_block m1 b -> valid_block m2 b.
+
+Theorem valid_block_free_2:
+  forall b, valid_block m2 b -> valid_block m1 b.
+
+Local Hint Resolve valid_block_free_1 valid_block_free_2: mem.
+
+Theorem perm_free_1:
+  forall b ofs k p,
+  b <> bf \/ ofs < lo \/ hi <= ofs ->
+  perm m1 b ofs k p ->
+  perm m2 b ofs k p.
+
+Theorem perm_free_2:
+  forall ofs k p, lo <= ofs < hi -> ~ perm m2 bf ofs k p.
+
+Theorem perm_free_3:
+  forall b ofs k p,
+  perm m2 b ofs k p -> perm m1 b ofs k p.
+
+Theorem perm_free_inv:
+  forall b ofs k p,
+  perm m1 b ofs k p ->
+  (b = bf /\ lo <= ofs < hi) \/ perm m2 b ofs k p.
+
+Theorem valid_access_free_1:
+  forall chunk b ofs p,
+  valid_access m1 chunk b ofs p ->
+  b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
+  valid_access m2 chunk b ofs p.
+
+Theorem valid_access_free_2:
+  forall chunk ofs p,
+  lo < hi -> ofs + size_chunk chunk > lo -> ofs < hi ->
+  ~(valid_access m2 chunk bf ofs p).
+
+Theorem valid_access_free_inv_1:
+  forall chunk b ofs p,
+  valid_access m2 chunk b ofs p ->
+  valid_access m1 chunk b ofs p.
+
+Theorem valid_access_free_inv_2:
+  forall chunk ofs p,
+  valid_access m2 chunk bf ofs p ->
+  lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs.
+
+Theorem load_free:
+  forall chunk b ofs,
+  b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
+  load chunk m2 b ofs = load chunk m1 b ofs.
+
+Theorem load_free_2:
+  forall chunk b ofs v,
+  load chunk m2 b ofs = Some v -> load chunk m1 b ofs = Some v.
+
+Theorem loadbytes_free:
+  forall b ofs n,
+  b <> bf \/ lo >= hi \/ ofs + n <= lo \/ hi <= ofs ->
+  loadbytes m2 b ofs n = loadbytes m1 b ofs n.
+
+Theorem loadbytes_free_2:
+  forall b ofs n bytes,
+  loadbytes m2 b ofs n = Some bytes -> loadbytes m1 b ofs n = Some bytes.
+
+End FREE.
+
+Local Hint Resolve valid_block_free_1 valid_block_free_2
+             perm_free_1 perm_free_2 perm_free_3
+             valid_access_free_1 valid_access_free_inv_1: mem.
+
+Theorem range_perm_drop_1:
+  forall m b lo hi p m', drop_perm m b lo hi p = Some m' -> range_perm m b lo hi Cur Freeable.
+
+Theorem range_perm_drop_2:
+  forall m b lo hi p,
+  range_perm m b lo hi Cur Freeable -> {m' | drop_perm m b lo hi p = Some m' }.
+
+Section DROP.
+
+Variable m: mem.
+Variable b: block.
+Variable lo hi: Z.
+Variable p: permission.
+Variable m': mem.
+Hypothesis DROP: drop_perm m b lo hi p = Some m'.
+
+Theorem nextblock_drop:
+  nextblock m' = nextblock m.
+
+Theorem drop_perm_valid_block_1:
+  forall b', valid_block m b' -> valid_block m' b'.
+
+Theorem drop_perm_valid_block_2:
+  forall b', valid_block m' b' -> valid_block m b'.
+
+Theorem perm_drop_1:
+  forall ofs k, lo <= ofs < hi -> perm m' b ofs k p.
+
+Theorem perm_drop_2:
+  forall ofs k p', lo <= ofs < hi -> perm m' b ofs k p' -> perm_order p p'.
+
+Theorem perm_drop_3:
+  forall b' ofs k p', b' <> b \/ ofs < lo \/ hi <= ofs -> perm m b' ofs k p' -> perm m' b' ofs k p'.
+
+Theorem perm_drop_4:
+  forall b' ofs k p', perm m' b' ofs k p' -> perm m b' ofs k p'.
+
+Lemma valid_access_drop_1:
+  forall chunk b' ofs p',
+  b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p p' ->
+  valid_access m chunk b' ofs p' -> valid_access m' chunk b' ofs p'.
+
+Lemma valid_access_drop_2:
+  forall chunk b' ofs p',
+  valid_access m' chunk b' ofs p' -> valid_access m chunk b' ofs p'.
+
+Theorem load_drop:
+  forall chunk b' ofs,
+  b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
+  load chunk m' b' ofs = load chunk m b' ofs.
+
+Theorem loadbytes_drop:
+  forall b' ofs n,
+  b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable ->
+  loadbytes m' b' ofs n = loadbytes m b' ofs n.
+
+End DROP.
+
+Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
+  mk_mem_inj {
+    mi_perm:
+      forall b1 b2 delta ofs k p,
+      f b1 = Some(b2, delta) ->
+      perm m1 b1 ofs k p ->
+      perm m2 b2 (ofs + delta) k p;
+    mi_align:
+      forall b1 b2 delta chunk ofs p,
+      f b1 = Some(b2, delta) ->
+      range_perm m1 b1 ofs (ofs + size_chunk chunk) Max p ->
+      (align_chunk chunk | delta);
+    mi_memval:
+      forall b1 ofs b2 delta,
+      f b1 = Some(b2, delta) ->
+      perm m1 b1 ofs Cur Readable ->
+      memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2)
+  }.
+
+Lemma perm_inj:
+  forall f m1 m2 b1 ofs k p b2 delta,
+  mem_inj f m1 m2 ->
+  perm m1 b1 ofs k p ->
+  f b1 = Some(b2, delta) ->
+  perm m2 b2 (ofs + delta) k p.
+
+Lemma range_perm_inj:
+  forall f m1 m2 b1 lo hi k p b2 delta,
+  mem_inj f m1 m2 ->
+  range_perm m1 b1 lo hi k p ->
+  f b1 = Some(b2, delta) ->
+  range_perm m2 b2 (lo + delta) (hi + delta) k p.
+
+Lemma valid_access_inj:
+  forall f m1 m2 b1 b2 delta chunk ofs p,
+  mem_inj f m1 m2 ->
+  f b1 = Some(b2, delta) ->
+  valid_access m1 chunk b1 ofs p ->
+  valid_access m2 chunk b2 (ofs + delta) p.
+
+Lemma getN_inj:
+  forall f m1 m2 b1 b2 delta,
+  mem_inj f m1 m2 ->
+  f b1 = Some(b2, delta) ->
+  forall n ofs,
+  range_perm m1 b1 ofs (ofs + Z.of_nat n) Cur Readable ->
+
+Lemma load_inj:
+  forall f m1 m2 chunk b1 ofs b2 delta v1,
+  mem_inj f m1 m2 ->
+  load chunk m1 b1 ofs = Some v1 ->
+  f b1 = Some (b2, delta) ->
+  exists v2, load chunk m2 b2 (ofs + delta) = Some v2 /\ Val.inject f v1 v2.
+
+Lemma loadbytes_inj:
+  forall f m1 m2 len b1 ofs b2 delta bytes1,
+  mem_inj f m1 m2 ->
+  loadbytes m1 b1 ofs len = Some bytes1 ->
+  f b1 = Some (b2, delta) ->
+  exists bytes2, loadbytes m2 b2 (ofs + delta) len = Some bytes2
+              /\ list_forall2 (memval_inject f) bytes1 bytes2.
+
+Lemma setN_inj:
+  forall (access: Z -> Prop) delta f vl1 vl2,
+  list_forall2 (memval_inject f) vl1 vl2 ->
+  forall p c1 c2,
+  (forall q, access q -> memval_inject f (ZMap.get q c1) (ZMap.get (q + delta) c2)) ->
+
+Definition meminj_no_overlap (f: meminj) (m: mem) : Prop :=
+  forall b1 b1' delta1 b2 b2' delta2 ofs1 ofs2,
+  b1 <> b2 ->
+  f b1 = Some (b1', delta1) ->
+  f b2 = Some (b2', delta2) ->
+  perm m b1 ofs1 Max Nonempty ->
+  perm m b2 ofs2 Max Nonempty ->
+  b1' <> b2' \/ ofs1 + delta1 <> ofs2 + delta2.
+
+Lemma store_mapped_inj:
+  forall f chunk m1 b1 ofs v1 n1 m2 b2 delta v2,
+  mem_inj f m1 m2 ->
+  store chunk m1 b1 ofs v1 = Some n1 ->
+  meminj_no_overlap f m1 ->
+  f b1 = Some (b2, delta) ->
+  Val.inject f v1 v2 ->
+
+Lemma store_unmapped_inj:
+  forall f chunk m1 b1 ofs v1 n1 m2,
+  mem_inj f m1 m2 ->
+  store chunk m1 b1 ofs v1 = Some n1 ->
+  f b1 = None ->
+  mem_inj f n1 m2.
+
+Lemma store_outside_inj:
+  forall f m1 m2 chunk b ofs v m2',
+  mem_inj f m1 m2 ->
+  (forall b' delta ofs',
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' Cur Readable ->
+    ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
+  store chunk m2 b ofs v = Some m2' ->
+  mem_inj f m1 m2'.
+
+Lemma storebytes_mapped_inj:
+  forall f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2,
+  mem_inj f m1 m2 ->
+  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  meminj_no_overlap f m1 ->
+  f b1 = Some (b2, delta) ->
+  list_forall2 (memval_inject f) bytes1 bytes2 ->
+  exists n2,
+    storebytes m2 b2 (ofs + delta) bytes2 = Some n2
+    /\ mem_inj f n1 n2.
+
+Lemma storebytes_unmapped_inj:
+  forall f m1 b1 ofs bytes1 n1 m2,
+  mem_inj f m1 m2 ->
+  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  f b1 = None ->
+  mem_inj f n1 m2.
+
+Lemma storebytes_outside_inj:
+  forall f m1 m2 b ofs bytes2 m2',
+  mem_inj f m1 m2 ->
+  (forall b' delta ofs',
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' Cur Readable ->
+    ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) ->
+
+Lemma storebytes_empty_inj:
+  forall f m1 b1 ofs1 m1' m2 b2 ofs2 m2',
+  mem_inj f m1 m2 ->
+  storebytes m1 b1 ofs1 nil = Some m1' ->
+  storebytes m2 b2 ofs2 nil = Some m2' ->
+  mem_inj f m1' m2'.
+
+Lemma alloc_right_inj:
+  forall f m1 m2 lo hi b2 m2',
+  mem_inj f m1 m2 ->
+  alloc m2 lo hi = (m2', b2) ->
+  mem_inj f m1 m2'.
+
+Lemma alloc_left_unmapped_inj:
+  forall f m1 m2 lo hi m1' b1,
+  mem_inj f m1 m2 ->
+  alloc m1 lo hi = (m1', b1) ->
+  f b1 = None ->
+  mem_inj f m1' m2.
+
+Definition inj_offset_aligned (delta: Z) (size: Z) : Prop :=
+  forall chunk, size_chunk chunk <= size -> (align_chunk chunk | delta).
+
+Lemma alloc_left_mapped_inj:
+  forall f m1 m2 lo hi m1' b1 b2 delta,
+  mem_inj f m1 m2 ->
+  alloc m1 lo hi = (m1', b1) ->
+  valid_block m2 b2 ->
+  inj_offset_aligned delta (hi-lo) ->
+  (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+  f b1 = Some(b2, delta) ->
+  mem_inj f m1' m2.
+
+Lemma free_left_inj:
+  forall f m1 m2 b lo hi m1',
+  mem_inj f m1 m2 ->
+  free m1 b lo hi = Some m1' ->
+  mem_inj f m1' m2.
+
+Lemma free_right_inj:
+  forall f m1 m2 b lo hi m2',
+  mem_inj f m1 m2 ->
+  free m2 b lo hi = Some m2' ->
+  (forall b' delta ofs k p,
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
+  mem_inj f m1 m2'.
+
+Lemma drop_unmapped_inj:
+  forall f m1 m2 b lo hi p m1',
+  mem_inj f m1 m2 ->
+  drop_perm m1 b lo hi p = Some m1' ->
+  f b = None ->
+  mem_inj f m1' m2.
+
+Lemma drop_mapped_inj:
+  forall f m1 m2 b1 b2 delta lo hi p m1',
+  mem_inj f m1 m2 ->
+  drop_perm m1 b1 lo hi p = Some m1' ->
+  meminj_no_overlap f m1 ->
+  f b1 = Some(b2, delta) ->
+  exists m2',
+      drop_perm m2 b2 (lo + delta) (hi + delta) p = Some m2'
+   /\ mem_inj f m1' m2'.
+
+Lemma drop_outside_inj: forall f m1 m2 b lo hi p m2',
+  mem_inj f m1 m2 ->
+  drop_perm m2 b lo hi p = Some m2' ->
+  (forall b' delta ofs' k p,
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' k p ->
+    lo <= ofs' + delta < hi -> False) ->
+  mem_inj f m1 m2'.
+
+Record extends' (m1 m2: mem) : Prop :=
+  mk_extends {
+    mext_next: nextblock m1 = nextblock m2;
+    mext_inj:  mem_inj inject_id m1 m2;
+    mext_perm_inv: forall b ofs k p,
+      perm m2 b ofs k p ->
+      perm m1 b ofs k p \/ ~perm m1 b ofs Max Nonempty
+  }.
+
+Definition extends := extends'.
+
+Theorem extends_refl:
+  forall m, extends m m.
+
+Theorem load_extends:
+  forall chunk m1 m2 b ofs v1,
+  extends m1 m2 ->
+  load chunk m1 b ofs = Some v1 ->
+  exists v2, load chunk m2 b ofs = Some v2 /\ Val.lessdef v1 v2.
+
+Theorem loadv_extends:
+  forall chunk m1 m2 addr1 addr2 v1,
+  extends m1 m2 ->
+  loadv chunk m1 addr1 = Some v1 ->
+  Val.lessdef addr1 addr2 ->
+
+Theorem loadbytes_extends:
+  forall m1 m2 b ofs len bytes1,
+  extends m1 m2 ->
+  loadbytes m1 b ofs len = Some bytes1 ->
+  exists bytes2, loadbytes m2 b ofs len = Some bytes2
+              /\ list_forall2 memval_lessdef bytes1 bytes2.
+
+Theorem store_within_extends:
+  forall chunk m1 m2 b ofs v1 m1' v2,
+  extends m1 m2 ->
+  store chunk m1 b ofs v1 = Some m1' ->
+  Val.lessdef v1 v2 ->
+
+Theorem store_outside_extends:
+  forall chunk m1 m2 b ofs v m2',
+  extends m1 m2 ->
+  store chunk m2 b ofs v = Some m2' ->
+  (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + size_chunk chunk -> False) ->
+  extends m1 m2'.
+
+Theorem storev_extends:
+  forall chunk m1 m2 addr1 v1 m1' addr2 v2,
+  extends m1 m2 ->
+  storev chunk m1 addr1 v1 = Some m1' ->
+  Val.lessdef addr1 addr2 ->
+
+Theorem storebytes_within_extends:
+  forall m1 m2 b ofs bytes1 m1' bytes2,
+  extends m1 m2 ->
+  storebytes m1 b ofs bytes1 = Some m1' ->
+  list_forall2 memval_lessdef bytes1 bytes2 ->
+  exists m2',
+     storebytes m2 b ofs bytes2 = Some m2'
+  /\ extends m1' m2'.
+
+Theorem storebytes_outside_extends:
+  forall m1 m2 b ofs bytes2 m2',
+  extends m1 m2 ->
+  storebytes m2 b ofs bytes2 = Some m2' ->
+  (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + Z.of_nat (length bytes2) -> False) ->
+
+Theorem alloc_extends:
+  forall m1 m2 lo1 hi1 b m1' lo2 hi2,
+  extends m1 m2 ->
+  alloc m1 lo1 hi1 = (m1', b) ->
+  lo2 <= lo1 -> hi1 <= hi2 ->
+  exists m2',
+     alloc m2 lo2 hi2 = (m2', b)
+  /\ extends m1' m2'.
+
+Theorem free_left_extends:
+  forall m1 m2 b lo hi m1',
+  extends m1 m2 ->
+  free m1 b lo hi = Some m1' ->
+  extends m1' m2.
+
+Theorem free_right_extends:
+  forall m1 m2 b lo hi m2',
+  extends m1 m2 ->
+  free m2 b lo hi = Some m2' ->
+  (forall ofs k p, perm m1 b ofs k p -> lo <= ofs < hi -> False) ->
+  extends m1 m2'.
+
+Theorem free_parallel_extends:
+  forall m1 m2 b lo hi m1',
+  extends m1 m2 ->
+  free m1 b lo hi = Some m1' ->
+  exists m2',
+     free m2 b lo hi = Some m2'
+  /\ extends m1' m2'.
+
+Theorem valid_block_extends:
+  forall m1 m2 b,
+  extends m1 m2 ->
+  (valid_block m1 b <-> valid_block m2 b).
+
+Theorem perm_extends:
+  forall m1 m2 b ofs k p,
+  extends m1 m2 -> perm m1 b ofs k p -> perm m2 b ofs k p.
+
+Theorem perm_extends_inv:
+  forall m1 m2 b ofs k p,
+  extends m1 m2 -> perm m2 b ofs k p -> perm m1 b ofs k p \/ ~perm m1 b ofs Max Nonempty.
+
+Theorem valid_access_extends:
+  forall m1 m2 chunk b ofs p,
+  extends m1 m2 -> valid_access m1 chunk b ofs p -> valid_access m2 chunk b ofs p.
+
+Theorem valid_pointer_extends:
+  forall m1 m2 b ofs,
+  extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true.
+
+Theorem weak_valid_pointer_extends:
+  forall m1 m2 b ofs,
+  extends m1 m2 ->
+  weak_valid_pointer m1 b ofs = true -> weak_valid_pointer m2 b ofs = true.
+
+Record inject' (f: meminj) (m1 m2: mem) : Prop :=
+  mk_inject {
+    mi_inj:
+      mem_inj f m1 m2;
+    mi_freeblocks:
+      forall b, ~(valid_block m1 b) -> f b = None;
+    mi_mappedblocks:
+      forall b b' delta, f b = Some(b', delta) -> valid_block m2 b';
+    mi_no_overlap:
+      meminj_no_overlap f m1;
+    mi_representable:
+      forall b b' delta ofs,
+      f b = Some(b', delta) ->
+      perm m1 b (Ptrofs.unsigned ofs) Max Nonempty \/ perm m1 b (Ptrofs.unsigned ofs - 1) Max Nonempty ->
+      delta >= 0 /\ 0 <= Ptrofs.unsigned ofs + delta <= Ptrofs.max_unsigned;
+    mi_perm_inv:
+      forall b1 ofs b2 delta k p,
+      f b1 = Some(b2, delta) ->
+      perm m2 b2 (ofs + delta) k p ->
+      perm m1 b1 ofs k p \/ ~perm m1 b1 ofs Max Nonempty
+  }.
+Definition inject := inject'.
+
+Local Hint Resolve mi_mappedblocks: mem.
+
+Theorem valid_block_inject_1:
+  forall f m1 m2 b1 b2 delta,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  valid_block m1 b1.
+
+Theorem valid_block_inject_2:
+  forall f m1 m2 b1 b2 delta,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  valid_block m2 b2.
+
+Local Hint Resolve valid_block_inject_1 valid_block_inject_2: mem.
+
+Theorem perm_inject:
+  forall f m1 m2 b1 b2 delta ofs k p,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  perm m1 b1 ofs k p -> perm m2 b2 (ofs + delta) k p.
+
+Theorem perm_inject_inv:
+  forall f m1 m2 b1 ofs b2 delta k p,
+  inject f m1 m2 ->
+  f b1 = Some(b2, delta) ->
+  perm m2 b2 (ofs + delta) k p ->
+  perm m1 b1 ofs k p \/ ~perm m1 b1 ofs Max Nonempty.
+
+Theorem range_perm_inject:
+  forall f m1 m2 b1 b2 delta lo hi k p,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  range_perm m1 b1 lo hi k p -> range_perm m2 b2 (lo + delta) (hi + delta) k p.
+
+Theorem valid_access_inject:
+  forall f m1 m2 chunk b1 ofs b2 delta p,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  valid_access m1 chunk b1 ofs p ->
+  valid_access m2 chunk b2 (ofs + delta) p.
+
+Theorem valid_pointer_inject:
+  forall f m1 m2 b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  valid_pointer m1 b1 ofs = true ->
+  valid_pointer m2 b2 (ofs + delta) = true.
+
+Theorem weak_valid_pointer_inject:
+  forall f m1 m2 b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  inject f m1 m2 ->
+  weak_valid_pointer m1 b1 ofs = true ->
+  weak_valid_pointer m2 b2 (ofs + delta) = true.
+
+Lemma address_inject:
+  forall f m1 m2 b1 ofs1 b2 delta p,
+  inject f m1 m2 ->
+  perm m1 b1 (Ptrofs.unsigned ofs1) Cur p ->
+
+Lemma address_inject':
+  forall f m1 m2 chunk b1 ofs1 b2 delta,
+  inject f m1 m2 ->
+  valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty ->
+
+Theorem weak_valid_pointer_inject_no_overflow:
+  forall f m1 m2 b ofs b' delta,
+  inject f m1 m2 ->
+  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+
+Theorem valid_pointer_inject_no_overflow:
+  forall f m1 m2 b ofs b' delta,
+  inject f m1 m2 ->
+  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+
+Theorem valid_pointer_inject_val:
+  forall f m1 m2 b ofs b' ofs',
+  inject f m1 m2 ->
+  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+
+Theorem weak_valid_pointer_inject_val:
+  forall f m1 m2 b ofs b' ofs',
+  inject f m1 m2 ->
+  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+
+Theorem inject_no_overlap:
+  forall f m1 m2 b1 b2 b1' b2' delta1 delta2 ofs1 ofs2,
+  inject f m1 m2 ->
+  b1 <> b2 ->
+  f b1 = Some (b1', delta1) ->
+  f b2 = Some (b2', delta2) ->
+  perm m1 b1 ofs1 Max Nonempty ->
+  perm m1 b2 ofs2 Max Nonempty ->
+  b1' <> b2' \/ ofs1 + delta1 <> ofs2 + delta2.
+
+Theorem different_pointers_inject:
+  forall f m m' b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  inject f m m' ->
+  b1 <> b2 ->
+  valid_pointer m b1 (Ptrofs.unsigned ofs1) = true ->
+
+Theorem disjoint_or_equal_inject:
+  forall f m m' b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 sz,
+  inject f m m' ->
+  f b1 = Some(b1', delta1) ->
+  f b2 = Some(b2', delta2) ->
+  range_perm m b1 ofs1 (ofs1 + sz) Max Nonempty ->
+  range_perm m b2 ofs2 (ofs2 + sz) Max Nonempty ->
+  sz > 0 ->
+  b1 <> b2 \/ ofs1 = ofs2 \/ ofs1 + sz <= ofs2 \/ ofs2 + sz <= ofs1 ->
+  b1' <> b2' \/ ofs1 + delta1 = ofs2 + delta2
+             \/ ofs1 + delta1 + sz <= ofs2 + delta2
+             \/ ofs2 + delta2 + sz <= ofs1 + delta1.
+
+Theorem aligned_area_inject:
+  forall f m m' b ofs al sz b' delta,
+  inject f m m' ->
+  al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz > 0 ->
+  (al | sz) ->
+  range_perm m b ofs (ofs + sz) Cur Nonempty ->
+  (al | ofs) ->
+  f b = Some(b', delta) ->
+  (al | ofs + delta).
+
+Theorem load_inject:
+  forall f m1 m2 chunk b1 ofs b2 delta v1,
+  inject f m1 m2 ->
+  load chunk m1 b1 ofs = Some v1 ->
+  f b1 = Some (b2, delta) ->
+  exists v2, load chunk m2 b2 (ofs + delta) = Some v2 /\ Val.inject f v1 v2.
+
+Theorem loadv_inject:
+  forall f m1 m2 chunk a1 a2 v1,
+  inject f m1 m2 ->
+  loadv chunk m1 a1 = Some v1 ->
+  Val.inject f a1 a2 ->
+
+Theorem loadbytes_inject:
+  forall f m1 m2 b1 ofs len b2 delta bytes1,
+  inject f m1 m2 ->
+  loadbytes m1 b1 ofs len = Some bytes1 ->
+  f b1 = Some (b2, delta) ->
+  exists bytes2, loadbytes m2 b2 (ofs + delta) len = Some bytes2
+              /\ list_forall2 (memval_inject f) bytes1 bytes2.
+
+Theorem store_mapped_inject:
+  forall f chunk m1 b1 ofs v1 n1 m2 b2 delta v2,
+  inject f m1 m2 ->
+  store chunk m1 b1 ofs v1 = Some n1 ->
+  f b1 = Some (b2, delta) ->
+  Val.inject f v1 v2 ->
+
+Theorem store_unmapped_inject:
+  forall f chunk m1 b1 ofs v1 n1 m2,
+  inject f m1 m2 ->
+  store chunk m1 b1 ofs v1 = Some n1 ->
+  f b1 = None ->
+  inject f n1 m2.
+
+Theorem store_outside_inject:
+  forall f m1 m2 chunk b ofs v m2',
+  inject f m1 m2 ->
+  (forall b' delta ofs',
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' Cur Readable ->
+    ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
+  store chunk m2 b ofs v = Some m2' ->
+  inject f m1 m2'.
+
+Theorem storev_mapped_inject:
+  forall f chunk m1 a1 v1 n1 m2 a2 v2,
+  inject f m1 m2 ->
+  storev chunk m1 a1 v1 = Some n1 ->
+  Val.inject f a1 a2 ->
+
+Theorem storebytes_mapped_inject:
+  forall f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2,
+  inject f m1 m2 ->
+  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  f b1 = Some (b2, delta) ->
+  list_forall2 (memval_inject f) bytes1 bytes2 ->
+  exists n2,
+    storebytes m2 b2 (ofs + delta) bytes2 = Some n2
+    /\ inject f n1 n2.
+
+Theorem storebytes_unmapped_inject:
+  forall f m1 b1 ofs bytes1 n1 m2,
+  inject f m1 m2 ->
+  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  f b1 = None ->
+  inject f n1 m2.
+
+Theorem storebytes_outside_inject:
+  forall f m1 m2 b ofs bytes2 m2',
+  inject f m1 m2 ->
+  (forall b' delta ofs',
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' Cur Readable ->
+    ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) ->
+
+Theorem storebytes_empty_inject:
+  forall f m1 b1 ofs1 m1' m2 b2 ofs2 m2',
+  inject f m1 m2 ->
+  storebytes m1 b1 ofs1 nil = Some m1' ->
+  storebytes m2 b2 ofs2 nil = Some m2' ->
+  inject f m1' m2'.
+
+Theorem alloc_right_inject:
+  forall f m1 m2 lo hi b2 m2',
+  inject f m1 m2 ->
+  alloc m2 lo hi = (m2', b2) ->
+  inject f m1 m2'.
+
+Theorem alloc_left_unmapped_inject:
+  forall f m1 m2 lo hi m1' b1,
+  inject f m1 m2 ->
+  alloc m1 lo hi = (m1', b1) ->
+  exists f',
+     inject f' m1' m2
+  /\ inject_incr f f'
+  /\ f' b1 = None
+  /\ (forall b, b <> b1 -> f' b = f b).
+
+Theorem alloc_left_mapped_inject:
+  forall f m1 m2 lo hi m1' b1 b2 delta,
+  inject f m1 m2 ->
+  alloc m1 lo hi = (m1', b1) ->
+  valid_block m2 b2 ->
+  0 <= delta <= Ptrofs.max_unsigned ->
+
+Theorem alloc_parallel_inject:
+  forall f m1 m2 lo1 hi1 m1' b1 lo2 hi2,
+  inject f m1 m2 ->
+  alloc m1 lo1 hi1 = (m1', b1) ->
+  lo2 <= lo1 -> hi1 <= hi2 ->
+  exists f', exists m2', exists b2,
+  alloc m2 lo2 hi2 = (m2', b2)
+  /\ inject f' m1' m2'
+  /\ inject_incr f f'
+  /\ f' b1 = Some(b2, 0)
+  /\ (forall b, b <> b1 -> f' b = f b).
+
+Lemma free_left_inject:
+  forall f m1 m2 b lo hi m1',
+  inject f m1 m2 ->
+  free m1 b lo hi = Some m1' ->
+  inject f m1' m2.
+
+Lemma free_list_left_inject:
+  forall f m2 l m1 m1',
+  inject f m1 m2 ->
+  free_list m1 l = Some m1' ->
+  inject f m1' m2.
+
+Lemma free_right_inject:
+  forall f m1 m2 b lo hi m2',
+  inject f m1 m2 ->
+  free m2 b lo hi = Some m2' ->
+  (forall b1 delta ofs k p,
+    f b1 = Some(b, delta) -> perm m1 b1 ofs k p ->
+    lo <= ofs + delta < hi -> False) ->
+  inject f m1 m2'.
+
+Lemma perm_free_list:
+  forall l m m' b ofs k p,
+  free_list m l = Some m' ->
+  perm m' b ofs k p ->
+  perm m b ofs k p /\
+  (forall lo hi, In (b, lo, hi) l -> lo <= ofs < hi -> False).
+
+Theorem free_inject:
+  forall f m1 l m1' m2 b lo hi m2',
+  inject f m1 m2 ->
+  free_list m1 l = Some m1' ->
+  free m2 b lo hi = Some m2' ->
+  (forall b1 delta ofs k p,
+    f b1 = Some(b, delta) ->
+    perm m1 b1 ofs k p -> lo <= ofs + delta < hi ->
+    exists lo1, exists hi1, In (b1, lo1, hi1) l /\ lo1 <= ofs < hi1) ->
+  inject f m1' m2'.
+
+Theorem free_parallel_inject:
+  forall f m1 m2 b lo hi m1' b' delta,
+  inject f m1 m2 ->
+  free m1 b lo hi = Some m1' ->
+  f b = Some(b', delta) ->
+  exists m2',
+     free m2 b' (lo + delta) (hi + delta) = Some m2'
+  /\ inject f m1' m2'.
+
+Lemma drop_outside_inject: forall f m1 m2 b lo hi p m2',
+  inject f m1 m2 ->
+  drop_perm m2 b lo hi p = Some m2' ->
+  (forall b' delta ofs k p,
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
+  inject f m1 m2'.
+
+Lemma mem_inj_compose:
+  forall f f' m1 m2 m3,
+  mem_inj f m1 m2 -> mem_inj f' m2 m3 -> mem_inj (compose_meminj f f') m1 m3.
+
+Theorem inject_compose:
+  forall f f' m1 m2 m3,
+  inject f m1 m2 -> inject f' m2 m3 ->
+  inject (compose_meminj f f') m1 m3.
+
+Lemma val_lessdef_inject_compose:
+  forall f v1 v2 v3,
+  Val.lessdef v1 v2 -> Val.inject f v2 v3 -> Val.inject f v1 v3.
+
+Lemma val_inject_lessdef_compose:
+  forall f v1 v2 v3,
+  Val.inject f v1 v2 -> Val.lessdef v2 v3 -> Val.inject f v1 v3.
+
+Lemma extends_inject_compose:
+  forall f m1 m2 m3,
+  extends m1 m2 -> inject f m2 m3 -> inject f m1 m3.
+
+Lemma inject_extends_compose:
+  forall f m1 m2 m3,
+  inject f m1 m2 -> extends m2 m3 -> inject f m1 m3.
+
+Lemma extends_extends_compose:
+  forall m1 m2 m3,
+  extends m1 m2 -> extends m2 m3 -> extends m1 m3.
+
+Definition flat_inj (thr: block) : meminj :=
+  fun (b: block) => if plt b thr then Some(b, 0) else None.
+
+Definition inject_neutral (thr: block) (m: mem) :=
+  mem_inj (flat_inj thr) m m.
+
+Remark flat_inj_no_overlap:
+  forall thr m, meminj_no_overlap (flat_inj thr) m.
+
+Theorem neutral_inject:
+  forall m, inject_neutral (nextblock m) m -> inject (flat_inj (nextblock m)) m m.
+
+Theorem empty_inject_neutral:
+  forall thr, inject_neutral thr empty.
+
+Theorem alloc_inject_neutral:
+  forall thr m lo hi b m',
+  alloc m lo hi = (m', b) ->
+  inject_neutral thr m ->
+  Plt (nextblock m) thr ->
+  inject_neutral thr m'.
+
+Theorem store_inject_neutral:
+  forall chunk m b ofs v m' thr,
+  store chunk m b ofs v = Some m' ->
+  inject_neutral thr m ->
+  Plt b thr ->
+  Val.inject (flat_inj thr) v v ->
+
+Theorem drop_inject_neutral:
+  forall m b lo hi p m' thr,
+  drop_perm m b lo hi p = Some m' ->
+  inject_neutral thr m ->
+  Plt b thr ->
+  inject_neutral thr m'.
+
+Section UNCHANGED_ON.
+
+Variable P: block -> Z -> Prop.
+
+Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
+  unchanged_on_nextblock:
+    Ple (nextblock m_before) (nextblock m_after);
+  unchanged_on_perm:
+    forall b ofs k p,
+    P b ofs -> valid_block m_before b ->
+    (perm m_before b ofs k p <-> perm m_after b ofs k p);
+  unchanged_on_contents:
+    forall b ofs,
+    P b ofs -> perm m_before b ofs Cur Readable ->
+    ZMap.get ofs (PMap.get b m_after.(mem_contents)) =
+    ZMap.get ofs (PMap.get b m_before.(mem_contents))
+}.
+
+Lemma unchanged_on_refl:
+  forall m, unchanged_on m m.
+
+Lemma valid_block_unchanged_on:
+  forall m m' b,
+  unchanged_on m m' -> valid_block m b -> valid_block m' b.
+
+Lemma perm_unchanged_on:
+  forall m m' b ofs k p,
+  unchanged_on m m' -> P b ofs ->
+  perm m b ofs k p -> perm m' b ofs k p.
+
+Lemma perm_unchanged_on_2:
+  forall m m' b ofs k p,
+  unchanged_on m m' -> P b ofs -> valid_block m b ->
+  perm m' b ofs k p -> perm m b ofs k p.
+
+Lemma unchanged_on_trans:
+  forall m1 m2 m3, unchanged_on m1 m2 -> unchanged_on m2 m3 -> unchanged_on m1 m3.
+
+Lemma loadbytes_unchanged_on_1:
+  forall m m' b ofs n,
+  unchanged_on m m' ->
+  valid_block m b ->
+  (forall i, ofs <= i < ofs + n -> P b i) ->
+  loadbytes m' b ofs n = loadbytes m b ofs n.
+
+Lemma loadbytes_unchanged_on:
+  forall m m' b ofs n bytes,
+  unchanged_on m m' ->
+  (forall i, ofs <= i < ofs + n -> P b i) ->
+  loadbytes m b ofs n = Some bytes ->
+  loadbytes m' b ofs n = Some bytes.
+
+Lemma load_unchanged_on_1:
+  forall m m' chunk b ofs,
+  unchanged_on m m' ->
+  valid_block m b ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+  load chunk m' b ofs = load chunk m b ofs.
+
+Lemma load_unchanged_on:
+  forall m m' chunk b ofs v,
+  unchanged_on m m' ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+  load chunk m b ofs = Some v ->
+  load chunk m' b ofs = Some v.
+
+Lemma store_unchanged_on:
+  forall chunk m b ofs v m',
+  store chunk m b ofs v = Some m' ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+  unchanged_on m m'.
+
+Lemma storebytes_unchanged_on:
+  forall m b ofs bytes m',
+  storebytes m b ofs bytes = Some m' ->
+  (forall i, ofs <= i < ofs + Z.of_nat (length bytes) -> ~ P b i) ->
+
+Lemma alloc_unchanged_on:
+  forall m lo hi m' b,
+  alloc m lo hi = (m', b) ->
+  unchanged_on m m'.
+
+Lemma free_unchanged_on:
+  forall m b lo hi m',
+  free m b lo hi = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  unchanged_on m m'.
+
+Lemma drop_perm_unchanged_on:
+  forall m b lo hi p m',
+  drop_perm m b lo hi p = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  unchanged_on m m'.
+
+End UNCHANGED_ON.
+
+Lemma unchanged_on_implies:
+  forall (P Q: block -> Z -> Prop) m m',
+  unchanged_on P m m' ->
+  (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
+  unchanged_on Q m m'.
+
+End Mem.
+
+Notation mem := Mem.mem.
+
+Global Opaque Mem.alloc Mem.free Mem.store Mem.load Mem.storebytes Mem.loadbytes.
+
+Hint Resolve
+  Mem.valid_not_valid_diff
+  Mem.perm_implies
+  Mem.perm_cur
+  Mem.perm_max
+  Mem.perm_valid_block
+  Mem.range_perm_implies
+  Mem.range_perm_cur
+  Mem.range_perm_max
+  Mem.valid_access_implies
+  Mem.valid_access_valid_block
+  Mem.valid_access_perm
+  Mem.valid_access_load
+  Mem.load_valid_access
+  Mem.loadbytes_range_perm
+  Mem.valid_access_store
+  Mem.perm_store_1
+  Mem.perm_store_2
+  Mem.nextblock_store
+  Mem.store_valid_block_1
+  Mem.store_valid_block_2
+  Mem.store_valid_access_1
+  Mem.store_valid_access_2
+  Mem.store_valid_access_3
+  Mem.storebytes_range_perm
+  Mem.perm_storebytes_1
+  Mem.perm_storebytes_2
+  Mem.storebytes_valid_access_1
+  Mem.storebytes_valid_access_2
+  Mem.nextblock_storebytes
+  Mem.storebytes_valid_block_1
+  Mem.storebytes_valid_block_2
+  Mem.nextblock_alloc
+  Mem.alloc_result
+  Mem.valid_block_alloc
+  Mem.fresh_block_alloc
+  Mem.valid_new_block
+  Mem.perm_alloc_1
+  Mem.perm_alloc_2
+  Mem.perm_alloc_3
+  Mem.perm_alloc_4
+  Mem.perm_alloc_inv
+  Mem.valid_access_alloc_other
+  Mem.valid_access_alloc_same
+  Mem.valid_access_alloc_inv
+  Mem.range_perm_free
+  Mem.free_range_perm
+  Mem.nextblock_free
+  Mem.valid_block_free_1
+  Mem.valid_block_free_2
+  Mem.perm_free_1
+  Mem.perm_free_2
+  Mem.perm_free_3
+  Mem.valid_access_free_1
+  Mem.valid_access_free_2
+  Mem.valid_access_free_inv_1
+  Mem.valid_access_free_inv_2
+  Mem.unchanged_on_refl
+: mem. *)
+
+Require Import VST.msl.seplog.
+(* VST.msl.seplog:
+Definition  extensible {A}{ND: NatDed A}{SL: SepLog A}(P:A) := sepcon P TT |-- P.
+
+Lemma orp_comm: forall {A: Type} `{NatDed A} (P Q: A), P || Q = Q || P. *)
+
+Require Import VST.msl.ageable.
+(* VST.msl.ageable:
+Require Import VST.msl.base.
+  Require Coq.funind.Recdef.
+
+Local Open Scope nat_scope.
+
+Record ageable_facts (A:Type) (level: A -> nat) (age1:A -> option A)  :=
+{ af_unage : forall x':A, exists x, age1 x = Some x'
+; af_level1 : forall x, age1 x = None <-> level x = 0
+; af_level2 : forall x y, age1 x = Some y -> level x = S (level y)
+}.
+
+Arguments af_unage [A] [level] [age1] _ _.
+Arguments af_level1 [A] [level] [age1] _ _.
+Arguments af_level2 [A] [level] [age1] _ _ _ _.
+
+Class ageable (A:Type) := mkAgeable
+{ level : A -> nat
+; age1 : A -> option A
+; age_facts : ageable_facts A level age1
+}.
+
+Definition age {A} `{ageable A} (x y:A) := age1 x = Some y.
+
+Lemma af_wf {A} `{ageable A} :
+ well_founded (fun x y => age y x).
+Arguments af_wf [A] _ _.
+
+Definition age_induction {A} `{ageable A} :=
+  well_founded_induction (af_wf _).
+
+Definition fashionR {A1} `{ageable A1} {A2}`{ageable A2} (x:A1) (y: A2) : Prop :=
+  level x = level y.
+
+Lemma fashionR_refl {A} `{ageable A} : reflexive _ fashionR.
+
+Lemma fashionR_trans {A} `{ageable A} {B} `{ageable B} {C} `{ageable C} :
+    forall (x: A) (y: B) (z: C), fashionR x y -> fashionR y z -> fashionR x z.
+
+Lemma fashionR_sym {A} `{ageable A} {B} `{ageable B}:
+   forall (x: A) (y: B), fashionR x y -> fashionR y x.
+
+Lemma age_level {A} `{ageable A} : forall (x y:A),
+  age x y -> level x = S (level y).
+
+Lemma age1_level0 {A} `{ageable A} : forall (x:A),
+  age1 x = None <-> level x = 0.
+
+  Theorem level_level' : forall x:A, level x = level' x.
+End level'.
+
+Lemma levelS_age1 {A} `{ageable A} : forall (x:A) n,
+  level x = S n ->
+  exists y, age1 x = Some y.
+
+Lemma age1_levelS {A} `{ageable A} : forall (x y:A),
+  age1 x = Some y ->
+  exists n, level x = S n.
+
+Lemma age1_level0_absurd {A} `{ageable A} : forall (x y:A),
+  age1 x = Some y ->
+  level x = 0 ->
+  False.
+
+Lemma age1None_levelS_absurd {A} `{ageable A} : forall (x:A) n,
+  age1 x = None ->
+  level x = S n ->
+  False.
+
+Section RtRft.
+  Variable A:Type.
+  Variable R:relation A.
+
+  Let Rt := clos_trans A R.
+  Let Rft := clos_refl_trans A R.
+
+  Lemma Rt_Rft : forall x y, Rt x y -> Rft x y.
+
+  Lemma Rt_Rft_trans : forall x y z, Rt x y -> Rft y z -> Rt x z.
+
+  Lemma Rft_Rt_trans : forall x y z, Rft x y -> Rt y z -> Rt x z.
+
+  Lemma transpose_clos_trans : forall A R x y,
+    clos_trans A (transp A R) x y <-> transp A (clos_trans A R) x y.
+End RtRft.
+
+Hint Resolve rt_refl.
+
+Definition laterR {A} `{ageable A} : relation A := clos_trans A age.
+Definition necR   {A} `{ageable A} : relation A := clos_refl_trans A age.
+
+Require Coq.Wellfounded.Wellfounded.
+Lemma laterR_wf {A} `{ageable A} :
+  well_founded (transp _ laterR).
+
+Definition laterR_induction {A} `{ageable A} :=
+  @well_founded_induction A (transp A laterR) laterR_wf.
+
+Lemma age_irreflexive {A}  `{ageable A}: forall x, age x x -> False.
+
+Lemma laterR_irreflexive {A} `{HA: ageable A} : forall x, laterR x x -> False.
+
+Lemma nec_refl_or_later {A} `{ageable A} : forall x y,
+  necR x y -> x = y \/ laterR x y.
+
+Lemma necR_antisym {A} `{ageable A} : forall x y,
+  necR x y -> necR y x -> x = y.
+
+Lemma age_later_nec {A} `{HA: ageable A} : forall x y z,
+  age x y ->
+  laterR x z ->
+  necR y z.
+
+Lemma necR_level {A} `{X: ageable A} : forall (x y:A),
+  necR x y ->
+  level x >= level y.
+
+Lemma laterR_level {A} `{X: ageable A} : forall (x y:A),
+  laterR x y ->
+  level x > level y.
+
+Section NAT_AGEABLE.
+
+  Definition natLevel (x:nat) : nat := x.
+  Definition natAge1 (x:nat) : option nat :=
+    match x with
+    | 0 => None
+    | S n => Some n
+    end.
+  Definition natUnage (x:nat) : nat := S x.
+
+  Lemma ag_nat_facts :
+    ageable_facts nat natLevel natAge1.
+
+  Definition ag_nat : ageable nat :=
+    mkAgeable nat natLevel natAge1 ag_nat_facts.
+
+  Lemma nec_nat : forall (n n':nat),
+    @necR _ ag_nat n n' <-> n' <= n.
+
+  Lemma later_nat : forall (n n':nat),
+    @laterR _ ag_nat n n' <-> n' < n.
+
+End NAT_AGEABLE.
+
+Lemma laterR_level' {A} `{H : ageable A}: forall {w1 w2: A}, laterR w1 w2 -> @laterR _ ag_nat (level w1) (level w2).
+
+Lemma necR_nat {A} `{H : ageable A}:
+    forall {x y: A}, necR x y -> @necR nat ag_nat (level x) (level y).
+
+Section BIJECTION.
+  Variable A B : Type.
+  Variable ag: ageable A.
+  Variable bijAB: bijection A B.
+
+  Let levelB (x:B) : nat :=
+    level (bij_g _ _ bijAB x).
+
+  Let age1B  (x: B) : option B :=
+     match age1 (bij_g _ _ bijAB x) with
+     | Some y => Some (bij_f _ _ bijAB y)
+     | None => None
+     end.
+
+  Let ageB (x y: B) :=age1B x = Some y.
+
+  Lemma age_bij_unage :
+    forall x', exists x, age1B x = Some x'.
+
+  Lemma age_bij_level1 :
+    forall x, age1B x = None <-> levelB x = 0.
+
+  Lemma age_bij_level2 :
+    forall x y, age1B x = Some y -> levelB x = S (levelB y).
+
+  Lemma ag_bij_facts : ageable_facts B levelB age1B.
+
+  Definition ag_bij : ageable B :=
+    mkAgeable B levelB age1B ag_bij_facts.
+End BIJECTION.
+
+Section PROD.
+  Variable A B : Type.
+  Variable agA: ageable A.
+
+  Let levelAB (x:prod A B) := level (fst x).
+  Let age1AB (x:prod A B) :=
+    match age1 (fst x) with
+    | None => None
+    | Some a' => Some (a',snd x)
+    end.
+
+  Lemma ag_prod_facts : ageable_facts (prod A B) levelAB age1AB.
+
+  Definition ag_prod :=
+    mkAgeable (prod A B) levelAB age1AB ag_prod_facts.
+
+  Lemma prod_nec_split : forall n x n' x',
+    @necR (prod A B) ag_prod (n,x) (n',x') <-> necR n n' /\ x = x'.
+
+  Lemma prod_later_split : forall n x n' x',
+    @laterR (prod A B) ag_prod (n,x) (n',x') <-> laterR n n' /\ x = x'.
+
+End PROD.
+
+Section PROD'.
+  Variable A B : Type.
+  Variable agB: ageable B.
+
+  Let levelAB (x:prod A B) := level (snd x).
+  Let age1AB (x:prod A B) :=
+    match age1 (snd x) with
+    | None => None
+    | Some a' => Some (fst x, a')
+    end.
+
+  Lemma ag_prod'_facts : ageable_facts (prod A B) levelAB age1AB.
+
+  Definition ag_prod' :=
+    mkAgeable (prod A B) levelAB age1AB ag_prod'_facts.
+
+  Lemma prod'_nec_split : forall n x n' x',
+    @necR (prod A B) ag_prod' (x,n) (x',n') <-> necR n n' /\ x = x'.
+
+  Lemma prod'_later_split : forall n x n' x',
+    @laterR (prod A B) ag_prod' (x,n) (x',n') <-> laterR n n' /\ x = x'.
+
+End PROD'.
+
+Fixpoint composeOptN (A: Type) (f: A -> option A)
+         (n: nat) (w: A) {struct n} : option A :=
+ match n  with
+ | S n' => match f w with Some w' => composeOptN A f n' w' | None => None end
+ | O => Some w
+ end.
+Arguments composeOptN [A] _ _ _.
+
+Definition ageN {A} `{ageable A}: nat -> A -> option A := composeOptN age1.
+
+Lemma ageN1  {A} `{ageable A}: ageN 1 = age1.
+
+Lemma ageN_compose {A} `{agA : ageable A}:
+ forall a b c phi1 phi2 phi3,ageN a phi1 = Some phi2 ->
+       ageN b phi2 = Some phi3 ->  (a+b=c)%nat ->  ageN c phi1 = Some phi3.
+
+Lemma ageN_compose' {A} `{agA : ageable A}:
+  forall a b phi1 phi3,
+   ageN (a+b)%nat phi1 = Some phi3 -> exists phi2, ageN a phi1 = Some phi2 /\ ageN b phi2 = Some phi3.
+
+Lemma necR_evolve {A} `{agA : ageable A}:
+    necR = fun (phi phi': A) => exists n, ageN n phi = Some phi'.
+
+Lemma age_noetherian  {A} `{ageable A}: forall phi, exists n, ageN n phi = None.
+
+Lemma predicate_max:
+  forall (F: nat -> Prop) (Fdec: forall n, {F n}+{~ F n}) n,
+  F 0%nat ->
+  ~ F n ->
+  exists i, F i /\ (i<n)%nat /\ ~ F (S i).
+
+Lemma age_noetherian'  {A} `{agA : ageable A}:
+       forall phi, exists! n, exists phi', ageN n phi = Some phi' /\ age1 phi' = None.
+
+Lemma ageable_ext:
+   forall A (B C: ageable A),
+      @age1 _ B = @age1 _ C -> @level _ B = @level _ C -> B=C.
+
+Lemma necR_linear {A} `{H : ageable A}:
+  forall {a b c}, necR a b -> necR a c -> necR b c \/ necR c b.
+
+Lemma necR_linear' {A} `{H : ageable A}:
+   forall {a b c}, necR a b -> necR a c -> level b = level c -> b=c.
+
+Lemma laterR_necR {A} `{agA : ageable A}:
+  forall {x y}, laterR x y -> necR x y.
+
+Lemma necR_refl {A} `{H : ageable A}:
+  forall phi, necR phi phi.
+
+Hint Resolve @necR_refl.
+
+Lemma necR_trans  {A} `{H : ageable A}:
+  forall phi1 phi2 phi3, necR phi1 phi2 -> necR phi2 phi3 -> necR phi1 phi3.
+
+Lemma necR_laterR {A} `{agA : ageable A}:
+  forall w1 w2 w3, necR w1 w2 -> laterR w2 w3 -> laterR w1 w3. *)
+
+Require Import VST.msl.age_to.
+(* VST.msl.age_to:
+Require Import Coq.omega.Omega.
+Require Import VST.msl.ageable.
+Require Import VST.msl.predicates_hered.
+Require Import VST.msl.sepalg.
+Require Import VST.msl.age_sepalg.
+Require Import VST.msl.sepalg_generators.
+
+Definition age1' {A} `{agA : ageable A} : A -> A :=
+  fun x => match age1 x with Some y => y | None => x end.
+
+Definition age_by n {A} `{agA : ageable A} : A -> A := Nat.iter n age1'.
+
+Lemma level_age1' {A} `{agA : ageable A} x : level (age1' x) = level x - 1.
+
+Lemma level_age_by n {A} `{agA : ageable A} x : level (age_by n x) = level x - n.
+
+Lemma age_age_by n {A} `{agA : ageable A} (x y : A) : age x y -> age_by (S n) x = age_by n y.
+
+Definition age_to k {A} `{agA : ageable A} (x : A) : A := age_by (level x - k) x.
+
+Lemma level_age_to k {A} `{agA : ageable A} x : k <= level x -> level (age_to k x) = k.
+
+Lemma age_to_lt k {A} `{agA : ageable A} (x : A) : k < level x -> exists y, age x y /\ age_to k x = age_to k y.
+
+Lemma age_to_ge k {A} `{agA : ageable A} (x : A) : k >= level x -> age_to k x = x.
+
+Lemma age_to_eq k {A} `{agA : ageable A} (x : A) : k = level x -> age_to k x = x.
+
+Lemma age_age_to n {A} `{agA : ageable A} x y : level x = S n -> age x y -> age_to n x = y.
+
+Lemma age_by_ind {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> P x -> P y) ->
+  forall x n, P x -> P (age_by n x).
+
+Lemma age_to_ind {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> P x -> P y) ->
+  forall x n, P x -> P (age_to n x).
+
+Lemma age_to_ind_refined n {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> n <= level y -> P x -> P y) ->
+  forall x, P x -> P (age_to n x).
+
+Lemma iter_iter n m {A} f (x : A) : Nat.iter n f (Nat.iter m f x) = Nat.iter (n + m) f x.
+
+Lemma age_by_age_by n m  {A} `{agA : ageable A} (x : A) : age_by n (age_by m x) = age_by (n + m) x.
+
+Lemma age_by_ind_opp {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> P y -> P x) ->
+  forall x n, P (age_by n x) -> P x.
+
+Lemma age_to_ind_opp {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> P y -> P x) ->
+  forall x n, P (age_to n x) -> P x.
+
+Lemma rewrite_age_to {A} `{agA : ageable A} (P : A -> Prop) :
+  (forall x y, age x y -> P x <-> P y) ->
+  forall x n, P x <-> P (age_to n x).
+
+Lemma level_age_to_le k {A} `{agA : ageable A} x : level (age_to k x) <= level x.
+
+Lemma level_age_to_le' k {A} `{agA : ageable A} x : level (age_to k x) <= k.
+
+Lemma age_by_necR {A} `{agA : ageable A} n x : necR x (age_by n x).
+
+Lemma age_to_necR {A} `{agA : ageable A} n x : necR x (age_to n x).
+
+Lemma necR_age_by {A} `{agA : ageable A} x x' : necR x x' -> x' = age_by (level x - level x') x.
+
+Lemma necR_age_to {A} `{agA : ageable A} x x' : necR x x' -> x' = age_to (level x') x.
+
+Lemma necR_age_by_iff {A} `{agA : ageable A} x x' : necR x x' <-> x' = age_by (level x - level x') x.
+
+Lemma necR_age_to_iff {A} `{agA : ageable A} x x' : necR x x' <-> x' = age_to (level x') x.
+
+Lemma age_to_pred {A} `{agA : ageable A} (P : pred A) x n :
+  app_pred P x ->
+  app_pred P (age_to n x).
+
+Lemma age_by_pred {A} `{agA : ageable A} (P : pred A) x n :
+  app_pred P x ->
+  app_pred P (age_by n x).
+
+Lemma pred_age1' {A} `{agA : ageable A} (R : pred A) x : app_pred R x -> app_pred R (age1' x).
+
+Lemma age_by_age_by_pred {A} `{agA : ageable A} (P : pred A) x n1 n2 :
+  le n1 n2 ->
+  app_pred P (age_by n1 x) ->
+  app_pred P (age_by n2 x).
+
+Fixpoint composeOptN' {A} (f : A -> option A) n x :=
+  match n with
+  | 0 => Some x
+  | S n =>
+    match composeOptN' f n x with
+    | Some y => f y
+    | None => None
+    end
+  end.
+
+Lemma composeOptN_assoc_aux_None {A} (f : A -> option A) n x :
+  f x = None ->
+  match composeOptN f n x with
+  | Some x => f x
+  | None => None
+  end = None.
+
+Lemma composeOptN_assoc_aux_Some {A} (f : A -> option A) n x y :
+  f x = Some y ->
+  match composeOptN f n x with
+  | Some x => f x
+  | None => None
+  end = composeOptN f n y.
+
+Lemma composeOptN_assoc {A} (f : A -> option A) n x :
+  composeOptN f n x = composeOptN' f n x.
+
+Lemma age_by_ageN {A} `{agA : ageable A} n (x : A) :
+  n <= level x ->
+  ageN n x = Some (age_by n x).
+
+Lemma age_to_ageN {A} `{agA : ageable A} n (x : A) :
+  ageN (level x - n) x = Some (age_to n x).
+
+Lemma age_by_1 {A} {_ : ageable A} x : 0 < level x -> age x (age_by 1 x).
+
+Lemma age_to_1 {A} {_ : ageable A} n x : level x = S n -> age x (age_to n x).
+
+Lemma age_to_identy {A} `{asaA: Age_alg A}: forall k phi,
+    identity phi -> identity (age_to k phi).
+
+Lemma age_to_join_eq {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} :
+  forall k x1 x2 x3,
+    join x1 x2 x3 ->
+    k <= level x3 ->
+    join (age_to k x1) (age_to k x2) (age_to k x3). *)
+
+Require Import VST.veric.coqlib4.
+(* VST.veric.coqlib4:
+Require Import Coq.Arith.EqNat.
+Require Import Coq.Relations.Relations.
+Require Import Coq.Sorting.Permutation.
+
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Integers.
+
+Require Import VST.msl.Coqlib2.
+Require Export VST.msl.eq_dec.
+
+Lemma max_two_power_nat: forall n1 n2, Z.max (two_power_nat n1) (two_power_nat n2) = two_power_nat (Nat.max n1 n2).
+
+Lemma Z_max_two_p: forall m1 m2, (exists n, m1 = two_power_nat n) -> (exists n, m2 = two_power_nat n) -> (exists n, Z.max m1 m2 = two_power_nat n).
+
+Lemma power_nat_divide: forall n m, two_power_nat n <= two_power_nat m -> Z.divide (two_power_nat n) (two_power_nat m).
+
+Lemma power_nat_divide_ge: forall n m: Z,
+  (exists N, n = two_power_nat N) ->
+  (exists M, m = two_power_nat M) ->
+  (n >= m <-> (m | n)).
+
+Lemma power_nat_divide_le: forall n m: Z,
+  (exists N, n = two_power_nat N) ->
+  (exists M, m = two_power_nat M) ->
+  (m <= n <-> (m | n)).
+
+Lemma two_p_max_divide: forall m1 m2 m, (exists n, m1 = two_power_nat n) -> (exists n, m2 = two_power_nat n) -> ((Z.max m1 m2 | m) <-> (m1 | m) /\ (m2 | m)).
+
+Lemma two_p_max_1: forall m1 m2, (exists n, m1 = two_power_nat n) -> (exists n, m2 = two_power_nat n) -> (Z.max m1 m2 = 1 <-> m1 = 1 /\ m2 = 1).
+
+Lemma two_power_nat_0: forall x, (exists n, x = two_power_nat n) -> x <> 0.
+
+Hint Rewrite andb_true_iff: align.
+Hint Rewrite <- Zle_is_le_bool: align.
+Hint Rewrite Z.eqb_eq: align.
+Hint Rewrite power_nat_divide_le using (auto with align): align.
+Hint Rewrite Z.mod_divide using (apply two_power_nat_0; auto with align): align.
+Hint Rewrite two_p_max_divide using (auto with align): align.
+Hint Rewrite two_p_max_1 using (auto with align): align.
+Hint Resolve Z_max_two_p: align.
+
+Lemma Z_of_nat_ge_O: forall n, Z.of_nat n >= 0.
+
+Lemma nth_error_nth:
+  forall A (al: list A) (z: A) i, (i < length al)%nat -> nth_error al i = Some (nth i al z).
+
+Lemma nat_of_Z_eq: forall i, nat_of_Z (Z_of_nat i) = i.
+
+Lemma nth_error_length:
+  forall {A} i (l: list A), nth_error l i = None <-> (i >= length l)%nat.
+
+Lemma prop_unext: forall P Q: Prop, P=Q -> (P<->Q).
+
+Lemma list_norepet_In_In: forall {K X} a x y (l:list (K*X)),
+  list_norepet (map (@fst K X) l) -> In (a, x) l -> In (a, y) l -> x = y.
+
+Inductive sublist {A} : list A -> list A -> Prop :=
+| sublist_nil : sublist nil nil
+| sublist_cons a l1 l2 : sublist l1 l2 -> sublist (a :: l1) (a :: l2)
+| sublist_drop a l1 l2 : sublist l1 l2 -> sublist l1 (a :: l2).
+
+Lemma sublist_In {A} (a : A) l1 l2 : sublist l1 l2 -> In a l1 -> In a l2.
+
+Lemma sublist_norepet {A} (l1 l2 : list A) : sublist l1 l2 -> list_norepet l2 -> list_norepet l1.
+
+Require Import Coq.Sets.Ensembles.
+
+Definition Ensemble_join {A} (X Y Z: Ensemble A): Prop :=
+  (forall a, Z a <-> X a \/ Y a) /\ (forall a, X a -> Y a -> False).
+
+Require Coq.Logic.ConstructiveEpsilon.
+
+Lemma decidable_countable_ex_sig {A} (f : nat -> A)
+      (Hf : forall a, exists n, a = f n)
+      (P : A -> Prop)
+      (Pdec : forall x, {P x} + {~ P x}) :
+  (exists x : A, P x) -> {x : A | P x}.
+
+Tactic Notation "if_tac" "eq:" simple_intropattern(E) :=
+  match goal with
+    |- context [if ?a then _ else _] =>
+    destruct a as [?H | ?H] eqn:E
+  end.
+
+Tactic Notation "if_tac" simple_intropattern(H) "eq:" simple_intropattern(E):=
+  match goal with
+    |- context [if ?a then _ else _] =>
+    destruct a as H eqn:E
+  end.
+
+Tactic Notation "if_tac" "in" hyp(H0) "eq:" simple_intropattern(E) :=
+  match type of H0 with
+    context [if ?a then _ else _] =>
+    destruct a as [?H  | ?H] eqn:E
+  end.
+
+Tactic Notation "if_tac" simple_intropattern(H) "in" hyp(H1) "eq:" simple_intropattern(E) :=
+  match type of H1 with
+    context [if ?a then _ else _] =>
+    destruct a as H eqn:E
+  end.
+
+Tactic Notation "assert_specialize" hyp(H) :=
+  match type of H with
+    forall x : ?P, _ =>
+    let Htemp := fresh "Htemp" in
+    assert P as Htemp; [ | specialize (H Htemp); try clear Htemp ]
+  end.
+
+Tactic Notation "assert_specialize" hyp(H) "by" tactic1(tac) :=
+  match type of H with
+    forall x : ?P, _ =>
+    let Htemp := fresh "Htemp" in
+    assert P as Htemp by tac; specialize (H Htemp); try clear Htemp
+  end.
+
+Tactic Notation "assert_specialize" hyp(H) "as" simple_intropattern(Hnew) :=
+  match type of H with
+    forall x : ?P, _ =>
+    assert P as Hnew; [ | specialize (H Hnew) ]
+  end.
+
+Tactic Notation "assert_specialize" hyp(H) "as" simple_intropattern(Hnew) "by" tactic1(tac) :=
+  match type of H with
+    forall x : ?P, _ =>
+    assert P as Hnew by tac;
+    specialize (H Hnew)
+  end.
+
+Ltac autospec H := specialize (H ltac:(solve [eauto])).
+
+Ltac exact_eq H :=
+  revert H;
+  match goal with
+    |- ?p -> ?q => cut (p = q); [intros ->; auto | ]
+  end.
+
+Tactic Notation "rewr" :=
+  match goal with
+  | H : ?f = _ |- context [?f] => rewrite H
+  | H : ?f _ = ?f _ |- _ => try (injection H; repeat intros ->)
+  end.
+
+Tactic Notation "rewr" constr(e) :=
+  match goal with
+    E : e = _ |- _ => rewrite E
+  | E : _ = e |- _ => rewrite <-E
+  end.
+
+Tactic Notation "rewr" constr(e) "in" "*" :=
+  match goal with
+    E : e = _ |- _ => rewrite E in *
+  | E : _ = e |- _ => rewrite <-E in *
+  end.
+
+Tactic Notation "rewr" constr(e) "in" hyp(H) :=
+  match goal with
+    E : e = _ |- _ => rewrite E in H
+  | E : _ = e |- _ => rewrite <-E in H
+  end.
+
+Lemma perm_search:
+  forall {A} (a b: A) r s t,
+     Permutation (a::t) s ->
+     Permutation (b::t) r ->
+     Permutation (a::r) (b::s).
+
+Lemma Permutation_concat: forall {A} (P Q: list (list A)),
+  Permutation P Q ->
+  Permutation (concat P) (concat Q).
+
+Lemma Permutation_app_comm_trans:
+ forall (A: Type) (a b c : list A),
+   Permutation (b++a) c ->
+   Permutation (a++b) c.
+
+Ltac solve_perm :=
+      try match goal with
+       | |-  Permutation (?A ++ ?B) _ =>
+            is_evar A; first [is_evar B; fail 1| idtac];
+            apply Permutation_app_comm_trans
+       end;
+  repeat first [ apply Permutation_refl
+       | apply perm_skip
+       | eapply perm_search
+       ].
+
+Goal exists e, Permutation ((1::2::nil)++e) (3::2::1::5::nil).
+
+Lemma range_pred_dec: forall (P: nat -> Prop),
+  (forall n, {P n} + {~ P n}) ->
+  forall m,
+    {forall n, (n < m)%nat -> P n} + {~ forall n, (n < m)%nat -> P n}.
+
+Lemma Z2Nat_neg: forall i, i < 0 -> Z.to_nat i = 0%nat.
+
+Lemma Zrange_pred_dec: forall (P: Z -> Prop),
+  (forall z, {P z} + {~ P z}) ->
+  forall l r,  
+    {forall z, l <= z < r -> P z} + {~ forall z, l <= z < r -> P z}.
+
+Definition eqb_list {A: Type} (eqb_A: A -> A -> bool): list A -> list A -> bool :=
+  fix eqb_list (l1 l2: list A): bool :=
+    match l1, l2 with
+    | nil, nil => true
+    | a1 :: l1, a2 :: l2 => eqb_A a1 a2 && eqb_list l1 l2
+    | _, _ => false
+    end.
+
+Lemma eqb_list_spec: forall {A: Type} (eqb_A: A -> A -> bool),
+  (forall a1 a2, eqb_A a1 a2 = true <-> a1 = a2) ->
+  (forall l1 l2, eqb_list eqb_A l1 l2 = true <-> l1 = l2).
+
+Lemma nat_ind2_Type:
+forall P : nat -> Type,
+((forall n, (forall j:nat, (j<n )%nat -> P j) ->  P n):Type) ->
+(forall n, P n).
+
+Lemma nat_ind2:
+forall P : nat -> Prop,
+(forall n, (forall j:nat, (j<n )%nat -> P j) ->  P n) ->
+(forall n, P n).
+
+Lemma equiv_e2 : forall A B: Prop, A=B -> B -> A.
+Arguments equiv_e2 [A B] _ _.
+
+Definition opt2list (A: Type) (x: option A) :=
+  match x with Some a => a::nil | None => nil end.
+Arguments opt2list [A] _.
+
+Definition isSome {A} (o: option A) := match o with Some _ => True | None => False end.
+
+Definition isSome_dec: forall {A} (P: option A), isSome P + ~ isSome P. *)
+
+Require Import VST.veric.juicy_mem.
+(* VST.veric.juicy_mem:
+Require Import VST.veric.base.
+Require Import VST.veric.Memory.
+Require Import VST.veric.juicy_base.
+Require Import VST.veric.shares.
+Import cjoins.
+
+Definition dec_share_nonidentity (sh: Share.t) : {~identity sh}+{identity sh} :=
+   (Sumbool.sumbool_not _ _ (dec_share_identity sh)).
+
+Definition perm_of_sh (sh: Share.t): option permission :=
+  if writable0_share_dec sh
+  then if eq_dec sh Share.top
+            then Some Freeable
+            else Some Writable
+    else if readable_share_dec sh
+         then Some Readable
+         else if eq_dec sh Share.bot
+                   then None
+              else Some Nonempty.
+Functional Scheme perm_of_sh_ind := Induction for perm_of_sh Sort Prop.
+
+Definition contents_at (m: mem) (loc: address) : memval :=
+  ZMap.get (snd loc) (PMap.get (fst loc) (mem_contents m)).
+
+Definition contents_cohere (m: mem) (phi: rmap) :=
+  forall rsh sh v loc pp, phi @ loc = YES rsh sh (VAL v) pp -> contents_at m loc = v /\ pp=NoneP.
+
+Definition valshare (r: resource) : share :=
+    match r with
+      | YES sh rsh _ _ => Share.glb Share.Rsh sh
+      | _ => Share.bot
+    end.
+
+Definition res_retain' (r: resource) : Share.t :=
+ match r with
+  | NO sh _ => sh
+  | YES sh _ _ _ => Share.glb Share.Lsh sh
+  | PURE _ _ => Share.top
+ end.
+
+Definition perm_of_res (r: resource) :=
+  
+ match r with
+ | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+ | PURE _ _ => Some Nonempty
+ | YES sh rsh (VAL _) _ => perm_of_sh sh
+ | YES sh rsh _ _ => Some Nonempty
+ end.
+
+Definition perm_of_res_lock_explicit
+             (r : compcert_rmaps.RML.R.resource):=
+    match r with
+    | compcert_rmaps.RML.R.NO _ _ => None
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ => None
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ =>
+      if writable0_share_dec (Share.glb Share.Rsh sh)
+      then if eq_dec (Share.glb Share.Rsh sh) Share.top then Some Freeable else Some Writable
+      else if readable_share_dec (Share.glb Share.Rsh sh) then Some Readable else
+             if eq_dec  (Share.glb Share.Rsh sh) Share.bot then None else Some Nonempty
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => None
+    | compcert_rmaps.RML.R.PURE _ _ => None
+    end.
+      
+  Functional Scheme perm_of_res_lock_expl_ind := Induction for perm_of_res_lock_explicit Sort Prop.
+
+Definition perm_of_res' (r: resource) :=
+  
+ match r with
+ | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+ | PURE _ _ => Some Nonempty
+ | YES sh _ _ _ => perm_of_sh sh
+ end.
+
+Definition perm_of_res_lock (r: resource) := 
+  
+ match r with
+ | YES sh rsh (LK _ _) _ => perm_of_sh (Share.glb Share.Rsh sh)
+ | _ => None 
+ end.
+
+Definition perm_of_res_explicit
+               (r : compcert_rmaps.RML.R.resource):=
+        match r with
+        | compcert_rmaps.RML.R.NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ =>
+             if writable0_share_dec sh
+             then if eq_dec sh Share.top then Some Freeable else Some Writable
+             else
+               if readable_share_dec sh
+               then Some Readable
+               else if eq_dec sh Share.bot then None else Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ => Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => Some Nonempty
+           | compcert_rmaps.RML.R.PURE _ _ => Some Nonempty
+        end.
+      
+Functional Scheme perm_of_res_expl_ind := Induction for perm_of_res_explicit Sort Prop.
+
+Lemma Rsh_not_top: Share.Rsh <> Share.top.
+
+Lemma nonidentity_Rsh: ~identity Share.Rsh.
+
+Lemma perm_of_sh_fullshare: perm_of_sh fullshare = Some Freeable.
+
+Lemma nonreadable_extern_retainer: ~readable_share extern_retainer.
+
+Lemma Lsh_nonreadable: ~readable_share Share.Lsh.
+
+Lemma perm_of_res_op1:
+  forall r,
+    perm_order'' (perm_of_res' r) (perm_of_res r).
+
+Lemma perm_of_res_op2:
+  forall r,
+    perm_order'' (perm_of_res' r) (perm_of_res_lock r).
+
+Definition access_cohere (m: mem)  (phi: rmap) :=
+  forall loc,  access_at m loc Cur = perm_of_res (phi @ loc).
+
+Definition max_access_at m loc := access_at m loc Max.
+
+Definition max_access_cohere (m: mem) (phi: rmap)  :=
+  forall loc,
+    perm_order'' (max_access_at m loc) (perm_of_res' (phi @ loc)).
+
+Definition alloc_cohere (m: mem) (phi: rmap) :=
+ forall loc,  (fst loc >= nextblock m)%positive -> phi @ loc = NO Share.bot bot_unreadable.
+
+Inductive juicy_mem: Type :=
+  mkJuicyMem: forall (m: mem) (phi: rmap)
+    (JMcontents: contents_cohere m phi)
+    (JMaccess: access_cohere m phi)
+    (JMmax_access: max_access_cohere m phi)
+    (JMalloc: alloc_cohere m phi),
+       juicy_mem.
+
+Section selectors.
+Variable (j: juicy_mem).
+Definition m_dry := match j with mkJuicyMem m _ _ _ _ _ => m end.
+Definition m_phi := match j with mkJuicyMem _ phi _ _ _ _ => phi end.
+Lemma juicy_mem_contents: contents_cohere m_dry m_phi.
+Lemma juicy_mem_access: access_cohere m_dry m_phi.
+Lemma juicy_mem_max_access: max_access_cohere m_dry m_phi.
+Lemma juicy_mem_alloc_cohere: alloc_cohere m_dry m_phi.
+End selectors.
+
+Definition juicy_mem_resource: forall jm m', resource_at m' = resource_at (m_phi jm) ->
+  {jm' | m_phi jm' = m' /\ m_dry jm' = m_dry jm}.
+
+Lemma perm_of_empty_inv {s} : perm_of_sh s = None -> s = Share.bot.
+
+Lemma writable_join_sub: forall loc phi1 phi2,
+  join_sub phi1 phi2 -> writable loc phi1 -> writable loc phi2.
+
+Lemma writable_inv: forall phi loc, writable loc phi ->
+  exists sh, exists rsh, exists k, exists pp, 
+       phi @ loc = YES sh rsh k pp /\ 
+       writable0_share sh /\
+       isVAL k.
+
+Lemma nreadable_inv: forall phi loc, ~readable loc phi 
+  -> (exists sh, exists nsh, phi @ loc = NO sh nsh)
+   \/ (exists sh, exists rsh, exists k, exists pp, phi @ loc = YES sh rsh k pp /\ ~isVAL k)
+   \/ (exists k, exists pp, phi @ loc = PURE k pp).
+
+Lemma age1_joinx {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall phi1 phi2 phi3 phi1' phi2' phi3',
+             age phi1 phi1' -> age phi2 phi2' -> age phi3 phi3' ->
+             join phi1 phi2 phi3 -> join phi1' phi2' phi3'.
+
+Lemma constructive_age1_join  {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall x y z x' : A,
+       join x y z ->
+       age x x' ->
+       { yz' : A*A | join x' (fst yz') (snd yz') /\ age y (fst yz') /\ age z (snd yz')}.
+
+Lemma age1_constructive_joins_eq : forall {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A}  {phi1 phi2},
+  constructive_joins phi1 phi2
+  -> forall {phi1'}, age1 phi1 = Some phi1'
+  -> forall {phi2'}, age1 phi2 = Some phi2'
+  -> constructive_joins phi1' phi2'.
+
+Program Definition age1_juicy_mem (j: juicy_mem): option juicy_mem :=
+      match age1 (m_phi j) with
+        | Some phi' => Some (mkJuicyMem (m_dry j) phi' _ _ _ _)
+        | None => None
+      end.
+
+Lemma age1_juicy_mem_unpack: forall j j',
+  age1_juicy_mem j = Some j' ->
+  age (m_phi j)  (m_phi j')
+  /\ m_dry j = m_dry j'.
+
+Lemma age1_juicy_mem_unpack': forall j j',
+  age (m_phi j)  (m_phi j')  /\ m_dry j = m_dry j' ->
+  age1_juicy_mem j = Some j'.
+
+Lemma age1_juicy_mem_unpack'': forall j j',
+  age (m_phi j)  (m_phi j')  -> m_dry j = m_dry j' ->
+  age1_juicy_mem j = Some j'.
+
+Lemma rmap_join_eq_level: forall phi1 phi2: rmap, joins phi1 phi2 -> level phi1 = level phi2.
+
+Lemma rmap_join_sub_eq_level: forall phi1 phi2: rmap,
+          join_sub phi1 phi2 -> level phi1 = level phi2.
+
+Lemma age1_juicy_mem_None1:
+  forall j, age1_juicy_mem j = None -> age1 (m_phi j) = None.
+
+Lemma age1_juicy_mem_None2:
+  forall j, age1 (m_phi j) = None -> age1_juicy_mem j = None.
+
+Lemma age1_juicy_mem_Some:
+  forall j j', age1_juicy_mem j = Some j' -> age1 (m_phi j) = Some (m_phi j').
+
+Lemma unage_juicy_mem: forall j' : juicy_mem,
+   exists j : juicy_mem, age1_juicy_mem j = Some j'.
+
+Lemma level1_juicy_mem: forall j: juicy_mem,
+  age1_juicy_mem j = None <-> level (m_phi j) = 0%nat.
+
+Lemma level2_juicy_mem: forall j1 j2: juicy_mem,
+   age1_juicy_mem j1 = Some j2 -> level (m_phi j1) = S (level (m_phi j2)).
+
+Lemma juicy_mem_ageable_facts: ageable_facts juicy_mem (fun j => level (m_phi j)) age1_juicy_mem.
+
+Instance juicy_mem_ageable: ageable juicy_mem :=
+  mkAgeable _ (fun j => level (m_phi j)) age1_juicy_mem juicy_mem_ageable_facts.
+
+Lemma level_juice_level_phi: forall (j: juicy_mem), level j = level (m_phi j).
+
+Lemma juicy_mem_ext: forall j1 j2,
+       m_dry j1 = m_dry j2  ->
+       m_phi j1 = m_phi j2 ->
+       j1=j2.
+
+Lemma unage_writable: forall (phi phi': rmap) loc,
+  age phi phi' -> writable loc phi' -> writable loc phi.
+
+Lemma unage_readable: forall (phi phi': rmap) loc,
+  age phi phi' -> readable loc phi' -> readable loc phi.
+
+Lemma readable_inv: forall phi loc, readable loc phi ->
+  exists rsh, exists sh, exists v, exists pp, phi @ loc = YES rsh sh (VAL v) pp.
+
+Definition fmap_option {A B} (v: option A) (m: B) (f: A -> B): B :=
+  match v with
+    | None => m
+    | Some v' => f v'
+  end.
+
+Lemma resource_at_make_rmap: forall f g lev H Hg, resource_at (proj1_sig (make_rmap f g lev H Hg)) = f.
+
+Lemma resource_at_remake_rmap: forall f g lev H Hg, resource_at (proj1_sig (remake_rmap f g lev H Hg)) = f.
+
+Lemma ghost_of_make_rmap: forall f g lev H Hg, ghost_of (proj1_sig (make_rmap f g lev H Hg)) = g.
+
+Lemma ghost_of_remake_rmap: forall f g lev H Hg, ghost_of (proj1_sig (remake_rmap f g lev H Hg)) = g.
+
+Lemma level_make_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (make_rmap f g lev H Hg)) = lev.
+
+Lemma level_remake_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (remake_rmap f g lev H Hg)) = lev.
+
+Section inflate.
+Variables (m: mem) (phi: rmap).
+
+Definition inflate_initial_mem' (w: rmap) (loc: address) :=
+   match access_at m loc Cur with
+           | Some Freeable => YES Share.top readable_share_top (VAL (contents_at m loc)) NoneP
+           | Some Writable => YES Ews (writable_readable writable_Ews) (VAL (contents_at m loc)) NoneP
+           | Some Readable => YES Ers readable_Ers (VAL (contents_at m loc)) NoneP
+           | Some Nonempty => 
+                         match w @ loc with PURE _ _ => w @ loc | _ => NO _ nonreadable_extern_retainer end
+           | None =>  NO Share.bot bot_unreadable
+         end.
+
+Lemma inflate_initial_mem'_fmap:
+ forall w, resource_fmap (approx (level w)) (approx (level w)) oo inflate_initial_mem' w =
+                inflate_initial_mem' w.
+
+Definition inflate_initial_mem (w: rmap): rmap :=
+    proj1_sig (make_rmap (inflate_initial_mem' w) (ghost_of w) _
+            (inflate_initial_mem'_fmap w) (ghost_of_approx w)).
+
+Lemma inflate_initial_mem_level: forall w, level (inflate_initial_mem w) = level w.
+
+Definition all_VALs (phi: rmap) :=
+  forall l, match phi @ l with
+              | YES _ _ k _ => isVAL k
+              | _ => True
+            end.
+
+Lemma inflate_initial_mem_all_VALs: forall lev, all_VALs (inflate_initial_mem lev).
+
+Definition inflate_alloc: rmap.
+
+Lemma approx_map_idem: forall n (lp: preds),
+  preds_fmap (approx n) (approx n) (preds_fmap (approx n) (approx n) lp) =
+  preds_fmap (approx n) (approx n) lp.
+
+Definition inflate_store: rmap. refine (
+
+End inflate.
+
+Lemma adr_inv0: forall (b b': block) (ofs ofs': Z) (sz: Z),
+  ~ adr_range (b, ofs) sz (b', ofs') ->
+  b <> b' \/ ~ ofs <= ofs' < ofs + sz.
+
+Lemma adr_inv: forall (b b': block) (ofs ofs': Z) ch,
+  ~ adr_range (b, ofs) (size_chunk ch) (b', ofs') ->
+  b <> b' \/ ~ ofs <= ofs' < ofs + size_chunk ch.
+
+Lemma range_inv0: forall ofs ofs' sz,
+  ~ ofs <= ofs' < ofs + sz ->
+  ofs' < ofs \/ ofs' >= ofs + sz.
+
+Lemma range_inv: forall ofs ofs' ch,
+  ~ ofs <= ofs' < ofs + size_chunk ch ->
+  ofs' < ofs \/ ofs' >= ofs + size_chunk ch.
+
+Lemma perm_of_sh_Freeable_top: forall sh, perm_of_sh sh = Some Freeable -> 
+     sh = Share.top.
+
+Lemma nextblock_access_empty: forall m b ofs k, (b >= nextblock m)%positive
+  -> access_at m (b, ofs) k = None.
+
+Section initial_mem.
+Variables (m: mem) (w: rmap).
+
+Definition initial_rmap_ok := 
+   forall loc, ((fst loc >= nextblock m)%positive -> core w @ loc = NO Share.bot bot_unreadable) /\
+                   (match w @ loc with 
+                    | PURE _ _ => (fst loc < nextblock m)%positive /\ 
+                                           access_at m loc Cur = Some Nonempty /\  
+                                            max_access_at m loc = Some Nonempty 
+                    | _ => True end).
+Hypothesis IOK: initial_rmap_ok.
+End initial_mem.
+
+Definition empty_retainer (loc: address) := Share.bot.
+
+Lemma perm_of_freeable: perm_of_sh Share.top = Some Freeable.
+
+Lemma perm_of_writable: 
+   forall sh, writable_share sh -> sh <> Share.top -> perm_of_sh sh = Some Writable.
+
+Lemma perm_of_readable:
+  forall sh (rsh: readable_share sh), ~writable0_share sh -> perm_of_sh sh = Some Readable.
+
+Lemma perm_of_nonempty:
+  forall sh, sh <> Share.bot -> ~readable_share sh -> perm_of_sh sh = Some Nonempty.
+
+Lemma perm_of_empty:
+    perm_of_sh Share.bot = None.
+
+Lemma perm_of_Ews: perm_of_sh Ews = Some Writable.
+
+Lemma perm_of_Ers: perm_of_sh Ers = Some Readable.
+
+Lemma extern_retainer_neq_bot: extern_retainer <> Share.bot.
+
+Lemma perm_order''_trans: forall a b c, Mem.perm_order'' a b ->  Mem.perm_order'' b c ->
+
+Definition initial_mem (m: mem) lev (IOK: initial_rmap_ok m lev) : juicy_mem.
+
+Definition juicy_mem_level (j: juicy_mem) (lev: nat) :=
+  level (m_phi j) = lev.
+
+Lemma initial_mem_level: forall lev m j IOK,
+  j = initial_mem m lev IOK -> juicy_mem_level j (level lev).
+
+Lemma initial_mem_all_VALs: forall lev m j IOK, j = initial_mem m lev IOK
+  -> all_VALs (m_phi j).
+
+Lemma perm_mem_access: forall m b ofs p,
+  perm m b ofs Cur p ->
+  exists p', (perm_order p' p /\ access_at m (b, ofs) Cur = Some p').
+
+Section store.
+Variables (jm: juicy_mem) (m': mem)
+          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
+          (STORE: store ch (m_dry jm) b ofs v = Some m').
+
+Lemma store_phi_elsewhere_eq: forall rsh sh mv loc',
+  ~ adr_range (b, ofs) (size_chunk ch) loc'
+  -> (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP -> contents_at m' loc' = mv.
+
+Definition store_juicy_mem: juicy_mem.
+
+End store.
+
+Section storebytes.
+Variables (jm: juicy_mem) (m': mem) (b: block) (ofs: Z) (bytes: list memval)
+  (STOREBYTES: storebytes (m_dry jm) b ofs bytes = Some m').
+
+Lemma storebytes_phi_elsewhere_eq: forall rsh sh mv loc',
+  ~ adr_range (b, ofs) (Zlength bytes) loc' ->
+  (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP ->
+  contents_at m' loc' = mv.
+
+Definition storebytes_juicy_mem: juicy_mem.
+
+End storebytes.
+
+Lemma free_smaller_None : forall m b b' ofs lo hi m',
+  access_at m (b, ofs) Cur = None
+  -> free m b' lo hi = Some m'
+  -> access_at m' (b, ofs) Cur = None.
+
+Lemma free_nadr_range_eq : forall m b b' ofs' lo hi m',
+  ~ adr_range (b, lo) (hi - lo) (b', ofs')
+  -> free m b lo hi = Some m'
+  -> access_at m (b', ofs') = access_at m' (b', ofs')
+  /\  contents_at m (b', ofs') = contents_at m' (b', ofs').
+
+Section free.
+Variables (jm :juicy_mem) (m': mem)
+          (b: block) (lo hi: Z)
+          (FREE: free (m_dry jm) b lo hi = Some m')
+          (PERM: forall ofs, lo <= ofs < hi ->
+                      perm_of_res (m_phi jm @ (b,ofs)) = Some Freeable).
+
+Definition inflate_free: rmap. refine (
+
+Definition free_juicy_mem: juicy_mem.
+
+End free.
+
+Lemma free_not_freeable_eq : forall m b lo hi m' b' ofs',
+  free m b lo hi = Some m'
+  -> access_at m (b', ofs') Cur <> Some Freeable
+  -> access_at m (b', ofs') Cur = access_at m' (b', ofs') Cur.
+
+Definition after_alloc' 
+  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable)
+  : address -> resource := fun loc =>
+    if adr_range_dec (b,lo) (hi-lo) loc 
+      then YES Share.top readable_share_top (VAL Undef) NoneP
+      else phi @ loc.
+
+Lemma adr_range_eq_block : forall b ofs n b' ofs',
+  adr_range (b,ofs) n (b',ofs') ->
+  b=b'.
+
+Lemma after_alloc'_ok : forall lo hi b phi H,
+  resource_fmap (approx (level phi)) (approx (level phi)) oo (after_alloc' lo hi b phi H)
+  = after_alloc' lo hi b phi H.
+
+Definition after_alloc
+  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable) : rmap :=
+  proj1_sig (make_rmap (after_alloc' lo hi b phi H) (ghost_of phi)
+    (level phi)
+    (after_alloc'_ok lo hi b phi H) (ghost_of_approx phi)).
+
+Definition mod_after_alloc' (phi: rmap) (lo hi: Z) (b: block)
+  : address -> resource := fun loc =>
+    if adr_range_dec (b,lo) (hi-lo) loc 
+      then YES Share.top readable_share_top (VAL Undef) NoneP
+      else core phi @ loc.
+
+Lemma mod_after_alloc'_ok : forall phi lo hi b,
+  resource_fmap (approx (level phi)) (approx (level phi)) oo (mod_after_alloc'  phi lo hi b)
+  = mod_after_alloc' phi lo hi b.
+
+Definition mod_after_alloc (phi: rmap) (lo hi: Z) (b: block) :=
+  proj1_sig (make_rmap (mod_after_alloc' phi lo hi b) (ghost_of phi)
+    _
+    (mod_after_alloc'_ok phi lo hi b) (ghost_of_approx phi)).
+
+Transparent alloc.
+
+Lemma adr_range_inv: forall loc loc' n,
+  ~ adr_range loc n loc' ->
+  fst loc <> fst loc' \/ (fst loc=fst loc' /\ ~snd loc <= snd loc' < snd loc + n).
+
+Lemma dry_noperm_juicy_nonreadable : forall m loc,
+  access_at (m_dry m) loc Cur = None ->   ~readable loc (m_phi m).
+
+Lemma fullempty_after_alloc : forall m1 m2 lo n b ofs,
+  alloc m1 lo n = (m2, b) ->
+  access_at m2 (b, ofs) Cur = None \/ access_at m2 (b, ofs) Cur = Some Freeable.
+
+Lemma alloc_dry_unchanged_on : forall m1 m2 loc lo hi b0,
+  alloc m1 lo hi = (m2, b0) ->
+  ~adr_range (b0,lo) (hi-lo) loc ->
+  access_at m1 loc = access_at m2 loc /\
+  (access_at m1 loc Cur <> None -> contents_at m1 loc= contents_at m2 loc).
+
+Lemma adr_range_zle_fact : forall b lo hi loc,
+  adr_range (b,lo) (hi-lo) loc ->
+  zle lo (snd loc) && zlt (snd loc) hi = true.
+
+Lemma alloc_dry_updated_on : forall m1 m2 lo hi b loc,
+  alloc m1 lo hi = (m2, b) ->
+  adr_range (b, lo) (hi - lo) loc ->
+  access_at m2 loc Cur=Some Freeable /\
+  contents_at m2 loc=Undef.
+
+Definition resource_decay (nextb: block) (phi1 phi2: rmap) :=
+  (level phi1 >= level phi2)%nat /\
+ forall l: address,
+  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
+  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
+  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
+       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = 
+                       YES sh (writable0_readable wsh) (VAL v) NoneP /\ 
+       phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)
+  \/ ((fst l >= nextb)%positive /\ exists v, phi2 @ l = YES Share.top readable_share_top (VAL v) NoneP)
+  \/ (exists v, exists pp, phi1 @ l = YES Share.top readable_share_top (VAL v) pp 
+                        /\ phi2 @ l = NO Share.bot bot_unreadable)).
+
+Definition resource_nodecay (nextb: block) (phi1 phi2: rmap) :=
+  (level phi1 >= level phi2)%nat /\
+  forall l: address,
+  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
+  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
+  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
+       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = YES sh (writable0_readable wsh) (VAL v) NoneP
+      /\ phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)).
+
+Lemma resource_nodecay_decay:
+   forall b phi1 phi2, resource_nodecay b phi1 phi2 -> resource_decay b phi1 phi2.
+
+Lemma resource_decay_refl: forall b phi, 
+  (forall l, (fst l >= b)%positive -> phi @ l = NO Share.bot bot_unreadable) ->
+
+Lemma resource_decay_trans: forall b b' m1 m2 m3,
+  (b <= b')%positive ->
+  resource_decay b m1 m2 -> resource_decay b' m2 m3 -> resource_decay b m1 m3.
+
+Lemma level_store_juicy_mem:
+ forall jm m ch b i v H, level (store_juicy_mem jm m ch b i v H) = level jm.
+
+Lemma level_storebytes_juicy_mem:
+ forall jm m b i bytes H, level (storebytes_juicy_mem jm m b i bytes H) = level jm.
+
+Lemma inflate_store_resource_nodecay:
+  forall (jm: juicy_mem) (m': mem)
+          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
+          (STORE: store ch (m_dry jm) b ofs v = Some m')
+          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
+                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable))
+          phi',
+  inflate_store m' (m_phi jm) = phi' -> resource_nodecay (nextblock (m_dry jm)) (m_phi jm) phi'.
+
+Lemma inflate_free_resource_decay:
+ forall (jm :juicy_mem) (m': mem)
+          (b: block) (lo hi: Z)
+          (FREE: free (m_dry jm) b lo hi = Some m')
+          (PERM: forall ofs : Z,
+             lo <= ofs < hi -> perm_of_res (m_phi jm @ (b, ofs)) = Some Freeable),
+   resource_decay (nextblock (m_dry jm)) (m_phi jm) (inflate_free jm b lo hi).
+
+Lemma juicy_store_nodecay:
+  forall jm m' ch b ofs v
+       (H: store ch (m_dry jm) b ofs v = Some m')
+          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
+                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable)),
+       resource_nodecay (nextblock (m_dry jm)) (m_phi jm) (m_phi (store_juicy_mem jm _ _ _ _ _ H)).
+
+Lemma can_age1_juicy_mem: forall j r,
+  age (m_phi j) r -> exists j', age1 j = Some j'.
+
+Lemma can_age_jm:
+  forall jm, age1 (m_phi jm) <> None -> exists jm', age jm jm'.
+
+Lemma age_jm_dry: forall {jm jm'}, age jm jm' -> m_dry jm = m_dry jm'.
+
+Lemma age_jm_phi: forall {jm jm'}, age jm jm' -> age (m_phi jm) (m_phi jm').
+
+Lemma age1_YES'_1 {phi phi' l rsh sh k P} :
+  age1 phi = Some phi' ->
+  phi @ l = YES rsh sh k P ->
+  (exists P, phi' @ l = YES rsh sh k P).
+
+Lemma age1_YES'_2 {phi phi' l rsh sh k P} :
+  age1 phi = Some phi' ->
+  phi' @ l = YES rsh sh k P ->
+  (exists P, phi @ l = YES rsh sh k P).
+
+Lemma age1_PURE_2 {phi phi' l k P} :
+  age1 phi = Some phi' ->
+  phi' @ l = PURE k P ->
+  (exists P, phi @ l = PURE k P).
+
+Lemma perm_of_res_age x y loc :
+  age x y -> perm_of_res (x @ loc) = perm_of_res (y @ loc).
+
+Lemma contents_cohere_age m : hereditary age (contents_cohere m).
+
+Lemma access_cohere_age m : hereditary age (access_cohere m).
+
+Lemma max_access_cohere_age m : hereditary age (max_access_cohere m).
+
+Lemma alloc_cohere_age m : hereditary age (alloc_cohere m).
+
+Definition unage {A} {_:ageable A} x y := age y x.
+
+Lemma unage_YES'_1 {phi phi' l rsh sh k P} :
+  age1 phi' = Some phi ->
+  phi @ l = YES rsh sh k P ->
+  (exists P, phi' @ l = YES rsh sh k P).
+
+Lemma unage_YES'_2 {phi phi' l rsh sh k P} :
+  age1 phi' = Some phi ->
+  phi' @ l = YES rsh sh k P ->
+  (exists P, phi @ l = YES rsh sh k P).
+
+Lemma unage_PURE_2 {phi phi' l k P} :
+  age1 phi' = Some phi ->
+  phi' @ l = PURE k P ->
+  (exists P, phi @ l = PURE k P).
+
+Lemma contents_cohere_unage m : hereditary unage (contents_cohere m).
+
+Lemma access_cohere_unage m : hereditary unage (access_cohere m).
+
+Lemma max_access_cohere_unage m : hereditary unage (max_access_cohere m).
+
+Lemma alloc_cohere_unage m : hereditary unage (alloc_cohere m).
+
+Lemma juicy_mem_unage jm' : { jm | age jm jm' }. *)
+
+Require Import VST.veric.compcert_rmaps. 
+(* VST.veric.compcert_rmaps:
+Require Export VST.msl.msl_standard.
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes.
+Require Import VST.veric.shares.
+Require Import VST.veric.rmaps.
+Require Import VST.veric.rmaps_lemmas.
+Require Export VST.veric.Memory. 
+
+Instance EqDec_type: EqDec type := type_eq.
+
+Definition funsig := (list (ident*type) * type)%type. 
+
+Inductive kind : Type := VAL : memval -> kind
+                                   | LK : forall n i : Z, kind
+                                   | FUN: funsig -> calling_convention -> kind.
+
+Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
+Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
+
+Lemma isVAL_i: forall v, isVAL (VAL v).
+Hint Resolve isVAL_i.
+
+Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
+
+Module CompCert_AV <: ADR_VAL.
+
+Definition address := address.
+Definition some_address : address := (xH,0).
+Definition kind := kind.
+
+End CompCert_AV.
+
+Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
+
+Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
+
+Module R := Rmaps (CompCert_AV).
+Module RML := Rmaps_Lemmas(R).
+
+Export RML.
+Export R.
+
+Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
+Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
+
+Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
+  mk_rshare (rshare_sh p) H = p.
+
+Definition fixup_splitting
+  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
+  fun l => 
+    match z l with
+    | Some (sh, k) =>
+       match dec_readable (a l) with
+       | left p => Some (readable_part p,  k)
+       | right _ => None
+       end
+    | None => None
+    end.
+
+Definition share_of (x: option (rshare * kind)) : Share.t :=
+  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
+
+Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
+
+Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
+
+Lemma join_sub_same_k:
+ forall {a a' : rshare} {k k': AV.kind},
+
+Lemma pure_readable_glb_Rsh:
+ forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
+
+Lemma join_glb_Rsh:  
+  forall a b c : Share.t,
+
+Lemma pure_readable_share_glb:
+  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
+
+Lemma glb_Rsh_bot_unreadable:
+  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
+
+Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
+
+Lemma join_share_of: forall a b c,
+     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
+
+Lemma pure_readable_share_i:
+  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
+
+Obligation Tactic := Tactics.program_simpl.
+
+Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
+
+Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
+
+Program Definition writable (l: address): pred rmap :=
+ fun phi =>
+  match phi @ l with
+    | YES sh _ k lp => writable0_share sh /\ isVAL k
+    | _ => False
+  end.
+
+Program Definition readable (loc: address) : pred rmap :=
+   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
+
+Lemma readable_join:
+  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
+            readable loc phi1 -> readable loc phi3.
+
+Lemma readable_writable_join:
+forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
+
+Lemma writable0_join_sub:
+  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
+
+Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
+            writable loc phi1 -> writable loc phi2.
+
+Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
+
+Lemma writable_e: forall loc m, 
+   writable loc m -> 
+   exists sh, exists rsh, exists v, exists p, 
+     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
+Arguments writable_e [loc] [m] _.
+
+Lemma readable_e: forall loc m, 
+   readable loc m -> 
+  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
+Arguments readable_e [loc] [m] _.
+
+Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
+
+Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
+
+Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
+
+Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
+
+Lemma bytes_writable_dec:
+   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
+
+Lemma bytes_readable_dec:
+   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
+
+Lemma bytes_writable_readable:
+  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
+
+Hint Resolve bytes_writable_readable : mem.
+
+Lemma rmap_age_i:
+ forall w w' : rmap,
+    level w = S (level w') ->
+   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
+    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
+    age w w'. *)
+
+Require Import VST.veric.semax.
+(* VST.veric.semax:
+Require Import VST.veric.juicy_base.
+Require Import VST.veric.juicy_mem VST.veric.juicy_mem_lemmas VST.veric.juicy_mem_ops.
+Require Import VST.veric.res_predicates.
+Require Import VST.veric.extend_tc.
+Require Import VST.veric.Clight_seplog.
+Require Import VST.veric.Clight_assert_lemmas.
+Require Import VST.veric.Clight_new.
+Require Import VST.veric.Clight_lemmas.
+Require Import VST.sepcomp.extspec.
+Require Import VST.sepcomp.step_lemmas.
+Require Import VST.veric.juicy_safety.
+Require Import VST.veric.juicy_extspec.
+Require Import VST.veric.tycontext.
+Require Import VST.veric.expr2.
+Require Import VST.veric.expr_lemmas.
+Require Import VST.veric.own.
+
+Local Open Scope nat_scope.
+Local Open Scope pred.
+
+Definition closed_wrt_modvars c (F: assert) : Prop :=
+    closed_wrt_vars (modifiedvars c) F.
+
+Definition genv_symb_injective {F V} (ge: Genv.t F V) : extspec.injective_PTree block.
+
+Definition jsafeN {Z} (Hspec : juicy_ext_spec Z) (ge: genv) :=
+  @jsafeN_ genv _ _ genv_symb_injective 
+               (cl_core_sem ge) Hspec ge.
+
+Lemma ext_join_approx : forall {Z} (z : Z) n g,
+  joins g (Some (ghost_PCM.ext_ref z, NoneP) :: nil) ->
+
+Lemma ext_join_unapprox : forall {Z} (z : Z) n g,
+  joins (ghost_fmap (approx n) (approx n) g) (Some (ghost_PCM.ext_ref z, NoneP) :: nil) ->
+
+Program Definition ext_compat {Z} (ora : Z) : mpred :=
+  fun w => joins (ghost_of w) (Some (ghost_PCM.ext_ref ora, NoneP) :: nil).
+
+Program Definition assert_safe
+     (Espec : OracleKind)
+     (ge: genv) ve te (ctl: cont) : assert :=
+  fun rho => bupd (fun w => forall ora (jm:juicy_mem),
+       ext_compat ora w ->
+       rho = construct_rho (filter_genv ge) ve te ->
+       m_phi jm = w ->
+             jsafeN (@OK_spec Espec) ge (level w) ora (State ve te ctl) jm).
+
+Definition list2opt {T: Type} (vl: list T) : option T :=
+ match vl with nil => None | x::_ => Some x end.
+
+Definition match_venv (ve: venviron) (vars: list (ident * type)) :=
+ forall id, match ve id with Some (b,t) => In (id,t) vars | _ => True end.
+
+Definition guard_environ (Delta: tycontext) (f: option function) (rho: environ) : Prop :=
+   typecheck_environ Delta rho /\
+  match f with
+  | Some f' => match_venv (ve_of rho) (fn_vars f')
+                /\ ret_type Delta = fn_return f'
+  | None => True
+  end.
+
+Lemma guard_environ_e1:
+   forall Delta f rho, guard_environ Delta f rho ->
+     typecheck_environ Delta rho.
+
+Definition _guard (Espec : OracleKind)
+    (gx: genv) (Delta: tycontext) (P : assert) (f: option function) (ctl: cont) : pred nat :=
+     ALL tx : Clight.temp_env, ALL vx : env,
+          let rho := construct_rho (filter_genv gx) vx tx in
+          !! guard_environ Delta f rho
+                  && P rho && funassert Delta rho
+             >=> assert_safe Espec gx vx tx ctl rho.
+
+Definition guard (Espec : OracleKind)
+    (gx: genv) (Delta: tycontext) (P : assert)  (ctl: cont) : pred nat :=
+  _guard Espec gx Delta P (current_function ctl) ctl.
+
+Definition zap_fn_return (f: function) : function :=
+ mkfunction Tvoid f.(fn_callconv) f.(fn_params) f.(fn_vars) f.(fn_temps) f.(fn_body).
+
+Definition exit_cont (ek: exitkind) (vl: option val) (k: cont) : cont :=
+  match ek with
+  | EK_normal => k
+  | EK_break => break_cont k
+  | EK_continue => continue_cont k
+  | EK_return =>
+         match vl, call_cont k with
+         | Some v, Kcall (Some x) f ve te :: k' =>
+                    Kseq (Sreturn None) :: Kcall None (zap_fn_return f) ve (PTree.set x v te) :: k'
+         | _,_ => Kseq (Sreturn None) :: call_cont k
+         end
+   end.
+
+Definition rguard (Espec : OracleKind)
+    (gx: genv) (Delta: tycontext)  (R : ret_assert) (ctl: cont) : pred nat :=
+  ALL ek: exitkind, ALL vl: option val,
+    _guard Espec gx Delta (proj_ret_assert R ek vl) (current_function ctl) (exit_cont ek vl ctl).
+
+Record semaxArg :Type := SemaxArg {
+ sa_Delta: tycontext;
+ sa_P: assert;
+ sa_c: statement;
+ sa_R: ret_assert
+}.
+
+Definition ext_spec_pre' (Espec: OracleKind) (ef: external_function)
+   (x': ext_spec_type OK_spec ef) (ge_s: injective_PTree block)
+   (ts: list typ) (args: list val) (z: OK_ty) : pred juicy_mem :=
+  exist (hereditary age)
+     (ext_spec_pre OK_spec ef x' ge_s ts args z)
+     (JE_pre_hered _ _ _ _ _ _ _ _).
+
+Program Definition ext_spec_post' (Espec: OracleKind)
+   (ef: external_function) (x': ext_spec_type OK_spec ef) (ge_s: injective_PTree block)
+   (tret: option typ) (ret: option val) (z: OK_ty) : pred juicy_mem :=
+  exist (hereditary age)
+   (ext_spec_post OK_spec ef x' ge_s tret ret z)
+     (JE_post_hered _ _ _ _ _ _ _ _).
+
+Definition juicy_mem_pred (P : pred rmap) (jm: juicy_mem): pred nat :=
+     # diamond fashionM (exactly (m_phi jm) && P).
+
+Fixpoint make_ext_args (gx: genviron) (ids: list ident) (vl: list val)  :=
+  match ids, vl with
+  | id::ids', v::vl' => env_set (make_ext_args gx ids' vl') id v
+  | _, v::vl' => env_set (make_ext_args gx ids vl') 1%positive v
+  | _, _ => mkEnviron gx (Map.empty _) (Map.empty _)
+ end.
+
+Definition make_ext_rval  (gx: genviron) (v: option val):=
+  match v with
+  | Some v' =>  mkEnviron gx (Map.empty _)
+                              (Map.set 1%positive v' (Map.empty _))
+  | None => mkEnviron gx (Map.empty _) (Map.empty _)
+  end.
+
+Definition semax_external
+  (Hspec: OracleKind) (ids: list ident) ef
+  (A: TypeTree)
+  (P Q: forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)):
+        pred nat :=
+ ALL gx: genv, ALL Ts: list Type,
+ ALL x: (dependent_type_functor_rec Ts A (pred rmap)),
+   |>  ALL F: pred rmap, ALL ts: list typ,
+   ALL args: list val,
+   !!Val.has_type_list args (sig_args (ef_sig ef)) &&
+   juicy_mem_op (P Ts x (make_ext_args (filter_genv gx) ids args) * F) >=>
+   EX x': ext_spec_type OK_spec ef,
+    (ALL z:_, juicy_mem_op (ext_compat z) -->
+     ext_spec_pre' Hspec ef x' (genv_symb_injective gx) ts args z) &&
+     ! ALL tret: option typ, ALL ret: option val, ALL z': OK_ty,
+      ext_spec_post' Hspec ef x' (genv_symb_injective gx) tret ret z' >=>
+          juicy_mem_op (Q Ts x (make_ext_rval (filter_genv gx) ret) * F).
+
+Definition tc_option_val (sig: type) (ret: option val) :=
+  match sig, ret with
+    | Tvoid, None => True
+    | Tvoid, Some _ => False
+    | ty, Some v => tc_val ty v
+    | _, _ => False
+  end.
+
+Fixpoint zip_with_tl {A : Type} (l1 : list A) (l2 : typelist) : list (A*type) :=
+  match l1, l2 with
+    | a::l1', Tcons b l2' => (a,b)::zip_with_tl l1' l2'
+    | _, _ => nil
+  end.
+
+Definition believe_external (Hspec: OracleKind) (gx: genv) (v: val) (fsig: funsig) cc
+  (A: TypeTree)
+  (P Q: forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)):
+  pred nat :=
+  match Genv.find_funct gx v with
+  | Some (External ef sigargs sigret cc') =>
+      let ids := fst (split (fst fsig)) in
+        !! (fsig = (zip_with_tl ids sigargs, sigret) /\ cc'=cc
+           /\ ef_sig ef = mksignature
+                           (typlist_of_typelist (type_of_params (fst fsig)))
+                           (opttyp_of_type (snd fsig)) cc
+           /\ length (typelist2list sigargs)=length ids)
+        && semax_external Hspec ids ef A P Q
+        && ! (ALL ts: list Type,
+              ALL x: dependent_type_functor_rec ts A (pred rmap),
+              ALL ret:option val,
+                Q ts x (make_ext_rval (filter_genv gx) ret)
+                  && !!has_opttyp ret (opttyp_of_type (snd fsig))
+                  >=> !! tc_option_val sigret ret)
+  | _ => FF
+  end.
+
+Definition fn_funsig (f: function) : funsig := (fn_params f, fn_return f).
+
+Definition var_sizes_ok (cenv: composite_env) (vars: list (ident*type)) :=
+   Forall (fun var : ident * type => @sizeof cenv (snd var) <= Ptrofs.max_unsigned)%Z vars.
+
+Definition var_block' (sh: Share.t) (cenv: composite_env) (idt: ident * type) (rho: environ): mpred :=
+  !! (sizeof (snd idt) <= Ptrofs.max_unsigned)%Z &&
+  (memory_block sh (sizeof (snd idt))) (eval_lvar (fst idt) (snd idt) rho).
+
+Definition stackframe_of' (cenv: composite_env) (f: Clight.function) : assert :=
+  fold_right (fun P Q rho => P rho * Q rho) (fun rho => emp)
+     (map (fun idt => var_block' Share.top cenv idt) (Clight.fn_vars f)).
+
+Definition believe_internal_
+  (semax:semaxArg -> pred nat)
+  (gx: genv) (Delta: tycontext) v (fsig: funsig) cc (A: TypeTree)
+  (P Q: forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)) : pred nat :=
+  (EX b: block, EX f: function,
+   prop (v = Vptr b Ptrofs.zero /\ Genv.find_funct_ptr gx b = Some (Internal f)
+                 /\ Forall (fun it => complete_type (genv_cenv gx) (snd it) = true) (fn_vars f)
+                 /\ list_norepet (map (@fst _ _) f.(fn_params) ++ map (@fst _ _) f.(fn_temps))
+                 /\ list_norepet (map (@fst _ _) f.(fn_vars)) /\ var_sizes_ok (genv_cenv gx) (f.(fn_vars))
+                 /\ fsig = fn_funsig f /\ f.(fn_callconv) = cc)
+  && ALL ts: list Type,
+     ALL x : dependent_type_functor_rec ts A (pred rmap),
+           |> semax (SemaxArg  (func_tycontext' f Delta)
+                                (fun rho => (bind_args f.(fn_params) f.(fn_vars) (P ts x) rho * stackframe_of' (genv_cenv gx) f rho)
+                                             && funassert (func_tycontext' f Delta) rho)
+                              (Ssequence f.(fn_body) (Sreturn None))
+           (frame_ret_assert (function_body_ret_assert (fn_return f) (Q ts x)) (stackframe_of' (genv_cenv gx) f)))).
+
+Definition empty_environ (ge: genv) := mkEnviron (filter_genv ge) (Map.empty _) (Map.empty _).
+
+Definition claims (ge: genv) (Delta: tycontext) v fsig cc A P Q : Prop :=
+  exists id HP HQ, (glob_specs Delta)!id = Some (mk_funspec fsig cc A P Q HP HQ) /\
+    exists b, Genv.find_symbol ge id = Some b /\ v = Vptr b Ptrofs.zero.
+
+Definition believepred (Espec: OracleKind) (semax: semaxArg -> pred nat)
+              (Delta: tycontext) (gx: genv)  (Delta': tycontext) : pred nat :=
+  ALL v:val, ALL fsig: funsig, ALL cc: calling_convention,
+  ALL A: TypeTree,
+  ALL P: forall ts, dependent_type_functor_rec ts (AssertTT A) mpred,
+  ALL Q: forall ts, dependent_type_functor_rec ts (AssertTT A) mpred,
+       !! claims gx Delta' v fsig cc A P Q  -->
+      (believe_external Espec gx v fsig cc A P Q
+        || believe_internal_ semax gx Delta v fsig cc A P Q).
+
+Definition semax_  {CS: compspecs}  (Espec: OracleKind)
+       (semax: semaxArg -> pred nat) (a: semaxArg) : pred nat :=
+ match a with SemaxArg Delta P c R =>
+  ALL gx: genv, ALL Delta': tycontext,
+       !! (tycontext_sub Delta Delta' /\ genv_cenv gx = cenv_cs)-->
+      (believepred Espec semax Delta' gx Delta') -->
+     ALL k: cont, ALL F: assert,
+       (!! (closed_wrt_modvars c F) &&
+              rguard Espec gx Delta' (frame_ret_assert R F) k) -->
+        guard Espec gx Delta' (fun rho => F rho * P rho) (Kseq c :: k)
+  end.
+
+Definition semax'  {CS: compspecs} (Espec: OracleKind) Delta P c R : pred nat :=
+     HORec (semax_  Espec) (SemaxArg Delta P c R).
+
+Definition believe_internal {CS: compspecs} (Espec:  OracleKind)
+  (gx: genv) (Delta: tycontext) v (fsig: funsig) cc (A: TypeTree)
+  (P Q: forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)) : pred nat :=
+  (EX b: block, EX f: function,
+   prop (v = Vptr b Ptrofs.zero /\ Genv.find_funct_ptr gx b = Some (Internal f)
+                 /\ Forall (fun it => complete_type (genv_cenv gx) (snd it) = true) (fn_vars f)
+                 /\ list_norepet (map (@fst _ _) f.(fn_params) ++ map (@fst _ _) f.(fn_temps))
+                 /\ list_norepet (map (@fst _ _) f.(fn_vars)) /\ var_sizes_ok (genv_cenv gx) (f.(fn_vars))
+                 /\ fsig = fn_funsig f /\ f.(fn_callconv) = cc)
+  && ALL ts: list Type,
+     ALL x : dependent_type_functor_rec ts A (pred rmap),
+        |> semax' Espec (func_tycontext' f Delta)
+                                (fun rho => (bind_args f.(fn_params) f.(fn_vars) (P ts x) rho * stackframe_of' (genv_cenv gx)  f rho)
+                                             && funassert (func_tycontext' f Delta) rho)
+                               (Ssequence f.(fn_body) (Sreturn None))
+           (frame_ret_assert (function_body_ret_assert (fn_return f) (Q ts x)) (stackframe_of' (genv_cenv gx) f))).
+
+Definition believe {CS: compspecs} (Espec:OracleKind)
+              (Delta: tycontext) (gx: genv) (Delta': tycontext): pred nat :=
+  ALL v:val, ALL fsig: funsig, ALL cc: calling_convention,
+  ALL A: TypeTree,
+  ALL P: (forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)),
+  ALL Q: (forall ts, dependent_type_functor_rec ts (AssertTT A) (pred rmap)),
+       !! claims gx Delta' v fsig cc A P Q  -->
+      (believe_external Espec gx v fsig cc A P Q
+        || believe_internal Espec gx Delta v fsig cc A P Q).
+
+Lemma semax_fold_unfold : forall {CS: compspecs} (Espec : OracleKind),
+  semax' Espec = fun Delta P c R =>
+  ALL gx: genv, ALL Delta': tycontext,
+       !! (tycontext_sub Delta Delta' /\ genv_cenv gx = cenv_cs) -->
+       believe Espec Delta' gx Delta' -->
+     ALL k: cont, ALL F: assert,
+        (!! (closed_wrt_modvars c F) && rguard Espec gx Delta' (frame_ret_assert R F) k) -->
+        guard Espec gx Delta' (fun rho => F rho * P rho) (Kseq c :: k).
+
+Definition weakest_pre {CS: compspecs} (Espec: OracleKind) (Delta: tycontext) c Q: assert :=
+  fun rho: environ =>
+  ALL gx: genv, ALL Delta': tycontext,
+       !! (tycontext_sub Delta Delta' /\ genv_cenv gx = cenv_cs) -->
+       unfash (believe Espec Delta' gx Delta') -->
+     ALL k: cont, ALL F: assert,
+        unfash (!! (closed_wrt_modvars c F) && rguard Espec gx Delta' (frame_ret_assert Q F) k) -->
+        
+        ALL tx : Clight.temp_env, ALL vx : env,
+          (!! (rho = construct_rho (filter_genv gx) vx tx)) -->
+          ((!! guard_environ Delta' (current_function (Kseq c :: k)) rho && funassert Delta' rho) -->
+             (F rho -* assert_safe Espec gx vx tx (Kseq c :: k) rho)).
+
+Opaque semax'.
+
+Definition semax {CS: compspecs} (Espec: OracleKind) (Delta: tycontext) P c Q :=
+  forall n, semax' Espec Delta P c Q n.
+
+Lemma any_level_pred_nat: forall P: pred nat, (forall n, P n) <-> TT |-- P.
+
+Lemma semax_weakest_pre_aux: forall {A: Type} (P: pred nat) (Q R: A -> pred rmap),
+  P = fash (ALL x: A, Q x --> R x) ->
+  (TT |-- P <-> forall x, Q x |-- R x).
+
+Lemma unfash_allp:  forall {A} {agA: ageable A} {B} (f: B -> pred nat),
+  @unfash _ agA (allp f) = allp (fun x:B => unfash (f x)).
+
+Lemma fash_TT: forall {A} {agA: ageable A}, @unfash A agA TT = TT.
+
+Lemma allp_andp: 
+  forall {A} {NA: ageable A} {B: Type} (b0: B) (P: B -> pred A) (Q: pred A),
+   (allp P && Q = allp (fun x => P x && Q))%pred.
+
+Lemma unfash_prop_imp:
+  forall {A} {agA: ageable A} (P: Prop) (Q: pred nat),
+  (@unfash _ agA (prop P --> Q) = prop P --> @unfash _ agA Q)%pred.
+
+Import age_to.
+
+Lemma unfash_imp:
+  forall {A} {NA: ageable A} (P Q: pred nat),
+  (@unfash A _ (P --> Q) = (@unfash A _ P) --> @unfash A _ Q)%pred.
+
+Lemma unfash_andp:  forall {A} {agA: ageable A} (P Q: pred nat),
+  (@unfash A agA (andp P Q) = andp (@unfash A agA P) (@unfash A agA Q)).
+
+Lemma andp_imp_e':
+  forall (A : Type) (agA : ageable A) (P Q : pred A),
+   P && (P --> Q) |-- P && Q.
+
+Lemma unfash_fash:
+  forall (A : Type) (agA : ageable A) (P : pred A),
+   unfash (fash P) |-- P.
+
+Lemma imp_imp:
+  forall (A : Type) (agA : ageable A) (P Q R: pred A),
+    P --> (Q --> R) = P && Q --> R.
+
+Lemma imp_allp:
+  forall B (A : Type) (agA : ageable A) (P: pred A) (Q: B -> pred A),
+    P --> allp Q  = ALL x: B, P --> Q x.
+
+Lemma fash_prop: forall P: Prop,
+  fash (!! P: pred rmap) = !! P.
+
+Lemma fash_unfash:
+  forall (P : pred nat),
+   fash (unfash P: pred rmap) = P.
+
+Lemma prop_true_imp:
+  forall (P: Prop) (Q: pred rmap),
+    P -> !! P --> Q = Q.
+
+Lemma corable_unfash:
+  forall (A : Type) (JA : Join A) (PA : Perm_alg A) (SA : Sep_alg A) (agA : ageable A) 
+    (AgeA : Age_alg A) (P : pred nat), corable (! P). *)
+
+Require Import VST.veric.juicy_extspec.
+(* VST.veric.juicy_extspec:
+Require Import VST.veric.juicy_base.
+Require Import VST.sepcomp.semantics.
+Require Import VST.sepcomp.extspec.
+Require Import VST.sepcomp.step_lemmas.
+Require Import VST.veric.shares.
+Require Import VST.veric.juicy_safety.
+Require Import VST.veric.juicy_mem. 
+
+Require Import VST.veric.ghost_PCM. 
+Require Import VST.veric.own. 
+
+Require Import VST.veric.age_to_resource_at.
+
+Local Open Scope nat_scope.
+Local Open Scope pred.
+
+Record juicy_ext_spec (Z: Type) := {
+  JE_spec:> external_specification juicy_mem external_function Z;
+  JE_pre_hered: forall e t ge_s typs args z, hereditary age (ext_spec_pre JE_spec e t ge_s typs args z);
+  JE_post_hered: forall e t ge_s tret rv z, hereditary age (ext_spec_post JE_spec e t ge_s tret rv z);
+  JE_exit_hered: forall rv z, hereditary age (ext_spec_exit JE_spec rv z)
+}.
+
+Class OracleKind := {
+  OK_ty : Type;
+  OK_spec: juicy_ext_spec OK_ty
+}.
+
+Definition void_spec T : external_specification juicy_mem external_function T :=
+    Build_external_specification
+      juicy_mem external_function T
+      (fun ef => False)
+      (fun ef Hef ge tys vl m z => False)
+      (fun ef Hef ge ty vl m z => False)
+      (fun rv m z => False).
+
+Definition ok_void_spec (T : Type) : OracleKind.
+
+Definition j_initial_core {C} (csem: @CoreSemantics C mem)
+     (n: nat) (m: juicy_mem) (q: C) (m': juicy_mem) (v: val) (args: list val) 
+     : Prop :=
+  m' = m /\
+  semantics.initial_core csem n (m_dry m) q (m_dry m') v args.
+
+Definition j_at_external {C} (csem: @CoreSemantics C mem)
+   (q: C) (jm: juicy_mem) : option (external_function * list val) :=
+   semantics.at_external csem q (m_dry jm).
+
+Definition j_after_external {C} (csem: @CoreSemantics C mem)
+    (ret: option val) (q: C) (jm: juicy_mem) :=
+   semantics.after_external csem ret q (m_dry jm).
+
+Definition jstep {C} (csem: @CoreSemantics C mem)
+  (q: C) (jm: juicy_mem) (q': C) (jm': juicy_mem) : Prop :=
+ corestep csem q (m_dry jm) q' (m_dry jm') /\ 
+ resource_decay (nextblock (m_dry jm)) (m_phi jm) (m_phi jm') /\
+ level jm = S (level jm') /\
+ ghost_of (m_phi jm') = ghost_approx jm' (ghost_of (m_phi jm)).
+
+Definition j_halted {C} (csem: @CoreSemantics C mem)
+       (c: C) (i: int): Prop :=
+     halted csem c i.
+
+Lemma jstep_not_at_external {C} (csem: @CoreSemantics C mem):
+  forall m q m' q', jstep csem q m q' m' -> at_external csem q (m_dry m) = None.
+
+Lemma jstep_not_halted  {C} (csem: @CoreSemantics C mem):
+  forall m q m' q' i, jstep csem q m q' m' -> ~j_halted csem q i.
+
+Definition juicy_core_sem
+  {C} (csem: @CoreSemantics C mem) :
+   @CoreSemantics C juicy_mem :=
+  @Build_CoreSemantics _ juicy_mem
+    (j_initial_core csem)
+    (j_at_external csem)
+    (j_after_external csem)
+    (j_halted csem)
+    (jstep csem)
+    (jstep_not_halted csem)
+    (jstep_not_at_external csem)
+.
+
+Section upd_exit.
+  Context {Z : Type}.
+  Variable spec : juicy_ext_spec Z.
+
+  Definition upd_exit' (Q_exit : option val -> Z -> juicy_mem -> Prop) :=
+  {| ext_spec_type := ext_spec_type spec
+   ; ext_spec_pre := ext_spec_pre spec
+   ; ext_spec_post := ext_spec_post spec
+   ; ext_spec_exit := Q_exit |}.
+
+  Definition upd_exit'' (ef : external_function) (x : ext_spec_type spec ef) ge :=
+    upd_exit' (ext_spec_post spec ef x ge (sig_res (ef_sig ef))).
+
+  Program Definition upd_exit {ef : external_function} (x : ext_spec_type spec ef) ge :=
+    Build_juicy_ext_spec _ (upd_exit'' _ x ge) _ _ _.
+End upd_exit.
+
+Obligation Tactic := Tactics.program_simpl.
+
+Program Definition juicy_mem_op (P : pred rmap) : pred juicy_mem :=
+  fun jm => P (m_phi jm).
+
+Lemma age_resource_decay:
+   forall b jm1 jm2 jm1' jm2',
+        resource_decay b jm1 jm2 ->
+        age jm1 jm1' -> age jm2 jm2' ->
+        level jm1 = S (level jm2) ->
+        resource_decay b jm1' jm2'.
+
+Lemma necR_PURE' phi0 phi k p adr :
+  necR phi0 phi ->
+  phi @ adr = PURE k p ->
+  
+  exists pp, phi0 @ adr = PURE k pp.
+
+Definition jm_update m m' := m_dry m' = m_dry m /\ level m' = level m /\
+  resource_at (m_phi m') = resource_at (m_phi m).
+
+Lemma jm_update_age: forall m1 m2 m1', jm_update m1 m2 -> age m1 m1' ->
+  exists m2', jm_update m1' m2' /\ age m2 m2'.
+
+Definition has_ext {Z} (ora : Z) : pred rmap := @own (ext_PCM _) 0 (Some (Tsh, Some ora), None) NoneP.
+
+Definition jm_bupd {Z} (ora : Z) P m := forall C : ghost,
+  
+  join_sub (Some (ext_ref ora, NoneP) :: nil) C ->
+  joins (ghost_of (m_phi m)) (ghost_approx m C) ->
+  exists m' : juicy_mem, joins (ghost_of (m_phi m')) ((ghost_approx m) C) /\
+    jm_update m m' /\ P m'.
+
+Lemma jm_bupd_intro: forall {Z} (ora : Z) (P : juicy_mem -> Prop) m, P m -> jm_bupd ora P m.
+
+Section juicy_safety.
+  Context {G C Z:Type}.
+  Context {genv_symb: G -> injective_PTree block}.
+  Context (Hcore:@CoreSemantics C mem).
+  Variable (Hspec : juicy_ext_spec Z).
+  Variable ge : G.
+
+  Definition Hrel n' m m' :=
+    n' = level m' /\
+    (level m' < level m)%nat /\
+    pures_eq (m_phi m) (m_phi m').
+
+  Inductive jsafeN_:
+    nat -> Z -> C -> juicy_mem -> Prop :=
+  | jsafeN_0: forall z c m, jsafeN_ O z c m
+  | jsafeN_step:
+      forall n z c m c' m',
+      jstep Hcore c m c' m' ->
+      jm_bupd z (jsafeN_ n z c') m' ->
+      jsafeN_ (S n) z c m
+  | jsafeN_external:
+      forall n z c m e args x,
+      j_at_external Hcore c m = Some (e,args) ->
+      ext_spec_pre Hspec e x (genv_symb ge) (sig_args (ef_sig e)) args z m ->
+      (forall ret m' z' n'
+         (Hargsty : Val.has_type_list args (sig_args (ef_sig e)))
+         (Hretty : has_opttyp ret (sig_res (ef_sig e))),
+         (n' <= n)%nat ->
+         Hrel n' m m' ->
+         ext_spec_post Hspec e x (genv_symb ge) (sig_res (ef_sig e)) ret z' m' ->
+         exists c',
+           semantics.after_external Hcore ret c (m_dry m') = Some c' /\
+           jm_bupd z' (jsafeN_ n' z' c') m') ->
+      jsafeN_ (S n) z c m
+  | jsafeN_halted:
+      forall n z c m i,
+      semantics.halted Hcore c i ->
+      ext_spec_exit Hspec (Some (Vint i)) z m ->
+      jsafeN_ n z c m.
+
+  Lemma jsafe_corestep_backward:
+    forall c m c' m' n z,
+    jstep Hcore c m c' m' ->
+    jsafeN_ n z c' m' -> jsafeN_ (S n) z c m.
+
+  Lemma jsafe_downward1 :
+    forall n c m z,
+      jsafeN_ (S n) z c m -> jsafeN_ n z c m.
+
+  Lemma jsafe_downward :
+    forall n n' c m z,
+      le n' n ->
+      jsafeN_ n z c m -> jsafeN_ n' z c m.
+
+  Lemma jsafe_step'_back2 :
+    forall
+      {ora st m st' m' n},
+      jstep Hcore st m st' m' ->
+      jsafeN_ (n-1) ora st' m' ->
+      jsafeN_ n ora st m.
+
+  Lemma jsafe_corestepN_backward:
+    forall z c m c' m' n n0,
+      semantics_lemmas.corestepN (juicy_core_sem Hcore) n0 c m c' m' ->
+
+  Lemma convergent_controls_jsafe :
+    forall m q1 q2,
+      (j_at_external Hcore q1 m = j_at_external Hcore q2 m) ->
+      (forall ret m q', semantics.after_external Hcore ret q1 m = Some q' ->
+
+  Lemma wlog_jsafeN_gt0 : forall
+    n z q m,
+    (lt 0 n -> jsafeN_ n z q m) ->
+    jsafeN_ n z q m.
+
+Lemma make_join_ext : forall (ora : Z) a c n,
+  join_sub (Some (ext_ref ora, NoneP) :: nil) c ->
+  joins (ghost_fmap (approx n) (approx n) a) (ghost_fmap (approx n) (approx n) c) ->
+  join_sub (Some (ext_ref ora, NoneP) :: nil) (make_join a c).
+
+Lemma age_safe:
+  forall jm jm0, age jm0 jm ->
+  forall ora c,
+   jsafeN_ (level jm0) ora c jm0 ->
+   jsafeN_ (level jm) ora c jm.
+
+End juicy_safety.
+
+Lemma juicy_core_sem_preserves_corestep_fun
+  {C} (csem: @CoreSemantics C mem) :
+  corestep_fun csem ->
+  corestep_fun (juicy_core_sem csem). *)
+
+
+
+Require Import VST.veric.mem_lessdef.
+(* VST.veric.mem_lessdef:
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Integers.
+Require Import compcert.common.AST.
+Require Import compcert.common.Globalenvs.
+Require Import compcert.common.Memory.
+Require Import compcert.common.Memdata.
+Require Import compcert.common.Values.
+
+Require Import VST.msl.Coqlib2.
+Require Import VST.msl.eq_dec.
+Require Import VST.msl.seplog.
+Require Import VST.veric.Memory.
+Require Import VST.veric.juicy_mem. 
+Require Import VST.veric.juicy_extspec.
+
+Require Import VST.veric.res_predicates.
+
+Require Import VST.sepcomp.extspec.
+
+Notation val_inject := Val.inject. 
+
+Definition mem_lessdef m1 m2 :=
+  (forall b ofs len v,
+      Mem.loadbytes m1 b ofs len = Some v ->
+      exists v',
+        Mem.loadbytes m2 b ofs len = Some v' /\
+        list_forall2 memval_lessdef v v'
+  ) /\
+  (forall b ofs k p,
+      Mem.perm m1 b ofs k p ->
+      Mem.perm m2 b ofs k p) /\
+  (Mem.nextblock m1 <=
+   Mem.nextblock m2)%positive.
+
+Definition mem_lessalloc m1 m2 :=
+  Mem.loadbytes m1 = Mem.loadbytes m2 /\
+  Mem.perm m1 = Mem.perm m2 /\
+  (Mem.nextblock m1 <= Mem.nextblock m2)%positive.
+
+Definition mem_equiv m1 m2 :=
+  Mem.loadbytes m1 = Mem.loadbytes m2 /\
+  Mem.perm m1 = Mem.perm m2 /\
+  Mem.nextblock m1 = Mem.nextblock m2.
+
+Lemma perm_order_pp_refl p: Mem.perm_order'' p p.
+
+Lemma same_perm_spec m1 m2 :
+  Mem.perm m1 = Mem.perm m2 <->
+
+Lemma same_loadbytes_spec m1 m2 :
+  Mem.perm m1 = Mem.perm m2 ->  
+
+Definition mem_equiv' m1 m2 :=
+  (forall x, Mem.perm_order' (access_at m1 x Cur) Readable -> contents_at m1 x = contents_at m2 x) /\
+  Mem.perm m1 = Mem.perm m2 /\
+  Mem.nextblock m1 = Mem.nextblock m2.
+
+Definition mem_lessalloc' m1 m2 :=
+  (forall x, Mem.perm_order' (access_at m1 x Cur) Readable -> contents_at m1 x = contents_at m2 x) /\
+  Mem.perm m1 = Mem.perm m2 /\
+  (Mem.nextblock m1 <= Mem.nextblock m2)%positive.
+
+Lemma mem_equiv'_spec m1 m2 : mem_equiv m1 m2 <-> mem_equiv' m1 m2.
+
+Lemma mem_lessalloc'_spec m1 m2 : mem_lessalloc m1 m2 <-> mem_lessalloc' m1 m2.
+
+Lemma val_inject_antisym v1 v2 :
+  val_inject inject_id v1 v2 ->
+  val_inject inject_id v2 v1 ->
+  v1 = v2.
+
+Lemma memval_lessdef_antisym v1 v2 : memval_lessdef v1 v2 -> memval_lessdef v2 v1 -> v1 = v2.
+
+Lemma mem_lessdef_equiv m1 m2 : mem_lessdef m1 m2 -> mem_lessdef m2 m1 ->  mem_equiv m1 m2.
+
+Lemma mem_equiv_refl m : mem_equiv m m.
+
+Lemma mem_lessalloc_refl m : mem_lessalloc m m.
+
+Lemma mem_equiv_refl' m m' : m = m' -> mem_equiv m m'.
+
+Lemma mem_lessalloc_refl' m m' : m = m' -> mem_lessalloc m m'.
+
+Lemma mem_equiv_sym m1 m2 : mem_equiv m1 m2 -> mem_equiv m2 m1.
+
+Lemma mem_equiv_trans m1 m2 m3 :
+  mem_equiv m1 m2 ->
+  mem_equiv m2 m3 ->
+  mem_equiv m1 m3.
+
+Lemma mem_lessalloc_trans m1 m2 m3 :
+  mem_lessalloc m1 m2 ->
+  mem_lessalloc m2 m3 ->
+  mem_lessalloc m1 m3.
+
+Lemma mem_equiv_lessalloc m1 m2 : mem_equiv m1 m2 -> mem_lessalloc m1 m2.
+
+Lemma mem_lessalloc_lessdef m1 m2 : mem_lessalloc m1 m2 -> mem_lessdef m1 m2.
+
+Lemma mem_equiv_lessdef m1 m2 : mem_equiv m1 m2 -> mem_lessdef m1 m2.
+
+Lemma mem_lessdef_valid_pointer:
+  forall m1 m2 b z, 
+       mem_lessdef m1 m2 ->
+       Mem.valid_pointer m1 b z = true ->
+
+Lemma mem_lessdef_weak_valid_pointer:
+  forall m1 m2 b z, 
+       mem_lessdef m1 m2 ->
+       Mem.weak_valid_pointer m1 b z = true ->
+
+Ltac memval_lessdef_tac :=
+match goal with
+ | H: memval_lessdef ?a ?b |- _ => destruct a,b; inv H
+ | H: list_forall2 _ ?a ?b |- _ => destruct a,b; inv H
+ | H: proj_bytes ?a = Some _ |- _ => match a with context [nil] => inv H end
+end;
+ try discriminate;
+ try solve [unfold decode_val; simpl; auto] .
+
+Lemma mem_lessdef_proj_bytes:
+  forall vl vl',
+  list_forall2 memval_lessdef vl vl' ->
+  forall bl, proj_bytes vl = Some bl -> proj_bytes vl' = Some bl.
+
+Lemma mem_lessdef_decode_val:
+  forall ch vl vl', list_forall2 memval_lessdef vl vl' ->
+    Val.lessdef (decode_val ch vl) (decode_val ch vl').
+
+Lemma mem_lessdef_loadbytes:
+  forall m1 m2, mem_lessdef m1 m2 ->
+  forall b z n v1, Mem.loadbytes m1 b z n = Some v1 ->
+
+Lemma valid_pointer_lessalloc {m m2} (M:mem_lessalloc m m2):
+      Mem.valid_pointer m = Mem.valid_pointer m2.
+
+Lemma weak_valid_pointer_lessalloc {m m2} (M:mem_lessalloc m m2):
+      Mem.weak_valid_pointer m = Mem.weak_valid_pointer m2.
+
+Definition juicy_mem_equiv jm1 jm2 := mem_equiv (m_dry jm1) (m_dry jm2) /\ m_phi jm1 = m_phi jm2.
+
+Definition juicy_mem_lessdef jm1 jm2 := mem_lessdef (m_dry jm1) (m_dry jm2) /\ m_phi jm1 = m_phi jm2.
+
+Definition juicy_mem_lessalloc jm1 jm2 := mem_lessdef (m_dry jm1) (m_dry jm2) /\ m_phi jm1 = m_phi jm2.
+
+Ltac sync D :=
+  first
+    [ split; [destruct D as [D _] | destruct D as [_ D]]
+    | destruct D as [|D]; [left|right]
+    | let x := fresh in destruct D as (x, D); exists x
+    | let x := fresh in intro x; specialize (D x)
+    ].
+
+Definition ext_spec_stable {M E Z} (R : M -> M -> Prop)
+           (spec : external_specification M E Z) :=
+  (forall e x b tl vl z m1 m2,
+    R m1 m2 ->
+    ext_spec_pre spec e x b tl vl z m1 ->
+    ext_spec_pre spec e x b tl vl z m2) /\
+  (forall e v m1 m2,
+    R m1 m2 ->
+    ext_spec_exit spec e v m1 ->
+    ext_spec_exit spec e v m2).
+
+Lemma mem_ext m1 m2 :
+  Mem.mem_contents m1 = Mem.mem_contents m2 -> *)
+
+Require Import VST.veric.age_to_resource_at.
+(* VST.veric.age_to_resource_at:
+Require Import compcert.common.Memory.
+Require Import VST.msl.Coqlib2.
+Require Import VST.msl.eq_dec.
+Require Import VST.msl.ageable.
+Require Import VST.msl.age_to.
+Require Import VST.veric.coqlib4.
+Require Import VST.veric.compcert_rmaps.
+
+Set Bullet Behavior "Strict Subproofs".
+
+Lemma pred_hered {A} {_ : ageable A} (P : pred A) : hereditary age (app_pred P).
+
+Lemma hereditary_necR {phi phi' : rmap} {P} :
+  necR phi phi' ->
+  hereditary age P ->
+  P phi -> P phi'.
+
+Lemma anti_hereditary_necR {phi phi' : rmap} {P} :
+  necR phi phi' ->
+  hereditary (fun x y => age y x) P ->
+  P phi' -> P phi.
+
+Lemma app_pred_age {R} {phi phi' : rmap} :
+  age phi phi' ->
+  app_pred R phi ->
+  app_pred R phi'.
+
+Lemma age_yes_sat {Phi Phi' phi phi' l z z' sh sh'} (R : pred rmap) :
+  level Phi = level phi ->
+  age Phi Phi' ->
+  age phi phi' ->
+  app_pred R phi ->
+  Phi  @ l = YES sh sh' (LK z z') (SomeP rmaps.Mpred (fun _ => R)) ->
+
+Lemma age_resource_at {phi phi' loc} :
+  age phi phi' ->
+  phi' @ loc = resource_fmap (approx (level phi')) (approx (level phi')) (phi @ loc).
+
+Lemma age_to_resource_at phi n loc : age_to n phi @ loc = resource_fmap (approx n) (approx n) (phi @ loc).
+
+Lemma age_to_ghost_of phi n : ghost_of (age_to n phi) = ghost_fmap (approx n) (approx n) (ghost_of phi). *)
+
+
+
+Require Import VST.veric.aging_lemmas.
+(* VST.veric.aging_lemmas:
+Require Import compcert.common.Memory.
+Require Import VST.msl.Coqlib2.
+Require Import VST.msl.eq_dec.
+Require Import VST.msl.ageable.
+Require Import VST.msl.age_to.
+Require Import VST.veric.coqlib4.
+Require Import VST.veric.juicy_mem.
+Require Import VST.veric.compcert_rmaps. 
+Require Import VST.veric.seplog.
+Require Import VST.veric.juicy_extspec.
+Require Import VST.veric.mem_lessdef.
+Require Import VST.veric.age_to_resource_at.
+
+Set Bullet Behavior "Strict Subproofs".
+
+Ltac hered :=
+  match goal with
+    H : ?P ?x |- ?P ?y => revert H
+  end;
+  match goal with
+    |- ?P ?x -> ?P ?y =>
+    cut (hereditary age P);
+    [ let h := fresh "h" in intros h; apply h; auto | ]
+  end.
+
+Ltac agejoinhyp :=
+  match goal with
+    H : sepalg.join _ _ ?m, A : age ?m _ |- _ =>
+    pose proof age1_join2 _ H A; clear H
+  end.
+
+Ltac agehyps :=
+  match goal with
+    H : age ?x ?y, HH : ?P ?x |- _ =>
+    cut (P y);
+    [ clear HH; intros HH
+    | hered;
+      try apply pred_hered;
+      try apply predicates_hered.exactly_obligation_1]
+  end.
+
+Lemma hereditary_func_at' loc fs :
+  hereditary age (func_at' fs loc).
+
+Lemma anti_hereditary_func_at' loc fs :
+  hereditary (fun x y => age y x) (func_at' fs loc).
+
+Lemma pures_eq_unage {phi1 phi1' phi2}:
+  ge (level phi1') (level phi2) ->
+  age phi1 phi1' ->
+  juicy_safety.pures_eq phi1' phi2 ->
+
+Lemma jstep_age_sim {C} {csem : @semantics.CoreSemantics C mem} {c c' jm1 jm2 jm1'} :
+
+Lemma jsafeN__age {G C Z HH Sem Jspec ge ora q n} jm jmaged :
+  ext_spec_stable age (JE_spec _ Jspec) ->
+  age jm jmaged ->
+  le n (level jmaged) ->
+  @jsafeN_ G Z C HH Sem Jspec ge n ora q jm ->
+  @jsafeN_ G Z C HH Sem Jspec ge n ora q jmaged.
+
+Lemma jsafeN__age_to {G C Z HH Sem Jspec ge ora q n} l jm :
+  ext_spec_stable age (JE_spec _ Jspec) ->
+  le n l ->
+  @jsafeN_ G Z C HH Sem Jspec ge n ora q jm ->
+  @jsafeN_ G Z C HH Sem Jspec ge n ora q (age_to l jm).
+
+Lemma m_dry_age_to n jm : m_dry (age_to n jm) = m_dry jm.
+
+Lemma m_phi_age_to n jm : m_phi (age_to n jm) = age_to n (m_phi jm). *)
+
+
+
+Set Bullet Behavior "Strict Subproofs".
+
+
+
+Lemma jsafeN_age Z Jspec ge ora q n jm jmaged :
+
+  ext_spec_stable age (JE_spec _ Jspec) ->
+
+  age jm jmaged ->
+
+  le n (level jmaged) ->
+
+  @jsafeN Z Jspec ge n ora q jm ->
+
+  @jsafeN Z Jspec ge n ora q jmaged.
+
+Proof. intros. eapply jsafeN__age; eauto. Qed.
+
+
+
+Lemma jsafeN_age_to Z Jspec ge ora q n l jm :
+
+  ext_spec_stable age (JE_spec _ Jspec) ->
+
+  le n l ->
+
+  @jsafeN Z Jspec ge n ora q jm ->
+
+  @jsafeN Z Jspec ge n ora q (age_to l jm).
+
+Proof. intros. eapply jsafeN__age_to; eauto. Qed.
+

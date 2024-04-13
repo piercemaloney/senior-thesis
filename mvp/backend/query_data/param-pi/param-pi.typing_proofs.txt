@@ -1,0 +1,1435 @@
+
+
+Require Import processus.
+(* processus:
+Inductive capa : Set :=
+  | Read : capa
+  | Write : capa
+  | Both : capa
+  | Nil : capa.
+
+Inductive capst : capa -> capa -> Prop :=
+  | capst_refl : forall c : capa, capst c c
+  | capst_nil : forall c : capa, capst c Nil
+  | capst_both : forall c : capa, capst Both c.
+
+Parameter type : Set.
+
+Parameter getcap : type -> capa.
+
+Parameter getobj : type -> type.
+
+Parameter typest : type -> type -> Prop.
+
+Axiom typest_refl : forall t : type, typest t t.
+
+Axiom
+  typest_trans :
+    forall t t' : type,
+    typest t t' -> forall t'' : type, typest t' t'' -> typest t t''.
+
+Theorem capst_trans :
+ forall c c' c'' : capa, capst c c' -> capst c' c'' -> capst c c''.
+
+Parameter PP : Set.
+Parameter VV : Set.
+
+Axiom PP_decidable : forall p q : PP, {p = q} + {p <> q}.
+Axiom VV_decidable : forall x y : VV, {x = y} + {x <> y}.
+
+Inductive name : Set :=
+  | pname : PP -> name
+  | vname : VV -> name.
+
+Inductive proc : Set :=
+  | nil : proc
+  | inp : name -> VV -> proc -> proc
+  | out : name -> name -> proc -> proc
+  | par : proc -> proc -> proc
+  | res : VV -> type -> proc -> proc
+  | ban : proc -> proc
+  | sum : proc -> proc -> proc
+  | mat : name -> name -> proc -> proc.
+
+Definition subs_var_name (n m : name) (x : VV) : name :=
+  match n with
+  | pname p => n
+  | vname v => match VV_decidable x v with
+               | left _ => m
+               | right _ => n
+               end
+  end.
+
+Fixpoint subs_var_proc (P : proc) : name -> VV -> proc :=
+  fun (n : name) (x : VV) =>
+  match P with
+  | nil => nil
+  | inp m v qq =>
+      inp (subs_var_name m n x) v
+        match VV_decidable x v with
+        | left _ => qq
+        | right _ => subs_var_proc qq n x
+        end
+  | out m1 m2 qq =>
+      out (subs_var_name m1 n x) (subs_var_name m2 n x)
+        (subs_var_proc qq n x)
+  | par qq rr => par (subs_var_proc qq n x) (subs_var_proc rr n x)
+  | res v t qq =>
+      res v t
+        match VV_decidable x v with
+        | left _ => qq
+        | right _ => subs_var_proc qq n x
+        end
+  | ban qq => ban (subs_var_proc qq n x)
+  | sum qq rr => sum (subs_var_proc qq n x) (subs_var_proc rr n x)
+  | mat m1 m2 qq =>
+      mat (subs_var_name m1 n x) (subs_var_name m2 n x)
+        (subs_var_proc qq n x)
+  end.
+
+Definition subs_par_name (n m : name) (p : PP) : name :=
+  match n with
+  | pname q => match PP_decidable p q with
+               | left _ => m
+               | right _ => n
+               end
+  | vname v => n
+  end.
+
+Fixpoint subs_par_proc (P : proc) : name -> PP -> proc :=
+  fun (n : name) (p : PP) =>
+  match P with
+  | nil => nil
+  | inp m v qq => inp (subs_par_name m n p) v (subs_par_proc qq n p)
+  | out m1 m2 qq =>
+      out (subs_par_name m1 n p) (subs_par_name m2 n p)
+        (subs_par_proc qq n p)
+  | par qq rr => par (subs_par_proc qq n p) (subs_par_proc rr n p)
+  | res v t qq => res v t (subs_par_proc qq n p)
+  | ban qq => ban (subs_par_proc qq n p)
+  | sum qq rr => sum (subs_par_proc qq n p) (subs_par_proc rr n p)
+  | mat m1 m2 qq =>
+      mat (subs_par_name m1 n p) (subs_par_name m2 n p)
+        (subs_par_proc qq n p)
+  end.
+
+Inductive freshname (p : PP) : name -> Prop :=
+  | freshp : forall q : PP, p <> q -> freshname p (pname q)
+  | freshv : forall v : VV, freshname p (vname v).
+
+Inductive fresh (p : PP) : proc -> Prop :=
+  | frnil : fresh p nil
+  | frinp :
+      forall (m : name) (v : VV) (Q : proc),
+      freshname p m -> fresh p Q -> fresh p (inp m v Q)
+  | frout :
+      forall (m1 m2 : name) (Q : proc),
+      freshname p m1 -> freshname p m2 -> fresh p Q -> fresh p (out m1 m2 Q)
+  | frpar : forall P Q : proc, fresh p P -> fresh p Q -> fresh p (par P Q)
+  | frres :
+      forall (v : VV) (t : type) (Q : proc), fresh p Q -> fresh p (res v t Q)
+  | frban : forall Q : proc, fresh p Q -> fresh p (ban Q)
+  | frsum : forall P Q : proc, fresh p P -> fresh p Q -> fresh p (sum P Q)
+  | frmat :
+      forall (m1 m2 : name) (Q : proc),
+      freshname p m1 -> freshname p m2 -> fresh p Q -> fresh p (mat m1 m2 Q).
+
+Inductive freshvarname (v : VV) : name -> Prop :=
+  | freshvp : forall p : PP, freshvarname v (pname p)
+  | freshvv : forall x : VV, v <> x -> freshvarname v (vname x).
+
+Inductive freshvar (v : VV) : proc -> Prop :=
+  | fvnil : freshvar v nil
+  | fvinp :
+      forall (m : name) (x : VV) (Q : proc),
+      freshvarname v m -> v <> x -> freshvar v Q -> freshvar v (inp m x Q)
+  | fvout :
+      forall (m1 m2 : name) (Q : proc),
+      freshvarname v m1 ->
+      freshvarname v m2 -> freshvar v Q -> freshvar v (out m1 m2 Q)
+  | fvpar :
+      forall P Q : proc, freshvar v P -> freshvar v Q -> freshvar v (par P Q)
+  | fvres :
+      forall (x : VV) (t : type) (Q : proc),
+      v <> x -> freshvar v Q -> freshvar v (res x t Q)
+  | fvban : forall Q : proc, freshvar v Q -> freshvar v (ban Q)
+  | fvsum :
+      forall P Q : proc, freshvar v P -> freshvar v Q -> freshvar v (sum P Q)
+  | fvmat :
+      forall (m1 m2 : name) (Q : proc),
+      freshvarname v m1 ->
+      freshvarname v m2 -> freshvar v Q -> freshvar v (mat m1 m2 Q).
+
+Inductive act : Set :=
+  | aout : PP -> PP -> act
+  | ainp : PP -> PP -> act
+  | about : PP -> PP -> type -> act
+  | tau : act.
+
+Inductive freshact (p : PP) : act -> Prop :=
+  | faout : forall q1 q2 : PP, p <> q1 -> p <> q2 -> freshact p (aout q1 q2)
+  | fainp : forall q1 q2 : PP, p <> q1 -> p <> q2 -> freshact p (ainp q1 q2)
+  | fabout :
+      forall (q1 q2 : PP) (t : type),
+      p <> q1 -> p <> q2 -> freshact p (about q1 q2 t)
+  | ftau : freshact p tau.
+
+Inductive sem : proc -> act -> proc -> Prop :=
+  | sinp :
+      forall (p q : PP) (x : VV) (Q : proc),
+      sem (inp (pname p) x Q) (ainp p q) (subs_var_proc Q (pname q) x)
+  | sout :
+      forall (p q : PP) (Q : proc),
+      sem (out (pname p) (pname q) Q) (aout p q) Q
+  | scoml :
+      forall (P P' Q Q' : proc) (p q : PP),
+      sem P (ainp p q) P' ->
+      sem Q (aout p q) Q' -> sem (par P Q) tau (par P' Q')
+  | scomr :
+      forall (P P' Q Q' : proc) (p q : PP),
+      sem P (aout p q) P' ->
+      sem Q (ainp p q) Q' -> sem (par P Q) tau (par P' Q')
+  | sopen :
+      forall (P P' : proc) (p q : PP) (x : VV) (t : type),
+      fresh q P ->
+      p <> q ->
+      sem (subs_var_proc P (pname q) x) (aout p q) P' ->
+      sem (res x t P) (about p q t) P'
+  | sclosel :
+      forall (P P' Q Q' : proc) (p q r : PP) (t : type) (x : VV),
+      fresh q P ->
+      freshvar x P' ->
+      freshvar x Q' ->
+      sem P (ainp p q) P' ->
+      sem Q (about p r t) Q' ->
+      sem (par P Q) tau
+        (res x t
+           (par (subs_par_proc P' (vname x) q) (subs_par_proc Q' (vname x) r)))
+  | scloser :
+      forall (P P' Q Q' : proc) (p q r : PP) (t : type) (x : VV),
+      fresh q P ->
+      freshvar x P' ->
+      freshvar x Q' ->
+      sem P (ainp p q) P' ->
+      sem Q (about p r t) Q' ->
+      sem (par Q P) tau
+        (res x t
+           (par (subs_par_proc Q' (vname x) r) (subs_par_proc P' (vname x) q)))
+  | sres :
+      forall (P P' : proc) (mu : act) (x y : VV) (t : type),
+      (forall q : PP,
+       sem (subs_var_proc P (pname q) x) mu (subs_var_proc P' (pname q) y)) ->
+      sem (res x t P) mu (res y t P')
+  | sban :
+      forall (P P' : proc) (mu : act),
+      sem (par (ban P) P) mu P' -> sem (ban P) mu P'
+  | sparl :
+      forall (P P' Q : proc) (mu : act),
+      (forall (p q : PP) (t : type), mu = about p q t -> fresh q Q) ->
+      sem P mu P' -> sem (par P Q) mu (par P' Q)
+  | sparr :
+      forall (P P' Q : proc) (mu : act),
+      (forall (p q : PP) (t : type), mu = about p q t -> fresh q Q) ->
+      sem P mu P' -> sem (par Q P) mu (par Q P')
+  | ssuml :
+      forall (P P' Q : proc) (mu : act), sem P mu P' -> sem (sum P Q) mu P'
+  | ssumr :
+      forall (P P' Q : proc) (mu : act), sem P mu P' -> sem (sum Q P) mu P'
+  | smat :
+      forall (P P' : proc) (p : PP) (mu : act),
+      sem P mu P' -> sem (mat (pname p) (pname p) P) mu P'.
+
+Definition env : Type := PP -> type.
+
+Definition addenv (G : env) (p : PP) (t : type) : env :=
+  fun q : PP =>
+  match PP_decidable p q with
+  | left _ => t
+  | right _ => G q
+  end.
+
+Definition envst (G D : env) : Prop := forall p : PP, typest (G p) (D p).
+
+Definition eqvenv (G D : env) : Prop := forall p : PP, G p = D p.
+
+Inductive typing : env -> proc -> Prop :=
+  | tnil : forall G : env, typing G nil
+  | tinp :
+      forall (G : env) (p : PP) (x : VV) (P : proc),
+      capst (getcap (G p)) Read ->
+      (forall q : PP,
+       fresh q P ->
+       typing (addenv G q (getobj (G p))) (subs_var_proc P (pname q) x)) ->
+      typing G (inp (pname p) x P)
+  | tout :
+      forall (G : env) (p q : PP) (P : proc),
+      capst (getcap (G p)) Write ->
+      typest (G q) (getobj (G p)) ->
+      typing G P -> typing G (out (pname p) (pname q) P)
+  | tpar :
+      forall (G : env) (P Q : proc),
+      typing G P -> typing G Q -> typing G (par P Q)
+  | tres :
+      forall (G : env) (x : VV) (t : type) (P : proc),
+      (forall q : PP,
+       fresh q P -> typing (addenv G q t) (subs_var_proc P (pname q) x)) ->
+      typing G (res x t P)
+  | tban : forall (G : env) (P : proc), typing G P -> typing G (ban P)
+  | tsum :
+      forall (G : env) (P Q : proc),
+      typing G P -> typing G Q -> typing G (sum P Q)
+  | tmat :
+      forall (G : env) (p q : PP) (P : proc),
+      getcap (G p) = Both ->
+      getcap (G q) = Both ->
+      typing G P -> typing G (mat (pname p) (pname q) P).
+
+Definition swap_par (r p q : PP) : PP :=
+  match PP_decidable r p with
+  | left _ => q
+  | right _ => match PP_decidable r q with
+               | left _ => p
+               | right _ => r
+               end
+  end.
+
+Definition swap_name (n : name) (p q : PP) : name :=
+  match n with
+  | pname r =>
+      match PP_decidable r p with
+      | left _ => pname q
+      | right _ =>
+          match PP_decidable r q with
+          | left _ => pname p
+          | right _ => pname r
+          end
+      end
+  | vname x => vname x
+  end.
+
+Fixpoint swap_proc (P : proc) : PP -> PP -> proc :=
+  fun p q : PP =>
+  match P with
+  | inp n x p1 => inp (swap_name n p q) x (swap_proc p1 p q)
+  | out n1 n2 p1 =>
+      out (swap_name n1 p q) (swap_name n2 p q) (swap_proc p1 p q)
+  | res x t p1 => res x t (swap_proc p1 p q)
+  | par p1 p2 => par (swap_proc p1 p q) (swap_proc p2 p q)
+  | ban p1 => ban (swap_proc p1 p q)
+  | sum p1 p2 => sum (swap_proc p1 p q) (swap_proc p2 p q)
+  | mat n1 n2 p1 =>
+      mat (swap_name n1 p q) (swap_name n2 p q) (swap_proc p1 p q)
+  | nil => nil
+  end.
+
+Definition swap_env (G : env) (p q : PP) : env :=
+  fun r : PP =>
+  match PP_decidable p r with
+  | left _ => G q
+  | right _ =>
+      match PP_decidable q r with
+      | left _ => G p
+      | right _ => G r
+      end
+  end.
+         
+Axiom different : forall p : PP, exists s : PP, p <> s.
+
+Axiom
+  fresh_and_different :
+    forall (p : PP) (P : proc), exists r : PP, fresh r P /\ p <> r.
+
+Axiom
+  fresh_and_two_different :
+    forall (p q : PP) (P : proc),
+    exists r : PP, fresh r P /\ p <> r /\ q <> r.
+
+Axiom
+  fresh_and_three_different :
+    forall (p q r : PP) (P : proc),
+    exists s : PP, fresh s P /\ p <> s /\ q <> s /\ r <> s. *)
+
+Require Import fresh.
+(* fresh:
+Require Import processus.
+Require Import induc.
+
+Theorem freshname_is :
+ forall (p : PP) (n : name), freshname p n -> n <> pname p.
+
+Theorem freshvarname_is :
+ forall (x : VV) (n : name), freshvarname x n -> n <> vname x.
+
+Theorem fresh_after_subs_name :
+ forall (p q : PP) (x : VV) (n : name),
+ p <> q -> freshname p n -> freshname p (subs_var_name n (pname q) x).
+
+Theorem fresh_after_subs :
+ forall (p q : PP) (x : VV) (P : proc),
+ p <> q -> fresh p P -> fresh p (subs_var_proc P (pname q) x).
+
+Theorem fresh_after_subs_par_name :
+ forall (p q r : PP) (n : name),
+ r <> p -> freshname r n -> freshname r (subs_par_name n (pname p) q).
+
+Theorem fresh_after_subs_par :
+ forall (p q r : PP) (P : proc),
+ r <> p -> fresh r P -> fresh r (subs_par_proc P (pname p) q).
+
+Theorem fresh_after_subs_by_var_name :
+ forall (n : name) (p q : PP) (x : VV),
+ freshname p n -> freshname p (subs_par_name n (vname x) q).
+
+Theorem fresh_after_subs_by_var :
+ forall (P : proc) (p q : PP) (x : VV),
+ fresh p P -> fresh p (subs_par_proc P (vname x) q).
+ 
+Theorem fresh_before_subs_name :
+ forall (p q : PP) (x : VV) (n : name),
+ freshname p (subs_var_name n (pname q) x) -> freshname p n.
+
+Theorem fresh_before_subs :
+ forall (p q : PP) (x : VV) (P : proc),
+ fresh p (subs_var_proc P (pname q) x) -> fresh p P.
+
+Theorem out_known_name :
+ forall (P P' : proc) (p q : PP), sem P (aout p q) P' -> ~ fresh q P.
+
+Theorem inp_on_known_name :
+ forall (P P' : proc) (p q : PP), sem P (ainp p q) P' -> ~ fresh p P.
+
+Theorem fresh_masked_by_var_name :
+ forall (n : name) (p : PP) (x : VV),
+ freshname p (subs_par_name n (vname x) p).
+
+Theorem fresh_masked_by_var :
+ forall (P : proc) (p : PP) (x : VV), fresh p (subs_par_proc P (vname x) p).
+
+Theorem fresh_after_trans :
+ forall (P P' : proc) (mu : act),
+ sem P mu P' -> forall q : PP, fresh q P -> freshact q mu -> fresh q P'.
+
+Theorem fresh_mask_name :
+ forall (n : name) (p q : PP),
+ p <> q -> freshname q (subs_par_name n (pname p) q).
+
+Theorem fresh_mask :
+ forall (P : proc) (p q : PP),
+ p <> q -> fresh q (subs_par_proc P (pname p) q). *)
+
+
+
+Unset Standard Proposition Elimination Names.
+
+
+
+Theorem gettype_not_added_name :
+
+ forall (G : env) (p q : PP) (t : type), p <> q -> addenv G p t q = G q.
+
+Proof.
+
+intros G p q t p_not_q.
+
+unfold addenv in |- *.
+
+case (PP_decidable p q).
+
+intro absurd; elim p_not_q; assumption.
+
+intro; reflexivity.
+
+Qed.
+
+
+
+Theorem gettype_added_name :
+
+ forall (G : env) (p : PP) (t : type), addenv G p t p = t.
+
+Proof.
+
+intros.
+
+unfold addenv in |- *.
+
+case (PP_decidable p p).
+
+intro; reflexivity.
+
+intro absurd; elim absurd; reflexivity.
+
+Qed.
+
+
+
+Theorem eqv_addenv :
+
+ forall (G D : env) (p : PP) (t : type),
+
+ eqvenv G D -> eqvenv (addenv G p t) (addenv D p t).
+
+Proof.
+
+intros G D p t eq1.
+
+unfold eqvenv in |- *.
+
+intro r; unfold addenv in |- *.
+
+case (PP_decidable p r).
+
+intro; reflexivity.
+
+intro; apply eq1.
+
+Qed.
+
+
+
+Theorem eqv_trans :
+
+ forall G G' G'' : env, eqvenv G G' -> eqvenv G' G'' -> eqvenv G G''.
+
+Proof.
+
+intros.
+
+unfold eqvenv in |- *.
+
+intros.
+
+transitivity (G' p).
+
+apply H.
+
+apply H0.
+
+Qed.
+
+
+
+Theorem eqv_typing :
+
+ forall G D : env, eqvenv G D -> forall P : proc, typing G P -> typing D P.
+
+Proof.
+
+cut
+
+ (forall (G : env) (P : proc),
+
+  typing G P -> forall D : env, eqvenv G D -> typing D P).
+
+intro other.
+
+intros G D eqv P typed.
+
+apply other with (G := G).
+
+assumption.
+
+assumption.
+
+intros G P typed; elim typed.
+
+intros; apply tnil.
+
+intros GG p x Q p_reads tail_typed hyprec.
+
+intros D eqGGD.
+
+apply tinp.
+
+cut (D p = GG p).
+
+intro same; rewrite same; assumption.
+
+symmetry  in |- *; apply eqGGD.
+
+intros s fresh_s.
+
+apply hyprec.
+
+assumption.
+
+cut (GG p = D p).
+
+intro same; rewrite same.
+
+apply eqv_addenv.
+
+assumption.
+
+apply eqGGD.
+
+intros GG p q Q p_writes q_supported typed0 hyprec D eqv.
+
+cut (D p = GG p).
+
+intro same.
+
+apply tout.
+
+rewrite same.
+
+assumption.
+
+rewrite same.
+
+cut (D q = GG q).
+
+intro same2; rewrite same2.
+
+assumption.
+
+symmetry  in |- *; apply eqv.
+
+apply hyprec.
+
+assumption.
+
+symmetry  in |- *; apply eqv.
+
+intros GG Q R typedQ hyprecQ typedR hyprecR D eqv.
+
+apply tpar.
+
+apply hyprecQ; assumption.
+
+apply hyprecR; assumption.
+
+intros GG x t Q tail_typed hyprec.
+
+intros D eqv.
+
+apply tres.
+
+intros s fresh_s.
+
+apply hyprec.
+
+assumption.
+
+apply eqv_addenv.
+
+assumption.
+
+intros GG Q typed0 hyprec D eqv; apply tban; apply hyprec; assumption.
+
+intros GG Q R typedQ hyprecQ typedR hyprecR.
+
+intros D eqv; apply tsum.
+
+apply hyprecQ; assumption.
+
+apply hyprecR; assumption.
+
+intros GG p q PP p_both q_both tail_typed hyprec D eqv.
+
+apply tmat.
+
+cut (D p = GG p).
+
+intro same; rewrite same.
+
+assumption.
+
+symmetry  in |- *; apply eqv.
+
+cut (D q = GG q).
+
+intro same; rewrite same.
+
+assumption.
+
+symmetry  in |- *; apply eqv.
+
+apply hyprec; assumption.
+
+Qed.
+
+
+
+Theorem switch_addenv :
+
+ forall (G : env) (p q : PP) (t1 t2 : type),
+
+ p <> q -> eqvenv (addenv (addenv G p t1) q t2) (addenv (addenv G q t2) p t1). 
+
+Proof.
+
+intros G p q t1 t2 p_not_q.
+
+unfold eqvenv in |- *.
+
+intro r.
+
+unfold addenv in |- *.
+
+case (PP_decidable q r); case (PP_decidable p r).
+
+intros p_is_r q_is_r.
+
+rewrite p_is_r in p_not_q.
+
+rewrite q_is_r in p_not_q.
+
+elim p_not_q; reflexivity.
+
+intros; reflexivity.
+
+intros; reflexivity.
+
+intros; reflexivity.
+
+Qed.
+
+
+
+Theorem trivial_addenv :
+
+ forall (G : env) (p : PP), eqvenv G (addenv G p (G p)).
+
+Proof.
+
+intros.
+
+unfold eqvenv in |- *.
+
+intros q.
+
+unfold addenv in |- *.
+
+case (PP_decidable p q).
+
+intro same; rewrite same.
+
+reflexivity.
+
+intro; reflexivity.
+
+Qed.
+
+
+
+Theorem redundant_addenv :
+
+ forall (G : env) (P : proc),
+
+ typing G P ->
+
+ forall (D : env) (p : PP) (t : type),
+
+ fresh p P -> eqvenv G (addenv D p t) -> typing D P.
+
+Proof.
+
+intros G P typed.
+
+elim typed.
+
+intros; apply tnil.
+
+
+
+intros G0 p x Q p_reads tail_typed.
+
+intros hyprec D q t fresh_q.
+
+intro eqv.
+
+inversion_clear fresh_q.
+
+apply tinp.
+
+cut (D p = G0 p).
+
+intro same; rewrite same; assumption.
+
+cut (D p = addenv D q t p).
+
+intro same; rewrite same; symmetry  in |- *; apply eqv.
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+cut (pname p <> pname q).
+
+intro notsame; red in |- *; intro absurd; rewrite absurd in notsame.
+
+elim notsame; reflexivity.
+
+apply freshname_is.
+
+assumption.
+
+intros s fresh_s.
+
+case (PP_decidable q s).
+
+intro same.
+
+rewrite <- same.
+
+cut (D p = G0 p).
+
+intro same2; rewrite same2.
+
+apply eqv_typing with (G := addenv G0 q (getobj (G0 p))).
+
+apply eqv_trans with (G' := addenv (addenv D q t) q (getobj (G0 p))).
+
+apply eqv_addenv.
+
+assumption.
+
+unfold eqvenv in |- *.
+
+intro q0; unfold addenv in |- *.
+
+case (PP_decidable q q0).
+
+intro; reflexivity.
+
+intro; reflexivity.
+
+apply tail_typed.
+
+assumption.
+
+cut (pname p <> pname q).
+
+intro.
+
+cut (D p = addenv D q t p).
+
+intro same2; rewrite same2.
+
+symmetry  in |- *; apply eqv.
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+red in |- *; intro absurd; rewrite absurd in H1.
+
+elim H1; reflexivity.
+
+apply freshname_is.
+
+assumption.
+
+intro.
+
+apply hyprec with (p0 := q) (t := t).
+
+assumption.
+
+apply fresh_after_subs.
+
+assumption.
+
+assumption.
+
+apply eqv_trans with (G' := addenv (addenv D q t) s (getobj (D p))).
+
+cut (D p = G0 p).
+
+intro same; rewrite same.
+
+apply eqv_addenv.
+
+assumption.
+
+transitivity (addenv D q t p).
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+cut (pname p <> pname q).
+
+intro; red in |- *; intro absurd.
+
+rewrite absurd in H1; elim H1; reflexivity.
+
+apply freshname_is; assumption.
+
+symmetry  in |- *; apply eqv.
+
+apply switch_addenv.
+
+assumption.
+
+
+
+intros GG p q Q p_writes q_correct tail_typed hyprec D r t fresh_r eqv.
+
+inversion_clear fresh_r.
+
+cut (D p = GG p).
+
+intro same.
+
+apply tout.
+
+rewrite same.
+
+assumption.
+
+cut (D q = GG q).
+
+intro same2.
+
+rewrite same.
+
+rewrite same2.
+
+assumption.
+
+transitivity (addenv D r t q).
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+cut (pname q <> pname r).
+
+intro absurd; red in |- *; intro abs2; rewrite abs2 in absurd.
+
+elim absurd; reflexivity.
+
+apply freshname_is; assumption.
+
+symmetry  in |- *; apply eqv.
+
+apply hyprec with (p := r) (t := t).
+
+assumption.
+
+assumption.
+
+transitivity (addenv D r t p).
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+cut (pname p <> pname r).
+
+intro absurd; red in |- *; intro abs2; rewrite abs2 in absurd.
+
+elim absurd; reflexivity.
+
+apply freshname_is; assumption.
+
+symmetry  in |- *; apply eqv.
+
+
+
+intros GG Q R typQ hyprecQ typR hyprecR.
+
+intros D p t fresh_p eqv.
+
+inversion_clear fresh_p.
+
+apply tpar.
+
+apply hyprecQ with (p := p) (t := t); assumption.
+
+apply hyprecR with (p := p) (t := t); assumption.
+
+
+
+intros GG x t Q tail_typed hyprec D p t' fresh_p eqv.
+
+inversion_clear fresh_p.
+
+apply tres.
+
+intros s fresh_s.
+
+case (PP_decidable p s).
+
+intros same; rewrite <- same.
+
+apply eqv_typing with (G := addenv GG p t).
+
+apply eqv_trans with (G' := addenv (addenv D p t') p t).
+
+apply eqv_addenv.
+
+assumption.
+
+unfold eqvenv in |- *.
+
+unfold addenv in |- *.
+
+intro; case (PP_decidable p p0).
+
+intro; reflexivity.
+
+intro; reflexivity.
+
+apply tail_typed.
+
+assumption.
+
+intro not_same; apply hyprec with (p := p) (t0 := t').
+
+assumption.
+
+apply fresh_after_subs.
+
+assumption.
+
+assumption.
+
+apply eqv_trans with (G' := addenv (addenv D p t') s t).
+
+apply eqv_addenv; assumption.
+
+apply switch_addenv.
+
+assumption.
+
+
+
+intros GG Q tail_typed hyprec D p t fresh_p eqv.
+
+inversion_clear fresh_p.
+
+apply tban.
+
+apply hyprec with (p := p) (t := t); assumption.
+
+intros G0 Q R typQ hyprecQ typR hyprecR D p t fresh_p eqv.
+
+inversion_clear fresh_p.
+
+apply tsum.
+
+apply hyprecQ with (p := p) (t := t); assumption.
+
+apply hyprecR with (p := p) (t := t); assumption.
+
+
+
+intros GG p q PP p_both q_both tail_typed hyprec DD r t fresh_r eqv.
+
+cut (r <> p).
+
+intro r_not_p.
+
+cut (r <> q).
+
+intro r_not_q.
+
+apply tmat.
+
+cut (DD p = GG p).
+
+intro same; rewrite same.
+
+assumption.
+
+transitivity (addenv DD r t p).
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+assumption.
+
+symmetry  in |- *; apply eqv.
+
+transitivity (getcap (GG q)).
+
+cut (DD q = addenv DD r t q).
+
+intro same; rewrite same.
+
+cut (addenv DD r t q = GG q).
+
+intro same2; rewrite same2.
+
+reflexivity.
+
+symmetry  in |- *; apply eqv.
+
+symmetry  in |- *; apply gettype_not_added_name.
+
+assumption.
+
+assumption.
+
+apply hyprec with (p := r) (t := t).
+
+inversion fresh_r.
+
+assumption.
+
+assumption.
+
+inversion_clear fresh_r.
+
+red in |- *; intro.
+
+rewrite H2 in H0.
+
+inversion_clear H0.
+
+elim H3.
+
+reflexivity.
+
+inversion_clear fresh_r.
+
+red in |- *; intro.
+
+rewrite H2 in H.
+
+inversion_clear H.
+
+elim H3; reflexivity.
+
+Qed.
+
+
+
+Theorem addenv_unused_name :
+
+ forall (G : env) (P : proc),
+
+ typing G P ->
+
+ forall (q : PP) (t : type), fresh q P -> typing (addenv G q t) P.
+
+Proof.
+
+intros G P typed.
+
+elim typed.
+
+intros; apply tnil.
+
+
+
+intros GG p x Q.
+
+intros p_reads tail_typed hyprec s t fresh_s.
+
+inversion_clear fresh_s.
+
+apply tinp.
+
+cut (addenv GG s t p = GG p).
+
+intro same; rewrite same.
+
+assumption.
+
+apply gettype_not_added_name.
+
+cut (pname p <> pname s).
+
+intro; red in |- *; intro.
+
+rewrite H2 in H1; elim H1; reflexivity.
+
+apply freshname_is.
+
+assumption.
+
+intros r fresh_r.
+
+cut (addenv GG s t p = GG p).
+
+intro same; rewrite same.
+
+case (PP_decidable r s).
+
+intros same2; rewrite same2.
+
+apply eqv_typing with (G := addenv GG s (getobj (GG p))).
+
+unfold eqvenv in |- *.
+
+unfold addenv in |- *.
+
+intro.
+
+case (PP_decidable s p0).
+
+intros; reflexivity.
+
+intros; reflexivity.
+
+apply tail_typed.
+
+assumption.
+
+intro not_same.
+
+apply eqv_typing with (G := addenv (addenv GG r (getobj (GG p))) s t).
+
+apply switch_addenv.
+
+assumption.
+
+apply hyprec.
+
+assumption.
+
+apply fresh_after_subs.
+
+red in |- *; intro; elim not_same; symmetry  in |- *; assumption.
+
+assumption.
+
+apply gettype_not_added_name.
+
+cut (pname p <> pname s).
+
+intro absurd; red in |- *; intro abs2; rewrite abs2 in absurd; elim absurd;
+
+ reflexivity.
+
+apply freshname_is; assumption.
+
+
+
+intros GG p q Q p_writes q_correct tail_typed hyprec r t fresh_r.
+
+inversion_clear fresh_r.
+
+cut (r <> p).
+
+intro r_not_p.
+
+cut (r <> q).
+
+intro r_not_q.
+
+apply tout.
+
+cut (addenv GG r t p = GG p).
+
+intro same; rewrite same.
+
+assumption.
+
+apply gettype_not_added_name.
+
+assumption.
+
+cut (addenv GG r t q = GG q).
+
+intro same; rewrite same.
+
+cut (addenv GG r t p = GG p).
+
+intro same2; rewrite same2; assumption.
+
+apply gettype_not_added_name.
+
+assumption.
+
+apply gettype_not_added_name; assumption.
+
+apply hyprec.
+
+assumption.
+
+cut (pname q <> pname r).
+
+intro absurd; red in |- *; intro abs; rewrite abs in absurd; elim absurd;
+
+ reflexivity.
+
+apply freshname_is; assumption.
+
+cut (pname p <> pname r).
+
+intro absurd; red in |- *; intro abs; rewrite abs in absurd; elim absurd;
+
+ reflexivity.
+
+apply freshname_is; assumption.
+
+
+
+intros GG Q R typQ hyprecQ typR hyprecR q t fresh_q.
+
+inversion_clear fresh_q.
+
+apply tpar.
+
+apply hyprecQ.
+
+assumption.
+
+apply hyprecR.
+
+assumption.
+
+
+
+intros GG x t Q tail_typed hyprec q t' fresh_q.
+
+inversion_clear fresh_q.
+
+apply tres.
+
+intros r fresh_r.
+
+case (PP_decidable q r).
+
+intro same; rewrite same.
+
+apply eqv_typing with (G := addenv GG r t).
+
+unfold eqvenv in |- *.
+
+unfold addenv in |- *.
+
+intro s.
+
+case (PP_decidable r s).
+
+intro; reflexivity.
+
+intro; reflexivity.
+
+apply tail_typed.
+
+assumption.
+
+intro not_same.
+
+apply eqv_typing with (G := addenv (addenv GG r t) q t').
+
+apply switch_addenv.
+
+red in |- *; intro; elim not_same; symmetry  in |- *; assumption.
+
+apply hyprec.
+
+assumption.
+
+apply fresh_after_subs.
+
+assumption.
+
+assumption.
+
+intros GG Q typed0 hyprec q t fresh_q.
+
+inversion_clear fresh_q.
+
+apply tban.
+
+apply hyprec; assumption.
+
+intros G0 Q R typQ hyprecQ typR hyprecR q t fresh_q.
+
+inversion_clear fresh_q.
+
+apply tsum.
+
+apply hyprecQ; assumption.
+
+apply hyprecR; assumption.
+
+
+
+intros GG p q PP p_both q_both tail_typed hyprec r t fresh_r.
+
+inversion_clear fresh_r.
+
+apply tmat.
+
+cut (addenv GG r t p = GG p).
+
+intro same; rewrite same.
+
+assumption.
+
+apply gettype_not_added_name.
+
+red in |- *; intro same.
+
+rewrite same in H.
+
+inversion_clear H.
+
+elim H2; reflexivity.
+
+cut (addenv GG r t q = GG q).
+
+intro same; rewrite same.
+
+assumption.
+
+apply gettype_not_added_name.
+
+red in |- *; intro same; rewrite same in H0.
+
+inversion_clear H0.
+
+elim H2; reflexivity.
+
+apply hyprec.
+
+assumption.
+
+Qed.
+
+
+
+Theorem eqe_refl : forall G : env, eqvenv G G.
+
+Proof.
+
+intro; unfold eqvenv in |- *.
+
+intro p; reflexivity.
+
+Qed.
+
+
+
+Theorem eqe_sym : forall G D : env, eqvenv G D -> eqvenv D G.
+
+Proof.
+
+intros G D.
+
+intro e.
+
+unfold eqvenv in |- *.
+
+intros.
+
+symmetry  in |- *; apply e.
+
+Qed.
+
+
+
+Theorem eqe_mask :
+
+ forall (G : env) (p : PP) (t1 t2 : type),
+
+ eqvenv (addenv (addenv G p t1) p t2) (addenv G p t2).
+
+Proof.
+
+intros.
+
+unfold eqvenv in |- *.
+
+intro r.
+
+unfold addenv in |- *.
+
+case (PP_decidable p r).
+
+intro; reflexivity.
+
+intro; reflexivity.
+
+Qed.
+
+
+

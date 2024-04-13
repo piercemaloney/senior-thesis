@@ -1,0 +1,3362 @@
+Require Import Coqlib.
+
+Require Import AST.
+
+Require Import Integers.
+
+Require Import compcert.common.Values.
+(* compcert.common.Values:
+Require Import Coqlib.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+
+Definition block : Type := positive.
+Definition eq_block := peq.
+
+Inductive val: Type :=
+  | Vundef: val
+  | Vint: int -> val
+  | Vlong: int64 -> val
+  | Vfloat: float -> val
+  | Vsingle: float32 -> val
+  | Vptr: block -> ptrofs -> val.
+
+Definition Vzero: val := Vint Int.zero.
+Definition Vone: val := Vint Int.one.
+Definition Vmone: val := Vint Int.mone.
+
+Definition Vtrue: val := Vint Int.one.
+Definition Vfalse: val := Vint Int.zero.
+
+Definition Vnullptr :=
+  if Archi.ptr64 then Vlong Int64.zero else Vint Int.zero.
+
+Definition Vptrofs (n: ptrofs) :=
+  if Archi.ptr64 then Vlong (Ptrofs.to_int64 n) else Vint (Ptrofs.to_int n).
+
+Module Val.
+
+Definition eq (x y: val): {x=y} + {x<>y}.
+Global Opaque eq.
+
+Definition has_type (v: val) (t: typ) : Prop :=
+  match v, t with
+  | Vundef, _ => True
+  | Vint _, Tint => True
+  | Vlong _, Tlong => True
+  | Vfloat _, Tfloat => True
+  | Vsingle _, Tsingle => True
+  | Vptr _ _, Tint => Archi.ptr64 = false
+  | Vptr _ _, Tlong => Archi.ptr64 = true
+  | (Vint _ | Vsingle _), Tany32 => True
+  | Vptr _ _, Tany32 => Archi.ptr64 = false
+  | _, Tany64 => True
+  | _, _ => False
+  end.
+
+Fixpoint has_type_list (vl: list val) (tl: list typ) {struct vl} : Prop :=
+  match vl, tl with
+  | nil, nil => True
+  | v1 :: vs, t1 :: ts => has_type v1 t1 /\ has_type_list vs ts
+  | _, _ => False
+  end.
+
+Definition has_opttype (v: val) (ot: option typ) : Prop :=
+  match ot with
+  | None => v = Vundef
+  | Some t => has_type v t
+  end.
+
+Lemma Vptr_has_type:
+  forall b ofs, has_type (Vptr b ofs) Tptr.
+
+Lemma Vnullptr_has_type:
+  has_type Vnullptr Tptr.
+
+Lemma has_subtype:
+  forall ty1 ty2 v,
+  subtype ty1 ty2 = true -> has_type v ty1 -> has_type v ty2.
+
+Lemma has_subtype_list:
+  forall tyl1 tyl2 vl,
+  subtype_list tyl1 tyl2 = true -> has_type_list vl tyl1 -> has_type_list vl tyl2.
+
+Inductive bool_of_val: val -> bool -> Prop :=
+  | bool_of_val_int:
+      forall n, bool_of_val (Vint n) (negb (Int.eq n Int.zero)).
+
+Definition neg (v: val) : val :=
+  match v with
+  | Vint n => Vint (Int.neg n)
+  | _ => Vundef
+  end.
+
+Definition negf (v: val) : val :=
+  match v with
+  | Vfloat f => Vfloat (Float.neg f)
+  | _ => Vundef
+  end.
+
+Definition absf (v: val) : val :=
+  match v with
+  | Vfloat f => Vfloat (Float.abs f)
+  | _ => Vundef
+  end.
+
+Definition negfs (v: val) : val :=
+  match v with
+  | Vsingle f => Vsingle (Float32.neg f)
+  | _ => Vundef
+  end.
+
+Definition absfs (v: val) : val :=
+  match v with
+  | Vsingle f => Vsingle (Float32.abs f)
+  | _ => Vundef
+  end.
+
+Definition maketotal (ov: option val) : val :=
+  match ov with Some v => v | None => Vundef end.
+
+Definition intoffloat (v: val) : option val :=
+  match v with
+  | Vfloat f => option_map Vint (Float.to_int f)
+  | _ => None
+  end.
+
+Definition intuoffloat (v: val) : option val :=
+  match v with
+  | Vfloat f => option_map Vint (Float.to_intu f)
+  | _ => None
+  end.
+
+Definition floatofint (v: val) : option val :=
+  match v with
+  | Vint n => Some (Vfloat (Float.of_int n))
+  | _ => None
+  end.
+
+Definition floatofintu (v: val) : option val :=
+  match v with
+  | Vint n => Some (Vfloat (Float.of_intu n))
+  | _ => None
+  end.
+
+Definition intofsingle (v: val) : option val :=
+  match v with
+  | Vsingle f => option_map Vint (Float32.to_int f)
+  | _ => None
+  end.
+
+Definition intuofsingle (v: val) : option val :=
+  match v with
+  | Vsingle f => option_map Vint (Float32.to_intu f)
+  | _ => None
+  end.
+
+Definition singleofint (v: val) : option val :=
+  match v with
+  | Vint n => Some (Vsingle (Float32.of_int n))
+  | _ => None
+  end.
+
+Definition singleofintu (v: val) : option val :=
+  match v with
+  | Vint n => Some (Vsingle (Float32.of_intu n))
+  | _ => None
+  end.
+
+Definition negint (v: val) : val :=
+  match v with
+  | Vint n => Vint (Int.neg n)
+  | _ => Vundef
+  end.
+
+Definition notint (v: val) : val :=
+  match v with
+  | Vint n => Vint (Int.not n)
+  | _ => Vundef
+  end.
+
+Definition of_bool (b: bool): val := if b then Vtrue else Vfalse.
+
+Definition boolval (v: val) : val :=
+  match v with
+  | Vint n => of_bool (negb (Int.eq n Int.zero))
+  | Vptr b ofs => Vtrue
+  | _ => Vundef
+  end.
+
+Definition notbool (v: val) : val :=
+  match v with
+  | Vint n => of_bool (Int.eq n Int.zero)
+  | Vptr b ofs => Vfalse
+  | _ => Vundef
+  end.
+
+Definition zero_ext (nbits: Z) (v: val) : val :=
+  match v with
+  | Vint n => Vint(Int.zero_ext nbits n)
+  | _ => Vundef
+  end.
+
+Definition sign_ext (nbits: Z) (v: val) : val :=
+  match v with
+  | Vint n => Vint(Int.sign_ext nbits n)
+  | _ => Vundef
+  end.
+
+Definition singleoffloat (v: val) : val :=
+  match v with
+  | Vfloat f => Vsingle (Float.to_single f)
+  | _ => Vundef
+  end.
+
+Definition floatofsingle (v: val) : val :=
+  match v with
+  | Vsingle f => Vfloat (Float.of_single f)
+  | _ => Vundef
+  end.
+
+Definition add (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.add n1 n2)
+  | Vptr b1 ofs1, Vint n2 => if Archi.ptr64 then Vundef else Vptr b1 (Ptrofs.add ofs1 (Ptrofs.of_int n2))
+  | Vint n1, Vptr b2 ofs2 => if Archi.ptr64 then Vundef else Vptr b2 (Ptrofs.add ofs2 (Ptrofs.of_int n1))
+  | _, _ => Vundef
+  end.
+
+Definition sub (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.sub n1 n2)
+  | Vptr b1 ofs1, Vint n2 => if Archi.ptr64 then Vundef else Vptr b1 (Ptrofs.sub ofs1 (Ptrofs.of_int n2))
+  | Vptr b1 ofs1, Vptr b2 ofs2 =>
+      if Archi.ptr64 then Vundef else
+      if eq_block b1 b2 then Vint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2)) else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition mul (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.mul n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition mulhs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.mulhs n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition mulhu (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.mulhu n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition divs (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero
+      || Int.eq n1 (Int.repr Int.min_signed) && Int.eq n2 Int.mone
+      then None
+      else Some(Vint(Int.divs n1 n2))
+  | _, _ => None
+  end.
+
+Definition mods (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero
+      || Int.eq n1 (Int.repr Int.min_signed) && Int.eq n2 Int.mone
+      then None
+      else Some(Vint(Int.mods n1 n2))
+  | _, _ => None
+  end.
+
+Definition divu (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero then None else Some(Vint(Int.divu n1 n2))
+  | _, _ => None
+  end.
+
+Definition modu (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero then None else Some(Vint(Int.modu n1 n2))
+  | _, _ => None
+  end.
+
+Definition add_carry (v1 v2 cin: val): val :=
+  match v1, v2, cin with
+  | Vint n1, Vint n2, Vint c => Vint(Int.add_carry n1 n2 c)
+  | _, _, _ => Vundef
+  end.
+
+Definition sub_overflow (v1 v2: val) : val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.sub_overflow n1 n2 Int.zero)
+  | _, _ => Vundef
+  end.
+
+Definition negative (v: val) : val :=
+  match v with
+  | Vint n => Vint (Int.negative n)
+  | _ => Vundef
+  end.
+
+Definition and (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.and n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition or (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.or n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition xor (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.xor n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition shl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+     if Int.ltu n2 Int.iwordsize
+     then Vint(Int.shl n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shr (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+     if Int.ltu n2 Int.iwordsize
+     then Vint(Int.shr n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shr_carry (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+     if Int.ltu n2 Int.iwordsize
+     then Vint(Int.shr_carry n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shrx (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+     if Int.ltu n2 (Int.repr 31)
+     then Some(Vint(Int.shrx n1 n2))
+     else None
+  | _, _ => None
+  end.
+
+Definition shru (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+     if Int.ltu n2 Int.iwordsize
+     then Vint(Int.shru n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition rol (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.rol n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition rolm (v: val) (amount mask: int): val :=
+  match v with
+  | Vint n => Vint(Int.rolm n amount mask)
+  | _ => Vundef
+  end.
+
+Definition ror (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vint(Int.ror n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition addf (v1 v2: val): val :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 => Vfloat(Float.add f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition subf (v1 v2: val): val :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 => Vfloat(Float.sub f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition mulf (v1 v2: val): val :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 => Vfloat(Float.mul f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition divf (v1 v2: val): val :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 => Vfloat(Float.div f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition floatofwords (v1 v2: val) : val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vfloat (Float.from_words n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition addfs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vsingle f1, Vsingle f2 => Vsingle(Float32.add f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition subfs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vsingle f1, Vsingle f2 => Vsingle(Float32.sub f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition mulfs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vsingle f1, Vsingle f2 => Vsingle(Float32.mul f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition divfs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vsingle f1, Vsingle f2 => Vsingle(Float32.div f1 f2)
+  | _, _ => Vundef
+  end.
+
+Definition longofwords (v1 v2: val) : val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vlong (Int64.ofwords n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition loword (v: val) : val :=
+  match v with
+  | Vlong n  => Vint (Int64.loword n)
+  | _ => Vundef
+  end.
+
+Definition hiword (v: val) : val :=
+  match v with
+  | Vlong n  => Vint (Int64.hiword n)
+  | _ => Vundef
+  end.
+
+Definition negl (v: val) : val :=
+  match v with
+  | Vlong n => Vlong (Int64.neg n)
+  | _ => Vundef
+  end.
+
+Definition notl (v: val) : val :=
+  match v with
+  | Vlong n => Vlong (Int64.not n)
+  | _ => Vundef
+  end.
+
+Definition longofint (v: val) : val :=
+  match v with
+  | Vint n => Vlong (Int64.repr (Int.signed n))
+  | _ => Vundef
+  end.
+
+Definition longofintu (v: val) : val :=
+  match v with
+  | Vint n => Vlong (Int64.repr (Int.unsigned n))
+  | _ => Vundef
+  end.
+
+Definition longoffloat (v: val) : option val :=
+  match v with
+  | Vfloat f => option_map Vlong (Float.to_long f)
+  | _ => None
+  end.
+
+Definition longuoffloat (v: val) : option val :=
+  match v with
+  | Vfloat f => option_map Vlong (Float.to_longu f)
+  | _ => None
+  end.
+
+Definition longofsingle (v: val) : option val :=
+  match v with
+  | Vsingle f => option_map Vlong (Float32.to_long f)
+  | _ => None
+  end.
+
+Definition longuofsingle (v: val) : option val :=
+  match v with
+  | Vsingle f => option_map Vlong (Float32.to_longu f)
+  | _ => None
+  end.
+
+Definition floatoflong (v: val) : option val :=
+  match v with
+  | Vlong n => Some (Vfloat (Float.of_long n))
+  | _ => None
+  end.
+
+Definition floatoflongu (v: val) : option val :=
+  match v with
+  | Vlong n => Some (Vfloat (Float.of_longu n))
+  | _ => None
+  end.
+
+Definition singleoflong (v: val) : option val :=
+  match v with
+  | Vlong n => Some (Vsingle (Float32.of_long n))
+  | _ => None
+  end.
+
+Definition singleoflongu (v: val) : option val :=
+  match v with
+  | Vlong n => Some (Vsingle (Float32.of_longu n))
+  | _ => None
+  end.
+
+Definition addl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.add n1 n2)
+  | Vptr b1 ofs1, Vlong n2 => if Archi.ptr64 then Vptr b1 (Ptrofs.add ofs1 (Ptrofs.of_int64 n2)) else Vundef
+  | Vlong n1, Vptr b2 ofs2 => if Archi.ptr64 then Vptr b2 (Ptrofs.add ofs2 (Ptrofs.of_int64 n1)) else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition subl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.sub n1 n2)
+  | Vptr b1 ofs1, Vlong n2 =>
+      if Archi.ptr64 then Vptr b1 (Ptrofs.sub ofs1 (Ptrofs.of_int64 n2)) else Vundef
+  | Vptr b1 ofs1, Vptr b2 ofs2 =>
+      if negb Archi.ptr64 then Vundef else
+      if eq_block b1 b2 then Vlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2)) else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition mull (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.mul n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition mull' (v1 v2: val): val :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Vlong(Int64.mul' n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition mullhs (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.mulhs n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition mullhu (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.mulhu n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition divls (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 =>
+      if Int64.eq n2 Int64.zero
+      || Int64.eq n1 (Int64.repr Int64.min_signed) && Int64.eq n2 Int64.mone
+      then None
+      else Some(Vlong(Int64.divs n1 n2))
+  | _, _ => None
+  end.
+
+Definition modls (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 =>
+      if Int64.eq n2 Int64.zero
+      || Int64.eq n1 (Int64.repr Int64.min_signed) && Int64.eq n2 Int64.mone
+      then None
+      else Some(Vlong(Int64.mods n1 n2))
+  | _, _ => None
+  end.
+
+Definition divlu (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 =>
+      if Int64.eq n2 Int64.zero then None else Some(Vlong(Int64.divu n1 n2))
+  | _, _ => None
+  end.
+
+Definition modlu (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 =>
+      if Int64.eq n2 Int64.zero then None else Some(Vlong(Int64.modu n1 n2))
+  | _, _ => None
+  end.
+
+Definition addl_carry (v1 v2 cin: val): val :=
+  match v1, v2, cin with
+  | Vlong n1, Vlong n2, Vlong c => Vlong(Int64.add_carry n1 n2 c)
+  | _, _, _ => Vundef
+  end.
+
+Definition subl_overflow (v1 v2: val) : val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vint (Int.repr (Int64.unsigned (Int64.sub_overflow n1 n2 Int64.zero)))
+  | _, _ => Vundef
+  end.
+
+Definition negativel (v: val) : val :=
+  match v with
+  | Vlong n => Vint (Int.repr (Int64.unsigned (Int64.negative n)))
+  | _ => Vundef
+  end.
+
+Definition andl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.and n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition orl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.or n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition xorl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Vlong(Int64.xor n1 n2)
+  | _, _ => Vundef
+  end.
+
+Definition shll (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 =>
+     if Int.ltu n2 Int64.iwordsize'
+     then Vlong(Int64.shl' n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shrl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 =>
+     if Int.ltu n2 Int64.iwordsize'
+     then Vlong(Int64.shr' n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shrlu (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 =>
+     if Int.ltu n2 Int64.iwordsize'
+     then Vlong(Int64.shru' n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition shrxl (v1 v2: val): option val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 =>
+     if Int.ltu n2 (Int.repr 63)
+     then Some(Vlong(Int64.shrx' n1 n2))
+     else None
+  | _, _ => None
+  end.
+
+Definition shrl_carry (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 =>
+     if Int.ltu n2 Int64.iwordsize'
+     then Vlong(Int64.shr_carry' n1 n2)
+     else Vundef
+  | _, _ => Vundef
+  end.
+
+Definition roll (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 => Vlong(Int64.rol n1 (Int64.repr (Int.unsigned n2)))
+  | _, _ => Vundef
+  end.
+
+Definition rorl (v1 v2: val): val :=
+  match v1, v2 with
+  | Vlong n1, Vint n2 => Vlong(Int64.ror n1 (Int64.repr (Int.unsigned n2)))
+  | _, _ => Vundef
+  end.
+
+Definition rolml (v: val) (amount: int) (mask: int64): val :=
+  match v with
+  | Vlong n => Vlong(Int64.rolm n (Int64.repr (Int.unsigned amount)) mask)
+  | _ => Vundef
+  end.
+
+Section COMPARISONS.
+
+Variable valid_ptr: block -> Z -> bool.
+Let weak_valid_ptr (b: block) (ofs: Z) := valid_ptr b ofs || valid_ptr b (ofs - 1).
+
+Definition cmp_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vint n1, Vint n2 => Some (Int.cmp c n1 n2)
+  | _, _ => None
+  end.
+
+Definition cmp_different_blocks (c: comparison): option bool :=
+  match c with
+  | Ceq => Some false
+  | Cne => Some true
+  | _   => None
+  end.
+
+Definition cmpu_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vint n1, Vint n2 =>
+      Some (Int.cmpu c n1 n2)
+  | Vint n1, Vptr b2 ofs2 =>
+      if Archi.ptr64 then None else
+      if Int.eq n1 Int.zero && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+      then cmp_different_blocks c
+      else None
+  | Vptr b1 ofs1, Vptr b2 ofs2 =>
+      if Archi.ptr64 then None else
+      if eq_block b1 b2 then
+        if weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+           && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+        then Some (Ptrofs.cmpu c ofs1 ofs2)
+        else None
+      else
+        if valid_ptr b1 (Ptrofs.unsigned ofs1)
+           && valid_ptr b2 (Ptrofs.unsigned ofs2)
+        then cmp_different_blocks c
+        else None
+  | Vptr b1 ofs1, Vint n2 =>
+      if Archi.ptr64 then None else
+      if Int.eq n2 Int.zero && weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+      then cmp_different_blocks c
+      else None
+  | _, _ => None
+  end.
+
+Definition cmpf_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 => Some (Float.cmp c f1 f2)
+  | _, _ => None
+  end.
+
+Definition cmpfs_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vsingle f1, Vsingle f2 => Some (Float32.cmp c f1 f2)
+  | _, _ => None
+  end.
+
+Definition cmpl_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Some (Int64.cmp c n1 n2)
+  | _, _ => None
+  end.
+
+Definition cmplu_bool (c: comparison) (v1 v2: val): option bool :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => Some (Int64.cmpu c n1 n2)
+  | Vlong n1, Vptr b2 ofs2 =>
+      if negb Archi.ptr64 then None else
+      if Int64.eq n1 Int64.zero && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+      then cmp_different_blocks c
+      else None
+  | Vptr b1 ofs1, Vptr b2 ofs2 =>
+      if negb Archi.ptr64 then None else
+      if eq_block b1 b2 then
+        if weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+           && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+        then Some (Ptrofs.cmpu c ofs1 ofs2)
+        else None
+      else
+        if valid_ptr b1 (Ptrofs.unsigned ofs1)
+           && valid_ptr b2 (Ptrofs.unsigned ofs2)
+        then cmp_different_blocks c
+        else None
+  | Vptr b1 ofs1, Vlong n2 =>
+      if negb Archi.ptr64 then None else
+      if Int64.eq n2 Int64.zero && weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+      then cmp_different_blocks c
+      else None
+  | _, _ => None
+  end.
+
+Definition of_optbool (ob: option bool): val :=
+  match ob with Some true => Vtrue | Some false => Vfalse | None => Vundef end.
+
+Definition cmp (c: comparison) (v1 v2: val): val :=
+  of_optbool (cmp_bool c v1 v2).
+
+Definition cmpu (c: comparison) (v1 v2: val): val :=
+  of_optbool (cmpu_bool c v1 v2).
+
+Definition cmpf (c: comparison) (v1 v2: val): val :=
+  of_optbool (cmpf_bool c v1 v2).
+
+Definition cmpfs (c: comparison) (v1 v2: val): val :=
+  of_optbool (cmpfs_bool c v1 v2).
+
+Definition cmpl (c: comparison) (v1 v2: val): option val :=
+  option_map of_bool (cmpl_bool c v1 v2).
+
+Definition cmplu (c: comparison) (v1 v2: val): option val :=
+  option_map of_bool (cmplu_bool c v1 v2).
+
+Definition maskzero_bool (v: val) (mask: int): option bool :=
+  match v with
+  | Vint n => Some (Int.eq (Int.and n mask) Int.zero)
+  | _ => None
+  end.
+
+End COMPARISONS.
+
+Definition offset_ptr (v: val) (delta: ptrofs) : val :=
+  match v with
+  | Vptr b ofs => Vptr b (Ptrofs.add ofs delta)
+  | _ => Vundef
+  end.
+
+Definition load_result (chunk: memory_chunk) (v: val) :=
+  match chunk, v with
+  | Mint8signed, Vint n => Vint (Int.sign_ext 8 n)
+  | Mint8unsigned, Vint n => Vint (Int.zero_ext 8 n)
+  | Mint16signed, Vint n => Vint (Int.sign_ext 16 n)
+  | Mint16unsigned, Vint n => Vint (Int.zero_ext 16 n)
+  | Mint32, Vint n => Vint n
+  | Mint32, Vptr b ofs => if Archi.ptr64 then Vundef else Vptr b ofs
+  | Mint64, Vlong n => Vlong n
+  | Mint64, Vptr b ofs => if Archi.ptr64 then Vptr b ofs else Vundef
+  | Mfloat32, Vsingle f => Vsingle f
+  | Mfloat64, Vfloat f => Vfloat f
+  | Many32, (Vint _ | Vsingle _) => v
+  | Many32, Vptr _ _ => if Archi.ptr64 then Vundef else v
+  | Many64, _ => v
+  | _, _ => Vundef
+  end.
+
+Lemma load_result_type:
+  forall chunk v, has_type (load_result chunk v) (type_of_chunk chunk).
+
+Lemma load_result_same:
+  forall v ty, has_type v ty -> load_result (chunk_of_type ty) v = v.
+
+Theorem cast8unsigned_and:
+  forall x, zero_ext 8 x = and x (Vint(Int.repr 255)).
+
+Theorem cast16unsigned_and:
+  forall x, zero_ext 16 x = and x (Vint(Int.repr 65535)).
+
+Theorem bool_of_val_of_bool:
+  forall b1 b2, bool_of_val (of_bool b1) b2 -> b1 = b2.
+
+Theorem bool_of_val_of_optbool:
+  forall ob b, bool_of_val (of_optbool ob) b -> ob = Some b.
+
+Theorem notbool_negb_1:
+  forall b, of_bool (negb b) = notbool (of_bool b).
+
+Theorem notbool_negb_2:
+  forall b, of_bool b = notbool (of_bool (negb b)).
+
+Theorem notbool_negb_3:
+  forall ob, of_optbool (option_map negb ob) = notbool (of_optbool ob).
+
+Theorem notbool_idem2:
+  forall b, notbool(notbool(of_bool b)) = of_bool b.
+
+Theorem notbool_idem3:
+  forall x, notbool(notbool(notbool x)) = notbool x.
+
+Theorem notbool_idem4:
+  forall ob, notbool (notbool (of_optbool ob)) = of_optbool ob.
+
+Theorem add_commut: forall x y, add x y = add y x.
+
+Theorem add_assoc: forall x y z, add (add x y) z = add x (add y z).
+
+Theorem add_permut: forall x y z, add x (add y z) = add y (add x z).
+
+Theorem add_permut_4:
+  forall x y z t, add (add x y) (add z t) = add (add x z) (add y t).
+
+Theorem neg_zero: neg Vzero = Vzero.
+
+Theorem neg_add_distr: forall x y, neg(add x y) = add (neg x) (neg y).
+
+Theorem sub_zero_r: forall x, sub Vzero x = neg x.
+
+Theorem sub_add_opp: forall x y, sub x (Vint y) = add x (Vint (Int.neg y)).
+
+Theorem sub_opp_add: forall x y, sub x (Vint (Int.neg y)) = add x (Vint y).
+
+Theorem sub_add_l:
+  forall v1 v2 i, sub (add v1 (Vint i)) v2 = add (sub v1 v2) (Vint i).
+
+Theorem sub_add_r:
+  forall v1 v2 i, sub v1 (add v2 (Vint i)) = add (sub v1 v2) (Vint (Int.neg i)).
+
+Theorem mul_commut: forall x y, mul x y = mul y x.
+
+Theorem mul_assoc: forall x y z, mul (mul x y) z = mul x (mul y z).
+
+Theorem mul_add_distr_l:
+  forall x y z, mul (add x y) z = add (mul x z) (mul y z).
+
+Theorem mul_add_distr_r:
+  forall x y z, mul x (add y z) = add (mul x y) (mul x z).
+
+Theorem mul_pow2:
+  forall x n logn,
+  Int.is_power2 n = Some logn ->
+
+Theorem mods_divs:
+  forall x y z,
+  mods x y = Some z -> exists v, divs x y = Some v /\ z = sub x (mul v y).
+
+Theorem modu_divu:
+  forall x y z,
+  modu x y = Some z -> exists v, divu x y = Some v /\ z = sub x (mul v y).
+
+Theorem modls_divls:
+  forall x y z,
+  modls x y = Some z -> exists v, divls x y = Some v /\ z = subl x (mull v y).
+
+Theorem modlu_divlu:
+  forall x y z,
+  modlu x y = Some z -> exists v, divlu x y = Some v /\ z = subl x (mull v y).
+
+Theorem divs_pow2:
+  forall x n logn y,
+  Int.is_power2 n = Some logn -> Int.ltu logn (Int.repr 31) = true ->
+
+Theorem divs_one:
+  forall s , divs (Vint s) (Vint Int.one) = Some (Vint s).
+
+Theorem divu_pow2:
+  forall x n logn y,
+  Int.is_power2 n = Some logn ->
+
+Theorem divu_one:
+  forall s, divu (Vint s) (Vint Int.one) = Some (Vint s).
+
+Theorem modu_pow2:
+  forall x n logn y,
+  Int.is_power2 n = Some logn ->
+
+Theorem and_commut: forall x y, and x y = and y x.
+
+Theorem and_assoc: forall x y z, and (and x y) z = and x (and y z).
+
+Theorem or_commut: forall x y, or x y = or y x.
+
+Theorem or_assoc: forall x y z, or (or x y) z = or x (or y z).
+
+Theorem xor_commut: forall x y, xor x y = xor y x.
+
+Theorem xor_assoc: forall x y z, xor (xor x y) z = xor x (xor y z).
+
+Theorem not_xor: forall x, notint x = xor x (Vint Int.mone).
+
+Theorem shl_mul: forall x y, mul x (shl Vone y) = shl x y.
+
+Theorem shl_rolm:
+  forall x n,
+  Int.ltu n Int.iwordsize = true ->
+
+Theorem shll_rolml:
+  forall x n,
+  Int.ltu n Int64.iwordsize' = true ->
+
+Theorem shru_rolm:
+  forall x n,
+  Int.ltu n Int.iwordsize = true ->
+
+Theorem shrlu_rolml:
+  forall x n,
+    Int.ltu n Int64.iwordsize' = true ->
+
+Theorem shrx_carry:
+  forall x y z,
+  shrx x y = Some z ->
+  add (shr x y) (shr_carry x y) = z.
+
+Theorem shrx_shr:
+  forall x y z,
+  shrx x y = Some z ->
+  exists p, exists q,
+    x = Vint p /\ y = Vint q /\
+    z = shr (if Int.lt p Int.zero then add x (Vint (Int.sub (Int.shl Int.one q) Int.one)) else x) (Vint q).
+
+Theorem shrx_shr_2:
+  forall n x z,
+  shrx x (Vint n) = Some z ->
+  z = (if Int.eq n Int.zero then x else
+
+Theorem or_rolm:
+  forall x n m1 m2,
+  or (rolm x n m1) (rolm x n m2) = rolm x n (Int.or m1 m2).
+
+Theorem rolm_rolm:
+  forall x n1 m1 n2 m2,
+  rolm (rolm x n1 m1) n2 m2 =
+    rolm x (Int.modu (Int.add n1 n2) Int.iwordsize)
+
+Theorem rolm_zero:
+  forall x m,
+  rolm x Int.zero m = and x (Vint m).
+
+Theorem addl_commut: forall x y, addl x y = addl y x.
+
+Theorem addl_assoc: forall x y z, addl (addl x y) z = addl x (addl y z).
+
+Theorem addl_permut: forall x y z, addl x (addl y z) = addl y (addl x z).
+
+Theorem addl_permut_4:
+  forall x y z t, addl (addl x y) (addl z t) = addl (addl x z) (addl y t).
+
+Theorem negl_addl_distr: forall x y, negl(addl x y) = addl (negl x) (negl y).
+
+Theorem subl_addl_opp: forall x y, subl x (Vlong y) = addl x (Vlong (Int64.neg y)).
+
+Theorem subl_opp_addl: forall x y, subl x (Vlong (Int64.neg y)) = addl x (Vlong y).
+
+Theorem subl_addl_l:
+  forall v1 v2 i, subl (addl v1 (Vlong i)) v2 = addl (subl v1 v2) (Vlong i).
+
+Theorem subl_addl_r:
+  forall v1 v2 i, subl v1 (addl v2 (Vlong i)) = addl (subl v1 v2) (Vlong (Int64.neg i)).
+
+Theorem mull_commut: forall x y, mull x y = mull y x.
+
+Theorem mull_assoc: forall x y z, mull (mull x y) z = mull x (mull y z).
+
+Theorem mull_addl_distr_l:
+  forall x y z, mull (addl x y) z = addl (mull x z) (mull y z).
+
+Theorem mull_addl_distr_r:
+  forall x y z, mull x (addl y z) = addl (mull x y) (mull x z).
+
+Theorem andl_commut: forall x y, andl x y = andl y x.
+
+Theorem andl_assoc: forall x y z, andl (andl x y) z = andl x (andl y z).
+
+Theorem orl_commut: forall x y, orl x y = orl y x.
+
+Theorem orl_assoc: forall x y z, orl (orl x y) z = orl x (orl y z).
+
+Theorem xorl_commut: forall x y, xorl x y = xorl y x.
+
+Theorem xorl_assoc: forall x y z, xorl (xorl x y) z = xorl x (xorl y z).
+
+Theorem notl_xorl: forall x, notl x = xorl x (Vlong Int64.mone).
+
+Theorem divls_pow2:
+  forall x n logn y,
+  Int64.is_power2' n = Some logn -> Int.ltu logn (Int.repr 63) = true ->
+
+Theorem divls_one:
+  forall n, divls (Vlong n) (Vlong Int64.one) = Some (Vlong n).
+
+Theorem divlu_pow2:
+  forall x n logn y,
+  Int64.is_power2' n = Some logn ->
+
+Theorem divlu_one:
+  forall n, divlu (Vlong n) (Vlong Int64.one) = Some (Vlong n).
+
+Theorem modlu_pow2:
+  forall x n logn y,
+  Int64.is_power2 n = Some logn ->
+
+Theorem shrxl_carry:
+  forall x y z,
+  shrxl x y = Some z ->
+  addl (shrl x y) (shrl_carry x y) = z.
+
+Theorem shrxl_shrl_2:
+  forall n x z,
+  shrxl x (Vint n) = Some z ->
+  z = (if Int.eq n Int.zero then x else
+
+Theorem negate_cmp_bool:
+  forall c x y, cmp_bool (negate_comparison c) x y = option_map negb (cmp_bool c x y).
+
+Theorem negate_cmpu_bool:
+  forall valid_ptr c x y,
+  cmpu_bool valid_ptr (negate_comparison c) x y = option_map negb (cmpu_bool valid_ptr c x y).
+
+Theorem negate_cmpl_bool:
+  forall c x y, cmpl_bool (negate_comparison c) x y = option_map negb (cmpl_bool c x y).
+
+Theorem negate_cmplu_bool:
+  forall valid_ptr c x y,
+  cmplu_bool valid_ptr (negate_comparison c) x y = option_map negb (cmplu_bool valid_ptr c x y).
+
+Lemma not_of_optbool:
+  forall ob, of_optbool (option_map negb ob) = notbool (of_optbool ob).
+
+Theorem negate_cmp:
+  forall c x y,
+  cmp (negate_comparison c) x y = notbool (cmp c x y).
+
+Theorem negate_cmpu:
+  forall valid_ptr c x y,
+  cmpu valid_ptr (negate_comparison c) x y =
+    notbool (cmpu valid_ptr c x y).
+
+Theorem swap_cmp_bool:
+  forall c x y,
+  cmp_bool (swap_comparison c) x y = cmp_bool c y x.
+
+Theorem swap_cmpu_bool:
+  forall valid_ptr c x y,
+  cmpu_bool valid_ptr (swap_comparison c) x y =
+    cmpu_bool valid_ptr c y x.
+
+Theorem swap_cmpl_bool:
+  forall c x y,
+  cmpl_bool (swap_comparison c) x y = cmpl_bool c y x.
+
+Theorem swap_cmplu_bool:
+  forall valid_ptr c x y,
+  cmplu_bool valid_ptr (swap_comparison c) x y = cmplu_bool valid_ptr c y x.
+
+Theorem negate_cmpf_eq:
+  forall v1 v2, notbool (cmpf Cne v1 v2) = cmpf Ceq v1 v2.
+
+Theorem negate_cmpf_ne:
+  forall v1 v2, notbool (cmpf Ceq v1 v2) = cmpf Cne v1 v2.
+
+Theorem cmpf_le:
+  forall v1 v2, cmpf Cle v1 v2 = or (cmpf Clt v1 v2) (cmpf Ceq v1 v2).
+
+Theorem cmpf_ge:
+  forall v1 v2, cmpf Cge v1 v2 = or (cmpf Cgt v1 v2) (cmpf Ceq v1 v2).
+
+Theorem cmp_ne_0_optbool:
+  forall ob, cmp Cne (of_optbool ob) (Vint Int.zero) = of_optbool ob.
+
+Theorem cmp_eq_1_optbool:
+  forall ob, cmp Ceq (of_optbool ob) (Vint Int.one) = of_optbool ob.
+
+Theorem cmp_eq_0_optbool:
+  forall ob, cmp Ceq (of_optbool ob) (Vint Int.zero) = of_optbool (option_map negb ob).
+
+Theorem cmp_ne_1_optbool:
+  forall ob, cmp Cne (of_optbool ob) (Vint Int.one) = of_optbool (option_map negb ob).
+
+Theorem cmpu_ne_0_optbool:
+  forall valid_ptr ob,
+  cmpu valid_ptr Cne (of_optbool ob) (Vint Int.zero) = of_optbool ob.
+
+Theorem cmpu_eq_1_optbool:
+  forall valid_ptr ob,
+  cmpu valid_ptr Ceq (of_optbool ob) (Vint Int.one) = of_optbool ob.
+
+Theorem cmpu_eq_0_optbool:
+  forall valid_ptr ob,
+  cmpu valid_ptr Ceq (of_optbool ob) (Vint Int.zero) = of_optbool (option_map negb ob).
+
+Theorem cmpu_ne_1_optbool:
+  forall valid_ptr ob,
+  cmpu valid_ptr Cne (of_optbool ob) (Vint Int.one) = of_optbool (option_map negb ob).
+
+Lemma zero_ext_and:
+  forall n v,
+  0 < n < Int.zwordsize ->
+
+Lemma rolm_lt_zero:
+  forall v, rolm v Int.one Int.one = cmp Clt v (Vint Int.zero).
+
+Lemma rolm_ge_zero:
+  forall v,
+  xor (rolm v Int.one Int.one) (Vint Int.one) = cmp Cge v (Vint Int.zero).
+
+Inductive lessdef: val -> val -> Prop :=
+  | lessdef_refl: forall v, lessdef v v
+  | lessdef_undef: forall v, lessdef Vundef v.
+
+Lemma lessdef_same:
+  forall v1 v2, v1 = v2 -> lessdef v1 v2.
+
+Lemma lessdef_trans:
+  forall v1 v2 v3, lessdef v1 v2 -> lessdef v2 v3 -> lessdef v1 v3.
+
+Inductive lessdef_list: list val -> list val -> Prop :=
+  | lessdef_list_nil:
+      lessdef_list nil nil
+  | lessdef_list_cons:
+      forall v1 v2 vl1 vl2,
+      lessdef v1 v2 -> lessdef_list vl1 vl2 ->
+      lessdef_list (v1 :: vl1) (v2 :: vl2).
+
+Hint Resolve lessdef_refl lessdef_undef lessdef_list_nil lessdef_list_cons.
+
+Lemma lessdef_list_inv:
+  forall vl1 vl2, lessdef_list vl1 vl2 -> vl1 = vl2 \/ In Vundef vl1.
+
+Lemma lessdef_list_trans:
+  forall vl1 vl2, lessdef_list vl1 vl2 -> forall vl3, lessdef_list vl2 vl3 -> lessdef_list vl1 vl3.
+
+Lemma load_result_lessdef:
+  forall chunk v1 v2,
+  lessdef v1 v2 -> lessdef (load_result chunk v1) (load_result chunk v2).
+
+Lemma zero_ext_lessdef:
+  forall n v1 v2, lessdef v1 v2 -> lessdef (zero_ext n v1) (zero_ext n v2).
+
+Lemma sign_ext_lessdef:
+  forall n v1 v2, lessdef v1 v2 -> lessdef (sign_ext n v1) (sign_ext n v2).
+
+Lemma singleoffloat_lessdef:
+  forall v1 v2, lessdef v1 v2 -> lessdef (singleoffloat v1) (singleoffloat v2).
+
+Lemma add_lessdef:
+  forall v1 v1' v2 v2',
+  lessdef v1 v1' -> lessdef v2 v2' -> lessdef (add v1 v2) (add v1' v2').
+
+Lemma addl_lessdef:
+  forall v1 v1' v2 v2',
+  lessdef v1 v1' -> lessdef v2 v2' -> lessdef (addl v1 v2) (addl v1' v2').
+
+Lemma cmpu_bool_lessdef:
+  forall valid_ptr valid_ptr' c v1 v1' v2 v2' b,
+  (forall b ofs, valid_ptr b ofs = true -> valid_ptr' b ofs = true) ->
+  lessdef v1 v1' -> lessdef v2 v2' ->
+  cmpu_bool valid_ptr c v1 v2 = Some b ->
+  cmpu_bool valid_ptr' c v1' v2' = Some b.
+
+Lemma cmplu_bool_lessdef:
+  forall valid_ptr valid_ptr' c v1 v1' v2 v2' b,
+  (forall b ofs, valid_ptr b ofs = true -> valid_ptr' b ofs = true) ->
+  lessdef v1 v1' -> lessdef v2 v2' ->
+  cmplu_bool valid_ptr c v1 v2 = Some b ->
+  cmplu_bool valid_ptr' c v1' v2' = Some b.
+
+Lemma of_optbool_lessdef:
+  forall ob ob',
+  (forall b, ob = Some b -> ob' = Some b) ->
+  lessdef (of_optbool ob) (of_optbool ob').
+
+Lemma longofwords_lessdef:
+  forall v1 v2 v1' v2',
+  lessdef v1 v1' -> lessdef v2 v2' -> lessdef (longofwords v1 v2) (longofwords v1' v2').
+
+Lemma loword_lessdef:
+  forall v v', lessdef v v' -> lessdef (loword v) (loword v').
+
+Lemma hiword_lessdef:
+  forall v v', lessdef v v' -> lessdef (hiword v) (hiword v').
+
+Lemma offset_ptr_zero:
+  forall v, lessdef (offset_ptr v Ptrofs.zero) v.
+
+Lemma offset_ptr_assoc:
+  forall v d1 d2, offset_ptr (offset_ptr v d1) d2 = offset_ptr v (Ptrofs.add d1 d2).
+
+Definition meminj : Type := block -> option (block * Z).
+
+Inductive inject (mi: meminj): val -> val -> Prop :=
+  | inject_int:
+      forall i, inject mi (Vint i) (Vint i)
+  | inject_long:
+      forall i, inject mi (Vlong i) (Vlong i)
+  | inject_float:
+      forall f, inject mi (Vfloat f) (Vfloat f)
+  | inject_single:
+      forall f, inject mi (Vsingle f) (Vsingle f)
+  | inject_ptr:
+      forall b1 ofs1 b2 ofs2 delta,
+      mi b1 = Some (b2, delta) ->
+      ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) ->
+      inject mi (Vptr b1 ofs1) (Vptr b2 ofs2)
+  | val_inject_undef: forall v,
+      inject mi Vundef v.
+
+Hint Constructors inject.
+
+Inductive inject_list (mi: meminj): list val -> list val-> Prop:=
+  | inject_list_nil :
+      inject_list mi nil nil
+  | inject_list_cons : forall v v' vl vl' ,
+      inject mi v v' -> inject_list mi vl vl'->
+      inject_list mi (v :: vl) (v' :: vl').
+
+Hint Resolve inject_list_nil inject_list_cons.
+
+Lemma inject_ptrofs:
+  forall mi i, inject mi (Vptrofs i) (Vptrofs i).
+
+Hint Resolve inject_ptrofs.
+
+Section VAL_INJ_OPS.
+
+Variable f: meminj.
+
+Lemma load_result_inject:
+  forall chunk v1 v2,
+  inject f v1 v2 ->
+  inject f (Val.load_result chunk v1) (Val.load_result chunk v2).
+
+Remark add_inject:
+  forall v1 v1' v2 v2',
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  inject f (Val.add v1 v2) (Val.add v1' v2').
+
+Remark sub_inject:
+  forall v1 v1' v2 v2',
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  inject f (Val.sub v1 v2) (Val.sub v1' v2').
+
+Remark addl_inject:
+  forall v1 v1' v2 v2',
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  inject f (Val.addl v1 v2) (Val.addl v1' v2').
+
+Remark subl_inject:
+  forall v1 v1' v2 v2',
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  inject f (Val.subl v1 v2) (Val.subl v1' v2').
+
+Lemma offset_ptr_inject:
+  forall v v' ofs, inject f v v' -> inject f (offset_ptr v ofs) (offset_ptr v' ofs).
+
+Lemma cmp_bool_inject:
+  forall c v1 v2 v1' v2' b,
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  Val.cmp_bool c v1 v2 = Some b ->
+
+Variable (valid_ptr1 valid_ptr2 : block -> Z -> bool).
+
+Let weak_valid_ptr1 b ofs := valid_ptr1 b ofs || valid_ptr1 b (ofs - 1).
+Let weak_valid_ptr2 b ofs := valid_ptr2 b ofs || valid_ptr2 b (ofs - 1).
+
+Hypothesis valid_ptr_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  valid_ptr1 b1 (Ptrofs.unsigned ofs) = true ->
+  valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_ptr_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true ->
+  weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_ptr_no_overflow:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true ->
+  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
+
+Hypothesis valid_different_ptrs_inj:
+  forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  b1 <> b2 ->
+  valid_ptr1 b1 (Ptrofs.unsigned ofs1) = true ->
+  valid_ptr1 b2 (Ptrofs.unsigned ofs2) = true ->
+  f b1 = Some (b1', delta1) ->
+  f b2 = Some (b2', delta2) ->
+  b1' <> b2' \/
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
+
+Lemma cmpu_bool_inject:
+  forall c v1 v2 v1' v2' b,
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  Val.cmpu_bool valid_ptr1 c v1 v2 = Some b ->
+
+Lemma cmplu_bool_inject:
+  forall c v1 v2 v1' v2' b,
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  Val.cmplu_bool valid_ptr1 c v1 v2 = Some b ->
+
+Lemma longofwords_inject:
+  forall v1 v2 v1' v2',
+  inject f v1 v1' -> inject f v2 v2' -> inject f (Val.longofwords v1 v2) (Val.longofwords v1' v2').
+
+Lemma loword_inject:
+  forall v v', inject f v v' -> inject f (Val.loword v) (Val.loword v').
+
+Lemma hiword_inject:
+  forall v v', inject f v v' -> inject f (Val.hiword v) (Val.hiword v').
+
+End VAL_INJ_OPS.
+
+End Val.
+
+Notation meminj := Val.meminj.
+
+Definition inject_incr (f1 f2: meminj) : Prop :=
+  forall b b' delta, f1 b = Some(b', delta) -> f2 b = Some(b', delta).
+
+Lemma inject_incr_refl :
+   forall f , inject_incr f f .
+
+Lemma inject_incr_trans :
+  forall f1 f2 f3,
+  inject_incr f1 f2 -> inject_incr f2 f3 -> inject_incr f1 f3 .
+
+Lemma val_inject_incr:
+  forall f1 f2 v v',
+  inject_incr f1 f2 ->
+  Val.inject f1 v v' ->
+
+Lemma val_inject_list_incr:
+  forall f1 f2 vl vl' ,
+  inject_incr f1 f2 -> Val.inject_list f1 vl vl' ->
+
+Hint Resolve inject_incr_refl val_inject_incr val_inject_list_incr.
+
+Lemma val_inject_lessdef:
+  forall v1 v2, Val.lessdef v1 v2 <-> Val.inject (fun b => Some(b, 0)) v1 v2.
+
+Lemma val_inject_list_lessdef:
+  forall vl1 vl2, Val.lessdef_list vl1 vl2 <-> Val.inject_list (fun b => Some(b, 0)) vl1 vl2.
+
+Definition inject_id : meminj := fun b => Some(b, 0).
+
+Lemma val_inject_id:
+  forall v1 v2,
+  Val.inject inject_id v1 v2 <-> Val.lessdef v1 v2.
+
+Definition compose_meminj (f f': meminj) : meminj :=
+  fun b =>
+    match f b with
+    | None => None
+    | Some(b', delta) =>
+        match f' b' with
+        | None => None
+        | Some(b'', delta') => Some(b'', delta + delta')
+        end
+    end.
+
+Lemma val_inject_compose:
+  forall f f' v1 v2 v3,
+  Val.inject f v1 v2 -> Val.inject f' v2 v3 -> *)
+
+Require Import Memory.
+
+Require Import Events.
+
+Require Import Globalenvs.
+
+Require Import Op.
+(* Op:
+Require Import BoolEqual.
+Require Import Coqlib.
+Require Import AST.
+Require Import Integers.
+Require Import Floats.
+Require Import Values.
+Require Import Memory.
+Require Import Globalenvs.
+Require Import Events.
+
+Set Implicit Arguments.
+
+Inductive condition : Type :=
+  | Ccomp (c: comparison)      
+  | Ccompu (c: comparison)     
+  | Ccompimm (c: comparison) (n: int) 
+  | Ccompuimm (c: comparison) (n: int)  
+  | Ccompl (c: comparison)      
+  | Ccomplu (c: comparison)     
+  | Ccomplimm (c: comparison) (n: int64) 
+  | Ccompluimm (c: comparison) (n: int64)  
+  | Ccompf (c: comparison)     
+  | Cnotcompf (c: comparison)  
+  | Ccompfs (c: comparison)    
+  | Cnotcompfs (c: comparison) 
+  | Cmaskzero (n: int)         
+  | Cmasknotzero (n: int).     
+
+Inductive addressing: Type :=
+  | Aindexed: Z -> addressing       
+  | Aindexed2: Z -> addressing      
+  | Ascaled: Z -> Z -> addressing   
+  | Aindexed2scaled: Z -> Z -> addressing
+                                    
+  | Aglobal: ident -> ptrofs -> addressing 
+  | Abased: ident -> ptrofs -> addressing  
+  | Abasedscaled: Z -> ident -> ptrofs -> addressing  
+  | Ainstack: ptrofs -> addressing. 
+
+Inductive operation : Type :=
+  | Omove                    
+  | Ointconst (n: int)       
+  | Olongconst (n: int64)    
+  | Ofloatconst (n: float)   
+  | Osingleconst (n: float32)
+  | Oindirectsymbol (id: ident) 
+
+  | Ocast8signed             
+  | Ocast8unsigned           
+  | Ocast16signed            
+  | Ocast16unsigned          
+  | Oneg                     
+  | Osub                     
+  | Omul                     
+  | Omulimm (n: int)         
+  | Omulhs                   
+  | Omulhu                   
+  | Odiv                     
+  | Odivu                    
+  | Omod                     
+  | Omodu                    
+  | Oand                     
+  | Oandimm (n: int)         
+  | Oor                      
+  | Oorimm (n: int)          
+  | Oxor                     
+  | Oxorimm (n: int)         
+  | Onot                     
+  | Oshl                     
+  | Oshlimm (n: int)         
+  | Oshr                     
+  | Oshrimm (n: int)         
+  | Oshrximm (n: int)        
+  | Oshru                    
+  | Oshruimm (n: int)        
+  | Ororimm (n: int)         
+  | Oshldimm (n: int)        
+  | Olea (a: addressing)     
+
+  | Omakelong                
+  | Olowlong                 
+  | Ohighlong                
+  | Ocast32signed            
+  | Ocast32unsigned          
+  | Onegl                    
+  | Oaddlimm (n: int64)      
+  | Osubl                    
+  | Omull                    
+  | Omullimm (n: int64)      
+  | Omullhs                  
+  | Omullhu                  
+  | Odivl                    
+  | Odivlu                   
+  | Omodl                    
+  | Omodlu                   
+  | Oandl                    
+  | Oandlimm (n: int64)      
+  | Oorl                     
+  | Oorlimm (n: int64)       
+  | Oxorl                    
+  | Oxorlimm (n: int64)      
+  | Onotl                    
+  | Oshll                    
+  | Oshllimm (n: int)        
+  | Oshrl                    
+  | Oshrlimm (n: int)        
+  | Oshrxlimm (n: int)       
+  | Oshrlu                   
+  | Oshrluimm (n: int)       
+  | Ororlimm (n: int)        
+  | Oleal (a: addressing)    
+
+  | Onegf                    
+  | Oabsf                    
+  | Oaddf                    
+  | Osubf                    
+  | Omulf                    
+  | Odivf                    
+  | Onegfs                   
+  | Oabsfs                   
+  | Oaddfs                   
+  | Osubfs                   
+  | Omulfs                   
+  | Odivfs                   
+  | Osingleoffloat           
+  | Ofloatofsingle           
+
+  | Ointoffloat              
+  | Ofloatofint              
+  | Ointofsingle             
+  | Osingleofint             
+  | Olongoffloat             
+  | Ofloatoflong             
+  | Olongofsingle            
+  | Osingleoflong            
+
+  | Ocmp (cond: condition).  
+
+Definition eq_condition (x y: condition) : {x=y} + {x<>y}.
+
+Definition eq_addressing (x y: addressing) : {x=y} + {x<>y}.
+
+Definition beq_operation: forall (x y: operation), bool.
+
+Definition eq_operation: forall (x y: operation), {x=y} + {x<>y}.
+
+Global Opaque eq_condition eq_addressing eq_operation.
+
+Definition offset_in_range (n: Z) : bool := zle Int.min_signed n && zle n Int.max_signed.
+
+Definition addressing_valid (a: addressing) : bool :=
+  if Archi.ptr64 then
+    match a with
+    | Aindexed n => offset_in_range n
+    | Aindexed2 n => offset_in_range n
+    | Ascaled sc ofs => offset_in_range ofs
+    | Aindexed2scaled sc ofs => offset_in_range ofs
+    | Aglobal s ofs => true
+    | Abased s ofs => true
+    | Abasedscaled sc s ofs => true
+    | Ainstack ofs => offset_in_range (Ptrofs.signed ofs)
+    end
+  else true.
+  
+Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool :=
+  match cond, vl with
+  | Ccomp c, v1 :: v2 :: nil => Val.cmp_bool c v1 v2
+  | Ccompu c, v1 :: v2 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 v2
+  | Ccompimm c n, v1 :: nil => Val.cmp_bool c v1 (Vint n)
+  | Ccompuimm c n, v1 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 (Vint n)
+  | Ccompl c, v1 :: v2 :: nil => Val.cmpl_bool c v1 v2
+  | Ccomplu c, v1 :: v2 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 v2
+  | Ccomplimm c n, v1 :: nil => Val.cmpl_bool c v1 (Vlong n)
+  | Ccompluimm c n, v1 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 (Vlong n)
+  | Ccompf c, v1 :: v2 :: nil => Val.cmpf_bool c v1 v2
+  | Cnotcompf c, v1 :: v2 :: nil => option_map negb (Val.cmpf_bool c v1 v2)
+  | Ccompfs c, v1 :: v2 :: nil => Val.cmpfs_bool c v1 v2
+  | Cnotcompfs c, v1 :: v2 :: nil => option_map negb (Val.cmpfs_bool c v1 v2)
+  | Cmaskzero n, v1 :: nil => Val.maskzero_bool v1 n
+  | Cmasknotzero n, v1 :: nil => option_map negb (Val.maskzero_bool v1 n)
+  | _, _ => None
+  end.
+
+Definition eval_addressing32
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  match addr, vl with
+  | Aindexed n, v1::nil =>
+      Some (Val.add v1 (Vint (Int.repr n)))
+  | Aindexed2 n, v1::v2::nil =>
+      Some (Val.add (Val.add v1 v2) (Vint (Int.repr n)))
+  | Ascaled sc ofs, v1::nil =>
+      Some (Val.add (Val.mul v1 (Vint (Int.repr sc))) (Vint (Int.repr ofs)))
+  | Aindexed2scaled sc ofs, v1::v2::nil =>
+      Some(Val.add v1 (Val.add (Val.mul v2 (Vint (Int.repr sc))) (Vint (Int.repr ofs))))
+  | Aglobal s ofs, nil =>
+      if Archi.ptr64 then None else Some (Genv.symbol_address genv s ofs)
+  | Abased s ofs, v1::nil =>
+      if Archi.ptr64 then None else Some (Val.add (Genv.symbol_address genv s ofs) v1)
+  | Abasedscaled sc s ofs, v1::nil =>
+      if Archi.ptr64 then None else Some (Val.add (Genv.symbol_address genv s ofs) (Val.mul v1 (Vint (Int.repr sc))))
+  | Ainstack ofs, nil =>
+      if Archi.ptr64 then None else Some(Val.offset_ptr sp ofs)
+  | _, _ => None
+  end.
+
+Definition eval_addressing64
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  match addr, vl with
+  | Aindexed n, v1::nil =>
+      Some (Val.addl v1 (Vlong (Int64.repr n)))
+  | Aindexed2 n, v1::v2::nil =>
+      Some (Val.addl (Val.addl v1 v2) (Vlong (Int64.repr n)))
+  | Ascaled sc ofs, v1::nil =>
+      Some (Val.addl (Val.mull v1 (Vlong (Int64.repr sc))) (Vlong (Int64.repr ofs)))
+  | Aindexed2scaled sc ofs, v1::v2::nil =>
+      Some(Val.addl v1 (Val.addl (Val.mull v2 (Vlong (Int64.repr sc))) (Vlong (Int64.repr ofs))))
+  | Aglobal s ofs, nil =>
+      if Archi.ptr64 then Some (Genv.symbol_address genv s ofs) else None
+  | Ainstack ofs, nil =>
+      if Archi.ptr64 then Some(Val.offset_ptr sp ofs) else None
+  | _, _ => None
+  end.
+
+Definition eval_addressing
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (addr: addressing) (vl: list val) : option val :=
+  if Archi.ptr64
+  then eval_addressing64 genv sp addr vl
+  else eval_addressing32 genv sp addr vl.
+
+Definition eval_operation
+    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (op: operation) (vl: list val) (m: mem): option val :=
+  match op, vl with
+  | Omove, v1::nil => Some v1
+  | Ointconst n, nil => Some (Vint n)
+  | Olongconst n, nil => Some (Vlong n)
+  | Ofloatconst n, nil => Some (Vfloat n)
+  | Osingleconst n, nil => Some (Vsingle n)
+  | Oindirectsymbol id, nil => Some (Genv.symbol_address genv id Ptrofs.zero)
+  | Ocast8signed, v1 :: nil => Some (Val.sign_ext 8 v1)
+  | Ocast8unsigned, v1 :: nil => Some (Val.zero_ext 8 v1)
+  | Ocast16signed, v1 :: nil => Some (Val.sign_ext 16 v1)
+  | Ocast16unsigned, v1 :: nil => Some (Val.zero_ext 16 v1)
+  | Oneg, v1::nil => Some (Val.neg v1)
+  | Osub, v1::v2::nil => Some (Val.sub v1 v2)
+  | Omul, v1::v2::nil => Some (Val.mul v1 v2)
+  | Omulimm n, v1::nil => Some (Val.mul v1 (Vint n))
+  | Omulhs, v1::v2::nil => Some (Val.mulhs v1 v2)
+  | Omulhu, v1::v2::nil => Some (Val.mulhu v1 v2)
+  | Odiv, v1::v2::nil => Val.divs v1 v2
+  | Odivu, v1::v2::nil => Val.divu v1 v2
+  | Omod, v1::v2::nil => Val.mods v1 v2
+  | Omodu, v1::v2::nil => Val.modu v1 v2
+  | Oand, v1::v2::nil => Some(Val.and v1 v2)
+  | Oandimm n, v1::nil => Some (Val.and v1 (Vint n))
+  | Oor, v1::v2::nil => Some(Val.or v1 v2)
+  | Oorimm n, v1::nil => Some (Val.or v1 (Vint n))
+  | Oxor, v1::v2::nil => Some(Val.xor v1 v2)
+  | Oxorimm n, v1::nil => Some (Val.xor v1 (Vint n))
+  | Onot, v1::nil => Some(Val.notint v1)
+  | Oshl, v1::v2::nil => Some (Val.shl v1 v2)
+  | Oshlimm n, v1::nil => Some (Val.shl v1 (Vint n))
+  | Oshr, v1::v2::nil => Some (Val.shr v1 v2)
+  | Oshrimm n, v1::nil => Some (Val.shr v1 (Vint n))
+  | Oshrximm n, v1::nil => Val.shrx v1 (Vint n)
+  | Oshru, v1::v2::nil => Some (Val.shru v1 v2)
+  | Oshruimm n, v1::nil => Some (Val.shru v1 (Vint n))
+  | Ororimm n, v1::nil => Some (Val.ror v1 (Vint n))
+  | Oshldimm n, v1::v2::nil => Some (Val.or (Val.shl v1 (Vint n))
+                                            (Val.shru v2 (Vint (Int.sub Int.iwordsize n))))
+  | Olea addr, _ => eval_addressing32 genv sp addr vl
+  | Omakelong, v1::v2::nil => Some(Val.longofwords v1 v2)
+  | Olowlong, v1::nil => Some(Val.loword v1)
+  | Ohighlong, v1::nil => Some(Val.hiword v1)
+  | Ocast32signed, v1 :: nil => Some (Val.longofint v1)
+  | Ocast32unsigned, v1 :: nil => Some (Val.longofintu v1)
+  | Onegl, v1::nil => Some (Val.negl v1)
+  | Oaddlimm n, v1::nil => Some (Val.addl v1 (Vlong n))
+  | Osubl, v1::v2::nil => Some (Val.subl v1 v2)
+  | Omull, v1::v2::nil => Some (Val.mull v1 v2)
+  | Omullimm n, v1::nil => Some (Val.mull v1 (Vlong n))
+  | Omullhs, v1::v2::nil => Some (Val.mullhs v1 v2)
+  | Omullhu, v1::v2::nil => Some (Val.mullhu v1 v2)
+  | Odivl, v1::v2::nil => Val.divls v1 v2
+  | Odivlu, v1::v2::nil => Val.divlu v1 v2
+  | Omodl, v1::v2::nil => Val.modls v1 v2
+  | Omodlu, v1::v2::nil => Val.modlu v1 v2
+  | Oandl, v1::v2::nil => Some(Val.andl v1 v2)
+  | Oandlimm n, v1::nil => Some (Val.andl v1 (Vlong n))
+  | Oorl, v1::v2::nil => Some(Val.orl v1 v2)
+  | Oorlimm n, v1::nil => Some (Val.orl v1 (Vlong n))
+  | Oxorl, v1::v2::nil => Some(Val.xorl v1 v2)
+  | Oxorlimm n, v1::nil => Some (Val.xorl v1 (Vlong n))
+  | Onotl, v1::nil => Some(Val.notl v1)
+  | Oshll, v1::v2::nil => Some (Val.shll v1 v2)
+  | Oshllimm n, v1::nil => Some (Val.shll v1 (Vint n))
+  | Oshrl, v1::v2::nil => Some (Val.shrl v1 v2)
+  | Oshrlimm n, v1::nil => Some (Val.shrl v1 (Vint n))
+  | Oshrxlimm n, v1::nil => Val.shrxl v1 (Vint n)
+  | Oshrlu, v1::v2::nil => Some (Val.shrlu v1 v2)
+  | Oshrluimm n, v1::nil => Some (Val.shrlu v1 (Vint n))
+  | Ororlimm n, v1::nil => Some (Val.rorl v1 (Vint n))
+  | Oleal addr, _ => eval_addressing64 genv sp addr vl
+  | Onegf, v1::nil => Some(Val.negf v1)
+  | Oabsf, v1::nil => Some(Val.absf v1)
+  | Oaddf, v1::v2::nil => Some(Val.addf v1 v2)
+  | Osubf, v1::v2::nil => Some(Val.subf v1 v2)
+  | Omulf, v1::v2::nil => Some(Val.mulf v1 v2)
+  | Odivf, v1::v2::nil => Some(Val.divf v1 v2)
+  | Onegfs, v1::nil => Some(Val.negfs v1)
+  | Oabsfs, v1::nil => Some(Val.absfs v1)
+  | Oaddfs, v1::v2::nil => Some(Val.addfs v1 v2)
+  | Osubfs, v1::v2::nil => Some(Val.subfs v1 v2)
+  | Omulfs, v1::v2::nil => Some(Val.mulfs v1 v2)
+  | Odivfs, v1::v2::nil => Some(Val.divfs v1 v2)
+  | Osingleoffloat, v1::nil => Some(Val.singleoffloat v1)
+  | Ofloatofsingle, v1::nil => Some(Val.floatofsingle v1)
+  | Ointoffloat, v1::nil => Val.intoffloat v1
+  | Ofloatofint, v1::nil => Val.floatofint v1
+  | Ointofsingle, v1::nil => Val.intofsingle v1
+  | Osingleofint, v1::nil => Val.singleofint v1
+  | Olongoffloat, v1::nil => Val.longoffloat v1
+  | Ofloatoflong, v1::nil => Val.floatoflong v1
+  | Olongofsingle, v1::nil => Val.longofsingle v1
+  | Osingleoflong, v1::nil => Val.singleoflong v1
+  | Ocmp c, _ => Some(Val.of_optbool (eval_condition c vl m))
+  | _, _ => None
+  end.
+
+Remark eval_addressing_Aglobal:
+  forall (F V: Type) (genv: Genv.t F V) sp id ofs,
+
+Remark eval_addressing_Ainstack:
+  forall (F V: Type) (genv: Genv.t F V) sp ofs,
+
+Remark eval_addressing_Ainstack_inv:
+  forall (F V: Type) (genv: Genv.t F V) sp ofs vl v,
+
+Ltac FuncInv :=
+  match goal with
+  | H: (match ?x with nil => _ | _ :: _ => _ end = Some _) |- _ =>
+      destruct x; simpl in H; FuncInv
+  | H: (match ?v with Vundef => _ | Vint _ => _ | Vfloat _ => _ | Vptr _ _ => _ end = Some _) |- _ =>
+      destruct v; simpl in H; FuncInv
+  | H: (if Archi.ptr64 then _ else _) = Some _ |- _ =>
+      destruct Archi.ptr64 eqn:?; FuncInv
+  | H: (Some _ = Some _) |- _ =>
+      injection H; intros; clear H; FuncInv
+  | H: (None = Some _) |- _ =>
+      discriminate H
+  | _ =>
+      idtac
+  end.
+
+Definition type_of_condition (c: condition) : list typ :=
+  match c with
+  | Ccomp _ => Tint :: Tint :: nil
+  | Ccompu _ => Tint :: Tint :: nil
+  | Ccompimm _ _ => Tint :: nil
+  | Ccompuimm _ _ => Tint :: nil
+  | Ccompl _ => Tlong :: Tlong :: nil
+  | Ccomplu _ => Tlong :: Tlong :: nil
+  | Ccomplimm _ _ => Tlong :: nil
+  | Ccompluimm _ _ => Tlong :: nil
+  | Ccompf _ => Tfloat :: Tfloat :: nil
+  | Cnotcompf _ => Tfloat :: Tfloat :: nil
+  | Ccompfs _ => Tsingle :: Tsingle :: nil
+  | Cnotcompfs _ => Tsingle :: Tsingle :: nil
+  | Cmaskzero _ => Tint :: nil
+  | Cmasknotzero _ => Tint :: nil
+  end.
+
+Definition type_of_addressing_gen (tyA: typ) (addr: addressing): list typ :=
+  match addr with
+  | Aindexed _ => tyA :: nil
+  | Aindexed2 _ => tyA :: tyA :: nil
+  | Ascaled _ _ => tyA :: nil
+  | Aindexed2scaled _ _ => tyA :: tyA :: nil
+  | Aglobal _ _ => nil
+  | Abased _ _ => tyA :: nil
+  | Abasedscaled _ _ _ => tyA :: nil
+  | Ainstack _ => nil
+  end.
+
+Definition type_of_addressing := type_of_addressing_gen Tptr.
+Definition type_of_addressing32 := type_of_addressing_gen Tint.
+Definition type_of_addressing64 := type_of_addressing_gen Tlong.
+
+Definition type_of_operation (op: operation) : list typ * typ :=
+  match op with
+  | Omove => (nil, Tint)   
+  | Ointconst _ => (nil, Tint)
+  | Olongconst _ => (nil, Tlong)
+  | Ofloatconst f => (nil, Tfloat)
+  | Osingleconst f => (nil, Tsingle)
+  | Oindirectsymbol _ => (nil, Tptr)
+  | Ocast8signed => (Tint :: nil, Tint)
+  | Ocast8unsigned => (Tint :: nil, Tint)
+  | Ocast16signed => (Tint :: nil, Tint)
+  | Ocast16unsigned => (Tint :: nil, Tint)
+  | Oneg => (Tint :: nil, Tint)
+  | Osub => (Tint :: Tint :: nil, Tint)
+  | Omul => (Tint :: Tint :: nil, Tint)
+  | Omulimm _ => (Tint :: nil, Tint)
+  | Omulhs => (Tint :: Tint :: nil, Tint)
+  | Omulhu => (Tint :: Tint :: nil, Tint)
+  | Odiv => (Tint :: Tint :: nil, Tint)
+  | Odivu => (Tint :: Tint :: nil, Tint)
+  | Omod => (Tint :: Tint :: nil, Tint)
+  | Omodu => (Tint :: Tint :: nil, Tint)
+  | Oand => (Tint :: Tint :: nil, Tint)
+  | Oandimm _ => (Tint :: nil, Tint)
+  | Oor => (Tint :: Tint :: nil, Tint)
+  | Oorimm _ => (Tint :: nil, Tint)
+  | Oxor => (Tint :: Tint :: nil, Tint)
+  | Oxorimm _ => (Tint :: nil, Tint)
+  | Onot => (Tint :: nil, Tint)
+  | Oshl => (Tint :: Tint :: nil, Tint)
+  | Oshlimm _ => (Tint :: nil, Tint)
+  | Oshr => (Tint :: Tint :: nil, Tint)
+  | Oshrimm _ => (Tint :: nil, Tint)
+  | Oshrximm _ => (Tint :: nil, Tint)
+  | Oshru => (Tint :: Tint :: nil, Tint)
+  | Oshruimm _ => (Tint :: nil, Tint)
+  | Ororimm _ => (Tint :: nil, Tint)
+  | Oshldimm _ => (Tint :: Tint :: nil, Tint)
+  | Olea addr => (type_of_addressing32 addr, Tint)
+  | Omakelong => (Tint :: Tint :: nil, Tlong)
+  | Olowlong => (Tlong :: nil, Tint)
+  | Ohighlong => (Tlong :: nil, Tint)
+  | Ocast32signed => (Tint :: nil, Tlong)
+  | Ocast32unsigned => (Tint :: nil, Tlong)
+  | Onegl => (Tlong :: nil, Tlong)
+  | Oaddlimm _ => (Tlong :: nil, Tlong)
+  | Osubl => (Tlong :: Tlong :: nil, Tlong)
+  | Omull => (Tlong :: Tlong :: nil, Tlong)
+  | Omullimm _ => (Tlong :: nil, Tlong)
+  | Omullhs => (Tlong :: Tlong :: nil, Tlong)
+  | Omullhu => (Tlong :: Tlong :: nil, Tlong)
+  | Odivl => (Tlong :: Tlong :: nil, Tlong)
+  | Odivlu => (Tlong :: Tlong :: nil, Tlong)
+  | Omodl => (Tlong :: Tlong :: nil, Tlong)
+  | Omodlu => (Tlong :: Tlong :: nil, Tlong)
+  | Oandl => (Tlong :: Tlong :: nil, Tlong)
+  | Oandlimm _ => (Tlong :: nil, Tlong)
+  | Oorl => (Tlong :: Tlong :: nil, Tlong)
+  | Oorlimm _ => (Tlong :: nil, Tlong)
+  | Oxorl => (Tlong :: Tlong :: nil, Tlong)
+  | Oxorlimm _ => (Tlong :: nil, Tlong)
+  | Onotl => (Tlong :: nil, Tlong)
+  | Oshll => (Tlong :: Tint :: nil, Tlong)
+  | Oshllimm _ => (Tlong :: nil, Tlong)
+  | Oshrl => (Tlong :: Tint :: nil, Tlong)
+  | Oshrlimm _ => (Tlong :: nil, Tlong)
+  | Oshrxlimm _ => (Tlong :: nil, Tlong)
+  | Oshrlu => (Tlong :: Tint :: nil, Tlong)
+  | Oshrluimm _ => (Tlong :: nil, Tlong)
+  | Ororlimm _ => (Tlong :: nil, Tlong)
+  | Oleal addr => (type_of_addressing64 addr, Tlong)
+  | Onegf => (Tfloat :: nil, Tfloat)
+  | Oabsf => (Tfloat :: nil, Tfloat)
+  | Oaddf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Osubf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Omulf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Odivf => (Tfloat :: Tfloat :: nil, Tfloat)
+  | Onegfs => (Tsingle :: nil, Tsingle)
+  | Oabsfs => (Tsingle :: nil, Tsingle)
+  | Oaddfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Osubfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Omulfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Odivfs => (Tsingle :: Tsingle :: nil, Tsingle)
+  | Osingleoffloat => (Tfloat :: nil, Tsingle)
+  | Ofloatofsingle => (Tsingle :: nil, Tfloat)
+  | Ointoffloat => (Tfloat :: nil, Tint)
+  | Ofloatofint => (Tint :: nil, Tfloat)
+  | Ointofsingle => (Tsingle :: nil, Tint)
+  | Osingleofint => (Tint :: nil, Tsingle)
+  | Olongoffloat => (Tfloat :: nil, Tlong)
+  | Ofloatoflong => (Tlong :: nil, Tfloat)
+  | Olongofsingle => (Tsingle :: nil, Tlong)
+  | Osingleoflong => (Tlong :: nil, Tsingle)
+  | Ocmp c => (type_of_condition c, Tint)
+  end.
+
+Section SOUNDNESS.
+
+Variable A V: Type.
+Variable genv: Genv.t A V.
+
+Remark type_add:
+  forall v1 v2, Val.has_type (Val.add v1 v2) Tint.
+
+Remark type_addl:
+  forall v1 v2, Val.has_type (Val.addl v1 v2) Tlong.
+
+Lemma type_of_addressing64_sound:
+  forall addr vl sp v,
+  eval_addressing64 genv sp addr vl = Some v ->
+  Val.has_type v Tlong.
+
+Lemma type_of_addressing32_sound:
+  forall addr vl sp v,
+  eval_addressing32 genv sp addr vl = Some v ->
+  Val.has_type v Tint.
+
+Corollary type_of_addressing_sound:
+  forall addr vl sp v,
+  eval_addressing genv sp addr vl = Some v ->
+  Val.has_type v Tptr.
+
+Lemma type_of_operation_sound:
+  forall op vl sp v m,
+  op <> Omove ->
+  eval_operation genv sp op vl m = Some v ->
+  Val.has_type v (snd (type_of_operation op)).
+
+End SOUNDNESS.
+
+Definition is_move_operation
+    (A: Type) (op: operation) (args: list A) : option A :=
+  match op, args with
+  | Omove, arg :: nil => Some arg
+  | _, _ => None
+  end.
+
+Lemma is_move_operation_correct:
+  forall (A: Type) (op: operation) (args: list A) (a: A),
+  is_move_operation op args = Some a ->
+  op = Omove /\ args = a :: nil.
+
+Definition negate_condition (cond: condition): condition :=
+  match cond with
+  | Ccomp c => Ccomp(negate_comparison c)
+  | Ccompu c => Ccompu(negate_comparison c)
+  | Ccompimm c n => Ccompimm (negate_comparison c) n
+  | Ccompuimm c n => Ccompuimm (negate_comparison c) n
+  | Ccompl c => Ccompl(negate_comparison c)
+  | Ccomplu c => Ccomplu(negate_comparison c)
+  | Ccomplimm c n => Ccomplimm (negate_comparison c) n
+  | Ccompluimm c n => Ccompluimm (negate_comparison c) n
+  | Ccompf c => Cnotcompf c
+  | Cnotcompf c => Ccompf c
+  | Ccompfs c => Cnotcompfs c
+  | Cnotcompfs c => Ccompfs c
+  | Cmaskzero n => Cmasknotzero n
+  | Cmasknotzero n => Cmaskzero n
+  end.
+
+Lemma eval_negate_condition:
+  forall cond vl m,
+  eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m).
+
+Definition shift_stack_addressing (delta: Z) (addr: addressing) :=
+  match addr with
+  | Ainstack ofs => Ainstack (Ptrofs.add ofs (Ptrofs.repr delta))
+  | _ => addr
+  end.
+
+Definition shift_stack_operation (delta: Z) (op: operation) :=
+  match op with
+  | Olea  addr => Olea  (shift_stack_addressing delta addr)
+  | Oleal addr => Oleal (shift_stack_addressing delta addr)
+  | _ => op
+  end.
+
+Lemma type_shift_stack_addressing:
+  forall delta addr, type_of_addressing (shift_stack_addressing delta addr) = type_of_addressing addr.
+
+Lemma type_shift_stack_operation:
+  forall delta op, type_of_operation (shift_stack_operation delta op) = type_of_operation op.
+
+Lemma eval_shift_stack_addressing32:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_addressing64:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_addressing:
+  forall F V (ge: Genv.t F V) sp addr vl delta,
+
+Lemma eval_shift_stack_operation:
+  forall F V (ge: Genv.t F V) sp op vl m delta,
+
+Definition offset_addressing_total (addr: addressing) (delta: Z) : addressing :=
+  match addr with
+  | Aindexed n => Aindexed (n + delta)
+  | Aindexed2 n => Aindexed2 (n + delta)
+  | Ascaled sc n => Ascaled sc (n + delta)
+  | Aindexed2scaled sc n => Aindexed2scaled sc (n + delta)
+  | Aglobal s n => Aglobal s (Ptrofs.add n (Ptrofs.repr delta))
+  | Abased s n => Abased s (Ptrofs.add n (Ptrofs.repr delta))
+  | Abasedscaled sc s n => Abasedscaled sc s (Ptrofs.add n (Ptrofs.repr delta))
+  | Ainstack n => Ainstack (Ptrofs.add n (Ptrofs.repr delta))
+  end.
+
+Definition offset_addressing (addr: addressing) (delta: Z) : option addressing :=
+  let addr' := offset_addressing_total addr delta in
+  if addressing_valid addr' then Some addr' else None.
+
+Lemma eval_offset_addressing_total_32:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta v,
+
+Lemma eval_offset_addressing_total_64:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta v,
+
+Lemma eval_offset_addressing:
+  forall (F V: Type) (ge: Genv.t F V) sp addr args delta addr' v,
+
+Definition is_trivial_op (op: operation) : bool :=
+  match op with
+  | Omove => true
+  | Ointconst _ => true
+  | Olongconst _ => true
+  | Olea (Aglobal _ _) => true
+  | Olea (Ainstack _) => true
+  | Oleal (Aglobal _ _) => true
+  | Oleal (Ainstack _) => true
+  | _ => false
+  end.
+
+Definition op_depends_on_memory (op: operation) : bool :=
+  match op with
+  | Ocmp (Ccompu _) => negb Archi.ptr64
+  | Ocmp (Ccompuimm _ _) => negb Archi.ptr64
+  | Ocmp (Ccomplu _) => Archi.ptr64
+  | Ocmp (Ccompluimm _ _) => Archi.ptr64
+  | _ => false
+  end.
+
+Lemma op_depends_on_memory_correct:
+  forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2,
+
+Definition globals_addressing (addr: addressing) : list ident :=
+  match addr with
+  | Aglobal s n => s :: nil
+  | Abased s n => s :: nil
+  | Abasedscaled sc s n => s :: nil
+  | _ => nil
+  end.
+
+Definition globals_operation (op: operation) : list ident :=
+  match op with
+  | Oindirectsymbol s => s :: nil
+  | Olea addr => globals_addressing addr
+  | Oleal addr => globals_addressing addr
+  | _ => nil
+  end.
+
+Section GENV_TRANSF.
+
+Variable F1 F2 V1 V2: Type.
+Variable ge1: Genv.t F1 V1.
+Variable ge2: Genv.t F2 V2.
+Hypothesis agree_on_symbols:
+  forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
+
+Lemma eval_addressing32_preserved:
+  forall sp addr vl,
+  eval_addressing32 ge2 sp addr vl = eval_addressing32 ge1 sp addr vl.
+
+Lemma eval_addressing64_preserved:
+  forall sp addr vl,
+  eval_addressing64 ge2 sp addr vl = eval_addressing64 ge1 sp addr vl.
+
+Lemma eval_addressing_preserved:
+  forall sp addr vl,
+  eval_addressing ge2 sp addr vl = eval_addressing ge1 sp addr vl.
+
+Lemma eval_operation_preserved:
+  forall sp op vl m,
+  eval_operation ge2 sp op vl m = eval_operation ge1 sp op vl m.
+
+End GENV_TRANSF.
+
+Section EVAL_COMPAT.
+
+Variable F1 F2 V1 V2: Type.
+Variable ge1: Genv.t F1 V1.
+Variable ge2: Genv.t F2 V2.
+Variable f: meminj.
+
+Variable m1: mem.
+Variable m2: mem.
+
+Hypothesis valid_pointer_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_pointer_inj:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+
+Hypothesis weak_valid_pointer_no_overflow:
+  forall b1 ofs b2 delta,
+  f b1 = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
+
+Hypothesis valid_different_pointers_inj:
+  forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  b1 <> b2 ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
+  Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true ->
+  f b1 = Some (b1', delta1) ->
+  f b2 = Some (b2', delta2) ->
+  b1' <> b2' \/
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
+
+Ltac InvInject :=
+  match goal with
+  | [ H: Val.inject _ (Vint _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject _ (Vfloat _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject _ (Vptr _ _) _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject_list _ nil _ |- _ ] =>
+      inv H; InvInject
+  | [ H: Val.inject_list _ (_ :: _) _ |- _ ] =>
+      inv H; InvInject
+  | _ => idtac
+  end.
+
+Lemma eval_condition_inj:
+  forall cond vl1 vl2 b,
+  Val.inject_list f vl1 vl2 ->
+
+Ltac TrivialExists :=
+  match goal with
+  | [ |- exists v2, Some ?v1 = Some v2 /\ Val.inject _ _ v2 ] =>
+      exists v1; split; auto
+  | _ => idtac
+  end.
+
+Lemma eval_addressing32_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_addressing64_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_addressing_inj:
+  forall addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+Lemma eval_operation_inj:
+  forall op sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_operation op) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+
+End EVAL_COMPAT.
+
+Section EVAL_LESSDEF.
+
+Variable F V: Type.
+Variable genv: Genv.t F V.
+
+Remark valid_pointer_extends:
+  forall m1 m2, Mem.extends m1 m2 ->
+
+Remark weak_valid_pointer_extends:
+  forall m1 m2, Mem.extends m1 m2 ->
+
+Remark weak_valid_pointer_no_overflow_extends:
+  forall m1 b1 ofs b2 delta,
+  Some(b1, 0) = Some(b2, delta) ->
+  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
+
+Remark valid_different_pointers_extends:
+  forall m1 b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+  b1 <> b2 ->
+  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
+
+Lemma eval_condition_lessdef:
+  forall cond vl1 vl2 b m1 m2,
+  Val.lessdef_list vl1 vl2 ->
+
+Lemma eval_operation_lessdef:
+  forall sp op vl1 vl2 v1 m1 m2,
+  Val.lessdef_list vl1 vl2 ->
+
+Lemma eval_addressing_lessdef:
+  forall sp addr vl1 vl2 v1,
+  Val.lessdef_list vl1 vl2 ->
+
+End EVAL_LESSDEF.
+
+Section EVAL_INJECT.
+
+Variable F V: Type.
+Variable genv: Genv.t F V.
+Variable f: meminj.
+Hypothesis globals: meminj_preserves_globals genv f.
+Variable sp1: block.
+Variable sp2: block.
+Variable delta: Z.
+Hypothesis sp_inj: f sp1 = Some(sp2, delta).
+
+Remark symbol_address_inject:
+  forall id ofs, Val.inject f (Genv.symbol_address genv id ofs) (Genv.symbol_address genv id ofs).
+
+Lemma eval_condition_inject:
+  forall cond vl1 vl2 b m1 m2,
+  Val.inject_list f vl1 vl2 ->
+
+Lemma eval_addressing_inject:
+  forall addr vl1 vl2 v1,
+  Val.inject_list f vl1 vl2 ->
+
+Lemma eval_operation_inject:
+  forall op vl1 vl2 v1 m1 m2,
+  Val.inject_list f vl1 vl2 ->
+
+End EVAL_INJECT.
+
+Definition builtin_arg_ok_1
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match c, ba with
+  | OK_all, _ => true
+  | OK_const, (BA_int _ | BA_long _ | BA_float _ | BA_single _) => true
+  | OK_addrstack, BA_addrstack _ => true
+  | OK_addressing, BA_addrstack _ => true
+  | OK_addressing, BA_addrglobal _ _ => true
+  | OK_addressing, BA_addptr (BA _) (BA_int _ | BA_long _) => true
+  | _, _ => false
+  end.
+
+Definition builtin_arg_ok
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match ba with
+  | (BA _ | BA_splitlong (BA _) (BA _)) => true
+  | _ => builtin_arg_ok_1 ba c
+  end. *)
+
+Require Import Maps.
+
+Require Import Switch.
+
+
+
+Require Import sepcomp.CminorSel.
+
+Require Import sepcomp.mem_lemmas. 
+(* sepcomp.mem_lemmas:
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Maps.
+Require Import compcert.lib.Integers.
+Require Import compcert.lib.Axioms.
+
+Require Import compcert.common.AST.
+Require Import compcert.common.Values.
+Require Import compcert.common.Memory.
+Require Import compcert.common.Events.
+Require Import compcert.common.Globalenvs.
+
+Require Import VST.msl.Extensionality.
+
+Require Import VST.sepcomp.Address.
+
+Notation val_inject:= Val.inject.
+
+Lemma valid_block_dec: forall m b, {Mem.valid_block m b} +  {~Mem.valid_block m b}.
+
+Lemma Forall2_length {A B} {f:A -> B -> Prop} {l1 l2} (F:Forall2 f l1 l2): length l1 = length l2.
+
+Lemma Forall2_Zlength {A B} {f:A -> B -> Prop} {l1 l2} (F:Forall2 f l1 l2): Zlength l1 = Zlength l2.
+
+Lemma pos_succ_plus_assoc: forall n m,
+    (Pos.succ n + m = n + Pos.succ m)%positive.
+
+Lemma mem_unchanged_on_sub: forall (P Q: block -> BinInt.Z -> Prop) m m',
+
+Lemma mem_unchanged_on_sub_strong: forall (P Q: block -> BinInt.Z -> Prop) m m',
+
+Lemma inject_separated_same_meminj: forall j m m',
+  Events.inject_separated j j m m'.
+
+Lemma compose_meminj_idR: forall j, j = compose_meminj j inject_id.
+
+Lemma compose_meminj_idL: forall j, j = compose_meminj inject_id j.
+
+Theorem drop_extends:
+  forall m1 m2 lo hi b p m1',
+  Mem.extends m1 m2 ->
+
+Lemma mem_inj_id_trans: forall m1 m2 (Inj12: Mem.mem_inj inject_id m1 m2) m3
+
+Lemma extends_trans: forall m1 m2
+  (Ext12: Mem.extends m1 m2) m3 (Ext23: Mem.extends m2 m3), Mem.extends m1 m3.
+
+Lemma memval_inject_id_refl: forall v, memval_inject inject_id v v.
+
+Lemma extends_refl: forall m, Mem.extends m m.
+
+Lemma perm_decE:
+  forall m b ofs k p PF,
+  (Mem.perm_dec m b ofs k p = left PF <-> Mem.perm m b ofs k p).
+
+Lemma flatinj_E: forall b b1 b2 delta (H:Mem.flat_inj b b1 = Some (b2, delta)),
+
+Lemma flatinj_I: forall bb b, Plt b bb -> Mem.flat_inj bb b = Some (b, 0).
+
+Lemma flatinj_mono: forall b b1 b2 b' delta
+  (F: Mem.flat_inj b1 b = Some (b', delta)),
+
+Definition readonlyLD m1 b m2 :=
+    forall chunk ofs
+    (NWR: forall ofs', ofs <= ofs' < ofs + size_chunk chunk ->
+                          ~(Mem.perm m1 b ofs' Cur Writable)),
+     Mem.load chunk m2 b ofs = Mem.load chunk m1 b ofs /\
+     (forall ofs', ofs <= ofs' < ofs + size_chunk chunk ->
+        (forall k p, Mem.perm m1 b ofs' k p <-> Mem.perm m2 b ofs' k p)).
+
+Definition readonly m1 b m2 :=
+    forall n ofs
+    (NWR: forall i, 0 <= i < n ->
+                          ~(Mem.perm m1 b (ofs + i) Cur Writable)),
+     Mem.loadbytes m2 b ofs n = Mem.loadbytes m1 b ofs n /\
+     (forall i, 0 <= i < n ->
+        (forall k p, Mem.perm m1 b (ofs+i) k p <-> Mem.perm m2 b (ofs+i) k p)).
+
+Definition max_readonlyLD m1 b m2 :=
+    forall chunk ofs
+    (NWR: forall ofs', ofs <= ofs' < ofs + size_chunk chunk ->
+                          ~(Mem.perm m1 b ofs' Max Writable)),
+     Mem.load chunk m2 b ofs = Mem.load chunk m1 b ofs /\
+     (forall ofs', ofs <= ofs' < ofs + size_chunk chunk ->
+        (forall k p, Mem.perm m1 b ofs' k p <-> Mem.perm m2 b ofs' k p)).
+
+Definition max_readonly m1 b m2 :=
+    forall n ofs
+    (NWR: forall i, 0 <= i < n ->
+                          ~(Mem.perm m1 b (ofs + i) Max Writable)),
+     Mem.loadbytes m2 b ofs n = Mem.loadbytes m1 b ofs n /\
+     (forall i, 0 <= i < n ->
+        (forall k p, Mem.perm m1 b (ofs+i) k p <-> Mem.perm m2 b (ofs+i) k p)).
+
+Lemma readonlyLD_max_readonlyLD m1 b m2: readonlyLD m1 b m2 -> max_readonlyLD m1 b m2.
+
+Lemma readonly_max_readonly m1 b m2: readonly m1 b m2 -> max_readonly m1 b m2.
+
+Lemma readonly_readonlyLD m1 b m2: readonly m1 b m2 -> readonlyLD m1 b m2.
+
+Lemma readonly_refl m b: readonly m b m.
+
+Lemma readonlyLD_refl m b: readonlyLD m b m.
+
+Lemma readonlyLD_trans m1 m2 m3 b: readonlyLD m1 b m2 -> readonlyLD m2 b m3 -> readonlyLD m1 b m3.
+
+Lemma readonly_trans m1 m2 m3 b: readonly m1 b m2 -> readonly m2 b m3 -> readonly m1 b m3.
+
+Definition mem_forward (m1 m2:mem) :=
+  forall b, Mem.valid_block m1 b ->
+    (Mem.valid_block m2 b
+     /\ (forall ofs p, Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p)
+     ).
+
+Lemma mem_forward_refl: forall m, mem_forward m m.
+
+Lemma mem_forward_trans: forall m1 m2 m3,
+  mem_forward m1 m2 -> mem_forward m2 m3 -> mem_forward m1 m3.
+
+Lemma forward_unchanged_trans: forall P m1 m2 m3,
+Mem.unchanged_on P m1 m2 -> Mem.unchanged_on P m2 m3 ->
+
+Lemma matchOptE: forall {A} (a:option A) (P: A -> Prop),
+   match a with Some b => P b | None => False end ->
+   exists b, a = Some b /\ P b.
+
+Lemma compose_meminjD_None: forall j jj b,
+  (compose_meminj j jj) b = None ->
+  j b = None \/
+  (exists b', exists ofs, j b = Some(b',ofs) /\ jj b' = None).
+
+Lemma compose_meminjD_Some: forall j jj b b2 ofs2,
+       (compose_meminj j jj) b = Some(b2,ofs2) ->
+       exists b1, exists ofs1, exists ofs,
+       j b = Some(b1,ofs1) /\ jj b1 = Some(b2,ofs) /\ ofs2=ofs1+ofs.
+
+Lemma compose_meminj_inject_incr: forall j12 j12' j23 j23'
+  (InjIncr12: inject_incr j12 j12') (InjIncr23: inject_incr j23 j23'),
+  inject_incr (compose_meminj j12 j23) (compose_meminj j12' j23').
+
+Lemma compose_meminj_inject_separated: forall j12 j12' j23 j23' m1 m2 m3
+   (InjSep12 : inject_separated j12 j12' m1 m2)
+   (InjSep23 : inject_separated j23 j23' m2 m3)
+   (InjIncr12: inject_incr j12 j12') (InjIncr23: inject_incr j23 j23')
+   (BV12: forall b1 b2 ofs, j12 b1 = Some (b2,ofs) -> Mem.valid_block m1 b1 /\ Mem.valid_block m2 b2)
+
+Lemma compose_meminj_inject_separated': forall j12 j12' j23 j23' m1 m2 m3
+   (InjSep12 : inject_separated j12 j12' m1 m2)
+   (InjSep23 : inject_separated j23 j23' m2 m3)
+   (InjIncr12: inject_incr j12 j12') (InjIncr23: inject_incr j23 j23')
+   (MInj12: Mem.inject j12 m1 m2)
+
+Lemma forall_lessdef_refl: forall vals,  Forall2 Val.lessdef vals vals.
+
+Lemma lessdef_hastype: forall v v' (V:Val.lessdef v v') T,
+
+Lemma forall_lessdef_hastype: forall vals vals'
+          (V:Forall2 Val.lessdef vals vals') Ts
+
+Lemma valinject_hastype:  forall j v v'
+       (V: (val_inject j) v v') T,
+       Val.has_type v' T -> Val.has_type v T.
+
+Lemma forall_valinject_hastype:  forall j vals vals'
+            (V:  Forall2 (val_inject j) vals vals')
+            Ts (HTs: Forall2 Val.has_type vals' Ts),
+
+Definition val_inject_opt (j: meminj) (v1 v2: option val) :=
+  match v1, v2 with Some v1', Some v2' => val_inject j v1' v2'
+  | None, None => True
+  | _, _ => False
+  end.
+
+Lemma val_inject_split:
+  forall v1 v3 j12 j23 (V: val_inject (compose_meminj j12 j23) v1 v3),
+    exists v2, val_inject j12 v1 v2 /\ val_inject j23 v2 v3.
+
+Lemma forall_lessdef_trans:
+  forall vals1 vals2 (V12: Forall2 Val.lessdef vals1 vals2)
+
+Lemma extends_loc_out_of_bounds:
+  forall m1 m2 (Ext: Mem.extends m1 m2) b ofs,
+
+Lemma extends_loc_out_of_reach:
+  forall m1 m2 (Ext: Mem.extends m1 m2) b ofs j
+
+Lemma valinject_lessdef:
+  forall v1 v2 v3 j (V12:val_inject j v1 v2) (V23 : Val.lessdef v2 v3),
+
+Lemma forall_valinject_lessdef:
+  forall vals1 vals2 j (VInj12 : Forall2 (val_inject j) vals1 vals2) vals3
+    (LD23 : Forall2 Val.lessdef vals2 vals3), Forall2 (val_inject j) vals1 vals3.
+
+Lemma val_lessdef_inject_compose:
+  forall v1 v2 (LD12 : Val.lessdef v1 v2) j v3
+
+Lemma forall_val_lessdef_inject_compose:
+  forall v1 v2 (LD12 : Forall2 Val.lessdef v1 v2) j v3
+
+Lemma forall_val_inject_compose:
+  forall vals1 vals2 j1 (ValsInj12 : Forall2 (val_inject j1) vals1 vals2)
+     vals3 j2 (ValsInj23 : Forall2 (val_inject j2) vals2 vals3),
+     Forall2 (val_inject (compose_meminj j1 j2)) vals1 vals3.
+
+Lemma val_inject_flat:
+  forall m1 m2 j (Inj: Mem.inject j m1 m2) v1 v2 (V: val_inject j v1 v2),
+
+Lemma forall_val_inject_flat: forall m1 m2 j (Inj: Mem.inject j m1 m2) vals1 vals2
+
+Lemma po_trans: forall a b c, Mem.perm_order'' a b ->  Mem.perm_order'' b c ->
+
+Lemma extends_perm: forall m1 m2 (Ext: Mem.extends m1 m2) b ofs k p,
+
+Lemma extends_permorder: forall m1 m2 (Ext: Mem.extends m1 m2) (b:block) ofs k,
+
+Lemma fwd_maxperm: forall m1 m2 (FWD: mem_forward m1 m2) b
+  (V:Mem.valid_block m1 b) ofs p,
+
+Lemma fwd_maxpermorder: forall m1 m2 (FWD: mem_forward m1 m2) (b:block)
+  (V:Mem.valid_block m1 b) ofs,
+
+Lemma po_oo: forall p q, Mem.perm_order' p q = Mem.perm_order'' p (Some q).
+
+Lemma inject_permorder:
+  forall j m1 m2 (Inj : Mem.inject j m1 m2) (b b':block) ofs'
+
+Lemma PermExtNotnonempty:
+  forall m1 m2
+    (Inj: Mem.extends m1 m2) b ofs p
+
+Lemma PermInjNotnonempty:
+  forall j m1 m2
+    (Inj: Mem.inject j m1 m2) b b2 delta (J:j b = Some(b2,delta)) ofs p
+
+Lemma inject_LOOR_LOOB:
+  forall m1 m2 j (Minj12 : Mem.inject j m1 m2) m3 m3',
+
+Lemma free_neutral:
+  forall (thr : block) (m : mem) (lo hi : Z) (b : block) (m' : Mem.mem')
+
+Lemma getN_aux: forall n p c B1 v B2, Mem.getN n p c = B1 ++ v::B2 ->
+
+Lemma getN_range: forall n ofs M bytes1 v bytes2,
+  Mem.getN n ofs M = bytes1 ++ v::bytes2 ->
+
+Lemma loadbytes_D: forall m b ofs n bytes
+      (LD: Mem.loadbytes m b ofs n = Some bytes),
+
+Lemma load_ptr_is_fragment ch m b ofs b0 i
+      (LD: Mem.load ch m b ofs = Some (Vptr b0 i)):
+
+Lemma load_storebytes_nil m b ofs m': Mem.storebytes m b ofs nil = Some m' ->
+
+Lemma loadbytes_storebytes_nil m b ofs m': Mem.storebytes m b ofs nil = Some m' ->
+
+Lemma storebytes_forward: forall m b ofs bytes m'
+      (M: Mem.storebytes m b ofs bytes = Some m'),
+
+Lemma storebytes_readonlyLD: forall m b ofs bytes m'
+      (M: Mem.storebytes m b ofs bytes = Some m'),
+
+Lemma storebytes_readonly: forall m b ofs bytes m'
+      (M: Mem.storebytes m b ofs bytes = Some m'),
+
+Lemma store_forward: forall m b ofs v ch m'
+      (M:Mem.store ch m b ofs v = Some m'),
+
+Lemma store_readonly: forall m b ofs v ch m'
+      (M:Mem.store ch m b ofs v = Some m'),
+
+Lemma alloc_forward:
+      forall m lo hi m' b
+      (A: Mem.alloc m lo hi = (m',b)),
+
+Lemma loadbytes_unchanged_on (P : block -> Z -> Prop) m m' b ofs n:
+  Mem.unchanged_on P m m' -> Mem.valid_block m b ->
+
+Lemma loadbytes_alloc_unchanged m1 lo hi m2 b :
+  Mem.alloc m1 lo hi = (m2, b) ->
+
+Lemma alloc_readonly:
+      forall m lo hi m' b
+      (A: Mem.alloc m lo hi = (m',b)),
+
+Lemma alloc_readonlyLD:
+      forall m lo hi m' b
+      (A: Mem.alloc m lo hi = (m',b)),
+
+Lemma free_forward: forall b z0 z m m'
+      (M: Mem.free m b z0 z = Some m'),
+
+Lemma loadbytes_free m1 bf lo hi m2:
+  Mem.free m1 bf lo hi = Some m2 ->
+
+Lemma free_readonlyLD: forall b lo hi m m'
+      (M: Mem.free m b lo hi = Some m'),
+
+Lemma free_readonly: forall b lo hi m m'
+      (M: Mem.free m b lo hi = Some m'),
+
+Lemma freelist_forward: forall l m m'
+      (M: Mem.free_list m l = Some m'),
+
+Lemma freelist_readonly: forall l m m'
+      (M: Mem.free_list m l = Some m'),
+
+Lemma freelist_readonlyLD: forall l m m'
+      (M: Mem.free_list m l = Some m'),
+
+Lemma forward_nextblock: forall m m',
+  mem_forward m m' ->
+  (Mem.nextblock m <= Mem.nextblock m')%positive.
+
+Lemma inject_separated_incr_fwd:
+  forall j j' m1 m2 j'' m2'
+    (InjSep : inject_separated j j' m1 m2)
+    (InjSep' : inject_separated j' j'' m1 m2')
+    (InjIncr' : inject_incr j' j'')
+    (Fwd: mem_forward m2 m2'),
+    inject_separated j j'' m1 m2.
+
+Lemma inject_separated_incr_fwd2:
+  forall j0 j j' m10 m20 m1 m2,
+  inject_incr j j' ->
+  inject_separated j j' m1 m2 ->
+  inject_incr j0 j ->
+  mem_forward m10 m1 ->
+  inject_separated j0 j m10 m20 ->
+  mem_forward m20 m2 ->
+  inject_separated j0 j' m10 m20.
+
+Lemma forall_inject_val_list_inject:
+  forall j args args' (H:Forall2 (val_inject j) args args' ),
+    Val.inject_list j args args'.
+
+Lemma val_list_inject_forall_inject:
+  forall j args args' (H:Val.inject_list j args args'),
+
+Lemma forall_lessdef_val_listless:
+  forall args args' (H: Forall2 Val.lessdef args args'),
+
+Lemma val_listless_forall_lessdef:
+  forall args args' (H:Val.lessdef_list args args'),
+
+Lemma storev_valid_block_1:
+forall ch m addr v m',
+Mem.storev ch m addr v = Some m' ->
+
+Lemma storev_valid_block_2:
+forall ch m addr v m',
+Mem.storev ch m addr v = Some m' ->
+
+Definition meminj_preserves_globals_ind (globals: (block->Prop)*(block->Prop)) f :=
+  (forall b, fst globals b -> f b = Some (b, 0)) /\
+  (forall b, snd globals b -> f b = Some (b, 0)) /\
+  (forall b1 b2 delta, snd globals b2 -> f b1 = Some (b2, delta) -> b1=b2).
+
+Definition genv2blocks {F V: Type} (ge: Genv.t F V) :=
+  (fun b => exists id, Genv.find_symbol ge id = Some b,
+   fun b => exists gv, Genv.find_var_info ge b = Some gv).
+
+Lemma meminj_preserves_genv2blocks:
+  forall {F V: Type} (ge: Genv.t F V) j,
+
+Definition genvs_domain_eq {F1 F2 V1 V2: Type}
+  (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2) :=
+    (forall b, fst (genv2blocks ge1) b <-> fst (genv2blocks ge2) b) /\
+    (forall b, snd (genv2blocks ge1) b <-> snd (genv2blocks ge2) b) /\
+    (forall b, (exists f, Genv.find_funct_ptr ge1 b = Some f)
+           <-> (exists f, Genv.find_funct_ptr ge2 b = Some f)).
+
+Lemma genvs_domain_eq_preserves:
+  forall {F1 F2 V1 V2: Type} (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2) j,
+
+Lemma genvs_domain_eq_sym:
+  forall {F1 F2 V1 V2: Type} (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2),
+
+Lemma genvs_domain_eq_refl:
+  forall F V (ge: Genv.t F V), genvs_domain_eq ge ge.
+
+Lemma genvs_domain_eq_trans: forall {F1 F2 F3 V1 V2 V3: Type}
+  (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2) (ge3: Genv.t F3 V3),
+
+Lemma genvs_domain_eq_match_genvs: forall {F1 V1 F2 V2:Type}
+  (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2),
+
+Lemma meminj_preserves_globals_ind_compose:
+   forall {F1 V1 F2 V2} (ge1: Genv.t F1 V1) (ge2: Genv.t F2 V2)
+
+Lemma meminj_preserves_incr_sep:
+  forall {F V:Type} ge j (PG: @meminj_preserves_globals F V ge j)
+         m tm (MINJ : Mem.inject j m tm)
+
+Lemma meminj_preserves_incr_sep_vb:
+  forall {F V:Type} ge j (PG: @meminj_preserves_globals F V ge j)
+         m tm
+         (VB: forall b1 b2 ofs, j b1 = Some(b2,ofs) ->
+               (Mem.valid_block m b1 /\ Mem.valid_block tm b2))
+
+Lemma mem_forward_nextblock:
+  forall m m', mem_forward m m' -> Ple  (Mem.nextblock m) (Mem.nextblock m').
+
+Lemma forward_unchanged_on: forall m m' (FWD: mem_forward m m')
+           b ofs (NP: ~ Mem.perm m b ofs Max Nonempty),
+
+Lemma unchanged_on_union:
+      forall m m' P Q (HP: Mem.unchanged_on P m m') (HQ: Mem.unchanged_on Q m m')
+
+Lemma unchanged_on_validblock: forall m m' (U V: Values.block -> Z -> Prop)
+
+Lemma unchanged_on_validblock_invariant: forall m m' U V
+   (UV: forall b ofs, Mem.valid_block m b -> (U b ofs <-> V b ofs)),
+
+Lemma unchanged_on_perm_intersection: forall m m' U (Fwd: mem_forward m m'),
+   Mem.unchanged_on U m m' <->
+
+Lemma unchanged_on_trans: forall m1 m2 m3 U
+      (U1: Mem.unchanged_on U m1 m2)
+
+Lemma external_call_mem_forward:
+  forall (ef : external_function) (F V : Type) (ge : Genv.t F V)
+
+Definition val_has_type_opt' (v: option val) (ty: typ) :=
+ match v with
+ | None => True
+ | Some v' => Val.has_type v' ty
+ end.
+
+Definition val_has_type_opt (v: option val) (sig: signature) :=
+  val_has_type_opt' v (proj_sig_res sig).
+
+Definition is_vundef (v : val) : bool :=
+  match v with
+    | Vundef => true
+    | _ => false
+  end.
+
+Definition vals_def (vs : list val) :=
+  List.forallb (fun v => negb (is_vundef v)) vs.
+
+Definition genv2blocksBool {F V : Type} (ge : Genv.t F V):=
+  (fun b =>
+      match Genv.invert_symbol ge b with
+        Some id => true
+      | None => false
+      end,
+   fun b => match Genv.find_var_info ge b with
+                  Some gv => true
+                | None => false
+            end).
+
+Definition isGlobalBlock {F V : Type} (ge : Genv.t F V) :=
+  fun b => (fst (genv2blocksBool ge)) b || (snd (genv2blocksBool ge)) b.
+
+Lemma invert_symbol_isGlobal: forall {V F} (ge : Genv.t F V) b x,
+
+Lemma find_symbol_isGlobal: forall {V F} (ge : Genv.t F V) x b
+
+Lemma symbol_address_isGLobalBlock {V F} (ge : Genv.t F V) i1 i2 b i3:
+
+Lemma find_var_info_isGlobal: forall {V F} (ge : Genv.t F V) b x,
+
+Definition ReadOnlyBlocks {F V} (ge: Genv.t F V) (b:block): bool :=
+  match Genv.find_var_info ge b with
+          None => false
+        | Some gv => gvar_readonly gv && negb (gvar_volatile gv)
+  end.
+
+Lemma ReadOnlyBlocks_global {F V} (g:Genv.t F V) b:
+
+Definition RDOnly_fwd (m1 m1':mem) B :=
+  forall b (Hb: B b = true), readonly m1 b m1'.
+
+Lemma RDOnly_fwd_trans m1 m2 m3 B:
+  RDOnly_fwd m1 m2 B -> RDOnly_fwd m2 m3 B -> RDOnly_fwd m1 m3 B.
+
+Definition mem_respects_readonly {F V} (ge : Genv.t F V) m :=
+    forall b gv, Genv.find_var_info ge b = Some gv ->
+                 gvar_readonly gv && negb (gvar_volatile gv) = true ->
+           Genv.load_store_init_data ge m b 0 (gvar_init gv) /\
+           Mem.valid_block m b /\ (forall ofs : Z, ~ Mem.perm m b ofs Max Writable).
+
+Lemma mem_respects_readonly_fwd {F V} (g : Genv.t F V) m m'
+
+Lemma mem_respects_readonly_forward {F V} (ge : Genv.t F V) m m'
+
+Lemma mem_respects_readonly_forward' {F V} (ge : Genv.t F V) m m'
+
+Lemma nextblock_storev:
+  forall chunk m addr v m',
+  Mem.storev chunk m addr v = Some m' -> Mem.nextblock m' = Mem.nextblock m.
+Lemma nextblock_freelist:
+  forall fbl m m',
+  Mem.free_list m fbl = Some m' ->
+Lemma perm_freelist:
+  forall fbl m m' b ofs k p,
+  Mem.free_list m fbl = Some m' ->
+
+Lemma get_freelist:
+  forall fbl m m' (FL: Mem.free_list m fbl = Some m') b
+
+Lemma free_contents:
+ forall m b lo hi m' b' ofs,
+    Mem.free m b lo hi = Some m' ->
+
+Section ALLOC.
+
+Variable m1: mem.
+Variables lo hi: Z.
+Variable m2: mem.
+Variable b: Values.block.
+Hypothesis ALLOC: Mem.alloc m1 lo hi = (m2, b).
+
+Transparent Mem.alloc.
+Lemma AllocContentsUndef:
+     (Mem.mem_contents m2) !! b = ZMap.init Undef.
+Lemma AllocContentsOther: forall b', b' <> b ->
+     (Mem.mem_contents m2) !! b' = (Mem.mem_contents m1) !! b'.
+Opaque Mem.alloc.
+
+Lemma AllocContentsUndef1: forall z,
+     ZMap.get z (Mem.mem_contents m2) !! b = Undef.
+
+Lemma AllocContentsOther1: forall b', b' <> b ->
+      (Mem.mem_contents m2) !! b' = (Mem.mem_contents m1) !! b'.
+
+Lemma alloc_contents:
+ forall b1 ofs,
+    Mem.valid_block m1 b1 ->
+
+End ALLOC.
+
+Definition gvar_info_eq {V1 V2} (v1: option (globvar V1)) (v2: option (globvar V2)) :=
+  match v1, v2 with
+    None, None => True
+  | Some i1, Some i2 => gvar_init i1 = gvar_init i2 /\
+                        gvar_readonly i1 = gvar_readonly i2 /\ gvar_volatile i1 = gvar_volatile i2
+  | _, _ => False
+  end.
+
+Definition gvar_infos_eq {F1 V1 F2 V2}
+  (g1 : Genv.t F1 V1) (g2 : Genv.t F2 V2) :=
+  forall b, gvar_info_eq (Genv.find_var_info g1 b) (Genv.find_var_info g2 b).
+
+Lemma gvar_info_refl V v: @gvar_info_eq V V v v.
+
+Lemma gvar_infos_eqD {F1 V1 F2 V2} (ge1 : Genv.t F1 V1) (ge2 : Genv.t F2 V2)
+
+Lemma gvar_infos_eqD2 {F1 V1 F2 V2} (ge1 : Genv.t F1 V1) (ge2 : Genv.t F2 V2)
+
+Lemma gvar_infos_eq_ReadOnlyBlocks {F1 V1 F2 V2} (g1: Genv.t F1 V1) (g2:Genv.t F2 V2):
+
+Definition gvars_included {V1 V2} (gv1:option (globvar V1)) (gv2: option (globvar V2)): Prop :=
+  match gv1, gv2 with
+   None, None => True
+ | None, Some x2 => True
+ | Some x1, None => False
+ | Some x1, Some x2 => gvar_init x1 = gvar_init x2 /\
+                       gvar_readonly x1 = gvar_readonly x2 /\
+                       gvar_volatile x1 = gvar_volatile x2
+ end.
+
+Lemma gvars_cohereD {F1 V1 F2 V2} (ge1:Genv.t F1 V1) (ge2:Genv.t F2 V2)
+
+Definition findsymbols_preserved {F1 V1 F2 V2}
+           (g1 : Genv.t F1 V1) (g2 : Genv.t F2 V2) :=
+  forall i b, Genv.find_symbol g1 i = Some b -> Genv.find_symbol g2 i = Some b. *)
+
+Require Import sepcomp.core_semantics.
+
+
+
+Inductive CMinSel_core: Type :=
+
+  | CMinSel_State:                      
+
+      forall (f: function)              
+
+             (s: stmt)                  
+
+             (k: cont)                  
+
+             (sp: val)                  
+
+             (e: Cminor.env),           
+
+      CMinSel_core
+
+  | CMinSel_Callstate:                  
+
+      forall (f: fundef)                
+
+             (args: list val)           
+
+             (k: cont),                 
+
+      CMinSel_core
+
+  | CMinSel_Returnstate:
+
+      forall (v: val)                   
+
+             (k: cont),                 
+
+      CMinSel_core.
+
+
+
+Definition ToState (q:CMinSel_core) (m:mem): CminorSel.state :=
+
+  match q with
+
+     CMinSel_State f s k sp e => State f s k sp e m
+
+   | CMinSel_Callstate f args k => Callstate f args k m
+
+   | CMinSel_Returnstate v k => Returnstate v k m
+
+  end.
+
+
+
+Definition FromState (c: CminorSel.state) : CMinSel_core * mem :=
+
+  match c with
+
+     State f s k sp e m => (CMinSel_State f s k sp e, m)
+
+   | Callstate f args k m => (CMinSel_Callstate f args k, m)
+
+   | Returnstate v k m => (CMinSel_Returnstate v k, m)
+
+  end.
+
+
+
+Definition CMinSel_at_external (c: CMinSel_core) : option (external_function * signature * list val) :=
+
+  match c with
+
+  | CMinSel_State _ _ _ _ _ => None
+
+  | CMinSel_Callstate fd args k => match fd with
+
+                                  Internal f => None
+
+                                | External ef => Some (ef, ef_sig ef, args)
+
+                              end
+
+  | CMinSel_Returnstate v k => None
+
+ end.
+
+
+
+Definition CMinSel_after_external (vret: option val) (c: CMinSel_core) : option CMinSel_core :=
+
+  match c with
+
+    CMinSel_Callstate fd args k =>
+
+         match fd with
+
+            Internal f => None
+
+          | External ef => match vret with
+
+                             None => Some (CMinSel_Returnstate Vundef k)
+
+                           | Some v => Some (CMinSel_Returnstate v k)
+
+                           end
+
+         end
+
+  | _ => None
+
+  end.
+
+
+
+Inductive CMinSel_corestep (ge : genv) : CMinSel_core -> mem ->
+
+                           CMinSel_core -> mem -> Prop:=
+
+
+
+  | cminsel_corestep_skip_seq: forall f s k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f Sskip (Kseq s k) sp e) m
+
+        (CMinSel_State f s k sp e) m
+
+  | cminsel_corestep_skip_block: forall f k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f Sskip (Kblock k) sp e) m
+
+        (CMinSel_State f Sskip k sp e) m
+
+  | cminsel_corestep_skip_call: forall f k sp e m m',
+
+      is_call_cont k ->
+
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+
+      CMinSel_corestep ge (CMinSel_State f Sskip k (Vptr sp Int.zero) e) m
+
+        (CMinSel_Returnstate Vundef k) m'
+
+
+
+  | cminsel_corestep_assign: forall f id a k sp e m v,
+
+      eval_expr ge sp e m nil a v ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sassign id a) k sp e) m
+
+        (CMinSel_State f Sskip k sp (PTree.set id v e)) m
+
+
+
+  | cminsel_corestep_store: forall f chunk addr al b k sp e m vl v vaddr m',
+
+      eval_exprlist ge sp e m nil al vl ->
+
+      eval_expr ge sp e m nil b v ->
+
+      eval_addressing ge sp addr vl = Some vaddr ->
+
+      Mem.storev chunk m vaddr v = Some m' ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sstore chunk addr al b) k sp e) m
+
+        (CMinSel_State f Sskip k sp e) m'
+
+
+
+  | cminsel_corestep_call: forall f optid sig a bl k sp e m vf vargs fd,
+
+      eval_expr_or_symbol ge sp e m nil a vf ->
+
+      eval_exprlist ge sp e m nil bl vargs ->
+
+      Genv.find_funct ge vf = Some fd ->
+
+      funsig fd = sig ->
+
+      CMinSel_corestep ge (CMinSel_State f (Scall optid sig a bl) k sp e) m
+
+        (CMinSel_Callstate fd vargs (Kcall optid f sp e k)) m
+
+
+
+  | cminsel_corestep_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+
+      eval_expr_or_symbol ge (Vptr sp Int.zero) e m nil a vf ->
+
+      eval_exprlist ge (Vptr sp Int.zero) e m nil bl vargs ->
+
+      Genv.find_funct ge vf = Some fd ->
+
+      funsig fd = sig ->
+
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+
+      CMinSel_corestep ge (CMinSel_State f (Stailcall sig a bl) k (Vptr sp Int.zero) e) m
+
+        (CMinSel_Callstate fd vargs (call_cont k)) m'
+
+
+
+  | cminsel_corestep_seq: forall f s1 s2 k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sseq s1 s2) k sp e) m
+
+        (CMinSel_State f s1 (Kseq s2 k) sp e) m
+
+
+
+  | cminsel_corestep_ifthenelse: forall f c s1 s2 k sp e m b,
+
+      eval_condexpr ge sp e m nil c b ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sifthenelse c s1 s2) k sp e) m
+
+        (CMinSel_State f (if b then s1 else s2) k sp e) m
+
+
+
+  | cminsel_corestep_loop: forall f s k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sloop s) k sp e) m
+
+        (CMinSel_State f s (Kseq (Sloop s) k) sp e) m
+
+
+
+  | cminsel_corestep_block: forall f s k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sblock s) k sp e) m
+
+        (CMinSel_State f s (Kblock k) sp e) m
+
+
+
+  | cminsel_corestep_exit_seq: forall f n s k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sexit n) (Kseq s k) sp e) m
+
+        (CMinSel_State f (Sexit n) k sp e) m
+
+  | cminsel_corestep_exit_block_0: forall f k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sexit O) (Kblock k) sp e) m
+
+        (CMinSel_State f Sskip k sp e) m
+
+  | cminsel_corestep_exit_block_S: forall f n k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Sexit (S n)) (Kblock k) sp e) m
+
+        (CMinSel_State f (Sexit n) k sp e) m
+
+
+
+  | cminsel_corestep_switch: forall f a cases default k sp e m n,
+
+      eval_expr ge sp e m nil a (Vint n) ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sswitch a cases default) k sp e) m
+
+        (CMinSel_State f (Sexit (switch_target n default cases)) k sp e) m
+
+
+
+  | cminsel_corestep_return_0: forall f k sp e m m',
+
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sreturn None) k (Vptr sp Int.zero) e) m
+
+        (CMinSel_Returnstate Vundef (call_cont k)) m'
+
+  | cminsel_corestep_return_1: forall f a k sp e m v m',
+
+      eval_expr ge (Vptr sp Int.zero) e m nil a v ->
+
+      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sreturn (Some a)) k (Vptr sp Int.zero) e) m
+
+        (CMinSel_Returnstate v (call_cont k)) m'
+
+
+
+  | cminsel_corestep_label: forall f lbl s k sp e m,
+
+      CMinSel_corestep ge (CMinSel_State f (Slabel lbl s) k sp e) m
+
+        (CMinSel_State f s k sp e) m
+
+
+
+  | cminsel_corestep_goto: forall f lbl k sp e m s' k',
+
+      find_label lbl f.(fn_body) (call_cont k) = Some(s', k') ->
+
+      CMinSel_corestep ge (CMinSel_State f (Sgoto lbl) k sp e) m
+
+        (CMinSel_State f s' k' sp e) m
+
+
+
+  | cminsel_corestep_internal_function: forall f vargs k m m' sp e,
+
+      Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
+
+      Cminor.set_locals f.(fn_vars) (Cminor.set_params vargs f.(fn_params)) = e ->
+
+      CMinSel_corestep ge (CMinSel_Callstate (Internal f) vargs k) m
+
+        (CMinSel_State f f.(fn_body) k (Vptr sp Int.zero) e) m'
+
+
+
+  | cminsel_corestep_return: forall v optid f sp e k m,
+
+      CMinSel_corestep ge (CMinSel_Returnstate v (Kcall optid f sp e k)) m
+
+        (CMinSel_State f Sskip k sp (Cminor.set_optvar optid v e)) m.
+
+
+
+Lemma CMinSel_corestep_not_at_external:
+
+       forall ge m q m' q', CMinSel_corestep ge q m q' m' -> CMinSel_at_external q = None.
+
+  Proof. intros. inv H; reflexivity. Qed.
+
+
+
+Definition CMinSel_halted (q : CMinSel_core): option val :=
+
+    match q with
+
+       CMinSel_Returnstate v Kstop => Some v
+
+     | _ => None
+
+    end.
+
+
+
+Lemma CMinSel_corestep_not_halted : forall ge m q m' q',
+
+       CMinSel_corestep ge q m q' m' -> CMinSel_halted q = None.
+
+  Proof. intros. inv H; try reflexivity. Qed.
+
+
+
+Lemma CMinSel_at_external_halted_excl :
+
+       forall q, CMinSel_at_external q = None \/ CMinSel_halted q = None.
+
+   Proof. intros. destruct q; auto. Qed.
+
+
+
+Lemma CMinSel_after_at_external_excl : forall retv q q',
+
+      CMinSel_after_external retv q = Some q' -> CMinSel_at_external q' = None.
+
+  Proof. intros.
+
+       destruct q; simpl in *; try inv H.
+
+       destruct f; try inv H1; simpl; trivial.
+
+         destruct retv; inv H0; simpl; trivial.
+
+Qed.
+
+
+
+Definition CMinSel_initial_core (ge:genv) (v: val) (args:list val): option CMinSel_core :=
+
+   match v with
+
+     | Vptr b i =>
+
+          if Int.eq_dec i Int.zero
+
+          then match Genv.find_funct_ptr ge b with
+
+                 | None => None
+
+                 | Some f => Some (CMinSel_Callstate f args Kstop)
+
+               end
+
+          else None
+
+     | _ => None
+
+    end.
+
+
+
+Definition CMinSel_core_sem : CoreSemantics genv CMinSel_core mem.
+
+  eapply @Build_CoreSemantics with (at_external:=CMinSel_at_external)
+
+                  (after_external:=CMinSel_after_external)
+
+                  (corestep:=CMinSel_corestep)
+
+                  (halted:=CMinSel_halted).
+
+    apply CMinSel_initial_core.
+
+    apply CMinSel_corestep_not_at_external.
+
+    apply CMinSel_corestep_not_halted.
+
+    apply CMinSel_at_external_halted_excl.
+
+    apply CMinSel_after_at_external_excl.
+
+Defined.
+
+
+
+Lemma CMinSel_forward : forall g c m c' m' (CS: CMinSel_corestep g c m c' m'),
+
+      mem_forward m m'.
+
+  Proof. intros.
+
+     inv CS; try apply mem_forward_refl.
+
+         eapply free_forward; eassumption.
+
+         
+
+          destruct vaddr; simpl in H2; inv H2.
+
+          eapply store_forward; eassumption.
+
+         eapply free_forward; eassumption.
+
+         
+
+         eapply free_forward; eassumption.
+
+         eapply free_forward; eassumption.
+
+         eapply alloc_forward; eassumption.
+
+Qed.
+
+
+
+Program Definition cminsel_coop_sem :
+
+  CoopCoreSem genv CMinSel_core.
+
+apply Build_CoopCoreSem with (coopsem := CMinSel_core_sem).
+
+  apply CMinSel_forward.
+
+Defined.
+

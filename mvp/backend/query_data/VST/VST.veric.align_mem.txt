@@ -1,0 +1,3663 @@
+Require Import Coq.Sorting.Permutation.
+
+Require Import Coq.Sorting.Sorting.
+
+Require Import Coq.Structures.Orders.
+
+Require Import VST.veric.base.
+(* VST.veric.base:
+Require Export Coq.Arith.EqNat.
+Require Export Coq.Relations.Relations.
+
+Require Export compcert.lib.Axioms.
+Require Export compcert.lib.Coqlib.
+Require Export compcert.lib.Integers.
+Require Export compcert.lib.Floats.
+Require Export compcert.lib.Maps.
+Require Export compcert.common.AST.
+Require Export compcert.common.Values.
+Require Export compcert.common.Memdata.
+Require Export compcert.common.Memtype.
+Require Export compcert.common.Memory.
+Require Export compcert.common.Globalenvs.
+
+Require Export VST.msl.Coqlib2. 
+Require Export VST.veric.coqlib4.
+
+Fixpoint id_in_list (id: ident) (ids: list ident) : bool :=
+ match ids with i::ids' => orb (Pos.eqb id i) (id_in_list id ids') | _ => false end.
+
+Fixpoint compute_list_norepet (ids: list ident) : bool :=
+ match ids with
+ | id :: ids' => if id_in_list id ids' then false else compute_list_norepet ids'
+ | nil => true
+ end.
+
+Lemma id_in_list_true: forall i ids, id_in_list i ids = true -> In i ids.
+
+Lemma id_in_list_false: forall i ids, id_in_list i ids = false -> ~In i ids.
+
+Lemma compute_list_norepet_e: forall ids,
+     compute_list_norepet ids = true -> list_norepet ids.
+
+Lemma list_norepet_rev:
+  forall A (l: list A), list_norepet (rev l) = list_norepet l.
+
+Lemma block_eq_dec: forall b1 b2: block, {b1 = b2} + {b1 <> b2}.
+
+Lemma rev_if_be_singleton:
+  forall x, rev_if_be (x::nil) = (x::nil).
+
+Lemma rev_if_be_1: forall i, rev_if_be (i::nil) = (i::nil).
+
+Lemma decode_byte_val:
+  forall m, decode_val Mint8unsigned (Byte m :: nil) =
+              Vint (Int.zero_ext 8 (Int.repr (Byte.unsigned m))).
+
+Lemma Vint_inj: forall x y, Vint x = Vint y -> x=y.
+
+Definition nullval : val := 
+  if Archi.ptr64 then Vlong Int64.zero else Vint Int.zero.
+
+Definition val_to_bool (v: val) : option bool :=
+  match v with
+    | Vint n => Some (negb (Int.eq n Int.zero))
+    | Vptr _ _ => Some true
+    | _ => None
+  end.
+
+Definition bool_of_valf (v: val): option bool :=
+match v with
+  | Vint i => Some (negb (Int.eq i Int.zero))
+  | Vlong i => Some (negb (Int64.eq i Int64.zero))
+  | Vfloat _ => None
+  | Vsingle _ => None
+  | Vptr _ _ => Some true
+  | Vundef => None
+end. *)
+
+Require Import compcert.cfrontend.Ctypes. 
+(* compcert.cfrontend.Ctypes:
+Require Import Axioms Coqlib Maps Errors.
+Require Import AST Linking.
+Require Archi.
+
+Inductive signedness : Type :=
+  | Signed: signedness
+  | Unsigned: signedness.
+
+Inductive intsize : Type :=
+  | I8: intsize
+  | I16: intsize
+  | I32: intsize
+  | IBool: intsize.
+
+Inductive floatsize : Type :=
+  | F32: floatsize
+  | F64: floatsize.
+
+Record attr : Type := mk_attr {
+  attr_volatile: bool;
+  attr_alignas: option N         
+}.
+
+Definition noattr := {| attr_volatile := false; attr_alignas := None |}.
+
+Inductive type : Type :=
+  | Tvoid: type                                    
+  | Tint: intsize -> signedness -> attr -> type    
+  | Tlong: signedness -> attr -> type              
+  | Tfloat: floatsize -> attr -> type              
+  | Tpointer: type -> attr -> type                 
+  | Tarray: type -> Z -> attr -> type              
+  | Tfunction: typelist -> type -> calling_convention -> type    
+  | Tstruct: ident -> attr -> type                 
+  | Tunion: ident -> attr -> type                  
+with typelist : Type :=
+  | Tnil: typelist
+  | Tcons: type -> typelist -> typelist.
+
+Lemma intsize_eq: forall (s1 s2: intsize), {s1=s2} + {s1<>s2}.
+
+Lemma type_eq: forall (ty1 ty2: type), {ty1=ty2} + {ty1<>ty2}
+with typelist_eq: forall (tyl1 tyl2: typelist), {tyl1=tyl2} + {tyl1<>tyl2}.
+
+Opaque type_eq typelist_eq.
+
+Definition attr_of_type (ty: type) :=
+  match ty with
+  | Tvoid => noattr
+  | Tint sz si a => a
+  | Tlong si a => a
+  | Tfloat sz a => a
+  | Tpointer elt a => a
+  | Tarray elt sz a => a
+  | Tfunction args res cc => noattr
+  | Tstruct id a => a
+  | Tunion id a => a
+  end.
+
+Definition change_attributes (f: attr -> attr) (ty: type) : type :=
+  match ty with
+  | Tvoid => ty
+  | Tint sz si a => Tint sz si (f a)
+  | Tlong si a => Tlong si (f a)
+  | Tfloat sz a => Tfloat sz (f a)
+  | Tpointer elt a => Tpointer elt (f a)
+  | Tarray elt sz a => Tarray elt sz (f a)
+  | Tfunction args res cc => ty
+  | Tstruct id a => Tstruct id (f a)
+  | Tunion id a => Tunion id (f a)
+  end.
+
+Definition remove_attributes (ty: type) : type :=
+  change_attributes (fun _ => noattr) ty.
+
+Definition attr_union (a1 a2: attr) : attr :=
+  {| attr_volatile := a1.(attr_volatile) || a2.(attr_volatile);
+     attr_alignas :=
+       match a1.(attr_alignas), a2.(attr_alignas) with
+       | None, al => al
+       | al, None => al
+       | Some n1, Some n2 => Some (N.max n1 n2)
+       end
+  |}.
+
+Definition merge_attributes (ty: type) (a: attr) : type :=
+  change_attributes (attr_union a) ty.
+
+Inductive struct_or_union : Type := Struct | Union.
+
+Definition members : Type := list (ident * type).
+
+Inductive composite_definition : Type :=
+  Composite (id: ident) (su: struct_or_union) (m: members) (a: attr).
+
+Definition name_composite_def (c: composite_definition) : ident :=
+  match c with Composite id su m a => id end.
+
+Definition composite_def_eq (x y: composite_definition): {x=y} + {x<>y}.
+
+Global Opaque composite_def_eq. 
+
+Record composite : Type := {
+  co_su: struct_or_union;
+  co_members: members;
+  co_attr: attr;
+  co_sizeof: Z;
+  co_alignof: Z;
+  co_rank: nat;
+  co_sizeof_pos: co_sizeof >= 0;
+  co_alignof_two_p: exists n, co_alignof = two_power_nat n;
+  co_sizeof_alignof: (co_alignof | co_sizeof)
+}.
+
+Definition composite_env : Type := PTree.t composite.
+
+Definition type_int32s := Tint I32 Signed noattr.
+Definition type_bool := Tint IBool Signed noattr.
+
+Definition typeconv (ty: type) : type :=
+  match ty with
+  | Tint (I8 | I16 | IBool) _ _ => Tint I32 Signed noattr
+  | Tarray t sz a       => Tpointer t noattr
+  | Tfunction _ _ _     => Tpointer ty noattr
+  | _                   => remove_attributes ty
+  end.
+
+Definition default_argument_conversion (ty: type) : type :=
+  match ty with
+  | Tint (I8 | I16 | IBool) _ _ => Tint I32 Signed noattr
+  | Tfloat _ _          => Tfloat F64 noattr
+  | Tarray t sz a       => Tpointer t noattr
+  | Tfunction _ _ _     => Tpointer ty noattr
+  | _                   => remove_attributes ty
+  end.
+
+Fixpoint complete_type (env: composite_env) (t: type) : bool :=
+  match t with
+  | Tvoid => false
+  | Tint _ _ _ => true
+  | Tlong _ _ => true
+  | Tfloat _ _ => true
+  | Tpointer _ _ => true
+  | Tarray t' _ _ => complete_type env t'
+  | Tfunction _ _ _ => false
+  | Tstruct id _ | Tunion id _ =>
+      match env!id with Some co => true | None => false end
+  end.
+
+Definition complete_or_function_type (env: composite_env) (t: type) : bool :=
+  match t with
+  | Tfunction _ _ _ => true
+  | _ => complete_type env t
+  end.
+
+Definition align_attr (a: attr) (al: Z) : Z :=
+  match attr_alignas a with
+  | Some l => two_p (Z.of_N l)
+  | None => al
+  end.
+
+Fixpoint alignof (env: composite_env) (t: type) : Z :=
+  align_attr (attr_of_type t)
+   (match t with
+      | Tvoid => 1
+      | Tint I8 _ _ => 1
+      | Tint I16 _ _ => 2
+      | Tint I32 _ _ => 4
+      | Tint IBool _ _ => 1
+      | Tlong _ _ => Archi.align_int64
+      | Tfloat F32 _ => 4
+      | Tfloat F64 _ => Archi.align_float64
+      | Tpointer _ _ => if Archi.ptr64 then 8 else 4
+      | Tarray t' _ _ => alignof env t'
+      | Tfunction _ _ _ => 1
+      | Tstruct id _ | Tunion id _ =>
+          match env!id with Some co => co_alignof co | None => 1 end
+    end).
+
+Remark align_attr_two_p:
+  forall al a,
+  (exists n, al = two_power_nat n) ->
+  (exists n, align_attr a al = two_power_nat n).
+
+Lemma alignof_two_p:
+  forall env t, exists n, alignof env t = two_power_nat n.
+
+Lemma alignof_pos:
+  forall env t, alignof env t > 0.
+
+Fixpoint sizeof (env: composite_env) (t: type) : Z :=
+  match t with
+  | Tvoid => 1
+  | Tint I8 _ _ => 1
+  | Tint I16 _ _ => 2
+  | Tint I32 _ _ => 4
+  | Tint IBool _ _ => 1
+  | Tlong _ _ => 8
+  | Tfloat F32 _ => 4
+  | Tfloat F64 _ => 8
+  | Tpointer _ _ => if Archi.ptr64 then 8 else 4
+  | Tarray t' n _ => sizeof env t' * Z.max 0 n
+  | Tfunction _ _ _ => 1
+  | Tstruct id _ | Tunion id _ =>
+      match env!id with Some co => co_sizeof co | None => 0 end
+  end.
+
+Lemma sizeof_pos:
+  forall env t, sizeof env t >= 0.
+
+Fixpoint naturally_aligned (t: type) : Prop :=
+  attr_alignas (attr_of_type t) = None /\
+  match t with
+  | Tarray t' _ _ => naturally_aligned t'
+  | _ => True
+  end.
+
+Lemma sizeof_alignof_compat:
+  forall env t, naturally_aligned t -> (alignof env t | sizeof env t).
+
+Fixpoint alignof_composite (env: composite_env) (m: members) : Z :=
+  match m with
+  | nil => 1
+  | (id, t) :: m' => Z.max (alignof env t) (alignof_composite env m')
+  end.
+
+Fixpoint sizeof_struct (env: composite_env) (cur: Z) (m: members) : Z :=
+  match m with
+  | nil => cur
+  | (id, t) :: m' => sizeof_struct env (align cur (alignof env t) + sizeof env t) m'
+  end.
+
+Fixpoint sizeof_union (env: composite_env) (m: members) : Z :=
+  match m with
+  | nil => 0
+  | (id, t) :: m' => Z.max (sizeof env t) (sizeof_union env m')
+  end.
+
+Lemma alignof_composite_two_p:
+  forall env m, exists n, alignof_composite env m = two_power_nat n.
+
+Lemma alignof_composite_pos:
+  forall env m a, align_attr a (alignof_composite env m) > 0.
+
+Lemma sizeof_struct_incr:
+  forall env m cur, cur <= sizeof_struct env cur m.
+
+Lemma sizeof_union_pos:
+  forall env m, 0 <= sizeof_union env m.
+
+Fixpoint field_offset_rec (env: composite_env) (id: ident) (fld: members) (pos: Z)
+                          {struct fld} : res Z :=
+  match fld with
+  | nil => Error (MSG "Unknown field " :: CTX id :: nil)
+  | (id', t) :: fld' =>
+      if ident_eq id id'
+      then OK (align pos (alignof env t))
+      else field_offset_rec env id fld' (align pos (alignof env t) + sizeof env t)
+  end.
+
+Definition field_offset (env: composite_env) (id: ident) (fld: members) : res Z :=
+  field_offset_rec env id fld 0.
+
+Fixpoint field_type (id: ident) (fld: members) {struct fld} : res type :=
+  match fld with
+  | nil => Error (MSG "Unknown field " :: CTX id :: nil)
+  | (id', t) :: fld' => if ident_eq id id' then OK t else field_type id fld'
+  end.
+
+Remark field_offset_rec_in_range:
+  forall env id ofs ty fld pos,
+  field_offset_rec env id fld pos = OK ofs -> field_type id fld = OK ty ->
+  pos <= ofs /\ ofs + sizeof env ty <= sizeof_struct env pos fld.
+
+Lemma field_offset_in_range:
+  forall env fld id ofs ty,
+  field_offset env id fld = OK ofs -> field_type id fld = OK ty ->
+  0 <= ofs /\ ofs + sizeof env ty <= sizeof_struct env 0 fld.
+
+Lemma field_offset_no_overlap:
+  forall env id1 ofs1 ty1 id2 ofs2 ty2 fld,
+  field_offset env id1 fld = OK ofs1 -> field_type id1 fld = OK ty1 ->
+  field_offset env id2 fld = OK ofs2 -> field_type id2 fld = OK ty2 ->
+  id1 <> id2 ->
+  ofs1 + sizeof env ty1 <= ofs2 \/ ofs2 + sizeof env ty2 <= ofs1.
+
+Lemma field_offset_prefix:
+  forall env id ofs fld2 fld1,
+  field_offset env id fld1 = OK ofs ->
+  field_offset env id (fld1 ++ fld2) = OK ofs.
+
+Lemma field_offset_aligned:
+  forall env id fld ofs ty,
+  field_offset env id fld = OK ofs -> field_type id fld = OK ty ->
+  (alignof env ty | ofs).
+
+Inductive mode: Type :=
+  | By_value: memory_chunk -> mode
+  | By_reference: mode
+  | By_copy: mode
+  | By_nothing: mode.
+
+Definition access_mode (ty: type) : mode :=
+  match ty with
+  | Tint I8 Signed _ => By_value Mint8signed
+  | Tint I8 Unsigned _ => By_value Mint8unsigned
+  | Tint I16 Signed _ => By_value Mint16signed
+  | Tint I16 Unsigned _ => By_value Mint16unsigned
+  | Tint I32 _ _ => By_value Mint32
+  | Tint IBool _ _ => By_value Mint8unsigned
+  | Tlong _ _ => By_value Mint64
+  | Tfloat F32 _ => By_value Mfloat32
+  | Tfloat F64 _ => By_value Mfloat64
+  | Tvoid => By_nothing
+  | Tpointer _ _ => By_value Mptr
+  | Tarray _ _ _ => By_reference
+  | Tfunction _ _ _ => By_reference
+  | Tstruct _ _ => By_copy
+  | Tunion _ _ => By_copy
+end.
+
+Definition type_is_volatile (ty: type) : bool :=
+  match access_mode ty with
+  | By_value _ => attr_volatile (attr_of_type ty)
+  | _          => false
+  end.
+
+Fixpoint alignof_blockcopy (env: composite_env) (t: type) : Z :=
+  match t with
+  | Tvoid => 1
+  | Tint I8 _ _ => 1
+  | Tint I16 _ _ => 2
+  | Tint I32 _ _ => 4
+  | Tint IBool _ _ => 1
+  | Tlong _ _ => 8
+  | Tfloat F32 _ => 4
+  | Tfloat F64 _ => 8
+  | Tpointer _ _ => if Archi.ptr64 then 8 else 4
+  | Tarray t' _ _ => alignof_blockcopy env t'
+  | Tfunction _ _ _ => 1
+  | Tstruct id _ | Tunion id _ =>
+      match env!id with
+      | Some co => Z.min 8 (co_alignof co)
+      | None => 1
+      end
+  end.
+
+Lemma alignof_blockcopy_1248:
+  forall env ty, let a := alignof_blockcopy env ty in a = 1 \/ a = 2 \/ a = 4 \/ a = 8.
+
+Lemma alignof_blockcopy_pos:
+  forall env ty, alignof_blockcopy env ty > 0.
+
+Lemma sizeof_alignof_blockcopy_compat:
+  forall env ty, (alignof_blockcopy env ty | sizeof env ty).
+
+Fixpoint rank_type (ce: composite_env) (t: type) : nat :=
+  match t with
+  | Tarray t' _ _ => S (rank_type ce t')
+  | Tstruct id _ | Tunion id _ =>
+      match ce!id with
+      | None => O
+      | Some co => S (co_rank co)
+      end
+  | _ => O
+  end.
+
+Fixpoint rank_members (ce: composite_env) (m: members) : nat :=
+  match m with
+  | nil => 0%nat
+  | (id, t) :: m => Init.Nat.max (rank_type ce t) (rank_members ce m)
+  end.
+
+Fixpoint type_of_params (params: list (ident * type)) : typelist :=
+  match params with
+  | nil => Tnil
+  | (id, ty) :: rem => Tcons ty (type_of_params rem)
+  end.
+
+Definition typ_of_type (t: type) : AST.typ :=
+  match t with
+  | Tvoid => AST.Tint
+  | Tint _ _ _ => AST.Tint
+  | Tlong _ _ => AST.Tlong
+  | Tfloat F32 _ => AST.Tsingle
+  | Tfloat F64 _ => AST.Tfloat
+  | Tpointer _ _ | Tarray _ _ _ | Tfunction _ _ _ | Tstruct _ _ | Tunion _ _ => AST.Tptr
+  end.
+
+Definition opttyp_of_type (t: type) : option AST.typ :=
+  if type_eq t Tvoid then None else Some (typ_of_type t).
+
+Fixpoint typlist_of_typelist (tl: typelist) : list AST.typ :=
+  match tl with
+  | Tnil => nil
+  | Tcons hd tl => typ_of_type hd :: typlist_of_typelist tl
+  end.
+
+Definition signature_of_type (args: typelist) (res: type) (cc: calling_convention): signature :=
+  mksignature (typlist_of_typelist args) (opttyp_of_type res) cc.
+
+Definition sizeof_composite (env: composite_env) (su: struct_or_union) (m: members) : Z :=
+  match su with
+  | Struct => sizeof_struct env 0 m
+  | Union  => sizeof_union env m
+  end.
+
+Lemma sizeof_composite_pos:
+  forall env su m, 0 <= sizeof_composite env su m.
+
+Fixpoint complete_members (env: composite_env) (m: members) : bool :=
+  match m with
+  | nil => true
+  | (id, t) :: m' => complete_type env t && complete_members env m'
+  end.
+
+Lemma complete_member:
+  forall env id t m,
+  In (id, t) m -> complete_members env m = true -> complete_type env t = true.
+
+Program Definition composite_of_def
+     (env: composite_env) (id: ident) (su: struct_or_union) (m: members) (a: attr)
+     : res composite :=
+  match env!id, complete_members env m return _ with
+  | Some _, _ =>
+      Error (MSG "Multiple definitions of struct or union " :: CTX id :: nil)
+  | None, false =>
+      Error (MSG "Incomplete struct or union " :: CTX id :: nil)
+  | None, true =>
+      let al := align_attr a (alignof_composite env m) in
+      OK {| co_su := su;
+            co_members := m;
+            co_attr := a;
+            co_sizeof := align (sizeof_composite env su m) al;
+            co_alignof := al;
+            co_rank := rank_members env m;
+            co_sizeof_pos := _;
+            co_alignof_two_p := _;
+            co_sizeof_alignof := _ |}
+  end.
+
+Local Open Scope error_monad_scope.
+
+Fixpoint add_composite_definitions (env: composite_env) (defs: list composite_definition) : res composite_env :=
+  match defs with
+  | nil => OK env
+  | Composite id su m a :: defs =>
+      do co <- composite_of_def env id su m a;
+      add_composite_definitions (PTree.set id co env) defs
+  end.
+
+Definition build_composite_env (defs: list composite_definition) :=
+  add_composite_definitions (PTree.empty _) defs.
+
+Section STABILITY.
+
+Variables env env': composite_env.
+Hypothesis extends: forall id co, env!id = Some co -> env'!id = Some co.
+
+Lemma alignof_stable:
+  forall t, complete_type env t = true -> alignof env' t = alignof env t.
+
+Lemma sizeof_stable:
+  forall t, complete_type env t = true -> sizeof env' t = sizeof env t.
+
+Lemma complete_type_stable:
+  forall t, complete_type env t = true -> complete_type env' t = true.
+
+Lemma rank_type_stable:
+  forall t, complete_type env t = true -> rank_type env' t = rank_type env t.
+
+Lemma alignof_composite_stable:
+  forall m, complete_members env m = true -> alignof_composite env' m = alignof_composite env m.
+
+Lemma sizeof_struct_stable:
+  forall m pos, complete_members env m = true -> sizeof_struct env' pos m = sizeof_struct env pos m.
+
+Lemma sizeof_union_stable:
+  forall m, complete_members env m = true -> sizeof_union env' m = sizeof_union env m.
+
+Lemma sizeof_composite_stable:
+  forall su m, complete_members env m = true -> sizeof_composite env' su m = sizeof_composite env su m.
+
+Lemma complete_members_stable:
+  forall m, complete_members env m = true -> complete_members env' m = true.
+
+Lemma rank_members_stable:
+  forall m, complete_members env m = true -> rank_members env' m = rank_members env m.
+
+End STABILITY.
+
+Lemma add_composite_definitions_incr:
+  forall id co defs env1 env2,
+  add_composite_definitions env1 defs = OK env2 ->
+  env1!id = Some co -> env2!id = Some co.
+
+Record composite_consistent (env: composite_env) (co: composite) : Prop := {
+  co_consistent_complete:
+     complete_members env (co_members co) = true;
+  co_consistent_alignof:
+     co_alignof co = align_attr (co_attr co) (alignof_composite env (co_members co));
+  co_consistent_sizeof:
+     co_sizeof co = align (sizeof_composite env (co_su co) (co_members co)) (co_alignof co);
+  co_consistent_rank:
+     co_rank co = rank_members env (co_members co)
+}.
+
+Definition composite_env_consistent (env: composite_env) : Prop :=
+  forall id co, env!id = Some co -> composite_consistent env co.
+
+Lemma composite_consistent_stable:
+  forall (env env': composite_env)
+         (EXTENDS: forall id co, env!id = Some co -> env'!id = Some co)
+         co,
+  composite_consistent env co -> composite_consistent env' co.
+
+Lemma composite_of_def_consistent:
+  forall env id su m a co,
+  composite_of_def env id su m a = OK co ->
+  composite_consistent env co.
+
+Theorem build_composite_env_consistent:
+  forall defs env, build_composite_env defs = OK env -> composite_env_consistent env.
+
+Theorem build_composite_env_charact:
+  forall id su m a defs env,
+  build_composite_env defs = OK env ->
+  In (Composite id su m a) defs ->
+  exists co, env!id = Some co /\ co_members co = m /\ co_attr co = a /\ co_su co = su.
+
+Theorem build_composite_env_domain:
+  forall env defs id co,
+  build_composite_env defs = OK env ->
+  env!id = Some co ->
+  In (Composite id (co_su co) (co_members co) (co_attr co)) defs.
+
+Remark rank_type_members:
+  forall ce id t m, In (id, t) m -> (rank_type ce t <= rank_members ce m)%nat.
+
+Lemma rank_struct_member:
+  forall ce id a co id1 t1,
+  composite_env_consistent ce ->
+  ce!id = Some co ->
+  In (id1, t1) (co_members co) ->
+  (rank_type ce t1 < rank_type ce (Tstruct id a))%nat.
+
+Lemma rank_union_member:
+  forall ce id a co id1 t1,
+  composite_env_consistent ce ->
+  ce!id = Some co ->
+  In (id1, t1) (co_members co) ->
+  (rank_type ce t1 < rank_type ce (Tunion id a))%nat.
+
+Set Implicit Arguments.
+
+Section PROGRAMS.
+
+Variable F: Type.
+
+Inductive fundef : Type :=
+  | Internal: F -> fundef
+  | External: external_function -> typelist -> type -> calling_convention -> fundef.
+
+Record program : Type := {
+  prog_defs: list (ident * globdef fundef type);
+  prog_public: list ident;
+  prog_main: ident;
+  prog_types: list composite_definition;
+  prog_comp_env: composite_env;
+  prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env
+}.
+
+Definition program_of_program (p: program) : AST.program fundef type :=
+  {| AST.prog_defs := p.(prog_defs);
+     AST.prog_public := p.(prog_public);
+     AST.prog_main := p.(prog_main) |}.
+
+Coercion program_of_program: program >-> AST.program.
+
+Program Definition make_program (types: list composite_definition)
+                                (defs: list (ident * globdef fundef type))
+                                (public: list ident)
+                                (main: ident) : res program :=
+  match build_composite_env types with
+  | Error e => Error e
+  | OK ce =>
+      OK {| prog_defs := defs;
+            prog_public := public;
+            prog_main := main;
+            prog_types := types;
+            prog_comp_env := ce;
+            prog_comp_env_eq := _ |}
+  end.
+
+Global Opaque Linker_types.
+
+Definition check_compat_composite (l: list composite_definition) (cd: composite_definition) : bool :=
+  List.forallb
+    (fun cd' =>
+      if ident_eq (name_composite_def cd') (name_composite_def cd) then composite_def_eq cd cd' else true)
+    l.
+
+Definition filter_redefs (l1 l2: list composite_definition) :=
+  let names1 := map name_composite_def l1 in
+  List.filter (fun cd => negb (In_dec ident_eq (name_composite_def cd) names1)) l2.
+
+Definition link_composite_defs (l1 l2: list composite_definition): option (list composite_definition) :=
+  if List.forallb (check_compat_composite l2) l1
+  then Some (l1 ++ filter_redefs l1 l2)
+  else None.
+
+Lemma link_composite_def_inv:
+  forall l1 l2 l,
+  link_composite_defs l1 l2 = Some l ->
+     (forall cd1 cd2, In cd1 l1 -> In cd2 l2 -> name_composite_def cd2 = name_composite_def cd1 -> cd2 = cd1)
+  /\ l = l1 ++ filter_redefs l1 l2
+  /\ (forall x, In x l <-> In x l1 \/ In x l2).
+
+Lemma add_composite_definitions_append:
+  forall l1 l2 env env'',
+  add_composite_definitions env (l1 ++ l2) = OK env'' <->
+  exists env', add_composite_definitions env l1 = OK env' /\ add_composite_definitions env' l2 = OK env''.
+
+Lemma composite_eq:
+  forall su1 m1 a1 sz1 al1 r1 pos1 al2p1 szal1
+         su2 m2 a2 sz2 al2 r2 pos2 al2p2 szal2,
+  su1 = su2 -> m1 = m2 -> a1 = a2 -> sz1 = sz2 -> al1 = al2 -> r1 = r2 ->
+  Build_composite su1 m1 a1 sz1 al1 r1 pos1 al2p1 szal1 = Build_composite su2 m2 a2 sz2 al2 r2 pos2 al2p2 szal2.
+
+Lemma composite_of_def_eq:
+  forall env id co,
+  composite_consistent env co ->
+  env!id = None ->
+  composite_of_def env id (co_su co) (co_members co) (co_attr co) = OK co.
+
+Lemma composite_consistent_unique:
+  forall env co1 co2,
+  composite_consistent env co1 ->
+  composite_consistent env co2 ->
+  co_su co1 = co_su co2 ->
+  co_members co1 = co_members co2 ->
+  co_attr co1 = co_attr co2 ->
+  co1 = co2.
+
+Lemma composite_of_def_stable:
+  forall (env env': composite_env)
+         (EXTENDS: forall id co, env!id = Some co -> env'!id = Some co)
+         id su m a co,
+  env'!id = None ->
+  composite_of_def env id su m a = OK co ->
+  composite_of_def env' id su m a = OK co.
+
+Lemma link_add_composite_definitions:
+  forall l0 env0,
+  build_composite_env l0 = OK env0 ->
+  forall l env1 env1' env2,
+  add_composite_definitions env1 l = OK env1' ->
+  (forall id co, env1!id = Some co -> env2!id = Some co) ->
+  (forall id co, env0!id = Some co -> env2!id = Some co) ->
+  (forall id, env2!id = if In_dec ident_eq id (map name_composite_def l0) then env0!id else env1!id) ->
+  ((forall cd1 cd2, In cd1 l0 -> In cd2 l -> name_composite_def cd2 = name_composite_def cd1 -> cd2 = cd1)) ->
+  { env2' |
+      add_composite_definitions env2 (filter_redefs l0 l) = OK env2'
+  /\ (forall id co, env1'!id = Some co -> env2'!id = Some co)
+  /\ (forall id co, env0!id = Some co -> env2'!id = Some co) }.
+
+Theorem link_build_composite_env:
+  forall l1 l2 l env1 env2,
+  build_composite_env l1 = OK env1 ->
+  build_composite_env l2 = OK env2 ->
+  link l1 l2 = Some l ->
+  { env |
+     build_composite_env l = OK env
+  /\ (forall id co, env1!id = Some co -> env!id = Some co)
+  /\ (forall id co, env2!id = Some co -> env!id = Some co) }.
+
+Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
+  match fd1, fd2 with
+  | Internal _, Internal _ => None
+  | External ef1 targs1 tres1 cc1, External ef2 targs2 tres2 cc2 =>
+      if external_function_eq ef1 ef2
+      && typelist_eq targs1 targs2
+      && type_eq tres1 tres2
+      && calling_convention_eq cc1 cc2
+      then Some (External ef1 targs1 tres1 cc1)
+      else None
+  | Internal f, External ef targs tres cc =>
+      match ef with EF_external id sg => Some (Internal f) | _ => None end
+  | External ef targs tres cc, Internal f =>
+      match ef with EF_external id sg => Some (Internal f) | _ => None end
+  end.
+
+Remark link_fundef_either:
+  forall (F: Type) (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
+
+Global Opaque Linker_fundef.
+
+Definition lift_option {A: Type} (opt: option A) : { x | opt = Some x } + { opt = None }.
+
+Definition link_program {F:Type} (p1 p2: program F): option (program F) :=
+  match link (program_of_program p1) (program_of_program p2) with
+  | None => None
+  | Some p =>
+      match lift_option (link p1.(prog_types) p2.(prog_types)) with
+      | inright _ => None
+      | inleft (exist typs EQ) =>
+          match link_build_composite_env
+                   p1.(prog_types) p2.(prog_types) typs
+                   p1.(prog_comp_env) p2.(prog_comp_env)
+                   p1.(prog_comp_env_eq) p2.(prog_comp_env_eq) EQ with
+          | exist env (conj P Q) =>
+              Some {| prog_defs := p.(AST.prog_defs);
+                      prog_public := p.(AST.prog_public);
+                      prog_main := p.(AST.prog_main);
+                      prog_types := typs;
+                      prog_comp_env := env;
+                      prog_comp_env_eq := P |}
+          end
+      end
+  end.
+
+Definition linkorder_program {F: Type} (p1 p2: program F) : Prop :=
+     linkorder (program_of_program p1) (program_of_program p2)
+  /\ (forall id co, p1.(prog_comp_env)!id = Some co -> p2.(prog_comp_env)!id = Some co).
+
+Global Opaque Linker_program.
+
+Section LINK_MATCH_PROGRAM.
+
+Context {F G: Type}.
+Variable match_fundef: fundef F -> fundef G -> Prop.
+
+Hypothesis link_match_fundef:
+  forall f1 tf1 f2 tf2 f,
+  link f1 f2 = Some f ->
+  match_fundef f1 tf1 -> match_fundef f2 tf2 ->
+  exists tf, link tf1 tf2 = Some tf /\ match_fundef f tf.
+
+Let match_program (p: program F) (tp: program G) : Prop :=
+    Linking.match_program (fun ctx f tf => match_fundef f tf) eq p tp
+ /\ prog_types tp = prog_types p.
+
+Theorem link_match_program:
+  forall p1 p2 tp1 tp2 p,
+  link p1 p2 = Some p -> match_program p1 tp1 -> match_program p2 tp2 ->
+  exists tp, link tp1 tp2 = Some tp /\ match_program p tp.
+
+End LINK_MATCH_PROGRAM. *)
+
+Require Import VST.veric.type_induction.
+(* VST.veric.type_induction:
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes.
+
+Section COMPOSITE_ENV.
+
+Context (cenv: composite_env)
+        (cenv_consistent: composite_env_consistent cenv).
+
+Lemma type_ind: forall P : type -> Prop,
+  (forall t,
+  match t with
+  | Tarray t0 _ _ => P t0
+  | Tstruct id _ 
+  | Tunion id _ => match cenv ! id with
+                    | Some co => Forall (Basics.compose P snd) (co_members co)
+
+End COMPOSITE_ENV.
+
+Ltac type_induction t cenv cenv_consistent :=
+  pattern t;
+  match goal with
+  | |- ?P t =>
+    apply (type_ind cenv cenv_consistent); clear t;
+    let t := fresh "t" in
+    intros t IH;
+    let id := fresh "id" in
+    let a := fresh "a" in
+    destruct t as [| | | | | | | id a | id a]
+  end. *)
+
+Require Import VST.veric.composite_compute.
+(* VST.veric.composite_compute:
+Require Import Coq.Sorting.Permutation.
+Require Import Coq.Sorting.Sorting.
+Require Import Coq.Structures.Orders.
+Require Import VST.veric.base.
+
+Require Import compcert.cfrontend.Ctypes. 
+
+Axiom list_norepet_NoDup: forall {A: Type} (l: list A), list_norepet l <-> NoDup l.
+
+Lemma PTree_In_fst_elements {A: Type}: forall (T: PTree.t A) i,
+
+Lemma PTree_gs {A: Type}: forall (T: PTree.t A) i j x,
+
+Lemma PTree_gs_equiv {A: Type}: forall (T: PTree.t A) i j x,
+
+Lemma PTree_set_In_fst_elements {A: Type}: forall (T: PTree.t A) i i' a',
+  
+Fixpoint relative_defined_type {A: Type} (l: list (ident * A)) (t: type): Prop :=
+  match t with
+  | Tarray t' _ _ => relative_defined_type l t'
+  | Tstruct id _ => In id (map fst l)
+  | Tunion id _ => In id (map fst l)
+  | _ => True
+  end.
+
+Lemma relative_defined_type_mono: forall {A B: Type} (l1: list (ident * A)) (l2: list (ident * B)) (t: type),
+  (forall i, In i (map fst l1) -> In i (map fst l2)) ->
+  relative_defined_type l1 t ->
+  relative_defined_type l2 t.
+
+Lemma relative_defined_type_equiv: forall {A B: Type} (l1: list (ident * A)) (l2: list (ident * B)) (t: type),
+  (forall i, In i (map fst l1) <-> In i (map fst l2)) ->
+  (relative_defined_type l1 t <-> relative_defined_type l2 t).
+
+Inductive ordered_composite: list (positive * composite) -> Prop :=
+| ordered_composite_nil: ordered_composite nil
+| ordered_composite_cons: forall i co l,
+    Forall (relative_defined_type l) (map snd (co_members co)) ->
+    ordered_composite l ->
+    ordered_composite ((i, co) :: l).
+
+Module composite_reorder.
+
+Module CompositeRankOrder <: TotalLeBool.
+  Definition t := (positive * composite)%type.
+  Definition leb (x y: t) := Nat.leb (co_rank (snd y)) (co_rank (snd x)).
+
+  Theorem leb_total : forall a1 a2, leb a1 a2 = true \/ leb a2 a1 = true.
+
+  Theorem leb_trans: Transitive (fun x y => is_true (leb x y)).
+
+End CompositeRankOrder.
+
+Module CompositeRankSort := Sort CompositeRankOrder.
+
+Section composite_reorder.
+
+Context (cenv: composite_env)
+        (cenv_consistent: composite_env_consistent cenv).
+
+Definition rebuild_composite_elements := CompositeRankSort.sort (PTree.elements cenv).
+
+Inductive ordered_and_complete: list (positive * composite) -> Prop :=
+| ordered_and_complete_nil: ordered_and_complete nil
+| ordered_and_complete_cons: forall i co l,
+    (forall i' co',
+        cenv ! i' = Some co' ->
+        (co_rank co' < co_rank co)%nat ->
+        In (i', co') l) ->
+    ordered_and_complete l ->
+    ordered_and_complete ((i, co) :: l).
+
+Theorem RCT_Permutation: Permutation rebuild_composite_elements (PTree.elements cenv).
+
+Lemma RCT_ordered_and_complete: ordered_and_complete rebuild_composite_elements.
+
+Theorem RCT_ordered: ordered_composite rebuild_composite_elements.
+
+End composite_reorder.
+
+End composite_reorder.
+
+Module type_func.
+Section type_func.
+
+Context {A: Type}
+        (f_default: type -> A)
+        (f_array: A -> type -> Z -> attr -> A)
+        (f_struct: A -> ident -> attr -> A)
+        (f_union: A -> ident -> attr -> A)
+        (f_member: struct_or_union -> list (ident * type * A) -> A).
+
+Fixpoint F (env: PTree.t A) (t: type): A :=
+  match t with
+  | Tarray t n a => f_array (F env t) t n a
+  | Tstruct id a =>
+      match env ! id with
+      | Some v => f_struct v id a
+      | None => f_default t
+      end
+  | Tunion id a =>
+      match env ! id with
+      | Some v => f_union v id a
+      | None => f_default t
+      end
+  | _ => f_default t
+  end.
+
+Definition Complete (cenv: composite_env) (env: PTree.t A): Prop :=
+  forall i,
+    (exists co, PTree.get i cenv = Some co) <->
+    (exists a, PTree.get i env = Some a).
+
+Definition Consistent (cenv: composite_env) (env: PTree.t A): Prop :=
+  forall i co a,
+    PTree.get i cenv = Some co ->
+    PTree.get i env = Some a ->
+    a = f_member (co_su co) (map
+                              (fun it0: positive * type =>
+                                 let (i0, t0) := it0 in
+                                 (i0, t0, F env t0))
+                              (co_members co)).
+
+Definition env_rec (i: positive) (co: composite) (env: PTree.t A): PTree.t A :=
+  PTree.set i
+    (f_member (co_su co) (map
+                              (fun it0: positive * type =>
+                                 let (i0, t0) := it0 in (i0, t0, F env t0))
+                              (co_members co)))
+    env.
+
+Definition Env (l: list (positive * composite)): PTree.t A :=
+  fold_right
+    (fun (ic: positive * composite) =>
+       let (i, co) := ic in env_rec i co)
+    (PTree.empty A)
+    l.
+
+Lemma F_PTree_set: forall t env i a,
+  ~ In i (map fst (PTree.elements env)) ->
+
+Lemma relative_defined_type_PTree_set: forall t (env: PTree.t A) i a,
+
+Section Consistency_Induction_Step.
+
+Context (cenv: composite_env)
+        (env: PTree.t A)
+        (l: list (positive * composite))
+        (i0: positive)
+        (co0: composite).
+
+Hypothesis NOT_IN_LIST: ~ In i0 (map fst l).
+
+Hypothesis RDT_list: Forall (relative_defined_type l) (map snd (co_members co0)).
+
+Hypothesis CENV0: PTree.get i0 cenv = Some co0.
+
+Hypothesis IH_In_equiv: forall i, In i (map fst l) <-> In i (map fst (PTree.elements env)).
+
+Hypothesis IH_RDT:
+  forall i co a,
+    PTree.get i cenv = Some co ->
+    PTree.get i env = Some a ->
+    Forall (relative_defined_type (PTree.elements env)) (map snd (co_members co)).
+
+Hypothesis IH_main:
+  Consistent cenv env.
+
+Lemma NOT_IN: ~ In i0 (map fst (PTree.elements env)).
+
+Lemma RDT_PTree: Forall (relative_defined_type (PTree.elements env)) (map snd (co_members co0)).
+
+Lemma establish_In_equiv:
+  forall i, In i (map fst ((i0, co0) :: l)) <-> In i (map fst (PTree.elements (env_rec i0 co0 env))).
+
+Lemma establish_RDT:
+  forall i co a,
+    PTree.get i cenv = Some co ->
+
+Lemma establish_main:
+  Consistent cenv (env_rec i0 co0 env).
+
+End Consistency_Induction_Step.
+
+Lemma Consistency: forall cenv l,
+  Permutation l (PTree.elements cenv) ->
+
+Lemma Completeness: forall cenv l,
+  Permutation l (PTree.elements cenv) ->
+
+End type_func.
+
+End type_func.
+
+Corollary composite_reorder_consistent {A: Type}:
+  forall cenv f_default f_array f_struct f_union f_members,
+    composite_env_consistent cenv ->
+    type_func.Consistent f_default f_array f_struct f_union f_members cenv (@type_func.Env A f_default f_array f_struct f_union f_members (composite_reorder.rebuild_composite_elements cenv)).
+
+Corollary composite_reorder_complete {A: Type}:
+  forall cenv f_default f_array f_struct f_union f_members,
+    type_func.Complete cenv (@type_func.Env A f_default f_array f_struct f_union f_members (composite_reorder.rebuild_composite_elements cenv)).
+
+Section cuof.
+
+Context (cenv: composite_env).
+
+Fixpoint complete_legal_cosu_type t :=
+  match t with
+  | Tarray t' _ _ => complete_legal_cosu_type t'
+  | Tstruct id _ => match cenv ! id with
+                    | Some co => match co_su co with
+                                 | Struct => true
+                                 | Union => false
+                                 end
+                    | _ => false
+                    end
+  | Tunion id _ => match cenv ! id with
+                   | Some co => match co_su co with
+                                | Struct => false
+                                | Union => true
+                                end
+                   | _ => false
+                   end
+  | Tfunction _ _ _
+  | Tvoid => false
+  | _ => true
+  end.
+
+Fixpoint composite_complete_legal_cosu_type (m: members): bool :=
+  match m with
+  | nil => true
+  | (_, t) :: m' => complete_legal_cosu_type t && composite_complete_legal_cosu_type m'
+  end.
+
+Definition composite_env_complete_legal_cosu_type: Prop :=
+  forall (id : positive) (co : composite),
+    cenv ! id = Some co -> composite_complete_legal_cosu_type (co_members co) = true.
+  
+End cuof.
+
+Lemma complete_legal_cosu_type_complete_type: forall cenv: composite_env,
+  forall t,
+    complete_legal_cosu_type cenv t = true ->
+    complete_type cenv t = true. *)
+
+
+
+Section align_compatible_rec.
+
+
+
+Context (cenv: composite_env).
+
+
+
+Inductive align_compatible_rec: type -> Z -> Prop :=
+
+| align_compatible_rec_by_value: forall t ch z, access_mode t = By_value ch -> (Memdata.align_chunk ch | z) -> align_compatible_rec t z
+
+| align_compatible_rec_Tarray: forall t n a z, (forall i, 0 <= i < n -> align_compatible_rec t (z + sizeof cenv t * i)) -> align_compatible_rec (Tarray t n a) z
+
+| align_compatible_rec_Tstruct: forall i a co z, cenv ! i = Some co -> (forall i0 t0 z0, field_type i0 (co_members co) = Errors.OK t0 -> field_offset cenv i0 (co_members co) = Errors.OK z0 -> align_compatible_rec t0 (z + z0)) -> align_compatible_rec (Tstruct i a) z
+
+| align_compatible_rec_Tunion: forall i a co z, cenv ! i = Some co -> (forall i0 t0, field_type i0 (co_members co) = Errors.OK t0 -> align_compatible_rec t0 z) -> align_compatible_rec (Tunion i a) z.
+
+
+
+Lemma align_compatible_rec_by_value_inv : forall t ch z,
+
+  access_mode t = By_value ch ->
+
+  align_compatible_rec t z -> (Memdata.align_chunk ch | z).
+
+Proof.
+
+  intros.
+
+  inv H0.
+
+  + rewrite H in H1; inv H1; auto.
+
+  + inv H.
+
+  + inv H.
+
+  + inv H.
+
+Qed.
+
+
+
+Lemma align_compatible_rec_Tarray_inv: forall t n a z,
+
+  align_compatible_rec (Tarray t n a) z ->
+
+  (forall i : Z, 0 <= i < n -> align_compatible_rec t (z + sizeof cenv t * i)).
+
+Proof.
+
+  intros.
+
+  inv H.
+
+  + inv H1.
+
+  + auto.
+
+Qed.
+
+
+
+Lemma align_compatible_rec_Tstruct_inv: forall i a co z,
+
+  cenv ! i = Some co ->
+
+  align_compatible_rec (Tstruct i a) z ->
+
+  (forall i0 t0 z0, field_type i0 (co_members co) = Errors.OK t0 -> field_offset cenv i0 (co_members co) = Errors.OK z0 -> align_compatible_rec t0 (z + z0)).
+
+Proof.
+
+  intros.
+
+  inv H0.
+
+  + inv H3.
+
+  + rewrite H in H5; inv H5.
+
+    eauto.
+
+Qed.
+
+  
+
+Lemma align_compatible_rec_Tunion_inv: forall i a co z,
+
+  cenv ! i = Some co ->
+
+  align_compatible_rec (Tunion i a) z ->
+
+  (forall i0 t0, field_type i0 (co_members co) = Errors.OK t0 -> align_compatible_rec t0 z).
+
+Proof.
+
+  intros.
+
+  inv H0.
+
+  + inv H2.
+
+  + rewrite H in H4; inv H4.
+
+    eauto.
+
+Qed.
+
+
+
+End align_compatible_rec.
+
+
+
+Lemma align_chunk_1248: forall ch, align_chunk ch = 1 \/ align_chunk ch = 2 \/ align_chunk ch = 4 \/ align_chunk ch = 8.
+
+Proof.
+
+  intros.
+
+  destruct ch; simpl;
+
+  auto.
+
+Qed.
+
+
+
+Lemma align_chunk_two_p:
+
+  forall ch, exists n, align_chunk ch = two_power_nat n.
+
+Proof.
+
+  intros.
+
+  pose proof align_chunk_1248 ch as [| [| [|]]]; rewrite H.
+
+  + exists 0%nat; auto.
+
+  + exists 1%nat; auto.
+
+  + exists 2%nat; auto.
+
+  + exists 3%nat; auto.
+
+Qed.
+
+
+
+Fixpoint hardware_alignof (ha_env: PTree.t Z) t: Z :=
+
+  match t with
+
+  | Tarray t' _ _ => hardware_alignof ha_env t'
+
+  | Tstruct id _ =>
+
+      match ha_env ! id with
+
+      | Some ha => ha
+
+      | None => 1
+
+      end
+
+  | Tunion id _ =>
+
+      match ha_env ! id with
+
+      | Some ha => ha
+
+      | None => 1
+
+      end
+
+  | _ => match access_mode t with
+
+         | By_value ch => Memdata.align_chunk ch
+
+         | _ => 1
+
+         end
+
+  end.
+
+
+
+Fixpoint hardware_alignof_composite (ha_env: PTree.t Z) (m: members): Z :=
+
+  match m with
+
+  | nil => 1
+
+  | (_, t) :: m' => Z.max (hardware_alignof ha_env t) (hardware_alignof_composite ha_env m')
+
+  end.
+
+
+
+Definition hardware_alignof_env (cenv: composite_env): PTree.t Z :=
+
+  let l := composite_reorder.rebuild_composite_elements cenv in
+
+  fold_right (fun (ic: positive * composite) (T0: PTree.t Z) => let (i, co) := ic in let T := T0 in PTree.set i (hardware_alignof_composite T (co_members co)) T) (PTree.empty _) l.
+
+
+
+Definition hardware_alignof_env_consistent (cenv: composite_env) (ha_env: PTree.t Z): Prop :=
+
+  forall i co ha,
+
+    cenv ! i = Some co ->
+
+    ha_env ! i = Some ha ->
+
+    ha = hardware_alignof_composite ha_env (co_members co).
+
+
+
+Definition hardware_alignof_env_complete (cenv: composite_env) (ha_env: PTree.t Z): Prop :=
+
+  forall i,
+
+    (exists co, cenv ! i = Some co) <->
+
+    (exists ha, ha_env ! i = Some ha).
+
+
+
+Module Type HARDWARE_ALIGNOF_FACTS.
+
+
+
+  Axiom hardware_alignof_consistency:
+
+    forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+      composite_env_consistent cenv ->
+
+      ha_env = hardware_alignof_env cenv ->
+
+      hardware_alignof_env_consistent cenv ha_env.
+
+
+
+  Axiom hardware_alignof_completeness:
+
+    forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+      ha_env = hardware_alignof_env cenv ->
+
+      hardware_alignof_env_complete cenv ha_env.
+
+
+
+End HARDWARE_ALIGNOF_FACTS.
+
+
+
+Module hardware_alignof_facts: HARDWARE_ALIGNOF_FACTS.
+
+
+
+Lemma aux1: forall T co,
+
+  (fix fm (l : list (ident * type * Z)) : Z :=
+
+     match l with
+
+     | nil => 1
+
+     | (_, _, ha) :: l' => Z.max ha (fm l')
+
+     end)
+
+    (map
+
+       (fun it0 : positive * type =>
+
+        let (i0, t0) := it0 in
+
+        (i0, t0,
+
+        type_func.F
+
+          (fun t : type =>
+
+           match access_mode t with
+
+           | By_value ch => align_chunk ch
+
+           | By_reference => 1
+
+           | By_copy => 1
+
+           | By_nothing => 1
+
+           end) (fun (ha : Z) (_ : type) (_: Z) (_ : attr) => ha)
+
+          (fun (ha : Z) (_ : ident) (_ : attr) => ha)
+
+          (fun (ha : Z) (_ : ident) (_ : attr) => ha) T t0)) (co_members co)) =
+
+                    hardware_alignof_composite T (co_members co).
+
+Proof.
+
+  intros; unfold hardware_alignof_composite, hardware_alignof.
+
+  induction (co_members co) as [| [i t] ?].
+
+  + auto.
+
+  + simpl.
+
+    f_equal; auto.
+
+    clear.
+
+    induction t; auto.
+
+Qed.
+
+
+
+Lemma aux2: forall (cenv: composite_env),
+
+  type_func.Env
+
+          (fun t : type =>
+
+           match access_mode t with
+
+           | By_value ch => align_chunk ch
+
+           | By_reference => 1
+
+           | By_copy => 1
+
+           | By_nothing => 1
+
+           end) (fun (ha : Z) (_ : type) (_: Z) (_ : attr) => ha)
+
+          (fun (ha : Z) (_ : ident) (_ : attr) => ha)
+
+          (fun (ha : Z) (_ : ident) (_ : attr) => ha)
+
+          (fun _ : struct_or_union =>
+
+           fix fm (l : list (ident * type * Z)) : Z :=
+
+             match l with
+
+             | nil => 1
+
+             | (_, _, ha) :: l' => Z.max ha (fm l')
+
+             end) (composite_reorder.rebuild_composite_elements cenv) =
+
+  hardware_alignof_env cenv.
+
+Proof.
+
+  intros.
+
+  unfold type_func.Env, type_func.env_rec, hardware_alignof_env.
+
+  f_equal.
+
+  extensionality ic.
+
+  destruct ic as [i co].
+
+  extensionality T.
+
+  f_equal.
+
+  apply aux1.
+
+Qed.
+
+
+
+Lemma hardware_alignof_consistency (cenv: composite_env) (ha_env: PTree.t Z):
+
+  composite_env_consistent cenv ->
+
+  ha_env = hardware_alignof_env cenv ->
+
+  forall i co ha,
+
+    cenv ! i = Some co ->
+
+    ha_env ! i = Some ha ->
+
+    ha = hardware_alignof_composite ha_env (co_members co).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_consistent Z cenv
+
+             (fun t =>
+
+                match access_mode t with
+
+                | By_value ch => Memdata.align_chunk ch
+
+                | _ => 1
+
+                end)
+
+             (fun ha _ _ _ => ha)
+
+             (fun ha _ _ => ha)
+
+             (fun ha _ _ => ha)
+
+             (fun _ =>
+
+                fix fm (l: list (ident * type * Z)): Z :=
+
+                match l with
+
+                | nil => 1
+
+                | (_, _, ha) :: l' => Z.max ha (fm l')
+
+                end)
+
+             H
+
+    as HH.
+
+  hnf in HH.
+
+  subst ha_env.
+
+  rewrite aux2 in HH.
+
+  specialize (HH _ _ ha H1 H2).
+
+  rewrite HH, aux1; auto.
+
+Qed.
+
+
+
+Lemma hardware_alignof_completeness (cenv: composite_env) (ha_env: PTree.t Z):
+
+  ha_env = hardware_alignof_env cenv ->
+
+  forall i,
+
+    (exists co, cenv ! i = Some co) <->
+
+    (exists ha, ha_env ! i = Some ha).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_complete Z cenv
+
+             (fun t =>
+
+                match access_mode t with
+
+                | By_value ch => Memdata.align_chunk ch
+
+                | _ => 1
+
+                end)
+
+             (fun ha _ _ _ => ha)
+
+             (fun ha _ _ => ha)
+
+             (fun ha _ _ => ha)
+
+             (fun _ =>
+
+                fix fm (l: list (ident * type * Z)): Z :=
+
+                match l with
+
+                | nil => 1
+
+                | (_, _, ha) :: l' => Z.max ha (fm l')
+
+                end)
+
+    as HH.
+
+  hnf in HH.
+
+  subst.
+
+  rewrite aux2 in HH.
+
+  auto.
+
+Qed.
+
+
+
+End hardware_alignof_facts.
+
+
+
+Export hardware_alignof_facts.
+
+
+
+Lemma hardware_alignof_two_p: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+  composite_env_consistent cenv ->
+
+  hardware_alignof_env_consistent cenv ha_env ->
+
+  hardware_alignof_env_complete cenv ha_env ->
+
+  forall t, exists n,
+
+  hardware_alignof ha_env t = two_power_nat n.
+
+Proof.
+
+  intros ? ? CENV_CONS HA_ENV_CONS HA_ENV_COMPL ?.
+
+  type_induction t cenv CENV_CONS.
+
+  + exists 0%nat; reflexivity.
+
+  + destruct s, i; try solve [exists 0%nat; reflexivity | exists 1%nat; reflexivity | exists 2%nat; reflexivity | exists 3%nat; reflexivity].
+
+  + destruct s; try solve [exists 0%nat; reflexivity | exists 1%nat; reflexivity | exists 2%nat; reflexivity | exists 3%nat; reflexivity].
+
+  + destruct f; try solve [exists 0%nat; reflexivity | exists 1%nat; reflexivity | exists 2%nat; reflexivity | exists 3%nat; reflexivity].
+
+  + simpl. unfold Mptr.
+
+      destruct Archi.ptr64; [exists 3%nat | exists 2%nat]; reflexivity.
+
+  + simpl.
+
+    auto.
+
+  + exists 0%nat; reflexivity.
+
+  + simpl.
+
+    pose proof HA_ENV_CONS id; pose proof HA_ENV_COMPL id.
+
+    destruct (cenv ! id) as [co |] eqn:?H, (ha_env ! id) eqn:?H.
+
+    2: { pose proof proj1 H0 (ex_intro _ _ eq_refl) as [? ?]; congruence. }
+
+    2: { pose proof proj2 H0 (ex_intro _ _ eq_refl) as [? ?]; congruence. }
+
+    - specialize (H _ _ eq_refl eq_refl).
+
+      subst z.
+
+      clear - IH.
+
+      induction IH.
+
+      * exists 0%nat; reflexivity.
+
+      * destruct x as [i t], H as [n1 ?], IHIH as [n2 ?].
+
+        simpl in H |- *.
+
+        rewrite H, H0.
+
+        rewrite max_two_power_nat.
+
+        eexists; reflexivity.
+
+    - exists 0%nat; reflexivity.
+
+  + simpl.
+
+    pose proof HA_ENV_CONS id; pose proof HA_ENV_COMPL id.
+
+    destruct (cenv ! id) as [co |] eqn:?H, (ha_env ! id) eqn:?H.
+
+    2: { pose proof proj1 H0 (ex_intro _ _ eq_refl) as [? ?]; congruence. }
+
+    2: { pose proof proj2 H0 (ex_intro _ _ eq_refl) as [? ?]; congruence. }
+
+    - specialize (H _ _ eq_refl eq_refl).
+
+      subst z.
+
+      clear - IH.
+
+      induction IH.
+
+      * exists 0%nat; reflexivity.
+
+      * destruct x as [i t], H as [n1 ?], IHIH as [n2 ?].
+
+        simpl in H |- *.
+
+        rewrite H, H0.
+
+        rewrite max_two_power_nat.
+
+        eexists; reflexivity.
+
+    - exists 0%nat; reflexivity.
+
+Qed.
+
+
+
+Lemma hardware_alignof_pos: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+  composite_env_consistent cenv ->
+
+  hardware_alignof_env_consistent cenv ha_env ->
+
+  hardware_alignof_env_complete cenv ha_env ->
+
+  forall t,
+
+  hardware_alignof ha_env t > 0.
+
+Proof.
+
+  intros.
+
+  pose proof hardware_alignof_two_p _ _ H H0 H1 t as [n ?].
+
+  rewrite H2.
+
+  apply two_power_nat_pos.
+
+Qed.
+
+
+
+Lemma hardware_alignof_composite_two_p: forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+  composite_env_consistent cenv ->
+
+  hardware_alignof_env_consistent cenv ha_env ->
+
+  hardware_alignof_env_complete cenv ha_env ->
+
+  forall m, exists n,
+
+    hardware_alignof_composite ha_env m = two_power_nat n.
+
+Proof.
+
+  intros.
+
+  induction m as [| [i t] ?].
+
+  + exists 0%nat.
+
+    reflexivity.
+
+  + destruct IHm as [n1 ?], (hardware_alignof_two_p _ _ H H0 H1 t) as [n2 ?].
+
+    simpl.
+
+    rewrite H2, H3.
+
+    rewrite max_two_power_nat.
+
+    eexists; reflexivity.
+
+Qed.
+
+
+
+Hint Resolve alignof_two_p: align.
+
+Hint Resolve align_chunk_two_p: align.
+
+Hint Extern 10 (exists n: nat, hardware_alignof _ _ = two_power_nat n) => (eapply hardware_alignof_two_p; eassumption): align.
+
+Hint Extern 10 (exists n: nat, hardware_alignof_composite _ _ = two_power_nat n) => (eapply hardware_alignof_composite_two_p; eassumption): align.
+
+
+
+Lemma hardware_alignof_by_value: forall ha_env t ch,
+
+  access_mode t = By_value ch ->
+
+  hardware_alignof ha_env t = align_chunk ch.
+
+Proof.
+
+  intros.
+
+  destruct t as [| [| | |] [|] | [|] | [|] | | | | |]; inv H; auto.
+
+Qed.
+
+
+
+Lemma align_compatible_rec_hardware_alignof_divide: forall cenv ha_env t z1 z2,
+
+  composite_env_consistent cenv ->
+
+  composite_env_complete_legal_cosu_type cenv ->
+
+  hardware_alignof_env_consistent cenv ha_env ->
+
+  hardware_alignof_env_complete cenv ha_env ->
+
+  complete_legal_cosu_type cenv t = true ->
+
+  (hardware_alignof ha_env t | z1 - z2) ->
+
+  (align_compatible_rec cenv t z1 <-> align_compatible_rec cenv t z2).
+
+Proof.
+
+  intros ? ? ? ? ? CENV_CONS CENV_COSU HA_ENV_CONS HA_ENV_COMPL.
+
+  revert t z1 z2.
+
+  assert (BY_VALUE: forall t z1 z2, (exists ch, access_mode t = By_value ch) -> (hardware_alignof ha_env t | z1 - z2) -> align_compatible_rec cenv t z1 <-> align_compatible_rec cenv t z2).
+
+  {
+
+    intros ? ? ? [? ?] ?.
+
+    split; intros.
+
+    + eapply align_compatible_rec_by_value_inv in H1; eauto.
+
+      eapply align_compatible_rec_by_value; eauto.
+
+      replace z2 with (z1 - (z1 - z2)) by omega.
+
+      erewrite hardware_alignof_by_value in H0 by eauto.
+
+      apply Z.divide_sub_r; auto.
+
+    + eapply align_compatible_rec_by_value_inv in H1; eauto.
+
+      eapply align_compatible_rec_by_value; eauto.
+
+      replace z1 with (z2 + (z1 - z2)) by omega.
+
+      erewrite hardware_alignof_by_value in H0 by eauto.
+
+      apply Z.divide_add_r; auto.
+
+  } 
+
+  intro t; type_induction t cenv CENV_CONS; intros.
+
+  + split; intros; inv H1; inv H2.
+
+  + eapply BY_VALUE; auto.
+
+    destruct s, i; eexists; reflexivity.
+
+  + eapply BY_VALUE; auto.
+
+    destruct s; eexists; reflexivity.
+
+  + eapply BY_VALUE; auto.
+
+    destruct f; eexists; reflexivity.
+
+  + eapply BY_VALUE; auto.
+
+    eexists; reflexivity.
+
+  + simpl in H0.
+
+    split; intros; apply align_compatible_rec_Tarray; intros;
+
+    eapply align_compatible_rec_Tarray_inv in H1; eauto.
+
+    - specialize (IH (z1 + sizeof cenv t0 * i) (z2 + sizeof cenv t0 * i)).
+
+      replace (z1 + sizeof cenv t0 * i - (z2 + sizeof cenv t0 * i)) with (z1 - z2) in IH by omega.
+
+      tauto.
+
+    - specialize (IH (z1 + sizeof cenv t0 * i) (z2 + sizeof cenv t0 * i)).
+
+      replace (z1 + sizeof cenv t0 * i - (z2 + sizeof cenv t0 * i)) with (z1 - z2) in IH by omega.
+
+      tauto.
+
+  + split; intros; inv H1; inv H2; econstructor.
+
+  + simpl in H, H0.
+
+    destruct (cenv ! id) as [co |] eqn:?H; [| inv H].
+
+    destruct (co_su co) eqn:?H; inv H.
+
+    assert (forall i0 t0 ofs0,
+
+              field_type i0 (co_members co) = Errors.OK t0 ->
+
+              field_offset cenv i0 (co_members co) = Errors.OK ofs0 ->
+
+              (align_compatible_rec cenv t0 (z1 + ofs0) <->
+
+               align_compatible_rec cenv t0 (z2 + ofs0))) as HH;
+
+    [ | split; intros; eapply align_compatible_rec_Tstruct; eauto;
+
+        intros; eapply align_compatible_rec_Tstruct_inv in H; eauto;
+
+        eapply HH; eauto].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ co H1) as [ha ?].
+
+    rewrite H in H0.
+
+    pose proof HA_ENV_CONS _ _ _ H1 H.
+
+    rewrite H3 in H0.
+
+    pose proof CENV_COSU _ _ H1.
+
+    clear H H1 H2 H3 ha.
+
+    intros. clear H1.
+
+    induction IH as [| [i t] ?].
+
+    - inv H.
+
+    - simpl in H, H0, H4.
+
+      autorewrite with align in H0, H4.
+
+      if_tac in H.
+
+      * subst i; inv H.
+
+        apply H1; [simpl; tauto |].
+
+        replace (z1 + ofs0 - (z2 + ofs0)) with (z1 - z2) by omega; tauto.
+
+      * apply IHIH; tauto.
+
+  + simpl in H, H0.
+
+    destruct (cenv ! id) as [co |] eqn:?H; [| inv H].
+
+    destruct (co_su co) eqn:?H; inv H.
+
+    assert (forall i0 t0,
+
+              field_type i0 (co_members co) = Errors.OK t0 ->
+
+              (align_compatible_rec cenv t0 z1 <->
+
+               align_compatible_rec cenv t0 z2)) as HH;
+
+    [ | split; intros; eapply align_compatible_rec_Tunion; eauto;
+
+        intros; eapply align_compatible_rec_Tunion_inv in H; eauto;
+
+        eapply HH; eauto].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ co H1) as [ha ?].
+
+    rewrite H in H0.
+
+    pose proof HA_ENV_CONS _ _ _ H1 H.
+
+    rewrite H3 in H0.
+
+    pose proof CENV_COSU _ _ H1.
+
+    clear H H1 H2 H3 ha.
+
+    intros.
+
+    induction IH as [| [i t] ?].
+
+    - inv H.
+
+    - simpl in H, H0, H4.
+
+      autorewrite with align in H0, H4.
+
+      if_tac in H.
+
+      * subst i; inv H.
+
+        apply H1; simpl; tauto.
+
+      * apply IHIH; tauto.
+
+Qed.
+
+
+
+Lemma align_compatible_rec_hardware_1: forall cenv ha_env t z,
+
+  composite_env_consistent cenv ->
+
+  composite_env_complete_legal_cosu_type cenv ->
+
+  hardware_alignof_env_consistent cenv ha_env ->
+
+  hardware_alignof_env_complete cenv ha_env ->
+
+  complete_legal_cosu_type cenv t = true ->
+
+  hardware_alignof ha_env t = 1 ->
+
+  align_compatible_rec cenv t z.
+
+Proof.
+
+  intros ? ? ? ? CENV_CONS CENV_COSU HA_ENV_CONS HA_ENV_COMPL.
+
+  revert z; type_induction t cenv CENV_CONS; intros.
+
+  + inv H.
+
+  + destruct s, i; inv H0;
+
+    econstructor; try reflexivity; apply Z.divide_1_l.
+
+  + destruct s; inv H0.
+
+  + destruct f; inv H0.
+
+  + inv H0.
+
+  + apply align_compatible_rec_Tarray.
+
+    intros.
+
+    apply IH; auto.
+
+  + inv H.
+
+  + simpl in H, H0.
+
+    destruct (cenv ! id) as [co |] eqn:?H; [| inv H].
+
+    destruct (co_su co) eqn:?H; inv H.
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ co H1) as [ha ?].
+
+    rewrite H in H0.
+
+    pose proof HA_ENV_CONS _ _ _ H1 H.
+
+    rewrite H3 in H0.
+
+    pose proof CENV_COSU _ _ H1.
+
+    eapply align_compatible_rec_Tstruct; eauto.
+
+    clear H H1 H2 H3 ha.
+
+    intros; clear H1.
+
+    induction IH as [| [i t] ?].
+
+    - inv H.
+
+    - simpl in H, H0, H4.
+
+      autorewrite with align in H0, H4.
+
+      destruct H0, H4.
+
+      if_tac in H.
+
+      * subst i; inv H.
+
+        apply H1; auto.
+
+      * apply IHIH; auto.
+
+  + simpl in H, H0.
+
+    destruct (cenv ! id) as [co |] eqn:?H; [| inv H].
+
+    destruct (co_su co) eqn:?H; inv H.
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ co H1) as [ha ?].
+
+    rewrite H in H0.
+
+    pose proof HA_ENV_CONS _ _ _ H1 H.
+
+    rewrite H3 in H0.
+
+    pose proof CENV_COSU _ _ H1.
+
+    eapply align_compatible_rec_Tunion; eauto.
+
+    clear H H1 H2 H3 ha.
+
+    intros.
+
+    induction IH as [| [i t] ?].
+
+    - inv H.
+
+    - simpl in H, H0, H4.
+
+      autorewrite with align in H0, H4.
+
+      destruct H0, H4.
+
+      if_tac in H.
+
+      * subst i; inv H.
+
+        apply H1; auto.
+
+      * apply IHIH; auto.
+
+Qed.
+
+
+
+Module Type LEGAL_ALIGNAS.
+
+
+
+  Parameter legal_alignas_obs: Type.
+
+  Parameter legal_alignas_type: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs -> type -> legal_alignas_obs.
+
+  Parameter legal_alignas_composite: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs -> composite -> legal_alignas_obs.
+
+  Parameter legal_alignas_env: composite_env -> PTree.t Z -> PTree.t legal_alignas_obs.
+
+  Parameter is_aligned_aux: legal_alignas_obs -> Z -> Z -> bool.  
+
+
+
+End LEGAL_ALIGNAS.
+
+
+
+Module LegalAlignasDefsGen (LegalAlignas: LEGAL_ALIGNAS).
+
+
+
+  Import LegalAlignas.
+
+
+
+  Definition legal_alignas_env_consistent (cenv: composite_env) (ha_env: PTree.t Z) (la_env: PTree.t legal_alignas_obs): Prop :=
+
+    forall i co la,
+
+      cenv ! i = Some co ->
+
+      la_env ! i = Some la ->
+
+      la = legal_alignas_composite cenv ha_env la_env co.
+
+
+
+  Definition legal_alignas_env_complete (cenv: composite_env) (la_env: PTree.t legal_alignas_obs): Prop :=
+
+    forall i,
+
+      (exists co, cenv ! i = Some co) <->
+
+      (exists la, la_env ! i = Some la).
+
+
+
+  Definition is_aligned cenv ha_env la_env (t: type) (ofs: Z): bool := is_aligned_aux (legal_alignas_type cenv ha_env la_env t) (hardware_alignof ha_env t) ofs.
+
+
+
+  Definition legal_alignas_env_sound (cenv: composite_env) (ha_env: PTree.t Z) (la_env: PTree.t legal_alignas_obs): Prop :=
+
+    forall ofs t,
+
+      complete_legal_cosu_type cenv t = true ->
+
+      is_aligned cenv ha_env la_env t ofs = true ->
+
+      align_compatible_rec cenv t ofs.
+
+
+
+End LegalAlignasDefsGen.
+
+
+
+Module Type LEGAL_ALIGNAS_FACTS.
+
+
+
+  Declare Module LegalAlignas: LEGAL_ALIGNAS.
+
+  Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+
+  Export LegalAlignas LegalAlignasDefs.
+
+
+
+  Axiom legal_alignas_env_consistency: forall cenv ha_env,
+
+    composite_env_consistent cenv ->
+
+    legal_alignas_env_consistent cenv ha_env (legal_alignas_env cenv ha_env).
+
+
+
+  Axiom legal_alignas_env_completeness: forall cenv ha_env,
+
+    legal_alignas_env_complete cenv (legal_alignas_env cenv ha_env).
+
+
+
+  Axiom legal_alignas_soundness: forall cenv ha_env la_env,
+
+    composite_env_consistent cenv ->
+
+    composite_env_complete_legal_cosu_type cenv ->
+
+    hardware_alignof_env_consistent cenv ha_env ->
+
+    hardware_alignof_env_complete cenv ha_env ->
+
+    legal_alignas_env_consistent cenv ha_env la_env ->
+
+    legal_alignas_env_complete cenv la_env ->
+
+    legal_alignas_env_sound cenv ha_env la_env.
+
+
+
+End LEGAL_ALIGNAS_FACTS.
+
+
+
+Module LegalAlignasStrict <: LEGAL_ALIGNAS.
+
+
+
+Section legal_alignas.
+
+
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+
+
+Definition legal_alignas_obs: Type := bool.
+
+
+
+Fixpoint legal_alignas_type (la_env: PTree.t bool) t: bool :=
+
+  (hardware_alignof ha_env t <=? alignof cenv t) &&
+
+  match t with
+
+  | Tarray t' _ _ => (sizeof cenv t' mod alignof cenv t' =? 0) && legal_alignas_type la_env t'
+
+  | Tstruct id _ =>
+
+      match la_env ! id with
+
+      | Some la => la
+
+      | None => false
+
+      end
+
+  | Tunion id _ =>
+
+      match la_env ! id with
+
+      | Some la => la
+
+      | None => false
+
+      end
+
+  | _ => match access_mode t with
+
+         | By_value ch => true
+
+         | _ => false
+
+         end
+
+  end.
+
+
+
+Fixpoint legal_alignas_members (la_env: PTree.t bool) (m: members): bool :=
+
+  match m with
+
+  | nil => true
+
+  | (_, t) :: m' => (legal_alignas_type la_env t) && (legal_alignas_members la_env m')
+
+  end.
+
+
+
+Definition legal_alignas_composite (la_env: PTree.t bool) (co: composite): bool :=
+
+  legal_alignas_members la_env (co_members co).
+
+
+
+Definition legal_alignas_env: PTree.t bool :=
+
+  let l := composite_reorder.rebuild_composite_elements cenv in
+
+  fold_right (fun (ic: positive * composite) (T0: PTree.t bool) => let (i, co) := ic in let T := T0 in PTree.set i (legal_alignas_composite T co) T) (PTree.empty _) l.
+
+
+
+Definition is_aligned_aux (b: bool) (ha: Z) (ofs: Z) := b && ((ofs mod ha) =? 0).
+
+
+
+End legal_alignas.
+
+
+
+End LegalAlignasStrict.
+
+
+
+Module LegalAlignasStrictFacts: LEGAL_ALIGNAS_FACTS with Module LegalAlignas := LegalAlignasStrict.
+
+
+
+Module LegalAlignas := LegalAlignasStrict.
+
+Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+
+Export LegalAlignas LegalAlignasDefs.
+
+
+
+Section legal_alignas.
+
+
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+
+
+Lemma aux1: forall T co,
+
+      (fix fm (l : list (ident * type * bool)) : bool :=
+
+          match l with
+
+          | nil => true
+
+          | (_, _, la) :: l' => la && fm l'
+
+          end)
+
+         (map
+
+            (fun it0 : positive * type =>
+
+             let (i0, t0) := it0 in
+
+             (i0, t0,
+
+             type_func.F
+
+               (fun t : type =>
+
+                (hardware_alignof ha_env t <=? alignof cenv t) &&
+
+                match access_mode t with
+
+                | By_value _ => true
+
+                | By_reference => false
+
+                | By_copy => false
+
+                | By_nothing => false
+
+                end)
+
+               (fun (la : bool) (t : type) (n : Z) (a0 : attr) =>
+
+                (hardware_alignof ha_env (Tarray t n a0) <=? alignof cenv (Tarray t n a0)) && ((sizeof cenv t mod alignof cenv t =? 0) && la))
+
+               (fun (la : bool) (id : ident) (a0 : attr) =>
+
+                (hardware_alignof ha_env (Tstruct id a0) <=? alignof cenv (Tstruct id a0)) && la)
+
+               (fun (la : bool) (id : ident) (a0 : attr) =>
+
+                (hardware_alignof ha_env (Tunion id a0) <=? alignof cenv (Tunion id a0)) && la) T t0)) (co_members co)) =
+
+      legal_alignas_composite cenv ha_env T co.
+
+Proof.
+
+  intros; unfold legal_alignas_composite, legal_alignas_members, legal_alignas_type.
+
+  induction (co_members co) as [| [i t] ?].
+
+  + auto.
+
+  + simpl.
+
+    f_equal; auto.
+
+    clear.
+
+    induction t; auto.
+
+    - simpl.
+
+      rewrite IHt.
+
+      auto.
+
+    - simpl.
+
+      destruct (T ! i); auto.
+
+    - simpl.
+
+      destruct (T ! i); auto.
+
+Qed.
+
+
+
+Lemma aux2:
+
+    (type_func.Env
+
+          (fun t : type =>
+
+           (hardware_alignof ha_env t <=? alignof cenv t) &&
+
+           match access_mode t with
+
+           | By_value _ => true
+
+           | By_reference => false
+
+           | By_copy => false
+
+           | By_nothing => false
+
+           end)
+
+          (fun (la : bool) (t : type) (n : Z) (a0 : attr) =>
+
+           (hardware_alignof ha_env (Tarray t n a0) <=? alignof cenv (Tarray t n a0)) && ((sizeof cenv t mod alignof cenv t =? 0) && la))
+
+          (fun (la : bool) (id : ident) (a0 : attr) =>
+
+           (hardware_alignof ha_env (Tstruct id a0) <=? alignof cenv (Tstruct id a0)) && la)
+
+          (fun (la : bool) (id : ident) (a0 : attr) =>
+
+           (hardware_alignof ha_env (Tunion id a0) <=? alignof cenv (Tunion id a0)) && la)
+
+          (fun _ : struct_or_union =>
+
+           fix fm (l : list (ident * type * bool)) : bool :=
+
+             match l with
+
+             | nil => true
+
+             | (_, _, la) :: l' => la && fm l'
+
+             end) (composite_reorder.rebuild_composite_elements cenv)) =
+
+    legal_alignas_env cenv ha_env.
+
+Proof.
+
+  intros.
+
+  unfold type_func.Env, type_func.env_rec, legal_alignas_env.
+
+  f_equal.
+
+  extensionality ic.
+
+  destruct ic as [i co].
+
+  extensionality T.
+
+  f_equal.
+
+  apply aux1.
+
+Qed.
+
+
+
+End legal_alignas.
+
+
+
+Theorem legal_alignas_env_consistency:
+
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+    composite_env_consistent cenv ->
+
+    legal_alignas_env_consistent cenv ha_env (legal_alignas_env cenv ha_env).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_consistent bool cenv
+
+             (fun t => (hardware_alignof ha_env t <=? alignof cenv t) &&
+
+                match access_mode t with
+
+                | By_value _ => true
+
+                | _ => false
+
+                end)
+
+             (fun la t n a => (hardware_alignof ha_env (Tarray t n a) <=? alignof cenv (Tarray t n a)) && ((sizeof cenv t mod alignof cenv t =? 0) && la))
+
+             (fun la id a => (hardware_alignof ha_env (Tstruct id a) <=? alignof cenv (Tstruct id a)) && la)
+
+             (fun la id a => (hardware_alignof ha_env (Tunion id a) <=? alignof cenv (Tunion id a)) && la)
+
+             (fun _ =>
+
+                fix fm (l: list (ident * type * bool)): bool :=
+
+                match l with
+
+                | nil => true
+
+                | (_, _, la) :: l' => la && (fm l')
+
+                end)
+
+             H
+
+    as HH.
+
+  hnf in HH.
+
+  rewrite aux2 in HH.
+
+  hnf; intros.
+
+  specialize (HH _ _ la H0 H1).
+
+  rewrite HH, aux1; auto.
+
+Qed.
+
+
+
+Theorem legal_alignas_env_completeness:
+
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+    legal_alignas_env_complete cenv (legal_alignas_env cenv ha_env).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_complete bool cenv
+
+             (fun t => (hardware_alignof ha_env t <=? alignof cenv t) &&
+
+                match access_mode t with
+
+                | By_value _ => true
+
+                | _ => false
+
+                end)
+
+             (fun la t n a => (hardware_alignof ha_env (Tarray t n a) <=? alignof cenv (Tarray t n a)) && ((sizeof cenv t mod alignof cenv t =? 0) && la))
+
+             (fun la id a => (hardware_alignof ha_env (Tstruct id a) <=? alignof cenv (Tstruct id a)) && la)
+
+             (fun la id a => (hardware_alignof ha_env (Tunion id a) <=? alignof cenv (Tunion id a)) && la)
+
+             (fun _ =>
+
+                fix fm (l: list (ident * type * bool)): bool :=
+
+                match l with
+
+                | nil => true
+
+                | (_, _, la) :: l' => la && (fm l')
+
+                end)
+
+    as HH.
+
+  hnf in HH.
+
+  rewrite aux2 in HH.
+
+  auto.
+
+Qed.
+
+
+
+Section soundness.
+
+
+
+Context (cenv: composite_env)
+
+        (ha_env: PTree.t Z)
+
+        (la_env: PTree.t bool)
+
+        (CENV_CONSI: composite_env_consistent cenv)
+
+        (CENV_COSU: composite_env_complete_legal_cosu_type cenv)
+
+        (HA_ENV_CONSI: hardware_alignof_env_consistent cenv ha_env)
+
+        (HA_ENV_COMPL: hardware_alignof_env_complete cenv ha_env)
+
+        (LA_ENV_CONSI: legal_alignas_env_consistent cenv ha_env la_env)
+
+        (LA_ENV_COMPL: legal_alignas_env_complete cenv la_env).
+
+
+
+Lemma legal_alignas_type_divide: forall t,
+
+  legal_alignas_type cenv ha_env la_env t = true ->
+
+  (hardware_alignof ha_env t | alignof cenv t).
+
+Proof.
+
+  intros.
+
+  assert (hardware_alignof ha_env t <=? alignof cenv t = true).
+
+  {
+
+    destruct t; simpl in H |- *;
+
+    solve [inv H | rewrite andb_true_iff in H; tauto].
+
+  }
+
+  autorewrite with align in H0.
+
+  auto.
+
+Qed.
+
+
+
+Lemma by_value_sound:
+
+  forall t ofs,
+
+    is_aligned cenv ha_env la_env t ofs = true ->
+
+    (exists ch, access_mode t = By_value ch) ->
+
+    align_compatible_rec cenv t ofs.
+
+Proof.
+
+  intros.
+
+  unfold is_aligned, is_aligned_aux, legal_alignas_type, hardware_alignof in H.
+
+  destruct H0 as [ch ?].
+
+  assert ((align_chunk ch <=? alignof cenv t) && true && (ofs mod align_chunk ch =? 0) = true) by
+
+    (destruct t; try solve [inversion H0]; rewrite H0 in H; auto); clear H.
+
+  autorewrite with align in H1.
+
+  destruct H1 as [_ ?].
+
+  eapply align_compatible_rec_by_value; eauto.
+
+Qed.
+
+
+
+Theorem legal_alignas_soundness:
+
+  legal_alignas_env_sound cenv ha_env la_env.
+
+Proof.
+
+  pose proof CENV_COSU.
+
+  clear CENV_COSU H.
+
+  intros.
+
+  hnf; intros ? ? _ ?.
+
+  revert ofs H; type_induction t cenv CENV_CONSI; intros.
+
+  + inversion H.
+
+  + eapply by_value_sound; eauto.
+
+    destruct i, s; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    destruct s; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    destruct f; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    eexists; try reflexivity.
+
+  + apply align_compatible_rec_Tarray; intros.
+
+    apply IH; clear IH.
+
+    unfold is_aligned, is_aligned_aux in H |- *.
+
+    Opaque alignof. simpl in H |- *. Transparent alignof.
+
+    autorewrite with align in H |- *.
+
+    destruct H as [[? [? ?]] ?].
+
+    split; auto.
+
+    apply Z.divide_add_r; auto.
+
+    apply Z.divide_mul_l.
+
+    clear H H3.
+
+    apply legal_alignas_type_divide in H2.
+
+    eapply Z.divide_trans; try eassumption.
+
+  + inv H.
+
+  + unfold is_aligned, is_aligned_aux in H, IH.
+
+    Opaque alignof. simpl in H, IH. Transparent alignof.
+
+    destruct (la_env ! id) as [la |] eqn:?H.
+
+    2: {
+
+      rewrite (andb_comm _ false) in H.
+
+      inv H.
+
+    }
+
+    pose proof proj2 (LA_ENV_COMPL id) (ex_intro _ _ H0) as [co ?].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ _ H1) as [ha ?].
+
+    rewrite H1 in IH; rewrite H2 in H.
+
+    rewrite (HA_ENV_CONSI id _ _ H1 H2) in H.
+
+    rewrite (LA_ENV_CONSI id _ _ H1 H0) in H.
+
+    eapply align_compatible_rec_Tstruct; [eassumption | intros].
+
+    pose proof field_offset_aligned _ _ _ _ _ H4 H3.
+
+    unfold field_offset in H4.
+
+    clear H0 H1 H2 H4.
+
+    unfold legal_alignas_composite in *.
+
+    induction IH as [| [i t] ?].
+
+    - inv H3.
+
+    - Opaque alignof. simpl in H0, H3, H. Transparent alignof.
+
+      if_tac in H3.
+
+      * subst i0; inv H3.
+
+        apply H0; simpl.
+
+        autorewrite with align in H |- *.
+
+        destruct H as [[_ [? ?]] [? ?]].
+
+        split; auto.
+
+        apply Z.divide_add_r; auto.
+
+        apply legal_alignas_type_divide in H.
+
+        apply Z.divide_trans with (alignof cenv t0); try eassumption.
+
+      * apply IHIH; auto.
+
+        autorewrite with align in H |- *.
+
+        split; [split |]; tauto.
+
+  + unfold is_aligned, is_aligned_aux in H, IH.
+
+    Opaque alignof. simpl in H, IH. Transparent alignof.
+
+    destruct (la_env ! id) as [la |] eqn:?H.
+
+    2:{
+
+      rewrite (andb_comm _ false) in H.
+
+      inv H.
+
+    }
+
+    pose proof proj2 (LA_ENV_COMPL id) (ex_intro _ _ H0) as [co ?].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ _ H1) as [ha ?].
+
+    rewrite H1 in IH; rewrite H2 in H.
+
+    rewrite (HA_ENV_CONSI id _ _ H1 H2) in H.
+
+    rewrite (LA_ENV_CONSI id _ _ H1 H0) in H.
+
+    eapply align_compatible_rec_Tunion; [eassumption | intros].
+
+    clear H0 H1 H2.
+
+    unfold legal_alignas_composite in *.
+
+    induction IH as [| [i t] ?].
+
+    - inv H3.
+
+    - Opaque alignof. simpl in H0, H3, H. Transparent alignof.
+
+      if_tac in H3.
+
+      * subst i0; inv H3.
+
+        apply H0; simpl.
+
+        autorewrite with align in H |- *.
+
+        destruct H as [[_ [? ?]] [? ?]].
+
+        split; auto.
+
+      * apply IHIH; auto.
+
+        autorewrite with align in H |- *.
+
+        split; [split |]; tauto.
+
+Qed.
+
+
+
+End soundness.
+
+
+
+End LegalAlignasStrictFacts.
+
+
+
+Module LegalAlignasStrong <: LEGAL_ALIGNAS.
+
+
+
+Section legal_alignas.
+
+
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+
+
+Definition legal_alignas_obs: Type := bool.
+
+
+
+Fixpoint legal_alignas_type (la_env: PTree.t bool) t: bool :=
+
+  match t with
+
+  | Tarray t' _ _ => (sizeof cenv t' mod hardware_alignof ha_env t' =? 0) && legal_alignas_type la_env t'
+
+  | Tstruct id _ =>
+
+      match la_env ! id with
+
+      | Some la => la
+
+      | None => false
+
+      end
+
+  | Tunion id _ =>
+
+      match la_env ! id with
+
+      | Some la => la
+
+      | None => false
+
+      end
+
+  | _ => match access_mode t with
+
+         | By_value ch => true
+
+         | _ => false
+
+         end
+
+  end.
+
+
+
+Fixpoint legal_alignas_struct_members_rec (la_env: PTree.t bool) (m: members) (pos: Z): bool :=
+
+  match m with
+
+  | nil => true
+
+  | (_, t) :: m' => (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) && (legal_alignas_type la_env t) && (legal_alignas_struct_members_rec la_env m' (align pos (alignof cenv t) + sizeof cenv t))
+
+  end.
+
+
+
+Fixpoint legal_alignas_union_members_rec (la_env: PTree.t bool) (m: members): bool :=
+
+  match m with
+
+  | nil => true
+
+  | (_, t) :: m' => (legal_alignas_type la_env t) && (legal_alignas_union_members_rec la_env m')
+
+  end.
+
+
+
+Definition legal_alignas_composite (la_env: PTree.t bool) (co: composite): bool :=
+
+  match co_su co with
+
+  | Struct => legal_alignas_struct_members_rec la_env (co_members co) 0
+
+  | Union => legal_alignas_union_members_rec la_env (co_members co)
+
+  end.
+
+
+
+Definition legal_alignas_env: PTree.t bool :=
+
+  let l := composite_reorder.rebuild_composite_elements cenv in
+
+  fold_right (fun (ic: positive * composite) (T0: PTree.t bool) => let (i, co) := ic in let T := T0 in PTree.set i (legal_alignas_composite T co) T) (PTree.empty _) l.
+
+
+
+Definition is_aligned_aux (b: bool) (ha: Z) (ofs: Z) := b && ((ofs mod ha) =? 0).
+
+
+
+End legal_alignas.
+
+
+
+End LegalAlignasStrong.
+
+
+
+Module LegalAlignasStrongFacts: LEGAL_ALIGNAS_FACTS with Module LegalAlignas := LegalAlignasStrong.
+
+
+
+Module LegalAlignas := LegalAlignasStrong.
+
+Module LegalAlignasDefs := LegalAlignasDefsGen (LegalAlignas).
+
+Export LegalAlignas LegalAlignasDefs.
+
+
+
+Section legal_alignas.
+
+
+
+Context (cenv: composite_env) (ha_env: PTree.t Z).
+
+
+
+Lemma aux1: forall T co,
+
+  match co_su co with
+
+  | Struct =>
+
+      (fix fm (pos : Z) (l : list (ident * type * bool)) {struct l} : bool :=
+
+         match l with
+
+         | nil => true
+
+         | (_, t, la) :: l' =>
+
+             (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) &&
+
+             la && fm (align pos (alignof cenv t) + sizeof cenv t) l'
+
+         end) 0
+
+  | Union =>
+
+      fix fm (l : list (ident * type * bool)) : bool :=
+
+        match l with
+
+        | nil => true
+
+        | (_, _, la) :: l' => la && fm l'
+
+        end
+
+  end
+
+    (map
+
+       (fun it0 : positive * type =>
+
+        let (i0, t0) := it0 in
+
+        (i0, t0,
+
+        type_func.F
+
+          (fun t : type =>
+
+           match access_mode t with
+
+           | By_value _ => true
+
+           | By_reference => false
+
+           | By_copy => false
+
+           | By_nothing => false
+
+           end)
+
+          (fun (la : bool) (t : type) (_ : Z) (_ : attr) =>
+
+           (sizeof cenv t mod hardware_alignof ha_env t =? 0) && la)
+
+          (fun (la : bool) (_ : ident) (_ : attr) => la)
+
+          (fun (la : bool) (_ : ident) (_ : attr) => la) T t0)) 
+
+       (co_members co)) = legal_alignas_composite cenv ha_env T co.
+
+Proof.
+
+  intros; unfold legal_alignas_composite, legal_alignas_type.
+
+  destruct (co_su co).
+
+  {
+
+  generalize 0 at 2 4.
+
+  induction (co_members co) as [| [i t] ?]; intros.
+
+  + auto.
+
+  + simpl.
+
+    f_equal; [f_equal |]; auto.
+
+    clear.
+
+    induction t; auto.
+
+    simpl.
+
+    rewrite IHt.
+
+    auto.
+
+  }
+
+  {
+
+  induction (co_members co) as [| [i t] ?]; intros.
+
+  + auto.
+
+  + simpl.
+
+    f_equal; [f_equal |]; auto.
+
+    clear.
+
+    induction t; auto.
+
+    simpl.
+
+    rewrite IHt.
+
+    auto.
+
+  }
+
+Qed.
+
+
+
+Lemma aux2:
+
+    (type_func.Env
+
+                  (fun t : type =>
+
+                   match access_mode t with
+
+                   | By_value _ => true
+
+                   | By_reference => false
+
+                   | By_copy => false
+
+                   | By_nothing => false
+
+                   end)
+
+                  (fun (la : bool) (t : type) (_ : Z) (_ : attr) =>
+
+                   (sizeof cenv t mod hardware_alignof ha_env t =? 0) && la)
+
+                  (fun (la : bool) (_ : ident) (_ : attr) => la)
+
+                  (fun (la : bool) (_ : ident) (_ : attr) => la)
+
+                  (fun su : struct_or_union =>
+
+                   match su with
+
+                   | Struct =>
+
+                       (fix
+
+                        fm (pos : Z) (l : list (ident * type * bool)) {struct l} :
+
+                          bool :=
+
+                          match l with
+
+                          | nil => true
+
+                          | (_, t, la) :: l' =>
+
+                              (align pos (alignof cenv t)
+
+                               mod hardware_alignof ha_env t =? 0) && la &&
+
+                              fm (align pos (alignof cenv t) + sizeof cenv t) l'
+
+                          end) 0
+
+                   | Union =>
+
+                       fix fm (l : list (ident * type * bool)) : bool :=
+
+                         match l with
+
+                         | nil => true
+
+                         | (_, _, la) :: l' => la && fm l'
+
+                         end
+
+                   end) (composite_reorder.rebuild_composite_elements cenv)) =
+
+    legal_alignas_env cenv ha_env.
+
+Proof.
+
+  intros.
+
+  unfold type_func.Env, type_func.env_rec, legal_alignas_env.
+
+  f_equal.
+
+  extensionality ic.
+
+  destruct ic as [i co].
+
+  extensionality T.
+
+  f_equal.
+
+  apply aux1.
+
+Qed.
+
+
+
+End legal_alignas.
+
+
+
+Theorem legal_alignas_env_consistency:
+
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+    composite_env_consistent cenv ->
+
+    legal_alignas_env_consistent cenv ha_env (legal_alignas_env cenv ha_env).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_consistent bool cenv
+
+             (fun t =>
+
+                match access_mode t with
+
+                | By_value _ => true
+
+                | _ => false
+
+                end)
+
+             (fun la t n a => ((sizeof cenv t mod hardware_alignof ha_env t =? 0) && la))
+
+             (fun la id a => la)
+
+             (fun la id a => la)
+
+             (fun su =>
+
+                match su with
+
+                | Struct =>
+
+                   (fix fm (pos: Z) (l: list (ident * type * bool)) : bool :=
+
+                    match l with
+
+                    | nil => true
+
+                    | (_, t, la) :: l' => (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) && la && (fm (align pos (alignof cenv t) + sizeof cenv t) l')
+
+                    end) 0
+
+                | Union =>
+
+                   (fix fm (l: list (ident * type * bool)) : bool :=
+
+                    match l with
+
+                    | nil => true
+
+                    | (_, t, la) :: l' => la && (fm l')
+
+                    end)
+
+                end)
+
+             H
+
+    as HH.
+
+  hnf in HH.
+
+  rewrite aux2 in HH.
+
+  hnf; intros.
+
+  specialize (HH _ _ la H0 H1).
+
+  rewrite HH, <- aux1; auto.
+
+Qed.
+
+
+
+Theorem legal_alignas_env_completeness:
+
+  forall (cenv: composite_env) (ha_env: PTree.t Z),
+
+    legal_alignas_env_complete cenv (legal_alignas_env cenv ha_env).
+
+Proof.
+
+  intros.
+
+  pose proof @composite_reorder_complete bool cenv
+
+             (fun t =>
+
+                match access_mode t with
+
+                | By_value _ => true
+
+                | _ => false
+
+                end)
+
+             (fun la t n a => ((sizeof cenv t mod hardware_alignof ha_env t =? 0) && la))
+
+             (fun la id a => la)
+
+             (fun la id a => la)
+
+             (fun su =>
+
+                match su with
+
+                | Struct =>
+
+                   (fix fm (pos: Z) (l: list (ident * type * bool)) : bool :=
+
+                    match l with
+
+                    | nil => true
+
+                    | (_, t, la) :: l' => (align pos (alignof cenv t) mod hardware_alignof ha_env t =? 0) && la && (fm (align pos (alignof cenv t) + sizeof cenv t) l')
+
+                    end) 0
+
+                | Union =>
+
+                   (fix fm (l: list (ident * type * bool)) : bool :=
+
+                    match l with
+
+                    | nil => true
+
+                    | (_, t, la) :: l' => la && (fm l')
+
+                    end)
+
+                end)
+
+    as HH.
+
+  hnf in HH.
+
+  rewrite aux2 in HH.
+
+  auto.
+
+Qed.
+
+
+
+Section soundness.
+
+
+
+Context (cenv: composite_env)
+
+        (ha_env: PTree.t Z)
+
+        (la_env: PTree.t bool)
+
+        (CENV_CONSI: composite_env_consistent cenv)
+
+        (CENV_COSU: composite_env_complete_legal_cosu_type cenv)
+
+        (HA_ENV_CONSI: hardware_alignof_env_consistent cenv ha_env)
+
+        (HA_ENV_COMPL: hardware_alignof_env_complete cenv ha_env)
+
+        (LA_ENV_CONSI: legal_alignas_env_consistent cenv ha_env la_env)
+
+        (LA_ENV_COMPL: legal_alignas_env_complete cenv la_env).
+
+
+
+Lemma by_value_sound:
+
+  forall t ofs,
+
+    is_aligned cenv ha_env la_env t ofs = true ->
+
+    (exists ch, access_mode t = By_value ch) ->
+
+    align_compatible_rec cenv t ofs.
+
+Proof.
+
+  intros.
+
+  unfold is_aligned, is_aligned_aux, legal_alignas_type, hardware_alignof in H.
+
+  destruct H0 as [ch ?].
+
+  assert ((ofs mod align_chunk ch =? 0) = true) by
+
+    (destruct t; try solve [inversion H0]; rewrite H0 in H; auto); clear H.
+
+  autorewrite with align in H1.
+
+  eapply align_compatible_rec_by_value; eauto.
+
+Qed.
+
+
+
+Theorem legal_alignas_soundness:
+
+  legal_alignas_env_sound cenv ha_env la_env.
+
+Proof.
+
+  intros.
+
+  hnf; intros.
+
+  revert ofs H H0; type_induction t cenv CENV_CONSI; intros.
+
+  + inversion H0.
+
+  + eapply by_value_sound; eauto.
+
+    destruct i, s; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    destruct s; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    destruct f; eexists; try reflexivity.
+
+  + eapply by_value_sound; eauto.
+
+    eexists; try reflexivity.
+
+  + apply align_compatible_rec_Tarray; intros.
+
+    apply IH; clear IH; [auto |].
+
+    unfold is_aligned, is_aligned_aux in H0 |- *.
+
+    simpl in H0 |- *.
+
+    autorewrite with align in H0 |- *.
+
+    destruct H0 as [[? ?] ?].
+
+    split; auto.
+
+    apply Z.divide_add_r; auto.
+
+    apply Z.divide_mul_l; auto.
+
+  + inv H.
+
+  + unfold is_aligned, is_aligned_aux in H0, IH.
+
+    simpl in H, H0, IH.
+
+    destruct (la_env ! id) as [la |] eqn:?H; [| inv H0].
+
+    pose proof proj2 (LA_ENV_COMPL id) (ex_intro _ _ H1) as [co ?].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ _ H2) as [ha ?].
+
+    pose proof CENV_COSU _ _ H2.
+
+    rewrite H2 in IH, H; rewrite H3 in H0.
+
+    rewrite (HA_ENV_CONSI id _ _ H2 H3) in H0.
+
+    rewrite (LA_ENV_CONSI id _ _ H2 H1) in H0.
+
+    autorewrite with align in H0 |- *.
+
+    destruct H0.
+
+    unfold legal_alignas_composite in H0.
+
+    destruct (co_su co); [| inv H].
+
+    eapply align_compatible_rec_Tstruct; [eassumption | intros].
+
+    unfold field_offset in H7.
+
+    clear H H1 H2 H3.
+
+    revert H0 H4 H5 H6 H7; generalize 0;
+
+    induction IH as [| [i t] ?]; intros.
+
+    - inv H6.
+
+    - simpl in H, H0, H4, H5, H6, H7.
+
+      if_tac in H6.
+
+      * subst i0; inv H6; inv H7.
+
+        autorewrite with align in H4, H5, H0 |- *.
+
+        destruct H0 as [[? ?] ?], H4 as [? ?], H5 as [? ?].
+
+        apply H; simpl; [tauto |].
+
+        autorewrite with align.
+
+        split; auto.
+
+        apply Z.divide_add_r; auto.
+
+      * autorewrite with align in H0, H4, H5.
+
+        destruct H4, H5.
+
+        apply (IHIH (align z (alignof cenv t) + sizeof cenv t)); auto.
+
+        tauto.
+
+  + unfold is_aligned, is_aligned_aux in H0, IH.
+
+    simpl in H, H0, IH.
+
+    destruct (la_env ! id) as [la |] eqn:?H; [| inv H0].
+
+    pose proof proj2 (LA_ENV_COMPL id) (ex_intro _ _ H1) as [co ?].
+
+    pose proof proj1 (HA_ENV_COMPL id) (ex_intro _ _ H2) as [ha ?].
+
+    pose proof CENV_COSU _ _ H2.
+
+    rewrite H2 in IH, H; rewrite H3 in H0.
+
+    rewrite (HA_ENV_CONSI id _ _ H2 H3) in H0.
+
+    rewrite (LA_ENV_CONSI id _ _ H2 H1) in H0.
+
+    autorewrite with align in H0 |- *.
+
+    destruct H0.
+
+    unfold legal_alignas_composite in H0.
+
+    destruct (co_su co); [inv H |].
+
+    eapply align_compatible_rec_Tunion; [eassumption | intros].
+
+    clear H H1 H2 H3.
+
+    revert H0 H4 H5 H6;
+
+    induction IH as [| [i t] ?]; intros.
+
+    - inv H6.
+
+    - simpl in H, H0, H4, H5, H6.
+
+      if_tac in H6.
+
+      * subst i0; inv H6.
+
+        autorewrite with align in H4, H5, H0 |- *.
+
+        destruct H0 as [? ?], H4 as [? ?], H5 as [? ?].
+
+        apply H; simpl; [tauto |].
+
+        autorewrite with align.
+
+        split; auto.
+
+      * autorewrite with align in H0, H4, H5.
+
+        destruct H4, H5.
+
+        apply IHIH; auto.
+
+        tauto.
+
+Qed.
+
+
+
+End soundness.
+
+
+
+End LegalAlignasStrongFacts.
+
+
+
+Module Export LegalAlignasFacts := LegalAlignasStrongFacts.
+
+
+

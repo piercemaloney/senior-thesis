@@ -1,0 +1,570 @@
+
+
+Require Import Coq.Lists.List.
+
+Require Import Coq.Lists.SetoidList.
+
+
+
+Require Import Metalib.CoqUniquenessTac.
+(* Metalib.CoqUniquenessTac:
+Require Import Coq.Lists.List.
+Require Import Coq.Logic.Eqdep_dec.
+
+Require Import Coq.omega.Omega.
+
+Fixpoint arrow (xs : list Type) (res : Type) : Type :=
+  match xs with
+    | nil => res
+    | cons y ys => y -> arrow ys res
+  end.
+
+Fixpoint tuple (xs : list Type) : Type :=
+  match xs with
+    | nil => unit
+    | cons y ys => (y * tuple ys)%type
+  end.
+
+Definition apply_tuple
+  (xs : list Type) (res : Type) (f : arrow xs res) (arg : tuple xs)
+  : res.
+
+Fixpoint tr_list_rev (A : Type) (xs : list A) (acc : list A) : list A :=
+  match xs with
+    | nil => acc
+    | cons y ys => tr_list_rev A ys (cons y acc)
+  end.
+
+Arguments tr_list_rev [ A ].
+
+Definition list_rev (A : Type) (xs : list A) : list A :=
+  tr_list_rev xs nil.
+
+Arguments list_rev [ A ].
+
+Definition tr_tuple_rev
+  (xs : list Type) (ab : tuple xs)
+  (acc : list Type) (acc' : tuple acc)
+  : tuple (tr_list_rev xs acc).
+
+Definition tuple_rev
+  (xs : list Type) (ab : tuple xs) : tuple (list_rev xs) :=
+  tr_tuple_rev xs ab nil tt.
+
+Lemma eq_unit_dec : forall (x y : unit),
+  {x = y} + {x <> y}.
+
+Lemma eq_pair_dec : forall (A B : Type),
+  (forall x y : A, {x = y} + {x <> y}) ->
+  (forall x y : B, {x = y} + {x <> y}) ->
+  (forall x y : A * B, {x = y} + {x <> y}).
+
+Hint Resolve eq_unit_dec eq_pair_dec : eq_dec.
+
+Ltac uniqueness icount :=
+  
+  intros;
+
+  try (match goal with |- _ = ?f _ => symmetry end);
+
+  let lhs := match goal with |- ?lhs = _ => constr:(lhs) end in
+
+  let rhs := match goal with |- _ = ?rhs => constr:(rhs) end in
+
+  let sort := match type of rhs with
+                | ?pred => match type of pred with ?sort => sort end
+              end
+  in
+
+  let rec get_pred_type i pred :=
+    match i with
+      | O => pred
+      | S ?n => match pred with ?f ?x => get_pred_type n f end
+    end
+  in
+  let pred := get_pred_type icount ltac:(type of rhs) in
+
+  let rec get_ind_types i pred acc :=
+    match i with
+      | O => acc
+      | S ?n => match pred with
+                  | ?f ?x => let ind := type of x in
+                             get_ind_types n f (@cons Type ind acc)
+                end
+    end
+  in
+  let ind_types := get_ind_types icount ltac:(type of rhs) (@nil Type) in
+
+  let rec get_inds i pred acc :=
+    match i with
+      | O => acc
+      | S ?n => match pred with ?f ?x => get_inds n f (x, acc) end
+    end
+  in
+  let inds := get_inds icount ltac:(type of rhs) tt in
+
+  let rind_types := constr:(list_rev ind_types) in
+  let rinds := constr:(tuple_rev ind_types inds) in
+
+  let core :=
+    constr:(fun (ainds : tuple rind_types)
+                (rhs   : apply_tuple (list_rev rind_types)
+                                     sort
+                                     pred
+                                     (tuple_rev rind_types ainds))
+            =>
+            forall eqpf : rinds = ainds,
+              @eq (apply_tuple (list_rev rind_types)
+                               sort
+                               pred
+                               (tuple_rev rind_types ainds))
+                  (@eq_rect (tuple rind_types)
+                            rinds
+                            (fun rinds2 =>
+                              apply_tuple (list_rev rind_types)
+                                          sort
+                                          pred
+                                          (tuple_rev rind_types rinds2))
+                            lhs
+                            ainds
+                            eqpf)
+                 rhs)
+  in
+  let core := eval simpl in core in
+
+  let rec curry f :=
+    match type of f with
+      | forall _ : (unit), _ => constr:(f tt)
+      | forall _ : (_ * unit), _ => constr:(fun a => f (a, tt))
+      | forall _ : (_ * _), _ =>
+        let f' := constr:(fun b a => f (a, b)) in curry f'
+    end
+  in
+  let core := curry core in
+  let core := eval simpl in core in
+
+  let rec apply_core f args :=
+    match args with
+      | tt => constr:(f)
+      | (?x, ?xs) => apply_core (f x) xs
+    end
+  in
+  let core := apply_core core inds in
+  let core := constr:(core rhs) in
+
+  change lhs with (@eq_rect (tuple rind_types)
+                            rinds
+                            (fun rinds2 =>
+                              apply_tuple (list_rev rind_types)
+                                          sort
+                                          pred
+                                          (tuple_rev rind_types rinds2))
+                            lhs
+                            rinds
+                            (refl_equal rinds));
+  generalize (refl_equal rinds);
+
+  change core;
+  case rhs;
+
+  unfold list_rev, tuple_rev in *;
+  simpl tr_list_rev in *;
+  simpl tr_tuple_rev in *;
+
+  repeat (match goal with
+            | |- (_, _) = (_, _) -> _ =>
+              let H := fresh in intros H; try discriminate; injection H
+            | _ => progress intro
+          end);
+  subst;
+
+  try (rewrite <- eq_rect_eq_dec; [ f_equal; auto | auto with eq_dec ]). *)
+
+
+
+Open Scope list_scope.
+
+
+
+Lemma cons_eq_app : forall (A : Type) (z : A) (xs ys zs : list A),
+
+  z :: zs = xs ++ ys ->
+
+  (exists qs, xs = z :: qs /\ zs = qs ++ ys) \/
+
+  (xs = nil /\ ys = z :: zs).
+
+Proof.
+
+  destruct xs; intros ? ? H; simpl in *.
+
+    auto.
+
+    injection H. intros. subst. eauto.
+
+Qed.
+
+
+
+Lemma app_eq_cons : forall (A : Type) (z : A) (xs ys zs : list A),
+
+  xs ++ ys = z :: zs ->
+
+  (exists qs, xs = z :: qs /\ zs = qs ++ ys) \/
+
+  (xs = nil /\ ys = z :: zs).
+
+Proof. auto using cons_eq_app. Qed.
+
+
+
+Lemma nil_eq_app : forall (A : Type) (xs ys : list A),
+
+  nil = xs ++ ys ->
+
+  xs = nil /\ ys = nil.
+
+Proof. auto using List.app_eq_nil. Qed.
+
+
+
+Lemma app_cons_not_nil : forall (A : Type) (y : A) (xs ys : list A),
+
+  xs ++ y :: ys <> nil.
+
+Proof.
+
+  intros ? ? ? ? H. symmetry in H. revert H. apply List.app_cons_not_nil.
+
+Qed.
+
+
+
+Lemma In_map : forall (A B : Type) (xs : list A) (x : A) (f : A -> B),
+
+  In x xs ->
+
+  In (f x) (map f xs).
+
+Proof.
+
+  induction xs; intros ? ? H; simpl in *.
+
+    auto.
+
+    destruct H; subst; auto.
+
+Qed.
+
+
+
+Lemma not_In_cons : forall (A : Type) (ys : list A) (x y : A),
+
+  x <> y ->
+
+  ~ In x ys ->
+
+  ~ In x (y :: ys).
+
+Proof. unfold not. inversion 3; auto. Qed.
+
+
+
+Lemma not_In_app : forall (A : Type) (xs ys : list A) (x : A),
+
+  ~ In x xs ->
+
+  ~ In x ys ->
+
+  ~ In x (xs ++ ys).
+
+Proof. intros ? xs ys x ? ? H. apply in_app_or in H. intuition. Qed.
+
+
+
+Lemma elim_not_In_cons : forall (A : Type) (y : A) (ys : list A) (x : A),
+
+  ~ In x (y :: ys) ->
+
+  x <> y /\ ~ In x ys.
+
+Proof. simpl. intuition. Qed.
+
+
+
+Lemma elim_not_In_app : forall (A : Type) (xs ys : list A) (x : A),
+
+  ~ In x (xs ++ ys) ->
+
+  ~ In x xs /\ ~ In x ys.
+
+Proof. split; auto using in_or_app. Qed.
+
+
+
+Lemma incl_nil : forall (A : Type) (xs : list A),
+
+  incl nil xs.
+
+Proof. unfold incl. inversion 1. Qed.
+
+
+
+Lemma In_incl : forall (A : Type) (x : A) (ys zs : list A),
+
+  In x ys ->
+
+  incl ys zs ->
+
+  In x zs.
+
+Proof. unfold incl. auto. Qed.
+
+
+
+Lemma elim_incl_cons : forall (A : Type) (x : A) (xs zs : list A),
+
+  incl (x :: xs) zs ->
+
+  In x zs /\ incl xs zs.
+
+Proof. unfold incl. auto with datatypes. Qed.
+
+
+
+Lemma elim_incl_app : forall (A : Type) (xs ys zs : list A),
+
+  incl (xs ++ ys) zs ->
+
+  incl xs zs /\ incl ys zs.
+
+Proof. unfold incl. auto with datatypes. Qed.
+
+
+
+Lemma InA_In : forall (A : Type) (x : A) (xs : list A),
+
+  InA (@eq _) x xs -> In x xs.
+
+Proof.
+
+  induction xs; intros H.
+
+    inversion H.
+
+    inversion H; subst; simpl in *; auto.
+
+Qed.
+
+
+
+Lemma InA_iff_In : forall (A : Type) (x : A) (xs : list A),
+
+  InA (@eq _) x xs <-> In x xs.
+
+Proof.
+
+  split; auto using InA_In.
+
+  apply SetoidList.In_InA. apply eq_equivalence.
+
+Qed.
+
+
+
+Section DecidableSorting.
+
+
+
+  Variable A : Type.
+
+  Variable leA : relation A.
+
+  Hypothesis leA_dec : forall x y, {leA x y} + {~ leA x y}.
+
+
+
+  Theorem lelistA_dec : forall a xs,
+
+    {lelistA leA a xs} + {~ lelistA leA a xs}.
+
+  Proof with auto.
+
+    destruct xs as [ | x xs ]...
+
+    destruct (leA_dec a x)...
+
+    right. intros J. inversion J...
+
+  Defined.
+
+
+
+  Theorem sort_dec : forall xs,
+
+    {sort leA xs} + {~ sort leA xs}.
+
+  Proof with auto.
+
+    induction xs as [ | x xs [Yes | No] ]...
+
+    destruct (lelistA_dec x xs)...
+
+      right. intros K. inversion K...
+
+    right. intros K. inversion K...
+
+  Defined.
+
+
+
+End DecidableSorting.
+
+
+
+Section SortedListEquality.
+
+
+
+  Variable A : Type.
+
+  Variable ltA : relation A.
+
+  Hypothesis ltA_trans : forall x y z, ltA x y -> ltA y z -> ltA x z.
+
+  Hypothesis ltA_not_eqA : forall x y, ltA x y -> x <> y.
+
+  Hypothesis ltA_eqA : forall x y z, ltA x y -> y = z -> ltA x z.
+
+  Hypothesis eqA_ltA : forall x y z, x = y -> ltA y z -> ltA x z.
+
+
+
+  Hint Resolve ltA_trans.
+
+  Hint Immediate ltA_eqA eqA_ltA.
+
+
+
+  Notation Inf := (lelistA ltA).
+
+  Notation Sort := (sort ltA).
+
+
+
+  Lemma eqlist_eq : forall (xs ys : list A),
+
+    eqlistA (@eq _) xs ys ->
+
+    xs = ys.
+
+  Proof. induction xs; destruct ys; inversion 1; f_equal; auto. Qed.
+
+
+
+  Lemma Sort_InA_eq : forall xs ys,
+
+    Sort xs ->
+
+    Sort ys ->
+
+    (forall a, InA (@eq _) a xs <-> InA (@eq _) a ys) ->
+
+    xs = ys.
+
+  Proof.
+
+    intros xs ys ? ? ?.
+
+    cut (eqlistA (@eq _) xs ys).
+
+    auto using eqlist_eq.
+
+    apply SetoidList.SortA_equivlistA_eqlistA with (ltA := ltA); eauto.
+
+      apply eq_equivalence. firstorder.
+
+      reduce. subst. split; auto.
+
+  Qed.
+
+
+
+  Lemma Sort_In_eq : forall xs ys,
+
+    Sort xs ->
+
+    Sort ys ->
+
+    (forall a, In a xs <-> In a ys) ->
+
+    xs = ys.
+
+  Proof with auto using In_InA, InA_In.
+
+    intros ? ? ? ? H.
+
+    apply Sort_InA_eq...
+
+    intros a; specialize (H a).
+
+      split; intros; apply In_InA; intuition...
+
+  Qed.
+
+
+
+End SortedListEquality.
+
+
+
+Section Uniqueness_Of_SetoidList_Proofs.
+
+
+
+  Variable A : Type.
+
+  Variable R : A -> A -> Prop.
+
+
+
+  Hypothesis R_unique : forall (x y : A) (p q : R x y), p = q.
+
+  Hypothesis list_eq_dec : forall (xs ys : list A), {xs = ys} + {xs <> ys}.
+
+
+
+  Scheme lelistA_ind' := Induction for lelistA Sort Prop.
+
+  Scheme sort_ind'    := Induction for sort Sort Prop.
+
+  Scheme eqlistA_ind' := Induction for eqlistA Sort Prop.
+
+
+
+  Theorem lelistA_unique :
+
+    forall (x : A) (xs : list A) (p q : lelistA R x xs), p = q.
+
+  Proof. induction p using lelistA_ind'; uniqueness 1. Qed.
+
+
+
+  Theorem sort_unique :
+
+    forall (xs : list A) (p q : sort R xs), p = q.
+
+  Proof. induction p using sort_ind'; uniqueness 1. apply lelistA_unique. Qed.
+
+
+
+  Theorem eqlistA_unique :
+
+    forall (xs ys : list A) (p q : eqlistA R xs ys), p = q.
+
+  Proof. induction p using eqlistA_ind'; uniqueness 2. Qed.
+
+
+
+End Uniqueness_Of_SetoidList_Proofs.
+

@@ -1,0 +1,235 @@
+Require Import String List.
+(* String:
+Require Import Coq.Strings.String.
+Require Import Coq.Program.Program. 
+Require Import Coq.Numbers.Natural.Peano.NPeano.
+Require Import Coq.Arith.Arith.
+
+Require Import ExtLib.Tactics.Consider.
+Require Import ExtLib.Core.RelDec.
+Require Import ExtLib.Structures.Reducible.
+Require Import ExtLib.Structures.Monoid.
+Require Import ExtLib.Data.Char.
+Require Import ExtLib.Data.Nat.
+
+Set Implicit Arguments.
+Set Strict Implicit.
+
+Local Notation "x >> y" := (match x with
+                              | Eq => y
+                              | z => z
+                            end) (only parsing, at level 30).
+
+Definition bool_cmp (l r : bool) : comparison :=
+  match l , r with
+    | true , false => Gt
+    | false , true => Lt
+    | true , true
+    | false , false => Eq
+  end.
+
+Definition ascii_cmp (l r : Ascii.ascii) : comparison :=
+  match l , r with
+    | Ascii.Ascii l1 l2 l3 l4 l5 l6 l7 l8 ,
+      Ascii.Ascii r1 r2 r3 r4 r5 r6 r7 r8 =>
+      bool_cmp l8 r8 >> bool_cmp l7 r7 >> bool_cmp l6 r6 >> bool_cmp l5 r5 >>
+      bool_cmp l4 r4 >> bool_cmp l3 r3 >> bool_cmp l2 r2 >> bool_cmp l1 r1
+  end.
+
+Fixpoint string_dec (l r : string) : bool :=
+  match l , r with
+    | EmptyString , EmptyString => true
+    | String l ls , String r rs =>
+      if ascii_dec l r then string_dec ls rs
+      else false
+    | _ , _ => false
+  end.
+
+Theorem string_dec_sound : forall l r,
+  string_dec l r = true <-> l = r.
+
+Global Instance RelDec_string : RelDec (@eq string) :=
+{| rel_dec := string_dec |}.
+
+Global Instance RelDec_Correct_string : RelDec_Correct RelDec_string.
+
+Global Instance Reflect_string_dec a b : Reflect (string_dec a b) (a = b) (a <> b).
+
+Fixpoint string_cmp (l r : string) : comparison :=
+  match l , r with
+    | EmptyString , EmptyString => Eq
+    | EmptyString , _ => Lt
+    | _ , EmptyString => Gt
+    | String l ls , String r rs =>
+      ascii_cmp l r >> string_cmp ls rs
+  end.
+
+Section Program_Scope.
+  Variable modulus : nat.
+  Hypothesis one_lt_mod : 1 < modulus.
+
+  Lemma _xxx : forall m n,
+                 1 < m -> ~ n < m -> 0 < n.
+
+  Program Fixpoint nat2string (n:nat) {measure n}: string :=
+    match NPeano.Nat.ltb n modulus as x return NPeano.Nat.ltb n modulus = x -> string with
+
+End Program_Scope.
+
+Definition nat2string10 : nat -> string.
+
+Definition nat2string2 : nat -> string.
+
+Definition nat2string8 : nat -> string.
+
+Definition nat2string16 : nat -> string.
+
+Global Instance Foldable_string : Foldable string ascii :=
+  fun _ f base =>
+    fix go ls :=
+    match ls with
+    | EmptyString => base
+    | String l ls =>
+      f l (go ls)
+    end.
+
+Section string.
+  Inductive R_string_len : string -> string -> Prop :=
+  | R_s_len : forall n m, length n < length m -> R_string_len n m.
+
+  Theorem wf_R_string_len : well_founded R_string_len.
+End string.
+
+Definition Monoid_string_append : Monoid string :=
+{| monoid_plus := append
+ ; monoid_unit := EmptyString
+|}. *)
+
+Require Import ExtLib.Data.HList.
+
+
+
+Set Implicit Arguments.
+
+Set Strict Implicit.
+
+
+
+Inductive data T : (T -> Type) -> Type :=
+
+| Inj   : forall X, Type -> data X
+
+| Get   : forall X, T -> data X
+
+| Prod  : forall X, data X -> data X -> data X
+
+| Sigma : forall X (S : Type), (S -> data X) -> data X
+
+| Pi    : forall X (S : Type), (S -> data X) -> data X.
+
+
+
+Fixpoint dataD (T : Type) (X : T -> Type) (d : data X) : Type :=
+
+  match d with
+
+    | Inj _X x => x
+
+    | Get X i => X i
+
+    | Prod l r => prod (dataD l) (dataD r)
+
+    | @Sigma _ _ i s => @sigT i (fun v => dataD (s v))
+
+    | @Pi _ _ i s => forall v : i, dataD (s v)
+
+  end.
+
+
+
+Definition dataList (a : Type) : @data unit (fun _ => list a) :=
+
+  @Sigma _ _ bool (fun x => match x with 
+
+                              | true => @Inj _ _ unit
+
+                              | false => @Prod _ _ (Inj _ a) (Get _ tt)
+
+                            end).
+
+
+
+Theorem dataList_to_list : forall T (x : dataD (dataList T)), list T.
+
+  simpl. intros.
+
+  destruct x. destruct x.
+
+  apply nil.
+
+  simpl in *.
+
+  apply (fst d :: snd d).
+
+Defined.
+
+
+
+Theorem list_to_dataList : forall T (ls : list T), dataD (dataList T).
+
+  simpl. destruct 1.
+
+  exists true. apply tt.
+
+  exists false. apply (t, ls).
+
+Defined.
+
+
+
+Fixpoint dataP (T : Type) (X : T -> Type) (d : data X) (R : Type) : Type :=
+
+  match d with
+
+    | Inj _X x => x -> R
+
+    | Get X x => X x -> R
+
+    | @Prod _ _ l r => dataP l (dataP r R)
+
+    | @Sigma _ _ i s => forall i, dataP (s i) R
+
+    | @Pi _ _ i s => (forall i, dataD (s i)) -> R
+
+  end.
+
+
+
+Fixpoint dataMatch (T : Type) (X : T -> Type) (d : data X) {struct d} 
+
+  : forall (R : Type), dataP d R -> dataD d -> R :=
+
+    match d as d return forall (R : Type), dataP d R -> dataD d -> R with
+
+      | Inj _ _ => fun _ p => p
+
+      | Get X x => fun _ p => p
+
+      | @Prod _ _ l r => fun _ p v => 
+
+        dataMatch r _ (dataMatch l _ p (fst v)) (snd v)
+
+      | @Sigma _ _ i d => fun _ p v => 
+
+        match v with
+
+        | existT _ x y => dataMatch (d x) _ (p _) y
+
+        end
+
+      | @Pi _ _ i d => fun _ p v => p v
+
+    end.
+
+
+

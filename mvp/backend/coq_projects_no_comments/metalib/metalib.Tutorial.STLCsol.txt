@@ -1,0 +1,2183 @@
+
+
+Require Import Metalib.Metatheory.
+
+
+
+Inductive typ : Set :=
+
+  | typ_base  : typ
+
+  | typ_arrow : typ -> typ -> typ.
+
+
+
+Inductive exp : Set :=
+
+  | bvar : nat  -> exp
+
+  | fvar : atom -> exp
+
+  | abs  : typ -> exp  -> exp
+
+  | app  : exp  -> exp -> exp.
+
+
+
+Coercion bvar : nat >-> exp.
+
+Coercion fvar : atom >-> exp.
+
+
+
+Parameter Y : atom.
+
+Definition demo_rep1 := abs typ_base (app Y 0).
+
+
+
+Definition demo_rep2 := abs typ_base (abs typ_base (app 0 1)).
+
+
+
+Definition two :=
+
+  
+
+  abs (typ_arrow typ_base typ_base)
+
+                      (abs typ_base (app 1 (app 1 0))).
+
+
+
+Definition COMB_K :=
+
+  
+
+	abs typ_base
+
+    (abs typ_base 1).
+
+
+
+Definition COMB_S :=
+
+   
+
+   abs (typ_arrow typ_base (typ_arrow typ_base typ_base))
+
+    (abs (typ_arrow typ_base typ_base)
+
+      (abs (typ_base)
+
+        (app (app 2 0) (app 1 0)))).
+
+
+
+Fixpoint subst (z : atom) (u : exp) (e : exp)
+
+  {struct e} : exp :=
+
+  match e with
+
+    | bvar i => bvar i
+
+    | fvar x => if x == z then u else (fvar x)
+
+    | abs t e1 => abs t (subst z u e1)
+
+    | app e1 e2 => app (subst z u e1) (subst z u e2)
+
+  end.
+
+
+
+Notation "[ z ~> u ] e" := (subst z u e) (at level 68).
+
+
+
+Parameter Z : atom.
+
+
+
+Lemma demo_subst1:
+
+  [Y ~> Z] (abs typ_base (app 0 Y)) = (abs typ_base (app 0 Z)).
+
+Proof.
+
+  simpl.
+
+  destruct (Y==Y).
+
+  Case "left".
+
+    auto.
+
+  Case "right".
+
+    destruct n. auto.
+
+Qed.
+
+
+
+Lemma subst_eq_var: forall (x : atom) u,
+
+  [x ~> u]x = u.
+
+Proof.
+
+  
+
+  intros x u.
+
+  simpl.
+
+  destruct (x == x).
+
+  Case "left".
+
+    auto.
+
+  Case "right".
+
+    destruct n. auto.
+
+Qed.
+
+
+
+Lemma subst_neq_var : forall (x y : atom) u,
+
+  y <> x -> [x ~> u]y = y.
+
+Proof.
+
+  
+
+  intros x y u.
+
+  simpl.
+
+  intro Neq.
+
+  destruct (y == x).
+
+  Case "left".
+
+    destruct Neq. auto.
+
+  Case "right".
+
+    auto.
+
+Qed.
+
+
+
+Fixpoint fv (e : exp) {struct e} : atoms :=
+
+  match e with
+
+    | bvar i => empty
+
+    | fvar x => singleton x
+
+    | abs t e1 => fv e1
+
+    | app e1 e2 => (fv e1) `union` (fv e2)
+
+  end.
+
+
+
+Lemma f_equal_demo : forall e1 e2, e1 = e2 -> fv e1 = fv e2.
+
+Proof.
+
+  intros e1 e2 EQ.
+
+  f_equal.
+
+  assumption.
+
+Qed.
+
+
+
+Lemma fsetdec_demo : forall (x :atom) (S : atoms),
+
+  x `in` (singleton x `union` S).
+
+Proof.
+
+  fsetdec.
+
+Qed.
+
+
+
+Lemma subst_fresh : forall (x : atom) e u,
+
+  x `notin` fv e -> [x ~> u] e = e.
+
+Proof.
+
+  
+
+  intros x e u H.
+
+  induction e.
+
+  Case "bvar".
+
+    auto.
+
+  Case "fvar".
+
+    simpl.
+
+    destruct (a == x).
+
+    SCase "a=x".
+
+      subst. simpl fv in H. fsetdec.
+
+    SCase "a<>x".
+
+      auto.
+
+  Case "abs".
+
+    simpl.
+
+    f_equal.
+
+    auto.
+
+  Case "app".
+
+    simpl in *.
+
+    f_equal.
+
+    auto.
+
+    auto.
+
+Qed.
+
+
+
+Lemma subst_notin_fv : forall x y u e,
+
+   x `notin` fv e -> x `notin` fv u ->
+
+   x `notin` fv ([y ~> u]e).
+
+Proof.
+
+  intros x y u e Fr1 Fr2.
+
+  induction e; simpl in *.
+
+  Case "bvar".
+
+    assumption.
+
+  Case "fvar".
+
+    destruct (a == y).
+
+      assumption.
+
+      simpl. assumption.
+
+  Case "abs".
+
+    apply IHe. assumption.
+
+  Case "app".
+
+    destruct_notin.
+
+    apply notin_union.
+
+    apply IHe1.
+
+    assumption.
+
+    apply IHe2.
+
+    assumption.
+
+Qed.
+
+
+
+Fixpoint open_rec (k : nat) (u : exp)(e : exp)
+
+  {struct e} : exp :=
+
+  match e with
+
+    | bvar i => if k == i then u else (bvar i)
+
+    | fvar x => fvar x
+
+    | abs t e1 => abs t (open_rec (S k) u e1)
+
+    | app e1 e2 => app (open_rec k u e1) (open_rec k u e2)
+
+  end.
+
+
+
+Definition open e u := open_rec 0 u e.
+
+
+
+Lemma demo_open :
+
+  open (app (abs typ_base (app 1 0)) 0) Y =
+
+       (app (abs typ_base (app Y 0)) Y).
+
+Proof.
+
+  unfold open.
+
+  unfold open_rec.
+
+  simpl.
+
+  auto.
+
+Qed.
+
+
+
+Inductive lc : exp -> Prop :=
+
+  | lc_var : forall (x:atom),
+
+      lc x
+
+  | lc_abs : forall (x : atom) e t,
+
+      x `notin` fv e -> lc (open e x) ->
+
+      lc (abs t e)
+
+  | lc_app : forall e1 e2,
+
+      lc e1 -> lc e2 ->
+
+      lc (app e1 e2).
+
+
+
+Hint Constructors lc.
+
+
+
+Section BasicOperations.
+
+Local Notation "{ k ~> u } t" := (open_rec k u t) (at level 67).
+
+
+
+Lemma open_rec_lc_0 : forall k u e,
+
+  lc e ->
+
+  e = {k ~> u} e.
+
+Proof.
+
+  intros k u e LC.
+
+  induction LC.
+
+  Case "lc_fvar".
+
+    simpl.
+
+    auto.
+
+  Case "lc_abs".
+
+    simpl.
+
+    f_equal.
+
+Admitted.
+
+
+
+Lemma open_rec_lc_1 : forall k u e,
+
+  lc e ->
+
+  e = {k ~> u} e.
+
+Proof.
+
+  intros k u e LC.
+
+  generalize dependent k.
+
+  induction LC.
+
+  Case "lc_fvar".
+
+    simpl. auto.
+
+  Case "lc_abs".
+
+    simpl.
+
+    intro k.
+
+    f_equal.
+
+Admitted.
+
+
+
+Lemma open_rec_lc_core : forall e j v i u,
+
+  i <> j ->
+
+  {j ~> v} e = {i ~> u} ({j ~> v} e) ->
+
+  e = {i ~> u} e.
+
+Proof.
+
+  induction e; intros j v i u Neq H; simpl in *.
+
+  Case "bvar".
+
+    destruct (j == n);  destruct (i == n).
+
+      SCase "j = n = i".
+
+        subst n. destruct Neq. auto.
+
+      SCase "j = n, i <> n".
+
+        auto.
+
+      SCase "j <> n, i = n".
+
+        subst n. simpl in H.
+
+        destruct (i == i).
+
+           SSCase "i=i".
+
+             auto.
+
+           SSCase "i<>i".
+
+             destruct n. auto.
+
+      SCase "j <> n, i <> n".
+
+        auto.
+
+  Case "fvar".
+
+    auto.
+
+  Case "abs".
+
+    f_equal.
+
+    inversion H.
+
+    apply  IHe with (j := S j) (u := u) (i := S i) (v := v).
+
+    auto.
+
+    auto.
+
+  Case "app".
+
+    inversion H.
+
+    f_equal.
+
+    eapply IHe1; eauto.
+
+    eapply IHe2; eauto.
+
+Qed.
+
+
+
+Lemma open_rec_lc_core_automated : forall e j v i u,
+
+  i <> j ->
+
+  {j ~> v} e = {i ~> u} ({j ~> v} e) ->
+
+  e = {i ~> u} e.
+
+Proof with try solve [eauto | congruence].
+
+  induction e; intros j v i u Neq H; simpl in *;
+
+      try solve [inversion H; f_equal; eauto].
+
+  Case "bvar".
+
+    destruct (j == n)...
+
+    destruct (i == n)...
+
+Qed.
+
+
+
+Lemma open_rec_lc : forall k u e,
+
+  lc e -> e = {k ~> u} e.
+
+Proof.
+
+  intros k u e LC.
+
+  generalize dependent k.
+
+  induction LC.
+
+  Case "lc_fvar".
+
+    simpl.
+
+    auto.
+
+  Case "lc_abs".
+
+    simpl.
+
+    intro k.
+
+    f_equal.
+
+    unfold open in *.
+
+    apply open_rec_lc_core with
+
+      (i := S k) (j := 0) (u := u) (v := fvar x).
+
+    auto.
+
+    auto.
+
+  Case "lc_app".
+
+    intro k.
+
+    simpl.
+
+    f_equal.
+
+    auto.
+
+    auto.
+
+Qed.
+
+
+
+Lemma subst_open_rec : forall e1 e2 u (x : atom) k,
+
+  lc u ->
+
+  [x ~> u] ({k ~> e2} e1) = {k ~> [x ~> u] e2} ([x ~> u] e1).
+
+Proof.
+
+  
+
+  induction e1; intros e2 u x k H; simpl in *; f_equal; auto.
+
+  Case "bvar".
+
+    destruct (k == n); auto.
+
+  Case "fvar".
+
+    destruct (a == x); subst; auto.
+
+    apply open_rec_lc; auto.
+
+Qed.
+
+
+
+Lemma subst_open_var : forall (x y : atom) u e,
+
+  y <> x ->
+
+  lc u ->
+
+  open ([x ~> u] e) y = [x ~> u] (open e y).
+
+Proof.
+
+  
+
+  intros x y u e Neq H.
+
+  unfold open.
+
+  rewrite subst_open_rec with (e2 := fvar y); auto.
+
+  rewrite subst_neq_var; auto.
+
+Qed.
+
+
+
+Lemma subst_intro : forall (x : atom) u e,
+
+  x `notin` (fv e) ->
+
+  open e u = [x ~> u](open e x).
+
+Proof.
+
+  
+
+  intros x u e FV.
+
+  unfold open.
+
+  generalize 0.
+
+  induction e; intro n0; simpl.
+
+  Case "bvar".
+
+    destruct (n0 == n).
+
+    rewrite subst_eq_var. auto.
+
+    simpl. auto.
+
+  Case "fvar".
+
+    destruct (a == x). subst. simpl in FV. fsetdec. auto.
+
+  Case "abs".
+
+    f_equal. simpl in FV. apply IHe. auto.
+
+  Case "app".
+
+    simpl in FV.
+
+    f_equal.
+
+    apply IHe1. auto.
+
+    apply IHe2. auto.
+
+Qed.
+
+
+
+End BasicOperations.
+
+
+
+Lemma subst_lc_0 : forall (x : atom) u e,
+
+  lc e ->
+
+  lc u ->
+
+  lc ([x ~> u] e).
+
+Proof.
+
+  intros x u e He Hu.
+
+  induction He.
+
+  Case "lc_fvar".
+
+    simpl.
+
+    destruct (x0 == x).
+
+      auto.
+
+      auto.
+
+  Case "lc_abs".
+
+    simpl.
+
+    
+
+    apply lc_abs with (x:=x0).
+
+    apply subst_notin_fv.
+
+    auto.
+
+Admitted.
+
+
+
+Inductive lc_c : exp -> Prop :=
+
+  | lc_var_c : forall (x:atom),
+
+      lc_c x
+
+  | lc_abs_c : forall (L : atoms) e T,
+
+      (forall x : atom, x `notin` L -> lc_c (open e x)) ->
+
+      lc_c (abs T e)
+
+  | lc_app_c : forall e1 e2,
+
+      lc_c e1 ->
+
+      lc_c e2 ->
+
+      lc_c (app e1 e2).
+
+
+
+Hint Constructors lc_c.
+
+
+
+Section CofiniteQuantification.
+
+Local Notation "{ k ~> u } t" := (open_rec k u t) (at level 67).
+
+
+
+Lemma open_rec_lc_c : forall k u e,
+
+  lc_c e ->
+
+  e = {k ~> u} e.
+
+Proof.
+
+  intros k u e LC.
+
+  generalize dependent k.
+
+  induction LC.
+
+  Case "lc_fvar".
+
+    simpl.
+
+    auto.
+
+  Case "lc_abs".
+
+    simpl.
+
+    intro k.
+
+    f_equal.
+
+    unfold open in *.
+
+    pick fresh x for L.  
+
+    apply open_rec_lc_core with
+
+      (i := S k) (j := 0) (u := u) (v := fvar x).
+
+    auto.
+
+    auto.
+
+  Case "lc_app".
+
+    intro k.
+
+    simpl.
+
+    f_equal.
+
+    auto.
+
+    auto.
+
+Qed.
+
+
+
+Lemma subst_open_rec_c : forall e1 e2 u (x : atom) k,
+
+  lc_c u ->
+
+  [x ~> u] ({k ~> e2} e1) = {k ~> [x ~> u] e2} ([x ~> u] e1).
+
+Proof.
+
+
+
+  induction e1; intros e2 u x k H; simpl in *; f_equal; auto.
+
+  Case "bvar".
+
+    destruct (k == n); auto.
+
+  Case "fvar".
+
+    destruct (a == x); subst; auto.
+
+    apply open_rec_lc_c; auto.
+
+Qed.
+
+
+
+Lemma subst_open_var_c : forall (x y : atom) u e,
+
+  y <> x ->
+
+  lc_c u ->
+
+  open ([x ~> u] e) y = [x ~> u] (open e y).
+
+Proof.
+
+  
+
+  intros x y u e Neq H.
+
+  unfold open.
+
+  rewrite subst_open_rec_c with (e2 := fvar y); auto.
+
+  rewrite subst_neq_var; auto.
+
+Qed.
+
+
+
+Lemma subst_lc_c : forall (x : atom) u e,
+
+  lc_c e ->
+
+  lc_c u ->
+
+  lc_c ([x ~> u] e).
+
+Proof.
+
+  intros x u e He Hu.
+
+  induction He.
+
+  Case "lc_var_c".
+
+   simpl.
+
+   destruct (x0 == x).
+
+     auto.
+
+     auto.
+
+  Case "lc_abs_c".
+
+    simpl.
+
+    
+
+    apply lc_abs_c with (L := L `union` singleton x).
+
+    intros x0 Fr.
+
+    rewrite subst_open_var_c. auto. auto. auto.
+
+  Case "lc_app_c".
+
+     simpl. auto.
+
+Qed.
+
+
+
+End CofiniteQuantification.
+
+
+
+Ltac gather_atoms ::=
+
+  let A := gather_atoms_with (fun x : atoms => x) in
+
+  let B := gather_atoms_with (fun x : atom => singleton x) in
+
+  let C := gather_atoms_with (fun x : list (atom * typ) => dom x) in
+
+  let D := gather_atoms_with (fun x : exp => fv x) in
+
+  constr:(A `union` B `union` C `union` D).
+
+
+
+Lemma subst_lc_c_alternate_proof : forall (x : atom) u e,
+
+  lc_c e ->
+
+  lc_c u ->
+
+  lc_c ([x ~> u] e).
+
+Proof.
+
+  intros x u e He Hu.
+
+  induction He.
+
+  Case "fvar".
+
+   simpl.
+
+   destruct (x0 == x).
+
+     auto.
+
+     auto.
+
+  Case "abs".
+
+    simpl.
+
+    pick fresh y and apply lc_abs_c.
+
+    
+
+    rewrite subst_open_var_c. auto. auto. auto.
+
+  Case "app".
+
+     simpl. auto.
+
+Qed.
+
+
+
+Notation env := (list (atom * typ)).
+
+
+
+Lemma append_assoc_demo : forall (E0 E1 E2 E3:env),
+
+  E0 ++ (E1 ++ E2) ++ E3 = E0 ++ E1 ++ E2 ++ E3.
+
+Proof.
+
+  intros.
+
+  auto. 
+
+  simpl_env.
+
+  reflexivity.
+
+Qed.
+
+
+
+Lemma simpl_env_demo : forall (x y:atom) (T1 T2:typ) (E F:env),
+
+   ((x ~ T1) ++ nil) ++ (y,T2) :: (nil ++ E) ++ F =
+
+   (x ~ T1) ++ (y ~ T2) ++ E ++ F.
+
+Proof.
+
+   intros.
+
+   
+
+   simpl_env.
+
+   reflexivity.
+
+Qed.
+
+
+
+Lemma rewrite_env_demo : forall (x y:atom) (T:typ) P,
+
+  (forall E, P ((x,T):: E) -> True) ->
+
+  P (x ~ T) ->
+
+  True.
+
+Proof.
+
+  intros x y T P H.
+
+  
+
+  rewrite_env ((x,T) :: nil).
+
+  apply H.
+
+Qed.
+
+
+
+Lemma binds_demo : forall (x:atom) (T:typ) (E F:env),
+
+  binds x T (E ++ (x ~ T) ++ F).
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Lemma dom_demo : forall (x y : atom) (T : typ),
+
+  dom (x ~ T) [=] singleton x.
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Lemma uniq_demo : forall (x y : atom) (T : typ),
+
+  x <> y -> uniq ((x ~ T) ++ (y ~ T)).
+
+Proof.
+
+  auto.
+
+Qed.
+
+
+
+Inductive typing_c : env -> exp -> typ -> Prop :=
+
+  | typing_var_c : forall E (x : atom) T,
+
+      uniq E ->
+
+      binds x T E ->
+
+      typing_c E (fvar x) T
+
+  | typing_abs_c : forall (L : atoms) E e T1 T2,
+
+      (forall (x:atom), x `notin` L ->
+
+        typing_c ((x ~ T1) ++ E) (open e x) T2) ->
+
+      typing_c E (abs T1 e) (typ_arrow T1 T2)
+
+  | typing_app_c : forall E e1 e2 T1 T2,
+
+      typing_c E e1 (typ_arrow T1 T2) ->
+
+      typing_c E e2 T1 ->
+
+      typing_c E (app e1 e2) T2.
+
+
+
+Hint Constructors typing_c.
+
+
+
+Lemma typing_weakening_0 : forall E F e T,
+
+  typing_c E e T ->
+
+  uniq (F ++ E) ->
+
+  typing_c (F ++ E) e T.
+
+Proof.
+
+  intros E F e T H J.
+
+  induction H; eauto.
+
+  Case "typing_abs_c".
+
+    pick fresh x and apply typing_abs_c.
+
+    
+
+Admitted.
+
+
+
+Lemma typing_weakening_strengthened_0 : forall (E F G : env) e T,
+
+  typing_c (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing_c (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H J.
+
+  induction H.
+
+  Case "typing_var_c".
+
+    
+
+  Focus 2.
+
+  Case "typing_abs_c".
+
+    
+
+Admitted.
+
+
+
+Lemma typing_c_weakening_strengthened :  forall (E F G : env) e T,
+
+  typing_c (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing_c (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H.
+
+  remember (G ++ E) as E'.
+
+  generalize dependent G.
+
+  induction H; intros G Eq Uniq; subst.
+
+ 
+
+  Case "typing_var_c".
+
+    apply typing_var_c.
+
+      apply Uniq.
+
+      apply binds_weaken. apply H0.
+
+  Case "typing_abs_c".
+
+
+
+    pick fresh x and apply typing_abs_c.
+
+    rewrite_env (((x ~ T1) ++ G) ++ F ++ E).
+
+    apply H0.
+
+      auto.
+
+      simpl_env. reflexivity.
+
+      simpl_env. apply uniq_push.
+
+        apply Uniq.
+
+        auto.
+
+  Case "typing_app_c".
+
+    eapply typing_app_c.
+
+      eapply IHtyping_c1. reflexivity. apply Uniq.
+
+      eapply IHtyping_c2. reflexivity. apply Uniq.
+
+Qed.
+
+
+
+Lemma typing_c_weakening : forall (E F : env) e T,
+
+    typing_c E e T ->
+
+    uniq (F ++ E) ->
+
+    typing_c (F ++ E) e T.
+
+Proof.
+
+  intros E F e T H J.
+
+  rewrite_env (nil ++ F ++ E).
+
+  apply typing_c_weakening_strengthened; auto.
+
+Qed.
+
+
+
+Lemma typing_subst_var_case : forall (E F : env) u S T (z x : atom),
+
+  binds x T (F ++ (z ~ S) ++ E) ->
+
+  uniq (F ++ (z ~ S) ++ E) ->
+
+  typing_c E u S ->
+
+  typing_c (F ++ E) ([z ~> u] x) T.
+
+Proof.
+
+  intros E F u S T z x H J K.
+
+  simpl.
+
+ 
+
+  destruct (x == z).
+
+  Case "x = z".
+
+    subst.
+
+    assert (T = S).
+
+      eapply binds_mid_eq. apply H. apply J.
+
+    subst.
+
+    apply typing_c_weakening.
+
+      apply K.
+
+      eapply uniq_remove_mid. apply J.
+
+  Case "x <> z".
+
+    apply typing_var_c.
+
+      eapply uniq_remove_mid. apply J.
+
+      eapply binds_remove_mid. apply H. apply n.
+
+Qed.
+
+
+
+Lemma typing_c_to_lc_c : forall E e T,
+
+  typing_c E e T -> lc_c e.
+
+Proof.
+
+  intros E e T H. induction H; eauto.
+
+Qed.
+
+
+
+Lemma typing_c_subst : forall (E F : env) e u S T (z : atom),
+
+  typing_c (F ++ (z ~ S) ++ E) e T ->
+
+  typing_c E u S ->
+
+  typing_c (F ++ E) ([z ~> u] e) T.
+
+Proof.
+
+
+
+  intros E F e u S T z He Hu.
+
+  remember (F ++ (z ~ S) ++ E) as E'.
+
+  generalize dependent F.
+
+  induction He.
+
+  Case "typing_var_c".
+
+    intros F Eq.
+
+    subst.
+
+    eapply typing_subst_var_case. apply H0. apply H. apply Hu.
+
+  Case "typing_abs_c".
+
+    intros F Eq.
+
+    subst.
+
+    simpl.
+
+
+
+    pick fresh y and apply typing_abs_c.
+
+    rewrite subst_open_var_c.
+
+    rewrite_env (((y ~ T1) ++ F) ++ E).
+
+    apply H0.
+
+      auto.
+
+      simpl_env. reflexivity.
+
+    
+
+    auto.
+
+    eapply typing_c_to_lc_c. apply Hu.
+
+  Case "typing_app_c".
+
+    intros F Eq. subst. simpl. eapply typing_app_c.
+
+      apply IHHe1. reflexivity.
+
+      apply IHHe2. reflexivity.
+
+Qed.
+
+
+
+Lemma typing_c_subst_simple : forall (E : env) e u S T (z : atom),
+
+  typing_c ((z ~ S) ++ E) e T ->
+
+  typing_c E u S ->
+
+  typing_c E ([z ~> u] e) T.
+
+Proof.
+
+
+
+  intros E e u S T z H J.
+
+  rewrite_env (nil ++ E).
+
+  eapply typing_c_subst.
+
+    simpl_env. apply H.
+
+    apply J.
+
+Qed.
+
+
+
+Inductive value_c : exp -> Prop :=
+
+  | value_abs_c : forall e T1,
+
+      lc_c (abs T1 e) ->
+
+      value_c (abs T1 e).
+
+
+
+Inductive eval_c : exp -> exp -> Prop :=
+
+  | eval_beta_c : forall e1 e2 T1,
+
+      lc_c (abs T1 e1) ->
+
+      value_c e2 ->
+
+      eval_c (app (abs T1 e1) e2) (open e1 e2)
+
+  | eval_app_1_c : forall e1 e1' e2,
+
+      lc_c e2 ->
+
+      eval_c e1 e1' ->
+
+      eval_c (app e1 e2) (app e1' e2)
+
+  | eval_app_2_c : forall e1 e2 e2',
+
+      value_c e1 ->
+
+      eval_c e2 e2' ->
+
+      eval_c (app e1 e2) (app e1 e2').
+
+
+
+Hint Constructors value_c eval_c.
+
+
+
+Lemma preservation_c : forall (E : env) e e' T,
+
+  typing_c E e T ->
+
+  eval_c e e' ->
+
+  typing_c E e' T.
+
+Proof.
+
+  intros E e e' T H.
+
+  generalize dependent e'.
+
+  induction H; intros e' J.
+
+
+
+  Case "typing_var_c".
+
+    inversion J.
+
+  Case "typing_abs_c".
+
+    inversion J.
+
+  Case "typing_app_c".
+
+    inversion J; subst; eauto.
+
+    SCase "eval_beta".
+
+      inversion H; subst.
+
+      pick fresh y.
+
+      rewrite (subst_intro y); auto.
+
+      eapply typing_c_subst_simple; auto.
+
+Qed.
+
+
+
+Lemma progress_c : forall e T,
+
+  typing_c nil e T ->
+
+  value_c e \/ exists e', eval_c e e'.
+
+Proof.
+
+  intros e T H.
+
+
+
+  assert (typing_c nil e T); auto.
+
+
+
+  remember (@nil (atom * typ)) as E.
+
+
+
+  induction H; subst.
+
+
+
+  Case "typing_var_c".
+
+    inversion H1.
+
+  Case "typing_abs_c".
+
+    left.
+
+    apply value_abs_c.
+
+    eapply typing_c_to_lc_c; eauto.
+
+  Case "typing_app_c".
+
+    right.
+
+    destruct IHtyping_c1 as [V1 | [e1' Eval1]]; auto.
+
+      SCase "e1 is a value".
+
+      destruct IHtyping_c2 as [V2 | [e2' Eval2]]; auto.
+
+        SSCase "e2 is a value".
+
+          inversion V1; subst. exists (open e e2); auto.
+
+        SSCase "e2 is not a value".
+
+          exists (app e1 e2'); auto.
+
+      SCase "e1 is not a value".
+
+        exists (app e1' e2).
+
+        apply eval_app_1_c.
+
+          eapply typing_c_to_lc_c; eauto.
+
+          assumption.
+
+Qed.
+
+
+
+Lemma typing_c_uniq : forall E e T,
+
+  typing_c E e T -> uniq E.
+
+Proof.
+
+  intros E e T H.
+
+  induction H; auto.
+
+  Case "typing_abs_c".
+
+    pick fresh x.
+
+    assert (uniq ((x ~ T1) ++ E)); auto.
+
+    inversion H1. auto.
+
+Qed.
+
+
+
+Lemma typing_c_rename : forall (x y : atom) E e T1 T2,
+
+  x `notin` fv e -> y `notin` (dom E `union` fv e) ->
+
+  typing_c ((x ~ T1) ++ E) (open e x) T2 ->
+
+  typing_c ((y ~ T1) ++ E) (open e y) T2.
+
+Proof.
+
+  intros x y E e T1 T2 Fr1 Fr2 H.
+
+  destruct (x == y).
+
+  Case "x = y".
+
+    subst; eauto.
+
+  Case "x <> y".
+
+    assert (J : uniq ((x ~ T1) ++ E)).
+
+      eapply typing_c_uniq; eauto.
+
+    assert (J' : uniq E).
+
+      inversion J; eauto.
+
+    rewrite (@subst_intro x); eauto.
+
+    rewrite_env (nil ++ (y ~ T1) ++ E).
+
+    apply typing_c_subst with (S := T1).
+
+    simpl_env.
+
+    SCase "(open x s) is well-typed".
+
+      apply typing_c_weakening_strengthened. eauto. auto.
+
+    SCase "y is well-typed".
+
+      eapply typing_var_c; eauto.
+
+Qed.
+
+
+
+Inductive typing : env -> exp -> typ -> Prop :=
+
+  | typing_var : forall E (x : atom) T,
+
+      uniq E ->
+
+      binds x T E ->
+
+      typing E (fvar x) T
+
+  | typing_abs : forall E e T1 T2 (x : atom),
+
+      x `notin` fv e ->
+
+      typing ((x ~ T1) ++ E) (open e x) T2 ->
+
+      typing E (abs T1 e) (typ_arrow T1 T2)
+
+  | typing_app : forall E e1 e2 T1 T2,
+
+      typing E e1 (typ_arrow T1 T2) ->
+
+      typing E e2 T1 ->
+
+      typing E (app e1 e2) T2.
+
+
+
+Inductive value : exp -> Prop :=
+
+  | value_abs : forall e T1,
+
+      lc (abs T1 e) ->
+
+      value (abs T1 e).
+
+
+
+Inductive eval : exp -> exp -> Prop :=
+
+  | eval_beta : forall e1 e2 T1,
+
+      lc (abs T1 e1) ->
+
+      value e2 ->
+
+      eval (app (abs T1 e1) e2) (open e1 e2)
+
+  | eval_app_1 : forall e1 e1' e2,
+
+      lc e2 ->
+
+      eval e1 e1' ->
+
+      eval (app e1 e2) (app e1' e2)
+
+  | eval_app_2 : forall e1 e2 e2',
+
+      value e1 ->
+
+      eval e2 e2' ->
+
+      eval (app e1 e2) (app e1 e2').
+
+
+
+Hint Constructors typing value eval.
+
+
+
+Lemma lc_rename : forall e (x:atom) (y:atom),
+
+  x `notin` fv e ->
+
+  lc_c (open e x) -> lc_c (open e y).
+
+Proof.
+
+  intros e x y Frx LCx.
+
+  rewrite (@subst_intro x); auto.
+
+  apply subst_lc_c; auto.
+
+Qed.
+
+
+
+Lemma lc_to_lc_c : forall e, lc e -> lc_c e.
+
+Proof.
+
+  intros e LC.
+
+  induction LC; auto.
+
+  Case "lc_abs".
+
+    apply lc_abs_c with (L := fv e).
+
+    intros.
+
+    apply lc_rename with (x := x); auto.
+
+Qed.
+
+
+
+Lemma lc_c_to_lc : forall e, lc_c e -> lc e.
+
+Proof.
+
+
+
+  intros e LCC. induction LCC; auto.
+
+  Case "lc_abs_c".
+
+     pick fresh x.
+
+     apply lc_abs with (x:=x); auto.
+
+Qed.
+
+
+
+Lemma typing_to_typing_c : forall E e T,
+
+  typing E e T -> typing_c E e T.
+
+Proof.
+
+intros E e T H.
+
+induction H; eauto.
+
+Case "typing_abs".
+
+  pick fresh y and apply typing_abs_c; auto.
+
+  apply typing_c_rename with (x:=x); auto.
+
+Qed.
+
+
+
+Lemma typing_c_to_typing : forall E e T,
+
+  typing_c E e T -> typing E e T.
+
+Proof.
+
+
+
+  intros E e T H.
+
+  induction H; eauto.
+
+  Case "typing_abs_c".
+
+    pick fresh x.
+
+    apply typing_abs with (x:=x); auto.
+
+Qed.
+
+
+
+Lemma value_to_value_c : forall e,
+
+  value e -> value_c e.
+
+Proof.
+
+  intros e H.
+
+  induction H; eauto using lc_to_lc_c.
+
+Qed.
+
+
+
+Lemma value_c_to_value : forall e,
+
+  value_c e -> value e.
+
+Proof.
+
+  
+
+  intros e H.
+
+  induction H; eauto using lc_c_to_lc.
+
+Qed.
+
+
+
+Lemma eval_to_eval_c : forall e e',
+
+  eval e e' -> eval_c e e'.
+
+Proof.
+
+  intros e e' H.
+
+  induction H; eauto using lc_to_lc_c, value_to_value_c.
+
+Qed.
+
+
+
+Lemma eval_c_to_eval : forall e e',
+
+  eval_c e e' -> eval e e'.
+
+Proof.
+
+  
+
+  intros e e' H.
+
+  induction H; eauto using lc_c_to_lc, value_c_to_value.
+
+Qed.
+
+
+
+Lemma preservation : forall E e e' T,
+
+  typing E e T ->
+
+  eval e e' ->
+
+  typing E e' T.
+
+Proof.
+
+  intros E e e' T HT HE.
+
+  apply typing_c_to_typing.
+
+  eapply preservation_c; eauto.
+
+  eapply typing_to_typing_c. eauto.
+
+  apply eval_to_eval_c. auto.
+
+Qed.
+
+
+
+Lemma progress : forall e T,
+
+  typing nil e T ->
+
+  value e \/ exists e', eval e e'.
+
+Proof.
+
+  intros e T HT.
+
+  assert (typing_c nil e T).
+
+  eapply typing_to_typing_c; auto.
+
+  destruct (progress_c e T H) as [V | [e'' EV]].
+
+  left. apply value_c_to_value. auto.
+
+  right. exists e''. apply eval_c_to_eval. auto.
+
+Qed.
+
+
+
+Lemma subst_lc : forall (x : atom) u e,
+
+  lc e ->
+
+  lc u ->
+
+  lc ([x ~> u] e).
+
+Proof.
+
+eauto using lc_c_to_lc, subst_lc_c, lc_to_lc_c.
+
+Qed.
+
+
+
+Lemma open_abs : forall e u T1,
+
+  lc (abs T1 e) ->
+
+  lc u ->
+
+  lc (open e u).
+
+Proof.
+
+  
+
+  intros e u T1 H J.
+
+  inversion H; subst; auto.
+
+  rewrite (subst_intro x); auto.
+
+  apply subst_lc; auto.
+
+Qed.
+
+
+
+Lemma value_to_lc : forall e,
+
+  value e -> lc e.
+
+Proof.
+
+  
+
+  intros e H. induction H; auto.
+
+Qed.
+
+
+
+Lemma eval_to_lc : forall e1 e2,
+
+  eval e1 e2 -> lc e1 /\ lc e2.
+
+Proof.
+
+  
+
+  intros e1 e2 H. induction H; try inversion IHeval; split; eauto using value_to_lc, open_abs.
+
+Qed.
+
+
+
+Lemma typing_to_lc : forall E e T,
+
+  typing E e T -> lc e.
+
+Proof.
+
+  
+
+  intros E e T H. induction H; eauto.
+
+Qed.
+
+
+
+Lemma eq_typ_dec : forall (T T' : typ),
+
+  { T = T' } + { T <> T' }.
+
+Proof.
+
+  decide equality.
+
+Qed.
+
+
+
+Lemma typing_c_unique : forall E e T1 T2,
+
+  typing_c E e T1 ->
+
+  typing_c E e T2 ->
+
+  T1 = T2.
+
+Proof.
+
+
+
+  intros E e T1 T2 Typ1 Typ2.
+
+  generalize dependent T2.
+
+  induction Typ1; intros T' Typ'; inversion Typ'; subst; eauto.
+
+  Case "typing_var_c".
+
+    eapply binds_unique; eauto.
+
+  Case "typing_abs_c".
+
+    f_equal; eauto.
+
+    pick fresh x.
+
+    apply (H0 x); eauto.
+
+  Case "typing_app_c".
+
+    assert (typ_arrow T1 T2 = typ_arrow T0 T') by auto.
+
+    inversion H; eauto.
+
+Qed.
+
+
+
+Definition decidable (P : Prop) := (P \/ ~ P).
+
+
+
+Lemma typing_c_decidable : forall E e,
+
+  lc_c e -> uniq E -> decidable (exists T, typing_c E e T).
+
+Proof.
+
+  intros E e LC Uniq.
+
+  generalize dependent E.
+
+  induction LC; intros E Uniq.
+
+  Case "typing_var_c".
+
+    destruct (@binds_lookup_dec _ x E) as [[T H] | H].
+
+      SCase "variable is in environment".
+
+      left; eauto.
+
+      SCase "variable not in environment".
+
+      right.  intros [T J]. inversion J; subst; eauto.
+
+  Case "typing_abs_c".
+
+    
+        pick fresh x.
+
+    assert (Fr' : x `notin` L) by auto.
+
+    destruct (H0 x Fr' ((x ~ T) ++ E)) as [[S J] | J]; eauto.
+
+    SCase "body typeable".
+
+      left.
+
+      exists (typ_arrow T S).
+
+      
+
+      pick fresh z and apply typing_abs_c.
+
+      apply typing_c_rename with (x := x); eauto.
+
+    SCase "body not typeable".
+
+      right.
+
+      intros [S K].
+
+      inversion K; subst.
+
+      apply J.
+
+      exists T2.
+
+      pick fresh z.
+
+      apply typing_c_rename with (x := z); eauto.
+
+  Case "typing_app_c".
+
+    destruct (IHLC1 E) as [[T H] | H]; eauto.
+
+    SCase "function typeable".
+
+      destruct (IHLC2 E) as [[S J] | J]; eauto.
+
+      SSCase "argument typeable".
+
+        destruct T.
+
+          SSSCase "function has typ_base".
+
+            right.
+
+            intros [S' J'].
+
+            inversion J'; subst.
+
+            assert (K : typ_base = typ_arrow T1 S'); eauto using typing_c_unique.
+
+            inversion K.
+
+          SSSCase "typ_arrow".
+
+            destruct (eq_typ_dec T1 S).
+
+              subst. left; eauto.
+
+              right.
+
+                intros [S' J'].
+
+                inversion J'; subst.
+
+                assert (T0 = S); eauto using typing_c_unique.
+
+                assert (typ_arrow T1 T2 = typ_arrow T0 S'); eauto using typing_c_unique.
+
+                inversion H1; subst; eauto using typing_c_unique.
+
+      SSCase "argument not typeable".
+
+        right. intros [S' J']. inversion J'; subst; eauto.
+
+    SCase "function not typeable".
+
+      right. intros [S' J']. inversion J'; subst; eauto.
+
+Qed.
+
+
+
+Lemma typing_weakening_strengthened :  forall E F G e T,
+
+  typing (G ++ E) e T ->
+
+  uniq (G ++ F ++ E) ->
+
+  typing (G ++ F ++ E) e T.
+
+Proof.
+
+  intros E F G e T H.
+
+  remember (G ++ E) as E'.
+
+  generalize dependent G.
+
+  induction H; intros G Eq Ok; subst.
+
+  Case "typing_var".
+
+    apply typing_var.
+
+      apply Ok.
+
+      apply binds_weaken. apply H0.
+
+  Case "typing_abs".
+
+        apply typing_abs with (x:=x). auto.
+
+Admitted.
+

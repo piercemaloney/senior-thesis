@@ -1,0 +1,929 @@
+From mathcomp.ssreflect
+
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+
+From mathcomp
+
+Require Import path.
+
+Require Import Eqdep.
+
+Require Import Relation_Operators.
+
+From fcsl
+
+Require Import pred prelude ordtype finmap pcm unionmap heap.
+
+From DiSeL
+
+Require Import Freshness State EqTypeX DepMaps.
+(* Freshness:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+From fcsl
+Require Import pred prelude ordtype finmap pcm unionmap.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Section Keys.
+Variables (K : ordType) (V : Type) (U : union_map_class K V).
+Implicit Types (k : K) (v : V) (f : U).
+
+Lemma keys_last_mono f1 f2 k :
+        path oleq k (dom f1) ->
+        path oleq k (dom f2) ->
+        (forall x, x \in dom f1 -> x \in dom f2) ->
+        oleq (last k (dom f1)) (last k (dom f2)).
+
+End Keys.
+
+Section FreshLastKey.
+Variable V : Type.
+Implicit Type f : union_map [ordType of nat] V.
+
+Definition last_key f := last 0 (dom f).
+
+Lemma last_key0 : last_key Unit = 0.
+
+Lemma last_key_dom f : valid f -> last_key f \notin dom f -> f = Unit.
+
+Lemma dom_last_key f :  valid f -> ~~ empb f -> last_key f \in dom f.
+
+Lemma last_key_max f x : x \in dom f -> x <= last_key f.
+
+Lemma max_key_last f x :
+        x \in dom f -> {in dom f, forall y, y <= x} -> last_key f = x.
+
+Lemma last_keyPt (x : nat) v : last_key (x \\-> v) = x.
+
+Lemma hist_path f : path oleq 0 (dom f).
+
+Lemma last_key_mono f1 f2 :
+        {subset dom f1 <= dom f2} -> last_key f1 <= last_key f2.
+
+Lemma last_keyfUn f1 f2 :
+        valid (f1 \+ f2) -> last_key f1 <= last_key (f1 \+ f2).
+
+Lemma last_keyUnf f1 f2 :
+        valid (f1 \+ f2) -> last_key f2 <= last_key (f1 \+ f2).
+
+Definition fresh f := (last_key f).+1.
+
+Lemma dom_ordfresh f x : x \in dom f -> x < fresh f.
+
+Lemma dom_freshn f n : fresh f + n \notin dom f.
+
+Lemma dom_fresh f : fresh f \notin dom f.
+
+Lemma valid_fresh f v : valid (f \+ fresh f \\-> v) = valid f.
+
+Lemma valid_fresh' f v i w :
+  valid (f \+ i \\-> w) ->
+  valid (f \+ fresh (f \+ i \\-> w) \\-> v).
+
+Lemma last_fresh f v : valid f -> last_key (f \+ fresh f \\-> v) = fresh f.
+
+End FreshLastKey. *)
+(* State:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+From fcsl
+Require Import pred prelude ordtype finmap pcm unionmap heap.
+From DiSeL
+Require Import Freshness DepMaps EqTypeX.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Section TaggedMessages. 
+
+  Structure TaggedMessage :=
+    TMsg {
+        tag: nat;
+                tms_cont :> seq nat          
+      }.
+
+End TaggedMessages.
+
+Section Shared.
+
+  Definition Label := [ordType of nat].
+
+  Structure msg (mtype : Type) :=
+    Msg {content  : mtype;
+         from     : nat;
+         to       : nat;
+         active   : bool }.
+
+  Definition mid := [ordType of nat].
+
+  Definition soup : Type :=
+    union_map mid (msg (TaggedMessage)).
+
+  Variables (s: soup) (V: valid s).
+
+  Definition post_msg m : soup * mid :=
+    let: f := fresh s in (s \+ f \\-> m, f).
+
+  Lemma post_valid m :  valid (post_msg m).1.
+
+  Lemma post_fresh m : (post_msg m).2 \notin dom s.
+
+  Definition mark_msg T (m : msg T) : msg T :=
+    Msg (content m) (from m) (to m) false.
+
+  Definition consume_msg (s : soup) (id : mid) : soup :=
+    let: mr := find id s in
+    if mr is Some m then upd id (mark_msg m) s else s.
+
+  Definition is_active (id : mid) :=
+    exists m, find id s = Some m /\ active m.
+
+  Definition is_consumed (id : mid) :=
+    exists m, find id s = Some m /\ ~~ active m.
+
+  Lemma find_consume s' (id: mid) m:
+    valid s' -> find id s' = Some m ->
+    find id (consume_msg s' id) = Some (mark_msg m).
+
+  Lemma find_mark m s' msg :
+    valid s' -> find m (consume_msg s' m) = Some msg ->
+    exists msg', find m s' = Some msg' /\ msg = mark_msg msg'.
+
+  Lemma mark_other m m' s' :
+    valid s' -> m' == m = false -> find m' (consume_msg s' m) = find m' s'.
+
+  Lemma consume_valid s' m : valid s' -> valid (consume_msg s' m).
+
+  Lemma consumeUn (s': soup) (i : mid) mm
+        (j : mid) : valid (s' \+ i \\-> mm) ->
+    consume_msg (s' \+ i \\-> mm) j = 
+    if i == j then s' \+ i \\-> mark_msg mm
+    else (consume_msg s' j) \+ (i \\-> mm).
+
+  Notation "'{{' m 'in' s 'at' id '}}'" := (find id s = Some m).
+  Notation "'{{' m 'in' s '}}'" := (exists id, {{m in s at id}}).
+
+End Shared.
+
+Section Local.
+
+  Variable U : Type.
+
+  Definition nid := nat.
+
+  Definition lstate_type := union_map [ordType of nid] U.
+
+End Local.
+
+Section Statelets.
+
+  Structure dstatelet  :=
+    DStatelet {
+                dstate     : lstate_type heap;
+        dsoup      : soup
+    }.
+
+  Fixpoint empty_lstate (ns : seq nid) :=
+    if ns is n :: ns'
+    then n \\-> Heap.empty \+ (empty_lstate ns')
+    else  Unit.
+    
+  Definition empty_dstatelet : dstatelet :=
+    @DStatelet (empty_lstate [::]) Unit.
+
+  Lemma valid_mt_soup : valid (dsoup empty_dstatelet).
+
+  Lemma valid_mt_state  : valid (dstate empty_dstatelet).
+
+  Lemma mt_nodes : dom (dstate empty_dstatelet) =i [::].
+
+End Statelets.
+
+Module StateGetters.
+Section StateGetters.
+
+Definition state := union_map Label dstatelet.
+
+Definition getStatelet (s: state) (i : Label) : dstatelet :=
+  match find i s with
+  | Some d => d
+  | None => empty_dstatelet
+  end.
+
+End StateGetters.
+End StateGetters.
+
+Export StateGetters. *)
+(* EqTypeX:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Module EqualityX.
+
+Definition axiom T (e : rel T) := forall x y, reflect (x = y) (e x y).
+
+Structure mixin_of T := Mixin {op : rel T; _ : axiom op}.
+Notation class_of := mixin_of (only parsing).
+
+Section ClassDef.
+
+Structure type := Pack {sort; _ : class_of sort; _ : Type}.
+Local Coercion sort : type >-> Sortclass.
+Variables (T : Type) (cT : type).
+
+Definition class := let: Pack _ c _ := cT return class_of cT in c.
+
+Definition pack c := @Pack T c T.
+Definition clone := fun c & cT -> T & phant_id (pack c) cT => pack c.
+
+End ClassDef.
+
+Module Exports.
+Coercion sort : type >-> Sortclass.
+Notation eqTypeX := type.
+Notation EqMixinX := Mixin.
+Notation EqTypeX T m := (@pack T m).
+End Exports.
+
+End EqualityX.
+Export EqualityX.Exports.
+
+Section EqualityConversion.
+
+Variable U: eqTypeX.
+Definition eq_opX T := EqualityX.op (EqualityX.class T).
+
+Lemma eqxP : Equality.axiom (@eq_opX U).
+
+Canonical eqMixinX := EqMixin eqxP.
+Canonical eqTypeX' := EqType U eqMixinX.                                   
+
+End EqualityConversion. *)
+(* DepMaps:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+From fcsl
+Require Import pred prelude ordtype finmap pcm unionmap heap.
+From DiSeL
+Require Import Freshness EqTypeX.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Module DepMaps.
+
+Section DepMaps.
+
+Definition Label := [ordType of nat].
+
+Variable V : Type.
+Variable labF: V -> Label.
+
+Definition dmDom (u : union_map Label V) : bool :=
+    all (fun l => if find l u is Some p then (labF p) == l else false) (dom u).
+
+Record depmap := DepMap {
+   dmap : union_map Label V;
+   pf   : dmDom dmap;
+}.
+
+Section PCMOps.
+
+Variable dm : depmap.
+
+Lemma dmDom_unit : dmDom Unit.
+
+Definition unit := DepMap dmDom_unit.
+
+End PCMOps.
+
+Section DJoin.
+
+Variables (dm1 dm2 : depmap). 
+
+Lemma dmDom_join um1 um2:
+  dmDom um1 -> dmDom um2 -> dmDom (um1 \+ um2).
+
+Definition join : depmap := DepMap (dmDom_join (@pf dm1) (@pf dm2)).
+
+Definition valid (dm : depmap) := valid (dmap dm).
+
+End DJoin.
+
+End DepMaps.
+
+Section PCMLaws.
+
+Variables (V : Type) (labF: V -> [ordType of nat]).
+Implicit Type f : depmap labF.
+
+Local Notation "f1 \+ f2" := (join f1 f2)
+                               (at level 43, left associativity).
+
+Local Notation unit := (unit labF).
+
+Lemma joinC f1 f2 : f1 \+ f2 = f2 \+ f1.
+
+Lemma joinCA f1 f2 f3 : f1 \+ (f2 \+ f3) = f2 \+ (f1 \+ f3).
+
+Lemma joinA f1 f2 f3 : f1 \+ (f2 \+ f3) = (f1 \+ f2) \+ f3.
+
+Lemma validL f1 f2 : valid (f1 \+ f2) -> valid f1.
+
+Lemma unitL f : unit \+ f = f.
+
+Lemma validU : valid unit.
+
+End PCMLaws.
+
+Module Exports.
+Section Exports.
+Variable V : Type.
+Variable labF: V -> Label.
+Definition depmap := depmap.
+Definition DepMap := DepMap.
+
+Lemma dep_unit (d : depmap labF) : dmap d = Unit -> d = unit labF.
+
+Coercion dmap := dmap.
+Definition ddom (d : depmap labF) := dom (dmap d).
+Definition dfind x (d : depmap labF) := find x (dmap d).
+
+Definition depmap_classPCMMixin :=
+  PCMMixin (@joinC V labF) (@joinA V labF) (@unitL V labF) (@validL V labF) (validU labF).
+
+Canonical depmap_classPCM := Eval hnf in PCM (depmap labF) depmap_classPCMMixin.
+
+End Exports.
+End Exports.
+
+End DepMaps.
+
+Export DepMaps.Exports. *)
+
+Set Implicit Arguments.
+
+Unset Strict Implicit.
+
+Unset Printing Implicit Defensive.
+
+
+
+Section SoupPredicates.
+
+
+
+Definition msg_in_soup (from to : nid) (criterion : nat -> seq nat -> bool)
+
+           (d : soup) : Prop :=
+
+  (exists! i, exists t c,
+
+        find i d = Some (Msg (TMsg t c) from to true)) /\
+
+  forall i t c,
+
+    find i d = Some (Msg (TMsg t c) from to true) ->
+
+    criterion t c.
+
+
+
+Definition msg_spec from to tg cnt :=
+
+  msg_in_soup from to (fun x y => (x == tg) && (y == cnt)).
+
+
+
+Definition no_msg_from (from : nid) (d : soup) : Prop :=
+
+  forall i to tms b, find i d = Some (Msg tms from to b) -> b = false.
+
+
+
+Definition no_msg_to (to : nid) (d : soup) : Prop :=
+
+  forall i from tms b, find i d = Some (Msg tms from to b) -> b = false.
+
+
+
+Lemma no_msg_from_post (from from' to : nid) (s : soup) tms :
+
+  valid s ->
+
+  no_msg_from from s -> from' != from ->
+
+  no_msg_from from (post_msg s (Msg tms from' to true)).1.
+
+Proof.
+
+move=>V H/negbTE N i to' tms' b/=.
+
+rewrite findUnR ?valid_fresh?V//.
+
+case: ifP; last by move=>_/H.
+
+rewrite domPt inE/==>/eqP Z; subst i.
+
+rewrite findPt/=; case=>Z1 Z2 Z3; subst to' tms' from'.
+
+by rewrite eqxx in N.
+
+Qed.
+
+
+
+Lemma no_msg_from_consume from from' to s i m :
+
+  find i s = Some {| content := m; from := from'; to := to; active := true |} ->
+
+  valid s ->
+
+  no_msg_from from s ->
+
+  no_msg_from from (consume_msg s i).
+
+Proof.
+
+move=>F V NM j to' tms b.
+
+case H: (j == i).
+
+- move /eqP in H. subst j.
+
+  rewrite (find_consume _ F) //.
+
+  by case.
+
+rewrite mark_other//.
+
+exact: NM.
+
+Qed.
+
+
+
+Definition no_msg_from_to from to (d : soup) :=
+
+  forall i tms b,
+
+    find i d = Some (Msg tms from to b) -> b = false.
+
+
+
+Lemma no_msg_from_to_consume from to s i:
+
+  valid s ->
+
+  no_msg_from_to from to s ->
+
+  no_msg_from_to from to (consume_msg s i).
+
+Proof.
+
+move=>V H m tms b .
+
+rewrite /consume_msg; case: (find i s); last by move=>F; apply: (H m tms b F).
+
+move=>ms; case B: (m == i).
+
+- by move/eqP: B=>B; subst m; rewrite findU eqxx/= V; case. 
+
+by rewrite findU B/==>/(H m tms b).
+
+Qed.
+
+
+
+Lemma msg_spec_consume s from to tg cnt cnt' i :
+
+  valid s -> 
+
+  find i s = Some {| content := TMsg tg cnt';
+
+                     from := from; to := to; active := true |} ->
+
+  msg_spec from to tg cnt s ->
+
+  no_msg_from_to from to (consume_msg s i).
+
+Proof.
+
+move=>V E[][j][[t][c]]F H1 H2. 
+
+move=>m tms b; rewrite /consume_msg; move: (find_some E).
+
+case: dom_find=>// msg->_ _; case B: (m == i).
+
+- by move/eqP: B=>B; subst m; rewrite findU eqxx/= V; case. 
+
+have X: j = i by  apply: (H1 i); exists tg, cnt'.
+
+subst j; rewrite findU B/=; case: b=>// E'.
+
+suff X: i = m by subst i; rewrite eqxx in B.
+
+by apply: (H1 m); case: tms E'=>t' c' E'; exists t', c'. 
+
+Qed.
+
+
+
+Lemma msg_specE_consume s pt from to to' tg cnt i m :
+
+  valid s ->
+
+  find i s =
+
+  Some {| content := m; from := from; to := to'; active := true |} ->
+
+  (pt != from) || (to != to') ->
+
+  msg_spec pt to tg cnt s ->
+
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Proof.
+
+  move=>V E N[][j][[t][c]]F H1 H2.
+
+  have Nij: i != j.
+
+  - case H: (i == j)=>//.
+
+    move/eqP in H. subst i.
+
+    move: E. rewrite F. case. intros. subst.
+
+    move: N=>/orP[]/eqP; congruence.
+
+  split.
+
+  - exists j.
+
+    split.
+
+    + exists t, c. rewrite mark_other// eq_sym. by apply /negbTE.
+
+    + move => x [t'][c'].
+
+      case H: (x == i).
+
+      * move /eqP in H. subst x.
+
+        by rewrite (find_consume _ E)//.
+
+      * rewrite mark_other//.
+
+        eauto.
+
+  - move=>k t' c'.
+
+    case H: (k == i).
+
+    + move /eqP in H. subst.
+
+      rewrite (find_consume _ E) //.
+
+    + rewrite mark_other//.
+
+      eauto.
+
+Qed.
+
+
+
+Lemma msg_specE_consume1 s pt from to to' tg cnt i m :
+
+  valid s ->
+
+  find i s =
+
+  Some {| content := m; from := from; to := to'; active := true |} ->
+
+  (pt != from) ->
+
+  msg_spec pt to tg cnt s ->
+
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Proof.
+
+  intros.
+
+  eapply msg_specE_consume; eauto.
+
+  apply /orP; auto.
+
+Qed.
+
+
+
+Lemma msg_specE_consume2 s pt from to to' tg cnt i m :
+
+  valid s ->
+
+  find i s =
+
+  Some {| content := m; from := from; to := to'; active := true |} ->
+
+  (to != to') ->
+
+  msg_spec pt to tg cnt s ->
+
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Proof.
+
+  intros.
+
+  eapply msg_specE_consume; eauto.
+
+  apply /orP; auto.
+
+Qed.
+
+
+
+Definition no_msg_from_imp from to d :
+
+  no_msg_from from d -> no_msg_from_to from to d.
+
+Proof. by move=>H i; move: (H i to). Qed.
+
+
+
+Lemma no_msg_from_toE from to s tms to':
+
+  valid s -> 
+
+  no_msg_from_to from to s -> to == to' = false ->
+
+  no_msg_from_to from to (post_msg s (Msg tms from to' true)).1.
+
+Proof.
+
+move=>V H X/= i m b; rewrite findUnR ?valid_fresh?V//.
+
+case: ifP; last by move=>_/H.
+
+rewrite domPt inE/==>/eqP Z; subst i.
+
+by rewrite findPt/=; case=>_ Z; subst to'; rewrite eqxx in X.
+
+Qed.
+
+
+
+Lemma no_msg_from_toE' from to s tms from' to':
+
+  valid s -> 
+
+  no_msg_from_to from to s -> from' == from = false ->
+
+  no_msg_from_to from to (post_msg s (Msg tms from' to' true)).1.
+
+Proof.
+
+move=>V H X/= i m b; rewrite findUnR ?valid_fresh?V//.
+
+case: ifP; last by move=>_/H.
+
+rewrite domPt inE/==>/eqP Z; subst i.
+
+by rewrite findPt/=; case=>Z' Z; subst from'; rewrite eqxx in X.
+
+Qed.
+
+
+
+Lemma msg_specE s from to tg cnt :
+
+  valid s ->
+
+  no_msg_from_to from to s ->
+
+  msg_spec from to tg cnt (post_msg s (Msg (TMsg tg cnt) from to true)).1.
+
+Proof.
+
+move=>V H; split=>/=; last first.
+
+- move=>i t c; rewrite findUnR ?valid_fresh?V//.
+
+  case: ifP; last by move=>_/H.
+
+  rewrite domPt inE/==>/eqP Z; subst i.
+
+  by rewrite findPt/=; case=>E Z; subst c t; rewrite !eqxx.
+
+exists (fresh s); split=>[|z[t][c]].
+
+- exists tg, cnt; rewrite findUnR ?valid_fresh?V//.
+
+  by rewrite domPt inE eqxx/=findPt/=.
+
+rewrite findUnR ?valid_fresh?V// domPt !inE/=.
+
+by case: ifP=>[|_/H]//; move/eqP=>->.  
+
+Qed.
+
+
+
+Lemma msg_specE' s from to to' tg cnt tms :
+
+  valid s -> to == to' = false ->
+
+  msg_spec from to tg cnt s ->
+
+  msg_spec from to tg cnt (post_msg s (Msg tms from to' true)).1.
+
+Proof.
+
+move=>V N H; split=>//=; last first.
+
+- move=>i t c; rewrite findUnR ?valid_fresh?V//.
+
+  rewrite domPt inE/=; case:ifP; last by move=>_; move/(proj2 H).
+
+  move/eqP=>Z; subst i; rewrite findPt/=; case=>_ Z.
+
+  by subst to'; rewrite eqxx in N.   
+
+case: (H)=>H' _; case: H'=>i; case=>[[t]][c] U1 U2.
+
+exists i; split=>//.
+
+- exists t, c; rewrite findUnR ?valid_fresh?V//.
+
+  rewrite domPt inE/=; case:ifP=>//.
+
+  move/eqP=>Z; subst i.
+
+  by move/find_some: U1=>E; move:(dom_fresh s); rewrite E.
+
+move=>z[t'][c']; rewrite findUnR ?valid_fresh?V//.
+
+rewrite domPt inE/=; case:ifP=>//; last first.
+
+- by move=>_ G; apply: (U2 z); exists t', c'. 
+
+move/eqP=>Z; subst z.
+
+rewrite findPt/=; case=>Z1 Z2. 
+
+by subst to'; rewrite eqxx in N.
+
+Qed.
+
+
+
+Lemma msg_specE'' s from from' to to' tg cnt tms :
+
+  valid s -> from == from' = false ->
+
+  msg_spec from to tg cnt s ->
+
+  msg_spec from to tg cnt (post_msg s (Msg tms from' to' true)).1.
+
+Proof.
+
+move=>V N H; split=>//=; last first.
+
+- move=>i t c; rewrite findUnR ?valid_fresh?V//.
+
+  rewrite domPt inE/=; case:ifP; last by move=>_; move/(proj2 H).
+
+  move/eqP=>Z; subst i; rewrite findPt/=; case=>_ Z.
+
+  by subst from'; rewrite eqxx in N.   
+
+case: (H)=>H' _; case: H'=>i; case=>[[t]][c] U1 U2.
+
+exists i; split=>//.
+
+- exists t, c; rewrite findUnR ?valid_fresh?V//.
+
+  rewrite domPt inE/=; case:ifP=>//.
+
+  move/eqP=>Z; subst i.
+
+  by move/find_some: U1=>E; move:(dom_fresh s); rewrite E.
+
+move=>z[t'][c']; rewrite findUnR ?valid_fresh?V//.
+
+rewrite domPt inE/=; case:ifP=>//; last first.
+
+- by move=>_ G; apply: (U2 z); exists t', c'. 
+
+move/eqP=>Z; subst z.
+
+rewrite findPt/=; case=>Z1 Z2. 
+
+by subst from'; rewrite eqxx in N.
+
+Qed.
+
+
+
+End SoupPredicates.
+
+
+
+Lemma has_all_true xs (ps : seq nid) x:
+
+  perm_eq [seq i.1 | i <- xs] ps ->
+
+  all id [seq i.2 | i <- xs] ->
+
+  x \in ps -> (x, true) \in xs.
+
+Proof.
+
+move=>P A D; move: (perm_eq_mem P x).
+
+rewrite D=>/mapP[z] I Z; subst x.
+
+rewrite all_map/= in A; move/allP: A=>/(_ z I)/=<-.
+
+by rewrite -surjective_pairing.
+
+Qed.
+
+
+
+Lemma has_some_false (xs : seq (nid * bool)) ps x:
+
+  perm_eq [seq i.1 | i <- xs] ps ->
+
+  x \in ps -> exists b, (x, b) \in xs.
+
+Proof.
+
+move=>P D; move: (perm_eq_mem P x).
+
+rewrite D=>/mapP[z] I Z; subst x.
+
+by exists z.2; rewrite -surjective_pairing.
+
+Qed.
+
+
+
+Definition no_msg_from_to' from to
+
+           (criterion : nat -> seq nat -> bool) (d : soup) :=
+
+  forall i t c,
+
+    find i d = Some (Msg (TMsg t c) from to true) ->
+
+    ~~criterion t c.
+
+
+
+Lemma no_msg_from_to_consume' from to cond s i:
+
+  valid s ->
+
+  no_msg_from_to' from to cond s ->
+
+  no_msg_from_to' from to cond (consume_msg s i).
+
+Proof.
+
+move=>V H m t c .
+
+rewrite /consume_msg; case: (find i s); last by move=>F; apply: (H m t c F).
+
+move=>ms; case B: (m == i).
+
+- by move/eqP: B=>B; subst m; rewrite findU eqxx/= V.
+
+by rewrite findU B/==>/(H m t c).
+
+Qed.
+
+
+

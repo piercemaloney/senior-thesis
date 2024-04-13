@@ -1,0 +1,1263 @@
+Require Import Arith.
+
+Require Import fol.
+(* fol:
+Require Import Coq.Lists.List.
+Require Import Ensembles.
+Require Import Peano_dec.
+Require Import Eqdep_dec.
+Require Import Arith.
+Require Import Compare_dec.
+Require Import Max.
+Require Import misc.
+
+Unset Standard Proposition Elimination Names.
+
+Record Language : Type := language
+  {Relations : Set; Functions : Set; arity : Relations + Functions -> nat}.
+
+Section First_Order_Logic.
+
+Variable L : Language.
+
+Inductive Term : Set :=
+  | var : nat -> Term
+  | apply : forall f : Functions L, Terms (arity L (inr _ f)) -> Term
+with Terms : nat -> Set :=
+  | Tnil : Terms 0
+  | Tcons : forall n : nat, Term -> Terms n -> Terms (S n).
+ 
+Scheme Term_Terms_ind := Induction for Term Sort Prop
+  with Terms_Term_ind := Induction for Terms Sort Prop.
+
+Scheme Term_Terms_rec := Minimality for Term Sort Set
+  with Terms_Term_rec := Minimality for Terms Sort Set.
+
+Scheme Term_Terms_rec_full := Induction for Term
+  Sort Set
+  with Terms_Term_rec_full := Induction for Terms Sort Set.
+
+Inductive Formula : Set :=
+  | equal : Term -> Term -> Formula
+  | atomic : forall r : Relations L, Terms (arity L (inl _ r)) -> Formula
+  | impH : Formula -> Formula -> Formula
+  | notH : Formula -> Formula
+  | forallH : nat -> Formula -> Formula.
+
+Definition Formulas := list Formula.
+
+Definition System := Ensemble Formula.
+Definition mem := Ensembles.In.
+
+Section Fol_Full.
+
+Definition orH (A B : Formula) := impH (notH A) B.
+
+Definition andH (A B : Formula) := notH (orH (notH A) (notH B)).
+
+Definition iffH (A B : Formula) := andH (impH A B) (impH B A).
+
+Definition existH (x : nat) (A : Formula) := notH (forallH x (notH A)).
+
+End Fol_Full.
+
+Section Fol_Plus.
+
+Definition ifThenElseH (A B C : Formula) := andH (impH A B) (impH (notH A) C).
+
+End Fol_Plus.
+
+Section Formula_Decideability.
+
+Definition language_decideable :=
+  ((forall x y : Functions L, {x = y} + {x <> y}) *
+   (forall x y : Relations L, {x = y} + {x <> y}))%type.
+
+Hypothesis language_dec : language_decideable.
+
+Let nilTermsHelp : forall n : nat, n = 0 -> Terms n.
+
+Lemma nilTerms : forall x : Terms 0, Tnil = x.
+
+Let consTermsHelp : forall n : nat, Terms n -> Set.
+
+Lemma consTerms :
+ forall (n : nat) (x : Terms (S n)),
+ {t : Term * Terms n | Tcons n (fst t) (snd t) = x}.
+
+Lemma term_dec : forall x y : Term, {x = y} + {x <> y}.
+
+Lemma terms_dec : forall (n : nat) (x y : Terms n), {x = y} + {x <> y}.
+
+Lemma formula_dec : forall x y : Formula, {x = y} + {x <> y}.
+
+End Formula_Decideability.
+
+Section Formula_Depth_Induction.
+
+Fixpoint depth (A : Formula) : nat :=
+  match A with
+  | equal _ _ => 0
+  | atomic _ _ => 0
+  | impH A B => S (max (depth A) (depth B))
+  | notH A => S (depth A)
+  | forallH _ A => S (depth A)
+  end.
+
+Definition lt_depth (A B : Formula) : Prop := depth A < depth B.
+
+Lemma depthImp1 : forall A B : Formula, lt_depth A (impH A B).
+
+Lemma depthImp2 : forall A B : Formula, lt_depth B (impH A B).
+
+Lemma depthNot : forall A : Formula, lt_depth A (notH A).
+
+Lemma depthForall : forall (A : Formula) (v : nat), lt_depth A (forallH v A).
+
+Lemma eqDepth :
+ forall A B C : Formula, depth B = depth A -> lt_depth B C -> lt_depth A C.
+
+Definition Formula_depth_rec_rec :
+  forall P : Formula -> Set,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall (n : nat) (b : Formula), depth b <= n -> P b.
+
+Definition Formula_depth_rec (P : Formula -> Set)
+  (rec : forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a)
+  (a : Formula) : P a :=
+  Formula_depth_rec_rec P rec (depth a) a (le_n (depth a)).
+
+Lemma Formula_depth_rec_indep :
+ forall (Q P : Formula -> Set)
+   (rec : forall a : Formula,
+          (forall b : Formula, lt_depth b a -> Q b -> P b) -> Q a -> P a),
+ (forall (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+  (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+  forall q : Q a, rec a z1 q = rec a z2 q) ->
+ forall (a : Formula) (q : Q a),
+ Formula_depth_rec (fun x : Formula => Q x -> P x) rec a q =
+ rec a
+   (fun (b : Formula) _ =>
+    Formula_depth_rec (fun x : Formula => Q x -> P x) rec b) q.
+
+Definition Formula_depth_rec2rec (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) :
+  (forall b : Formula, lt_depth b a -> P b) -> P a :=
+  match a return ((forall b : Formula, lt_depth b a -> P b) -> P a) with
+  | equal t s => fun _ => f1 t s
+  | atomic r t => fun _ => f2 r t
+  | impH f g =>
+      fun hyp => f3 f (hyp f (depthImp1 f g)) g (hyp g (depthImp2 f g))
+  | notH f => fun hyp => f4 f (hyp f (depthNot f))
+  | forallH n f => fun hyp => f5 n f hyp
+  end.
+
+Definition Formula_depth_rec2 (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) : P a :=
+  Formula_depth_rec P (Formula_depth_rec2rec P f1 f2 f3 f4 f5) a.
+
+Remark Formula_depth_rec2rec_nice :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula)
+   (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+ (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+ forall q : Q a,
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z1 q =
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z2 q.
+
+Lemma Formula_depth_rec2_imp :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a b : Formula) (q : Q (impH a b)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 
+   (impH a b) q =
+ f3 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) b
+   (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b) q.
+
+Lemma Formula_depth_rec2_not :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula) (q : Q (notH a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 (notH a) q =
+ f4 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) q.
+
+Lemma Formula_depth_rec2_forall :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (v : nat) (a : Formula) (q : Q (forallH v a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5
+   (forallH v a) q =
+ f5 v a
+   (fun (b : Formula) _ (q : Q b) =>
+    Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b q) q.
+
+Definition Formula_depth_ind :
+  forall P : Formula -> Prop,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall a : Formula, P a.
+
+Lemma Formula_depth_ind2 :
+ forall P : Formula -> Prop,
+ (forall t t0 : Term, P (equal t t0)) ->
+ (forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+  P (atomic r t)) ->
+ (forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0)) ->
+ (forall f : Formula, P f -> P (notH f)) ->
+ (forall (v : nat) (a : Formula),
+  (forall b : Formula, lt_depth b (forallH v a) -> P b) -> P (forallH v a)) ->
+ forall f4 : Formula, P f4.
+
+End Formula_Depth_Induction.
+
+End First_Order_Logic. *)
+
+Require Import primRec.
+(* primRec:
+Require Import Arith.
+Require Import Peano_dec.
+Require Import Compare_dec.
+Require Import Coq.Lists.List.
+Require Import Eqdep_dec.
+Require Import extEqualNat.
+Require Vector.
+Require Import misc.
+Require Export Bool.
+Require Export EqNat.
+Require Import Even.
+Require Import Max.
+
+Inductive PrimRec : nat -> Set :=
+  | succFunc : PrimRec 1
+  | zeroFunc : PrimRec 0
+  | projFunc : forall n m : nat, m < n -> PrimRec n
+  | composeFunc :
+      forall (n m : nat) (g : PrimRecs n m) (h : PrimRec m), PrimRec n
+  | primRecFunc :
+      forall (n : nat) (g : PrimRec n) (h : PrimRec (S (S n))), PrimRec (S n)
+with PrimRecs : nat -> nat -> Set :=
+  | PRnil : forall n : nat, PrimRecs n 0
+  | PRcons : forall n m : nat, PrimRec n -> PrimRecs n m -> PrimRecs n (S m).
+
+Scheme PrimRec_PrimRecs_rec := Induction for PrimRec
+  Sort Set
+  with PrimRecs_PrimRec_rec := Induction for PrimRecs 
+  Sort Set.
+
+Scheme PrimRec_PrimRecs_ind := Induction for PrimRec
+  Sort Prop
+  with PrimRecs_PrimRec_ind := Induction for PrimRecs 
+  Sort Prop.
+
+Fixpoint evalConstFunc (n m : nat) {struct n} : naryFunc n :=
+  match n return (naryFunc n) with
+  | O => m
+  | S n' => fun _ => evalConstFunc n' m
+  end.
+
+Fixpoint evalProjFunc (n : nat) : forall m : nat, m < n -> naryFunc n :=
+  match n return (forall m : nat, m < n -> naryFunc n) with
+  | O => fun (m : nat) (l : m < 0) => False_rec _ (lt_n_O _ l)
+  | S n' =>
+      fun (m : nat) (l : m < S n') =>
+      match eq_nat_dec m n' with
+      | left _ => fun a : nat => evalConstFunc _ a
+      | right l1 =>
+          fun _ =>
+          evalProjFunc n' m
+            match le_lt_or_eq _ _ (lt_n_Sm_le _ _ l) with
+            | or_introl l2 => l2
+            | or_intror l2 => False_ind _ (l1 l2)
+            end
+      end
+  end.
+
+Lemma evalProjFuncInd :
+ forall (n m : nat) (p1 p2 : m < n),
+ evalProjFunc n m p1 = evalProjFunc n m p2.
+
+Fixpoint evalList (m : nat) (l : Vector.t nat m) {struct l} :
+ naryFunc m -> nat :=
+  match l in (Vector.t _ m) return (naryFunc m -> nat) with
+  | Vector.nil => fun x : naryFunc 0 => x
+  | Vector.cons a n l' => fun x : naryFunc (S n) => evalList n l' (x a)
+  end.
+
+Fixpoint evalOneParamList (n m a : nat) (l : Vector.t (naryFunc (S n)) m)
+ {struct l} : Vector.t (naryFunc n) m :=
+  match l in (Vector.t _ m) return (Vector.t (naryFunc n) m) with
+  | Vector.nil  => Vector.nil  (naryFunc n)
+  | Vector.cons f m' l' => Vector.cons _ (f a) m' (evalOneParamList n m' a l')
+  end.
+
+Fixpoint evalComposeFunc (n : nat) :
+ forall m : nat, Vector.t (naryFunc n) m -> naryFunc m -> naryFunc n :=
+  match
+    n
+    return
+      (forall m : nat, Vector.t (naryFunc n) m -> naryFunc m -> naryFunc n)
+  with
+  | O => evalList
+  | S n' =>
+      fun (m : nat) (l : Vector.t (naryFunc (S n')) m) 
+        (f : naryFunc m) (a : nat) =>
+      evalComposeFunc n' m (evalOneParamList _ _ a l) f
+  end.
+
+Fixpoint compose2 (n : nat) : naryFunc n -> naryFunc (S n) -> naryFunc n :=
+  match n return (naryFunc n -> naryFunc (S n) -> naryFunc n) with
+  | O => fun (a : nat) (g : nat -> nat) => g a
+  | S n' =>
+      fun (f : naryFunc (S n')) (g : naryFunc (S (S n'))) (a : nat) =>
+      compose2 n' (f a) (fun x : nat => g x a)
+  end.
+
+Fixpoint evalPrimRecFunc (n : nat) (g : naryFunc n) 
+ (h : naryFunc (S (S n))) (a : nat) {struct a} : naryFunc n :=
+  match a with
+  | O => g
+  | S a' => compose2 _ (evalPrimRecFunc n g h a') (h a')
+  end.
+
+Fixpoint evalPrimRec (n : nat) (f : PrimRec n) {struct f} : 
+ naryFunc n :=
+  match f in (PrimRec n) return (naryFunc n) with
+  | succFunc => S
+  | zeroFunc => 0
+  | projFunc n m pf => evalProjFunc n m pf
+  | composeFunc n m l f =>
+      evalComposeFunc n m (evalPrimRecs _ _ l) (evalPrimRec _ f)
+  | primRecFunc n g h =>
+      evalPrimRecFunc n (evalPrimRec _ g) (evalPrimRec _ h)
+  end
+ 
+ with evalPrimRecs (n m : nat) (fs : PrimRecs n m) {struct fs} :
+ Vector.t (naryFunc n) m :=
+  match fs in (PrimRecs n m) return (Vector.t (naryFunc n) m) with
+  | PRnil a => Vector.nil  (naryFunc a)
+  | PRcons a b g gs => Vector.cons _ (evalPrimRec _ g) _ (evalPrimRecs _ _ gs)
+  end.
+
+Definition extEqualVectorGeneral (n m : nat) (l : Vector.t (naryFunc n) m) :
+
+Definition extEqualVector n: forall m (l l' : Vector.t (naryFunc n) m), Prop.
+
+Lemma extEqualVectorRefl :
+ forall (n m : nat) (l : Vector.t (naryFunc n) m), extEqualVector n m l l.
+
+Lemma extEqualOneParamList :
+ forall (n m : nat) (l1 l2 : Vector.t (naryFunc (S n)) m) (c : nat),
+
+Lemma extEqualCompose :
+ forall (n m : nat) (l1 l2 : Vector.t (naryFunc n) m) (f1 f2 : naryFunc m),
+
+Lemma extEqualCompose2 :
+ forall (n : nat) (f1 f2 : naryFunc n),
+ extEqual n f1 f2 ->
+ forall g1 g2 : naryFunc (S n),
+ extEqual (S n) g1 g2 -> extEqual n (compose2 n f1 g1) (compose2 n f2 g2).
+
+Lemma extEqualPrimRec :
+ forall (n : nat) (g1 g2 : naryFunc n) (h1 h2 : naryFunc (S (S n))),
+ extEqual n g1 g2 ->
+ extEqual (S (S n)) h1 h2 ->
+ extEqual (S n) (evalPrimRecFunc n g1 h1) (evalPrimRecFunc n g2 h2).
+
+Definition isPR (n : nat) (f : naryFunc n) : Set :=
+  {p : PrimRec n | extEqual n (evalPrimRec _ p) f}.
+
+Definition isPRrel (n : nat) (R : naryRel n) : Set :=
+  isPR n (charFunction n R).
+
+Lemma succIsPR : isPR 1 S.
+
+Lemma const0_NIsPR : forall n : nat, isPR 0 n.
+
+Lemma const1_NIsPR : forall n : nat, isPR 1 (fun _ => n).
+
+Lemma idIsPR : isPR 1 (fun x : nat => x).
+
+Lemma pi1_2IsPR : isPR 2 (fun a b : nat => a).
+
+Lemma pi2_2IsPR : isPR 2 (fun a b : nat => b).
+
+Lemma pi1_3IsPR : isPR 3 (fun a b c : nat => a).
+
+Lemma pi2_3IsPR : isPR 3 (fun a b c : nat => b).
+
+Lemma pi3_3IsPR : isPR 3 (fun a b c : nat => c).
+
+Lemma pi1_4IsPR : isPR 4 (fun a b c d : nat => a).
+
+Lemma pi2_4IsPR : isPR 4 (fun a b c d : nat => b).
+
+Lemma pi3_4IsPR : isPR 4 (fun a b c d : nat => c).
+
+Lemma pi4_4IsPR : isPR 4 (fun a b c d : nat => d).
+
+Lemma filter01IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun a b : nat => g b).
+
+Lemma filter10IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun a b : nat => g a).
+
+Lemma filter100IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g a).
+
+Lemma filter010IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g b).
+
+Lemma filter001IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun a b c : nat => g c).
+
+Lemma filter011IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g b c).
+
+Lemma filter110IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g a b).
+
+Lemma filter101IsPR :
+ forall g : nat -> nat -> nat, isPR 2 g -> isPR 3 (fun a b c : nat => g a c).
+
+Lemma filter0011IsPR :
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun a b c d : nat => g c d).
+
+Lemma filter1000IsPR :
+ forall g : nat -> nat, isPR 1 g -> isPR 4 (fun a b c d : nat => g a).
+
+Lemma filter1011IsPR :
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 4 (fun a b c d : nat => g a c d).
+
+Lemma filter1100IsPR :
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun a b c d : nat => g a b).
+
+Lemma compose1_1IsPR :
+ forall f : nat -> nat,
+ isPR 1 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 1 (fun x : nat => g (f x)).
+
+Lemma compose1_2IsPR :
+ forall f : nat -> nat,
+ isPR 1 f ->
+ forall f' : nat -> nat,
+ isPR 1 f' ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 1 (fun x : nat => g (f x) (f' x)).
+
+Lemma compose1_3IsPR :
+ forall f1 : nat -> nat,
+ isPR 1 f1 ->
+ forall f2 : nat -> nat,
+ isPR 1 f2 ->
+ forall f3 : nat -> nat,
+ isPR 1 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 1 (fun x : nat => g (f1 x) (f2 x) (f3 x)).
+
+Lemma compose2_1IsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 2 (fun x y : nat => g (f x y)).
+
+Lemma compose2_2IsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g ->
+ forall h : nat -> nat -> nat,
+ isPR 2 h -> isPR 2 (fun x y : nat => h (f x y) (g x y)).
+
+Lemma compose2_3IsPR :
+ forall f1 : nat -> nat -> nat,
+ isPR 2 f1 ->
+ forall f2 : nat -> nat -> nat,
+ isPR 2 f2 ->
+ forall f3 : nat -> nat -> nat,
+ isPR 2 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 2 (fun x y : nat => g (f1 x y) (f2 x y) (f3 x y)).
+
+Lemma compose2_4IsPR :
+ forall f1 : nat -> nat -> nat,
+ isPR 2 f1 ->
+ forall f2 : nat -> nat -> nat,
+ isPR 2 f2 ->
+ forall f3 : nat -> nat -> nat,
+ isPR 2 f3 ->
+ forall f4 : nat -> nat -> nat,
+ isPR 2 f4 ->
+ forall g : nat -> nat -> nat -> nat -> nat,
+ isPR 4 g -> isPR 2 (fun x y : nat => g (f1 x y) (f2 x y) (f3 x y) (f4 x y)).
+
+Lemma compose3_1IsPR :
+ forall f : nat -> nat -> nat -> nat,
+ isPR 3 f ->
+ forall g : nat -> nat, isPR 1 g -> isPR 3 (fun x y z : nat => g (f x y z)).
+
+Lemma compose3_2IsPR :
+ forall f1 : nat -> nat -> nat -> nat,
+ isPR 3 f1 ->
+ forall f2 : nat -> nat -> nat -> nat,
+ isPR 3 f2 ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 3 (fun x y z : nat => g (f1 x y z) (f2 x y z)).
+
+Lemma compose3_3IsPR :
+ forall f1 : nat -> nat -> nat -> nat,
+ isPR 3 f1 ->
+ forall f2 : nat -> nat -> nat -> nat,
+ isPR 3 f2 ->
+ forall f3 : nat -> nat -> nat -> nat,
+ isPR 3 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g -> isPR 3 (fun x y z : nat => g (f1 x y z) (f2 x y z) (f3 x y z)).
+
+Lemma compose4_2IsPR :
+ forall f1 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f1 ->
+ forall f2 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f2 ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g -> isPR 4 (fun w x y z : nat => g (f1 w x y z) (f2 w x y z)).
+
+Lemma compose4_3IsPR :
+ forall f1 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f1 ->
+ forall f2 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f2 ->
+ forall f3 : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f3 ->
+ forall g : nat -> nat -> nat -> nat,
+ isPR 3 g ->
+ isPR 4 (fun w x y z : nat => g (f1 w x y z) (f2 w x y z) (f3 w x y z)).
+
+Lemma swapIsPR :
+ forall f : nat -> nat -> nat, isPR 2 f -> isPR 2 (fun x y : nat => f y x).
+
+Lemma indIsPR :
+ forall f : nat -> nat -> nat,
+ isPR 2 f ->
+ forall g : nat,
+ isPR 1
+   (fun a : nat => nat_rec (fun n : nat => nat) g (fun x y : nat => f x y) a).
+
+Lemma ind1ParamIsPR :
+ forall f : nat -> nat -> nat -> nat,
+ isPR 3 f ->
+ forall g : nat -> nat,
+ isPR 1 g ->
+ isPR 2
+   (fun a b : nat =>
+    nat_rec (fun n : nat => nat) (g b) (fun x y : nat => f x y b) a).
+
+Lemma ind2ParamIsPR :
+ forall f : nat -> nat -> nat -> nat -> nat,
+ isPR 4 f ->
+ forall g : nat -> nat -> nat,
+ isPR 2 g ->
+ isPR 3
+   (fun a b c : nat =>
+    nat_rec (fun n : nat => nat) (g b c) (fun x y : nat => f x y b c) a).
+
+Lemma plusIndIsPR : isPR 3 (fun n fn b : nat => S fn).
+
+Lemma plusIsPR : isPR 2 plus.
+
+Lemma multIndIsPR : isPR 3 (fun n fn b : nat => fn + b).
+
+Lemma multIsPR : isPR 2 mult.
+
+Lemma predIsPR : isPR 1 pred.
+
+Lemma minusIndIsPR : isPR 3 (fun n fn b : nat => pred fn).
+
+Lemma minusIsPR : isPR 2 minus.
+
+Definition notZero (a : nat) :=
+  nat_rec (fun n : nat => nat) 0 (fun x y : nat => 1) a.
+
+Lemma notZeroIsPR : isPR 1 notZero.
+
+Definition ltBool (a b : nat) : bool.
+
+Lemma ltBoolTrue : forall a b : nat, ltBool a b = true -> a < b.
+
+Lemma ltBoolFalse : forall a b : nat, ltBool a b = false -> ~ a < b.
+
+Lemma ltIsPR : isPRrel 2 ltBool.
+
+Lemma maxIsPR : isPR 2 max.
+
+Lemma gtIsPR : isPRrel 2 (fun a b : nat => ltBool b a).
+
+Remark replaceCompose2 :
+ forall (n : nat) (a b a' b' : naryFunc n) (c c' : naryFunc 2),
+ extEqual n a a' ->
+ extEqual n b b' ->
+ extEqual 2 c c' ->
+ extEqual n
+   (evalComposeFunc _ _ (Vector.cons _ a _ (Vector.cons _ b _ (Vector.nil  (naryFunc n)))) c)
+
+Definition orRel (n : nat) (R S : naryRel n) : naryRel n.
+
+Lemma orRelPR :
+ forall (n : nat) (R R' : naryRel n),
+ isPRrel n R -> isPRrel n R' -> isPRrel n (orRel n R R').
+
+Definition andRel (n : nat) (R S : naryRel n) : naryRel n.
+
+Lemma andRelPR :
+ forall (n : nat) (R R' : naryRel n),
+ isPRrel n R -> isPRrel n R' -> isPRrel n (andRel n R R').
+
+Definition notRel (n : nat) (R : naryRel n) : naryRel n.
+
+Lemma notRelPR :
+ forall (n : nat) (R : naryRel n), isPRrel n R -> isPRrel n (notRel n R).
+
+Fixpoint bodd (n : nat) : bool :=
+  match n with
+  | O => false
+  | S n' => negb (bodd n')
+  end.
+
+Lemma boddIsPR : isPRrel 1 bodd.
+
+Lemma beq_nat_not_refl : forall a b : nat, a <> b -> beq_nat a b = false.
+
+Lemma neqIsPR : isPRrel 2 (fun a b : nat => negb (beq_nat a b)).
+
+Lemma eqIsPR : isPRrel 2 beq_nat.
+
+Definition leBool (a b : nat) : bool.
+
+Lemma leIsPR : isPRrel 2 leBool.
+
+Section Ignore_Params.
+
+Fixpoint ignoreParams (n m : nat) (f : naryFunc n) {struct m} :
+ naryFunc (m + n) :=
+  match m return (naryFunc (m + n)) with
+  | O => f
+  | S x => fun _ => ignoreParams n x f
+  end.
+
+Definition projectionListPR (n m : nat) (p : m <= n) : PrimRecs n m.
+
+Definition projectionList (n m : nat) (p : m <= n) : 
+  Vector.t (naryFunc n) m := evalPrimRecs n m (projectionListPR n m p).
+
+Lemma projectionListInd :
+ forall (n m : nat) (p1 p2 : m <= n),
+ projectionList n m p1 = projectionList n m p2.
+
+Lemma projectionListApplyParam :
+ forall (m n c : nat) (p1 : m <= n) (p2 : m <= S n),
+ extEqualVector _ _ (projectionList n m p1)
+   (evalOneParamList n m c (projectionList (S n) m p2)).
+
+Lemma projectionListId :
+ forall (n : nat) (f : naryFunc n) (p : n <= n),
+ extEqual n f (evalComposeFunc n n (projectionList n n p) f).
+
+Lemma ignoreParamsIsPR :
+ forall (n m : nat) (f : naryFunc n), isPR _ f -> isPR _ (ignoreParams n m f).
+
+End Ignore_Params.
+
+Lemma reduce1stCompose :
+ forall (c n m : nat) (v : Vector.t (naryFunc n) m) (g : naryFunc (S m)),
+
+Lemma reduce2ndCompose :
+ forall (c n m : nat) (v : Vector.t (naryFunc n) m) (n0 : naryFunc n)
+
+Lemma evalPrimRecParam :
+ forall (n c d : nat) (g : naryFunc (S n)) (h : naryFunc (S (S (S n)))),
+ extEqual _ (evalPrimRecFunc n (g d) (fun x y : nat => h x y d) c)
+   (evalPrimRecFunc (S n) g h c d).
+
+Lemma compose2IsPR :
+ forall (n : nat) (f : naryFunc n) (p : isPR n f) (g : naryFunc (S n))
+   (q : isPR (S n) g), isPR n (compose2 n f g).
+
+Lemma compose1_NIsPR :
+ forall (n : nat) (g : naryFunc (S n)),
+ isPR (S n) g ->
+ forall f : naryFunc 1, isPR 1 f -> isPR (S n) (fun x : nat => g (f x)).
+
+Definition switchPR : naryFunc 3. 
+
+Lemma switchIsPR : isPR 3 switchPR.
+
+Fixpoint boundedSearchHelp (P : naryRel 1) (b : nat) {struct b} : nat :=
+  match b with
+  | O => 0
+  | S b' =>
+      match eq_nat_dec (boundedSearchHelp P b') b' with
+      | left _ => match P b' with
+                  | true => b'
+                  | false => S b'
+                  end
+      | right _ => boundedSearchHelp P b'
+      end
+  end.
+   
+Definition boundedSearch (P : naryRel 2) (b : nat) : nat :=
+  boundedSearchHelp (P b) b.
+
+Lemma boundedSearch1 :
+ forall (P : naryRel 2) (b x : nat), x < boundedSearch P b -> P b x = false.
+
+Lemma boundedSearch2 :
+ forall (P : naryRel 2) (b : nat),
+ boundedSearch P b = b \/ P b (boundedSearch P b) = true.
+
+Lemma boundSearchIsPR :
+ forall P : naryRel 2,
+ isPRrel 2 P -> isPR 1 (fun b : nat => boundedSearch P b).
+
+Definition iterate (g : nat -> nat) :=
+  nat_rec (fun _ => nat -> nat) (fun x : nat => x)
+    (fun (_ : nat) (rec : nat -> nat) (x : nat) => g (rec x)).
+
+Lemma iterateIsPR :
+ forall g : nat -> nat, isPR 1 g -> forall n : nat, isPR 1 (iterate g n). *)
+
+Require Import Coq.Lists.List.
+
+
+
+Inductive LNTFunction : Set :=
+
+  | Plus : LNTFunction
+
+  | Times : LNTFunction
+
+  | Succ : LNTFunction
+
+  | Zero : LNTFunction.
+
+
+
+Inductive LNNRelation : Set :=
+
+    LT : LNNRelation.
+
+
+
+Definition LNTFunctionArity (x : LNTFunction) : nat :=
+
+  match x with
+
+  | Plus => 2
+
+  | Times => 2
+
+  | Succ => 1
+
+  | Zero => 0
+
+  end.
+
+
+
+Definition LNTArity (x : Empty_set + LNTFunction) : nat :=
+
+  match x return nat with
+
+  | inl bot => Empty_set_rec (fun _ => nat) bot
+
+  | inr y => LNTFunctionArity y
+
+  end.
+
+
+
+Definition LNNArity (x : LNNRelation + LNTFunction) : nat :=
+
+  match x return nat with
+
+  | inl y => match y with
+
+             | LT => 2
+
+             end
+
+  | inr y => LNTFunctionArity y
+
+  end.
+
+
+
+Definition LNT : Language := language Empty_set LNTFunction LNTArity.
+
+
+
+Definition LNN : Language := language LNNRelation LNTFunction LNNArity.
+
+
+
+Definition codeLNTFunction (f : LNTFunction) : nat :=
+
+  match f with
+
+  | Plus => 0
+
+  | Times => 1
+
+  | Succ => 2
+
+  | Zero => 3
+
+  end.
+
+
+
+Definition codeLNTRelation (R : Empty_set) : nat :=
+
+  match R return nat with
+
+  end.
+
+
+
+Definition codeLNNRelation (R : LNNRelation) : nat := 0.
+
+
+
+Lemma codeLNTFunctionInj :
+
+ forall f g : LNTFunction, codeLNTFunction f = codeLNTFunction g -> f = g.
+
+Proof.
+
+intros.
+
+destruct f; destruct g; reflexivity || discriminate H.
+
+Qed.
+
+
+
+Lemma codeLNTRelationInj :
+
+ forall R S : Empty_set, codeLNTRelation R = codeLNTRelation S -> R = S.
+
+Proof.
+
+intros.
+
+destruct R; destruct S; reflexivity || discriminate H.
+
+Qed.
+
+
+
+Lemma codeLNNRelationInj :
+
+ forall R S : LNNRelation, codeLNNRelation R = codeLNNRelation S -> R = S.
+
+Proof.
+
+intros.
+
+destruct R; destruct S; reflexivity || discriminate H.
+
+Qed.
+
+
+
+Definition codeArityLNNR (r : nat) := switchPR r 0 3.
+
+
+
+Lemma codeArityLNNRIsPR : isPR 1 codeArityLNNR.
+
+Proof.
+
+unfold codeArityLNNR in |- *.
+
+apply
+
+ compose1_3IsPR
+
+  with
+
+    (f1 := fun r : nat => r)
+
+    (f2 := fun r : nat => 0)
+
+    (f3 := fun r : nat => 3).
+
+apply idIsPR.
+
+apply const1_NIsPR.
+
+apply const1_NIsPR.
+
+apply switchIsPR.
+
+Qed.
+
+
+
+Lemma codeArityLNNRIsCorrect1 :
+
+ forall r : Relations LNN,
+
+ codeArityLNNR (codeLNNRelation r) = S (arity LNN (inl _ r)).
+
+Proof.
+
+intros.
+
+induction r.
+
+simpl in |- *.
+
+reflexivity.
+
+Qed.
+
+
+
+Lemma codeArityLNNRIsCorrect2 :
+
+ forall n : nat,
+
+ codeArityLNNR n <> 0 -> exists r : Relations LNN, codeLNNRelation r = n.
+
+Proof.
+
+intros.
+
+destruct n.
+
+exists LT.
+
+reflexivity.
+
+elim H.
+
+reflexivity.
+
+Qed.
+
+
+
+Definition codeArityLNTR (r : nat) := 0.
+
+
+
+Lemma codeArityLNTRIsPR : isPR 1 codeArityLNTR.
+
+Proof.
+
+unfold codeArityLNTR in |- *.
+
+apply const1_NIsPR.
+
+Qed.
+
+
+
+Lemma codeArityLNTRIsCorrect1 :
+
+ forall r : Relations LNT,
+
+ codeArityLNTR (codeLNTRelation r) = S (arity LNT (inl _ r)).
+
+Proof.
+
+simple induction r.
+
+Qed.
+
+
+
+Lemma codeArityLNTRIsCorrect2 :
+
+ forall n : nat,
+
+ codeArityLNTR n <> 0 -> exists r : Relations LNT, codeLNTRelation r = n.
+
+Proof.
+
+intros.
+
+elim H.
+
+reflexivity.
+
+Qed.
+
+
+
+Definition codeArityLNTF (f : nat) :=
+
+  switchPR f
+
+    (switchPR (pred f)
+
+       (switchPR (pred (pred f)) (switchPR (pred (pred (pred f))) 0 1) 2) 3)
+
+    3.
+
+
+
+Lemma codeArityLNTFIsPR : isPR 1 codeArityLNTF.
+
+Proof.
+
+set
+
+ (f :=
+
+  list_rec (fun _ => nat -> nat -> nat) (fun _ _ : nat => 0)
+
+    (fun (a : nat) (l : list nat) (rec : nat -> nat -> nat) (n f : nat) =>
+
+     switchPR (iterate pred n f) (rec (S n) f) a)) 
+
+ in *.
+
+assert (forall (l : list nat) (n : nat), isPR 1 (f l n)). 
+
+intro.
+
+induction l as [| a l Hrecl]; intros.
+
+simpl in |- *.
+
+apply const1_NIsPR.
+
+simpl in |- *.
+
+apply
+
+ compose1_3IsPR
+
+  with
+
+    (f1 := fun f0 : nat => iterate pred n f0)
+
+    (f2 := fun f0 : nat => f l (S n) f0)
+
+    (f3 := fun f0 : nat => a).
+
+apply iterateIsPR with (g := pred) (n := n).
+
+apply predIsPR.
+
+apply Hrecl with (n := S n).
+
+apply const1_NIsPR.
+
+apply switchIsPR.
+
+apply (H (3 :: 3 :: 2 :: 1 :: nil) 0).
+
+Qed.
+
+
+
+Lemma codeArityLNTFIsCorrect1 :
+
+ forall f : Functions LNT,
+
+ codeArityLNTF (codeLNTFunction f) = S (arity LNT (inr _ f)).
+
+Proof.
+
+intros.
+
+induction f; reflexivity.
+
+Qed.
+
+
+
+Lemma codeArityLNNFIsCorrect1 :
+
+ forall f : Functions LNN,
+
+ codeArityLNTF (codeLNTFunction f) = S (arity LNN (inr _ f)).
+
+Proof.
+
+apply codeArityLNTFIsCorrect1.
+
+Qed.
+
+
+
+Lemma codeArityLNTFIsCorrect2 :
+
+ forall n : nat,
+
+ codeArityLNTF n <> 0 -> exists f : Functions LNT, codeLNTFunction f = n.
+
+Proof.
+
+intros.
+
+destruct n.
+
+exists Plus.
+
+reflexivity.
+
+destruct n.
+
+exists Times.
+
+reflexivity.
+
+destruct n.
+
+exists Succ.
+
+reflexivity.
+
+destruct n.
+
+exists Zero.
+
+reflexivity.
+
+elim H.
+
+reflexivity.
+
+Qed.
+
+
+
+Lemma codeArityLNNFIsCorrect2 :
+
+ forall n : nat,
+
+ codeArityLNTF n <> 0 -> exists f : Functions LNN, codeLNTFunction f = n.
+
+Proof.
+
+apply codeArityLNTFIsCorrect2.
+
+Qed.
+
+
+

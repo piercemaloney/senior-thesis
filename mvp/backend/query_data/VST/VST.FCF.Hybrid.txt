@@ -1,0 +1,1754 @@
+
+
+Set Implicit Arguments.
+
+
+
+Require Import FCF.FCF.
+(* FCF.FCF:
+Require Export FCF.Crypto.
+Require Export FCF.ProgramLogic.
+Require Export FCF.ProgTacs.
+Require Export FCF.RndNat.
+Require Export FCF.GenTacs.
+Require Export FCF.NotationV1.
+Require Export FCF.Tactics.
+
+Open Scope eq_scope. *)
+
+Require Import FCF.CompFold.
+(* FCF.CompFold:
+Set Implicit Arguments.
+Require Import FCF.FCF.
+
+Local Open Scope list_scope.
+
+Fixpoint compFold(A B : Set)(eqd : EqDec B)(f : B -> A -> Comp B)(init : B)(ls : list A) :=
+  match ls with
+      | nil => ret init 
+      | a :: ls' =>
+        init' <-$ f init a;
+          compFold  _ f init' ls'
+  end.
+
+Definition foldBody_option(A B : Set)(eqd : EqDec B)(f : B -> A -> Comp (option B))(b_opt : option B)(a : A) :=
+  match b_opt with
+      | None => ret None
+      | Some b =>
+        f b a
+  end.
+
+Definition opt_pred(A B : Set)(P : A -> B -> Prop)(opt_a : option A)(opt_b : option B) :=
+  match opt_a with
+    | Some a =>
+      match opt_b with
+        | Some b => P a b
+        | None => False
+      end
+    | None =>
+      match opt_b with
+        | Some _ => False
+        | None => True
+      end
+  end.
+
+Theorem foldBody_option_spec : 
+  forall (A B C D: Set)(eqda : EqDec A)(eqdb : EqDec B) (c1 : A -> C -> Comp (option A)) (c2 : B -> D -> Comp (option B)) (post : A -> B -> Prop) (pre1 : A -> B -> Prop) (pre2 : C -> D -> Prop), 
+    (forall a b c d, 
+         pre1 a b -> pre2 c d -> comp_spec (opt_pred post) (c1 a c) (c2 b d)) ->
+    forall opt_a opt_b c d,
+      opt_pred pre1 opt_a opt_b ->
+      pre2 c d ->
+      comp_spec
+        (opt_pred post)
+        (foldBody_option _ c1 opt_a c)
+        (foldBody_option _ c2 opt_b d).
+
+Theorem compFold_option_spec : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(pre : A -> B -> Prop),
+    list_pred pre lsa lsb ->
+    forall (C D : Set){eqdc : EqDec C}{eqdd : EqDec D}(c1 : C -> A -> Comp (option C))(c2 : D -> B -> Comp (option D))(post : C -> D -> Prop) c d,
+      (forall c d a b, post c d -> pre a b -> comp_spec (opt_pred post) (c1 c a) (c2 d b)) ->
+      opt_pred post c d ->
+      comp_spec 
+        (opt_pred post) 
+        (compFold _ (foldBody_option _ c1) c lsa) 
+        (compFold _ (foldBody_option _ c2) d lsb).
+
+Fixpoint compMap (A B : Set)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A) : Comp (list B) :=
+  match ls with
+      | nil => ret nil
+      | a :: lsa' =>
+        b <-$ c a;
+          lsb' <-$ compMap _ c lsa';
+          ret (b :: lsb')
+  end.
+
+Theorem compMap_cons: 
+  forall (A B : Set)(eqdb : EqDec B) (ls : list A)(c : A -> Comp B) (a : A) x,
+    evalDist (compMap _ c (a :: ls)) x ==
+    evalDist (b <-$ c a; lsb <-$ compMap _ c ls; ret (b :: lsb)) x.
+
+Theorem compMap_nil : 
+  forall (A B : Set)(eqdb : EqDec B)(c : A -> Comp B),
+    compMap _ c nil = ret nil.
+
+Theorem list_inhabited : 
+  forall (A : Set), list A.
+
+Theorem compMap_fission_eq:
+  forall (A B C D : Set){eqdb : EqDec B}{eqdd : EqDec D}{eqdc : EqDec C}(ls : list A)(f1 : A -> Comp B)(f2 : A -> Comp C)(f3 : list B -> Comp (list D))(f4 : C -> Comp D) P,
+    (comp_spec eq (f3 nil) (ret nil)) -> 
+    (forall a, comp_spec P (f1 a) (f2 a)) -> 
+    (forall r1 r2 r3, P r1 r2 ->
+      comp_spec eq (f3 (r1 :: r3)) (r0 <-$ f3 r3; a0 <-$ f4 r2; ret a0 :: r0)) ->
+    comp_spec eq 
+    (lsb <-$ compMap _ f1 ls; f3 lsb)
+    (compMap _ (fun a => b <-$ f2 a; f4 b) ls).
+  
+Theorem compMap_map_fission_eq :
+  forall (A B C D : Set){eqdb : EqDec B}{eqdd : EqDec D}{eqdc : EqDec C}(ls : list A)(f1 : A -> Comp B)(f2 : A -> Comp C)(f3 : B -> D)(f4 : C -> D),
+    (forall a, comp_spec (fun b c => f3 b = f4 c)
+              (f1 a) (f2 a)) -> 
+    comp_spec eq (lsb <-$ compMap _ f1 ls; ret (map f3 lsb))
+     (compMap _ (fun a => b <-$ f2 a; ret (f4 b)) ls).
+
+Theorem fold_map_fission_spec_eq : 
+  forall (A B C: Set)(eqdB : EqDec B)(eqdC : EqDec C) ls c init (ca : A -> Comp B) cb,
+    (forall a init, comp_spec eq (c init a) (x <-$ ca a; cb init x)) ->
+    comp_spec eq (compFold _ c init ls) 
+    (lsa <-$ (compMap _ ca ls); compFold _ cb init lsa).
+
+Theorem fold_map_fission_spec : 
+  forall (A E : Set)(P : A -> E -> Prop)(B D : Set)(eqdA : EqDec A)(c1 : A -> B -> Comp A)(ls_b : list B)(init_a : A)
+    (eqdD : EqDec D)(eqdE : EqDec E)(c2 : B -> Comp D)(c3 : E -> D -> Comp E)(init_e : E),
+    P init_a init_e ->
+    (forall a b e, P a e -> comp_spec P (c1 a b) (a0 <-$ c2 b; c3 e a0)) ->
+    comp_spec P 
+    (compFold _ c1 init_a ls_b)
+    (ls_d <-$ (compMap _ c2 ls_b); compFold _ c3 init_e ls_d).
+
+Definition repeatMax(A : Set)(eqd : EqDec A)(c : Comp A)(P : A -> bool) def (n : nat):=
+  compFold _ (fun a' i => if (P a') then (ret a') else c) def (allNatsLt n).
+  
+Lemma repeatMax_fold_true :
+  forall (A B: Set)(ls : list B)(eqd : EqDec A)(c : B -> Comp A)(P : A -> bool)(a : A),
+    P a = true ->
+    comp_spec eq 
+    (compFold _ (fun acc b => if (P acc) then (ret acc) else (c b)) a ls)  
+    (ret a).
+
+Lemma repeatMax_fold_in_support_false : 
+  forall (A B : Set)(ls : list B)(eqd : EqDec A)(c : B -> Comp A)(P : A -> bool)(a : A),
+    (forall b, In b ls -> In a (getSupport (c b))) ->
+    P a = false ->
+    In a
+       (getSupport
+          (compFold eqd
+                    (fun (a' : A) b => if P a' then ret a' else (c b)) a ls)).
+
+Theorem compFold_repeat_spec : 
+  forall (C D: Set)(ls1 : list C)(ls2 : list D)(pre : C -> D -> Prop),
+    list_pred pre ls1 ls2 ->
+    forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(post : A -> B -> Prop)(c1 : C -> Comp A)(P1 : A -> bool)(c2 : D -> Comp B)(P2 : B -> bool) a b,
+    post a b -> 
+    (forall a b, pre a b -> comp_spec post (c1 a) (c2 b)) ->
+    (forall a b, post a b -> (P1 a = true <-> P2 b = true)) ->
+    comp_spec 
+      post 
+      (compFold _ (fun acc v => if (P1 acc) then (ret acc) else (c1 v)) a ls1) 
+      (compFold _ (fun acc v => if (P2 acc) then (ret acc) else (c2 v)) b ls2).
+
+Theorem compFold_eq : 
+  forall (A1 A2 : Set) P (ls1 : list A1) (ls2 : list A2),
+    list_pred P ls1 ls2 ->
+    forall (B : Set)(eqd : EqDec B) (c1 : B -> A1 -> Comp B) (c2: B -> A2 -> Comp B),
+      (forall acc a1 a2, P a1 a2 -> In a1 ls1 -> In a2 ls2 ->
+        comp_spec eq (c1 acc a1) (c2 acc a2) ) ->
+      forall init, 
+        comp_spec eq (compFold _ c1 init ls1) (compFold _ c2 init ls2).
+
+Lemma list_pred_zip_l : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(lsc : list C)(P1 : A -> C -> Prop)(P2 : B -> C -> Prop),
+      list_pred P1 lsa lsc ->
+      list_pred P2 lsb lsc ->
+      list_pred (fun (p : A * B) c => P (fst p) (snd p) /\ P1 (fst p) c /\ P2 (snd p) c) (zip lsa lsb) lsc.
+
+Lemma list_pred_eq : 
+  forall (A : Set)(lsa : list A),
+    list_pred eq lsa lsa.
+
+Lemma list_pred_I : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    (length lsa = length lsb) ->
+    list_pred (fun a b => True) lsa lsb.
+
+Lemma list_pred_length_eq : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+       list_pred P lsa lsb ->
+       length lsa = length lsb.
+
+Lemma list_pred_zip_l_eq : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    list_pred (fun p a => (fst p) = a /\ P (fst p) (snd p)) (zip lsa lsb) lsa.
+
+Lemma list_pred_map_r_eq : 
+  forall (A B : Set)(ls : list A)(f : A -> B),
+    list_pred (fun a b => f a = b) ls (map f ls).
+
+Lemma list_pred_map_r : 
+  forall (A B : Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(f : B -> C),
+           list_pred (fun a c => exists b, P a b /\ c = f b) lsa (map f lsb).
+
+Lemma list_pred_zip_r : 
+  forall (A B: Set)(lsa : list A)(lsb : list B)(P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set)(lsc : list C)(P1 : A -> C -> Prop)(P2 : B -> C -> Prop),
+      list_pred P1 lsa lsc ->
+      list_pred P2 lsb lsc ->
+      list_pred (fun c (p : A * B) => P (fst p) (snd p) /\ P1 (fst p) c /\ P2 (snd p) c) lsc (zip lsa lsb).
+
+Lemma list_pred_map_l_eq : 
+  forall (A B : Set)(ls : list A)(f : A -> B),
+    list_pred (fun b a => f a = b) (map f ls) ls.
+
+Definition compMap_fold (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list A) :=
+  compFold _ (fun (acc : list B)(a : A) => b <-$ c a; ret (acc ++ (b :: nil))) nil ls.
+
+Lemma compFold_spec : 
+  forall (A C D : Set)(P2 : list A -> C -> D -> Prop)(eqdc : EqDec C)(eqdd : EqDec D)(lsa : list A)(c1 : C -> A -> Comp C)(c2 : D -> A -> Comp D) init1 init2,
+    P2 lsa init1 init2 ->
+    (forall a lsa c d, P2 (a :: lsa) c d -> comp_spec (P2 lsa) (c1 c a) (c2 d a)) ->
+    comp_spec (P2 nil) (compFold _ c1 init1 lsa) (compFold _ c2 init2 lsa).
+
+Theorem compMap_fold_equiv : 
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list A),
+    comp_spec eq (compMap eqd c ls) (compMap_fold eqd c ls).
+
+Lemma compFold_wf : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls : list B) init,
+    (forall a b, well_formed_comp (c a b)) ->
+    well_formed_comp (compFold _ c init ls).
+
+Lemma compMap_map : 
+  forall (A B : Set)(eqd : EqDec B)(f : A -> B) ls,
+    comp_spec eq (compMap _ (fun a => ret (f a)) ls) (ret (map f ls)).
+
+Lemma compFold_nop : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls : list B) init x, 
+    In x (getSupport (compFold _ c init ls)) ->
+    (forall b a, In b ls -> In a (getSupport (c init b)) -> a = init) ->
+    x = init.
+
+Lemma compFold_app : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp A)(ls1 ls2 : list B) init x,
+    evalDist (compFold _ c init (ls1 ++ ls2)) x ==
+    evalDist (init' <-$ compFold _ c init ls1; compFold _ c init' ls2) x.
+
+Theorem comp_fold_ext : 
+  forall (A B : Set)(eqd : EqDec A)(c1 c2 : A -> B -> Comp A)(ls : list B)(init : A),
+    (forall a b,
+       comp_spec eq (c1 a b) (c2 a b)) ->
+    comp_spec eq (compFold _ c1 init ls) (compFold _ c2 init ls).
+
+Lemma list_pred_app : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa1 lsa2 : list A)(lsb : list B),
+    list_pred P (lsa1 ++ lsa2) lsb ->
+    list_pred P lsa1 (firstn (length lsa1) lsb) *
+    list_pred P lsa2 (skipn (length lsa1) lsb).
+
+Theorem list_pred_map_l_inv :
+  forall (A B C : Set) (lsa : list A) (lsb : list B) (f : A -> C)(P : C -> B -> Prop),
+    list_pred P (map f lsa) lsb ->
+    list_pred (fun a b => P (f a) b) lsa lsb.
+
+Definition flatten_prep
+           (A B : Set)(ls : list (A * (list B))) : list (list (nat * nat * A * B)) :=
+  map (fun p => [a, lsb] <-2 p; map (fun p' => [i, b] <-2 p'; (i, length lsb, a, b)) (zip (allNatsLt (length lsb)) lsb)) ls.
+
+Theorem compFold_flatten : 
+  forall (A B C D: Set) P (eqd1 eqd2 : EqDec C)(c1 : C -> (D * list A) -> Comp C)(c2 : C -> B -> Comp C)(ls1 : list (D * (list A)))(ls2 : list B) init x,
+    list_pred P (flatten (flatten_prep ls1)) ls2 ->
+    (forall d lsa lsb init x, list_pred P (map (fun p => [i, a] <-2 p; (i, (length lsa), d, a)) (zip (allNatsLt (length lsa)) lsa)) lsb -> evalDist (c1 init (d, lsa)) x == evalDist (compFold eqd2 c2 init lsb) x) ->
+    evalDist (compFold eqd1 c1 init ls1) x ==
+    evalDist (compFold eqd2 c2 init ls2) x.
+
+Lemma compMap_eq : 
+  forall (A B : Set)(P : A -> B -> Prop)(C : Set)(eqd : EqDec C)(c1 : A -> Comp C)(c2 : B -> Comp C)(lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    (forall a b, P a b -> forall x, evalDist (c1 a) x == evalDist (c2 b) x) ->
+    forall x, 
+      evalDist (compMap _ c1 lsa) x == evalDist (compMap _ c2 lsb) x.
+
+Require Import Permutation.
+
+Theorem compFold_perm : 
+  forall (A B : Set)(inv : B -> Prop)(ls1 ls2 : list A),
+    Permutation ls1 ls2 ->
+    forall (eqd : EqDec B) (c : B -> A -> Comp B) init x,
+      (forall b a1 a2 x,
+           In a1 ls1 ->
+           In a2 ls2 ->
+           inv b -> 
+           evalDist (b' <-$ c b a1; c b' a2) x ==
+           evalDist (b' <-$ c b a2; c b' a1) x) ->
+      (forall a b b',
+         In a ls1 ->
+         inv b ->
+         In b' (getSupport (c b a)) ->
+         inv b') ->
+      inv init -> 
+      evalDist (compFold _ c init ls1) x ==
+      evalDist (compFold _ c init ls2) x.
+
+Lemma list_pred_app_both : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    list_pred P lsa1 lsb1 ->
+    list_pred P lsa2 lsb2 ->
+    list_pred P (lsa1 ++ lsa2) (lsb1 ++ lsb2).
+
+Lemma list_pred_map_both : 
+  forall (A B C D : Set)(P : A -> B -> Prop)(lsa : list A)(lsb : list B)(f1 : A -> C)(f2 : B -> D),
+    list_pred P lsa lsb ->
+    list_pred (fun c d => exists a b, P a b /\ c = (f1 a) /\ d = (f2 b)) (map f1 lsa) (map f2 lsb).
+
+Lemma compMap_spec : 
+  forall (A B C D : Set)(eqdc : EqDec C)(eqdd : EqDec D)(P1 : A -> B -> Prop)(P2 : C -> D -> Prop)(lsa : list A)(lsb : list B)(c1 : A -> Comp C)(c2 : B -> Comp D),
+    list_pred P1 lsa lsb ->
+    (forall a b, In a lsa -> In b lsb -> P1 a b -> comp_spec P2 (c1 a) (c2 b)) ->
+    comp_spec (list_pred P2)
+                   (compMap _ c1 lsa) 
+                   (compMap _ c2 lsb).
+
+Theorem compMap_fission_ex : 
+  forall (A B C : Set)(eqdb : EqDec B)(eqdc : EqDec C)
+         (c1 : A -> Comp B)(c2 : B -> Comp C)(ls : list A),
+    comp_spec eq 
+              (compMap _ (fun a => b <-$ c1 a; c2 b) ls)
+              (ls' <-$ compMap _ c1 ls; compMap _ c2 ls').
+
+Lemma list_pred_eq_gen : 
+  forall (A : Set)(ls1 ls2 : list A),
+    ls1 = ls2 ->
+    list_pred eq ls1 ls2.
+
+Lemma compMap_support : 
+  forall (A B : Set)(P : A -> B -> Prop)(eqd : EqDec B)(c : A -> Comp B)(lsa : list A)(lsb : list B),
+    In lsb (getSupport (compMap _ c lsa)) ->
+    (forall a b, In a lsa -> In b (getSupport (c a)) -> P a b) ->
+    list_pred P lsa lsb.
+
+Lemma In_zip : 
+  forall (A B : Set)(a : A)( b : B) lsa lsb, 
+    In (a, b) (zip lsa lsb) ->
+    In a lsa /\ In b lsb.
+
+Lemma list_pred_map_l
+: forall (A B : Set) (lsa : list A) (lsb : list B) (P : A -> B -> Prop),
+    list_pred P lsa lsb ->
+    forall (C : Set) (f : A -> C),
+      list_pred 
+        (fun (c : C) (b : B) => exists a : A, P a b /\ c = f a) (map f lsa)
+        lsb.
+
+Lemma list_pred_map_l_if : 
+  forall (A B C : Set) (P  : C -> B -> Prop)(lsa : list A)(lsb : list B)(f : A -> C),
+    list_pred P (map f lsa) lsb ->
+    list_pred (fun a b => P (f a) b) lsa lsb.
+
+Lemma list_pred_map_r_if : 
+  forall (A B C : Set) (P  : A -> C -> Prop)(lsb : list B)(lsa : list A)(f : B -> C),
+    list_pred P lsa (map f lsb) ->
+    list_pred (fun a b => P a (f b)) lsa lsb.
+
+Lemma list_pred_map_r'
+: forall (A B C : Set) (lsa : list A) (lsb : list B) (P : A -> C -> Prop) (f : B -> C),
+    list_pred (fun a b => P a (f b)) lsa lsb ->
+    list_pred P lsa (map f lsb).
+
+Lemma list_pred_map_l'
+: forall (A B C : Set) (lsa : list A) (lsb : list B) (P : C -> B -> Prop) (f : A -> C),
+    list_pred (fun a b => P (f a) b) lsa lsb ->
+    list_pred P (map f lsa) lsb.
+
+Theorem list_pred_rev : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) P,
+    list_pred P lsa lsb ->
+    forall a b,
+    P a b ->
+    list_pred P (lsa ++ (a :: nil)) (lsb ++ (b :: nil)).
+
+Theorem list_pred_impl'
+     : forall (A B : Set) (lsa : list A) (lsb : list B) (P1 : A -> B -> Prop),
+       list_pred P1 lsa lsb ->
+       forall P2 : A -> B -> Prop,
+       (forall (a : A) (b : B), In a lsa -> In b lsb -> P1 a b -> P2 a b) -> list_pred P2 lsa lsb.
+
+Lemma list_pred_allNatsLt : 
+  forall (A : Set)(ls : list A),
+    list_pred (fun i a => forall a', nth i ls a' = a) (allNatsLt (length ls)) ls.
+
+Lemma compMap_length :
+  forall (A B : Set)(eqd : EqDec B)(ls : list A) x (c : A -> Comp B) ,
+    In x (getSupport (compMap _ c ls)) ->
+    length x = length ls.
+
+Lemma map_eq : 
+  forall (A B C : Set)(lsa : list A)(lsb : list B)(f1 : A -> C)(f2 : B -> C),
+    list_pred (fun a b => f1 a = f2 b) lsa lsb ->
+    map f1 lsa = map f2 lsb.
+
+Lemma zip_length : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    length (zip lsa lsb) = length lsa.
+
+Definition numberedMap(A B : Set)(f : nat -> nat -> A -> B)(ls : list A) :=
+  map (fun p => [i, a] <-2 p; f i (length ls) a) (zip (allNatsLt (length ls)) ls).
+
+Lemma numberedMap_length : 
+  forall (A B : Set)(ls : list A)(f : nat -> nat -> A -> B),
+    length (numberedMap f ls) = length ls.
+
+Lemma nth_zip : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) n a b defa defb,
+    length lsa = length lsb ->
+    nth n (zip lsa lsb) (defa, defb) = (a, b) ->
+    nth n lsa defa = a /\ nth n lsb defb = b.
+
+Lemma compFold_spec' : 
+  forall (A B C D : Set)(P2 : list A -> list B -> C -> D -> Prop)(eqdc1 eqdc2  : EqDec C)(eqdd1 eqdd2 : EqDec D)(lsa : list A)(lsb : list B)(c1 : C -> A -> Comp C)(c2 : D -> B -> Comp D) init1 init2,
+    length lsa = length lsb ->
+    P2 lsa lsb init1 init2 ->
+    (forall a lsa b lsb c d, P2 (a :: lsa) (b :: lsb) c d -> comp_spec (P2 lsa lsb) (c1 c a) (c2 d b)) ->
+    @comp_spec _ _ eqdc1 eqdd1 (P2 nil nil) (compFold eqdc2 c1 init1 lsa) (compFold eqdd2 c2 init2 lsb).
+  
+Lemma compMap_support_app : 
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    In lsb1 (getSupport (compMap _ c lsa1)) ->
+    In lsb2 (getSupport (compMap _ c lsa2)) ->
+    In (lsb1 ++ lsb2) (getSupport (compMap _ c (lsa1 ++ lsa2))).
+
+Lemma list_pred_single : 
+  forall (A : Set) (P : A -> A -> Prop) (lsa : list A),
+    (forall a, In a lsa -> P a a) ->
+    list_pred P lsa lsa.
+
+Lemma flatten_map_eq : 
+  forall (A B : Set)(ls : list (list A))(f : A -> B),
+    map f (flatten ls) = flatten (map (fun ls' => map f ls') ls).
+
+Lemma zip_app : 
+  forall (A B : Set)(lsa1 lsa2 : list A)(lsb1 lsb2 : list B),
+    length lsa1 = length lsb1 ->
+    length lsa2 = length lsb2 ->
+    (zip lsa1 lsb1) ++ (zip lsa2 lsb2) =
+    (zip (lsa1 ++ lsa2) (lsb1 ++ lsb2)).
+
+Lemma length_flatten_eq : 
+  forall (A B : Set)(lsa : list (list A))(lsb : list (list B)),
+    list_pred (fun a1 a2 => length a1 = length a2) lsa lsb ->
+    length (flatten lsa) = length (flatten lsb).
+
+Lemma flatten_map_pair_eq : 
+  forall (A B C : Set)(ls : list (list A * list B))(f : A * B -> C),
+    (forall ls1 ls2, In (ls1, ls2) ls -> length ls1 = length ls2) ->
+    flatten (map (fun p => [ls1, ls2] <-2 p; map f (zip ls1 ls2)) ls) = 
+    map f (zip (flatten (fst (unzip ls))) (flatten (snd (unzip ls)))).
+
+Lemma compMap_app : 
+  forall (A B : Set)(eqd : EqDec B)(ls1 ls2 : list A)(c : A -> Comp B) x,
+    evalDist (compMap _ c (ls1 ++ ls2)) x ==
+    evalDist (r1 <-$ compMap _ c ls1; r2 <-$ compMap _ c ls2; ret (r1 ++ r2)) x.
+
+Lemma compMap_flatten :
+  forall (A B : Set)(eqd : EqDec B)(c : A -> Comp B)(ls : list (list A)),
+    comp_spec
+      (fun ls1 ls2 => ls2 = flatten ls1)
+      (compMap _ (fun ls' => compMap _ c ls') ls)
+      (compMap _ c (flatten ls)).
+
+Lemma map_f_equal : 
+  forall (A B : Set)(f1 f2 : A -> B)(ls1 ls2 : list A),
+    (forall a, f1 a = f2 a) ->
+    ls1 = ls2 ->
+    map f1 ls1 = map f2 ls2.
+
+Lemma list_pred_zip_eq_rev : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    (length lsa = length lsb) ->
+    list_pred (fun p1 p2 => [a1, b1] <-2 p1; [b2, a2] <-2 p2; a1 = a2 /\ b1 = b2) (zip lsa lsb) (zip lsb lsa).
+
+Lemma list_pred_zip_in : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    forall a b, 
+      In (a, b) (zip lsa lsb) ->
+      P a b.
+
+Lemma in_zip_swap : 
+  forall (A B : Set)(lsa : list A)(lsb : list B) a b,
+    length lsa = length lsb ->
+    In (a, b) (zip lsa lsb) ->
+    In (b, a) (zip lsb lsa).
+
+Lemma unzip_zip_inv : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    unzip (zip lsa lsb) = (lsa, lsb).
+
+Notation "'foreach' '(' x 'in' ls ')' c " := (compMap _ (fun x => c) ls) (right associativity, at level 85, only parsing) : comp_scope.
+Notation "'foreach' '(' x 'in' ls ')' c " := (map (fun x => c) ls) (right associativity, at level 85, only parsing).
+Notation "'for' '(' x ''<' n ')' c " := (map (fun x => c) (allNatsLt n)) (right associativity, at level 86, only parsing).
+
+Fixpoint removePresent (A : Set)(eqd : eq_dec A)(u ls : list A) :=
+  match ls with
+    | nil => nil
+    | a' :: ls' =>
+      ls'' <- removePresent eqd u ls'; 
+        if (in_dec eqd a' u) then ls'' else (a' :: ls'')
+  end.
+
+Lemma removePresent_not_in : 
+  forall (A : Set)(eqd : eq_dec A)(a : A) ls1 ls2,
+    In a (removePresent eqd ls1 ls2) ->
+    In a ls1 -> 
+    False.
+  
+  induction ls2; intuition; simpl in *.
+  unfold setLet in *.
+
+Ltac hypInv :=
+      try (match goal with
+          | [H: Some _ = Some _ |-_ ] => inversion H; clear H; subst
+      end); try pairInv.
+
+Fixpoint lookupIndex (A : Set)(eqd : eq_dec A)(ls : list A)(a : A) def :=
+  match ls with
+    | nil => def
+    | a' :: ls' =>
+      if (eqd a a') then O else S (lookupIndex eqd ls' a def)
+  end.
+
+Lemma nth_lookupIndex : 
+  forall (A : Set)(eqd : eq_dec A)(ls : list A) n (a a': A),
+    In a ls ->
+    nth (lookupIndex eqd ls a n ) ls a' = a.
+
+Theorem map_ext_in : 
+  forall (A B : Set)(ls : list A)(f1 f2 : A -> B),
+    (forall a, In a ls -> f1 a = f2 a) ->
+    map f1 ls = map f2 ls.
+
+Lemma nth_map_In : 
+  forall (A B : Set)(ls : list A)(f : A -> B) i defa defb,
+    i < length ls ->
+    nth i (map f ls) defa = f (nth i ls defb).
+
+Lemma removePresent_In : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A) a,
+    In a ls2 ->
+    (~ In a ls1) ->
+    In a (removePresent eqd ls1 ls2).
+  
+  induction ls2; intuition; simpl in *.
+  intuition; subst.
+  unfold setLet.
+  destruct (in_dec eqd a0 ls1); intuition.
+  
+  unfold setLet.
+
+Lemma lookupIndex_lt_length :
+  forall (A : Set)(eqd : eq_dec A)(ls : list A) a def,
+    In a ls -> 
+    lookupIndex eqd ls a def < length ls.
+
+Lemma skipn_app : 
+  forall (A : Set)(ls1 ls2 : list A),
+    skipn (length ls1) (ls1 ++ ls2) = ls2.
+
+Lemma fold_add_init_nat_h : 
+  forall (A : Set)(f : A -> nat)(ls : list A)(init1 init2 : nat),
+    (fold_left (fun acc a => acc + (f a))%nat ls (init1 + init2) = 
+     init1 + fold_left (fun acc a => acc + (f a))%nat ls init2)%nat.
+
+Lemma fold_add_init_nat : 
+  forall (A : Set)(f : A -> nat)(ls : list A)(init : nat),
+    (fold_left (fun acc a => acc + (f a))%nat ls init = 
+     init + fold_left (fun acc a => acc + (f a))%nat ls O)%nat.
+
+Lemma length_flatten : 
+  forall (A : Set)(ls : list (list A)),
+    length (flatten ls) =
+    fold_left (fun acc a => (acc + (length a))%nat) ls O.
+
+Lemma fold_left_map_eq : 
+  forall (A B C : Set)(ls : list A)(f1 : A -> B)(f2 : C -> B -> C)(init : C),
+    fold_left (fun acc b => f2 acc b) (map f1 ls) init = 
+    fold_left (fun acc a => f2 acc (f1 a)) ls init.
+
+Lemma fold_add_nat_Permutation : 
+  forall (A : Set)(f : A -> nat)(ls1 ls2 : list A),
+    Permutation ls1 ls2 ->
+    fold_left (fun acc a => acc + (f a))%nat ls1 O = 
+    fold_left (fun acc a => acc + (f a))%nat ls2 O.
+
+Lemma intersect_NoDup : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A),
+    NoDup ls2 ->
+    NoDup (intersect eqd ls1 ls2).
+
+Lemma intersect_comm_Permutation : 
+  forall (A : Set)(eqd : eq_dec A)(ls1 ls2 : list A),
+    NoDup ls1 ->
+    NoDup ls2 ->
+    Permutation
+      (intersect eqd ls1 ls2)
+      (intersect eqd ls2 ls1).
+
+Lemma fold_add_nat_filter_partition : 
+  forall (A : Set)(P : A -> bool)(f : A -> nat)(ls : list A),
+    fold_left (fun acc a => acc + (f a))%nat ls O = 
+    (plus
+       (fold_left (fun acc a => acc + (f a))%nat (filter P ls) O)
+       (fold_left (fun acc a => acc + (f a))%nat (filter (fun a => negb (P a)) ls) O)
+    ).
+
+Lemma fold_left_add_removePresent : 
+  forall (B : Set)(eqd : eq_dec B)(f : B -> nat)(ls u : list B),
+    NoDup ls ->
+    NoDup u ->
+    fold_left (fun acc b => (acc + (f b))%nat) (removePresent eqd u ls) O = 
+    minus 
+      (fold_left (fun acc b => (acc + (f b))%nat) ls O)
+      (fold_left (fun acc b => (acc + (f b))%nat) (intersect eqd ls u) O).
+  
+  induction ls; intuition; simpl in *.
+  
+  inversion H; clear H; subst.
+  destruct (in_dec eqd a u).
+  unfold setLet.
+  rewrite IHls; trivial.
+  rewrite (@fold_add_nat_Permutation _ _ (intersect eqd (a :: ls) u) (intersect eqd u (a :: ls))).
+  
+  simpl.
+  destruct (in_dec eqd a u); intuition.
+  simpl.
+  
+  repeat rewrite (@fold_add_init_nat _ _ _ (f a)).
+  rewrite <- minus_plus_simpl_l_reverse.
+  f_equal.
+  eapply fold_add_nat_Permutation.
+  eapply intersect_comm_Permutation; intuition.
+  eapply intersect_comm_Permutation; intuition.
+  econstructor; eauto.
+  
+  unfold setLet.
+
+Lemma fold_add_nat_0 : 
+  forall (A : Set)(ls : list A)(f : A -> nat), 
+    (forall a, In a ls -> f a = O) ->
+    fold_left (fun acc a => acc + (f a))%nat ls O = O.
+
+Lemma map_snd_zip : 
+  forall (A B : Set)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map (fun p => snd p) (zip lsa lsb) = lsb.
+
+Theorem Permutation_flatten :
+  forall (A : Set)(ls1 ls2 : list (list A)),
+    Permutation ls1 ls2 ->
+    Permutation (flatten ls1) (flatten ls2).
+
+Theorem zip_map_eq :
+  forall (A B C : Set)(ls : list A)(f1 : A -> B)(f2 : A -> C),
+    zip (map f1 ls) (map f2 ls) = map (fun a => (f1 a, f2 a)) ls.
+
+Theorem removePresent_in_only_if : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    In a (removePresent eqd u ls) ->
+    In a ls.
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Theorem removePresent_correct : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    In a u ->
+    In a (removePresent eqd u ls) ->
+    False.
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Theorem removePresent_NoDup :
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A),
+    NoDup ls ->
+    NoDup (removePresent eqd u ls).
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet.
+
+Theorem removePresent_correct2 : 
+  forall (A : Set)(eqd : eq_dec A)(u ls : list A) a,
+    (~In a u) ->
+    In a ls ->
+    In a (removePresent eqd u ls).
+  
+  induction ls; intuition; simpl in *.
+  unfold setLet in *.
+
+Definition optSwap (A : Set)(opt : option (A * A)) :=
+  match opt with
+    | None => None
+    | Some (a1, a2) =>
+      Some (a2, a1)
+  end.
+
+Theorem optSwap_involutive : 
+  forall (A : Set)(opt : option (A * A)),
+    optSwap (optSwap opt) = opt.
+
+Theorem nth_listReplace_nil_eq : 
+  forall (A : Set) i (a def1 def2 : A),
+    nth i (listReplace nil i a def1) def2 = a.
+
+Theorem nth_listReplace_eq : 
+  forall (A : Set) i (ls : list A) a def1 def2,
+    nth i (listReplace ls i a def1) def2 = a.
+
+Theorem nth_NoDup : 
+  forall (A : Set)(ls : list (list A)) i,
+    (forall e, In e ls -> NoDup e) ->
+    NoDup (nth i ls nil).
+
+Lemma listReplace_twice_nil : 
+  forall (A : Set)(n : nat) (a1 a2 def : A),
+    listReplace (listReplace nil n a1 def) n a2 def =
+    listReplace nil n a2 def.
+
+Lemma listReplace_twice : 
+  forall (A : Set)(n : nat)(ls : list A) a1 a2 def,
+    listReplace (listReplace ls n a1 def) n a2 def =
+    listReplace ls n a2 def.
+
+Lemma compFold_foldBodyOption_None : 
+  forall (A B : Set)(eqd : EqDec A)(c : A -> B -> Comp (option A))(ls : list B) x,
+    evalDist (compFold _ (foldBody_option _ c) None ls) x ==
+    evalDist (ret None) x.
+
+ Lemma Bvector_ne_exists : 
+      forall (n : nat)(v : Bvector n),
+        n > 0 ->
+        exists v', v <> v'.
+
+Lemma map_eq_inv : 
+      forall (A B : Set)(f1 f2 : A -> B)(ls : list A),
+        map f1 ls = map f2 ls ->
+        forall a, In a ls -> f1 a = f2 a.
+
+Lemma nth_lt_length : 
+  forall (A : Set)(ls : list A)(i : nat) a def,
+    nth i ls def = a ->
+    def <> a ->
+    i < length ls.
+
+Lemma map_eq_nth_h : 
+  forall (A B C : Set) (f1 : A -> C)(f2 : B -> C)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map f1 lsa = map f2 lsb ->
+    forall i def1 def2, 
+      i < length lsa ->
+      f1 (nth i lsa def1) = f2 (nth i lsb def2).
+
+Lemma map_eq_nth : 
+  forall (A B C : Set) i def1 def2 (f1 : A -> C)(f2 : B -> C)(lsa : list A)(lsb : list B),
+    length lsa = length lsb ->
+    map f1 lsa = map f2 lsb ->
+    i < length lsa ->
+    f1 (nth i lsa def1) = f2 (nth i lsb def2).
+
+Theorem compFold_eq' : 
+  forall (A1 A2 : Set) P (ls1 : list A1) (ls2 : list A2),
+    list_pred P ls1 ls2 ->
+    forall (B : Set)(eqd1 eqd2 : EqDec B) (c1 : B -> A1 -> Comp B) (c2: B -> A2 -> Comp B),
+      (forall acc a1 a2 x, P a1 a2 -> In a1 ls1 -> In a2 ls2 ->evalDist (c1 acc a1) x == evalDist (c2 acc a2) x) ->
+      forall init x, 
+        evalDist (compFold eqd1 c1 init ls1) x == evalDist (compFold eqd2 c2 init ls2) x.
+
+Lemma list_pred_flatten_both : 
+  forall (A B : Set)(P : A -> B -> Prop)(lsa : list (list A))(lsb : list (list B)),
+    list_pred (list_pred P) lsa lsb ->
+    list_pred P (flatten lsa) (flatten lsb).
+
+Theorem compMap_wf :
+  forall (A B : Set){eqdb : EqDec B}(c : A -> Comp B)(ls : list A),
+    (forall a, In a ls -> well_formed_comp (c a)) ->
+    well_formed_comp (compMap _ c ls).
+
+Theorem list_pred_listReplace : 
+  forall n (A B : Set) P (lsa : list A)(lsb : list B),
+    list_pred P lsa lsb ->
+    forall a b defa defb,
+      P a b -> 
+      P defa defb ->
+      list_pred P (listReplace lsa n a defa) (listReplace lsb n b defb).
+
+Theorem list_pred_nth : 
+  forall n (A B : Set) P (lsa : list A)(lsb : list B) defa defb,
+    list_pred P lsa lsb ->
+    P defa defb ->
+    P (nth n lsa defa) (nth n lsb defb).
+
+Theorem compFold_cons : 
+  forall (A B : Set)(eqda : EqDec A)(c : A -> B -> Comp A)(ls : list B) b (a : A),
+    comp_spec eq (compFold _ c a (b :: ls)) (a' <-$ c a b; compFold _ c a' ls).
+
+Theorem compFold_support_h : 
+  forall (A B : Set)(eqda : EqDec A)(P : A -> list B -> list B -> Prop)(c : A -> B -> Comp A) (ls1 ls2 ls3 : list B)(a z : A),
+    In z (getSupport (compFold _ c a ls1)) ->
+    P a ls2 (ls1 ++ ls3) ->
+    (forall a1 a2 b ls1 ls2,
+       In a2 (getSupport (c a1 b)) ->
+       P a1 ls1 (b :: ls2) ->
+       P a2 (ls1 ++ (b :: nil)) ls2
+    ) ->
+    P z (ls2 ++ ls1) ls3.
+
+Theorem compFold_support : 
+  forall (A B : Set)(eqda : EqDec A)(P : A -> list B -> list B -> Prop)(c : A -> B -> Comp A) (ls1 : list B)(a z : A),
+    In z (getSupport (compFold _ c a ls1)) ->
+    P a nil ls1 ->
+    (forall a1 a2 b ls1 ls2,
+       In a2 (getSupport (c a1 b)) ->
+       P a1 ls1 (b :: ls2) ->
+       P a2 (ls1 ++ (b :: nil)) ls2
+    ) ->
+    P z ls1 nil.
+
+Theorem list_pred_app_both_if : 
+   forall (A B : Set) P (x y : list A)(z q : list B),
+     length x = length z ->
+     list_pred P (x ++ y) (z ++ q) ->
+     list_pred P x z /\ list_pred P y q.
+
+Theorem compMap_seq_map :
+  forall (A B C : Set)(eqdc : EqDec C)(ls : list A)(f : A -> B)(c : B -> Comp C),
+    comp_spec eq
+              (compMap _ c (map f ls))
+              (compMap _ (fun x => c (f x)) ls).
+
+Lemma compMap_Repeat_close : 
+  forall n (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(c : Comp A)(P : A -> bool)(f : A -> B) x,
+    well_formed_comp c ->
+    (exists a, In a (filter P (getSupport c))) ->
+    | (evalDist 
+      (a <-$ compMap eqda (fun _ : nat => c) (forNats n);
+       ret hd_error (map f (filter P a))) x) - 
+      (evalDist 
+         (a <-$ Repeat c P; ret Some (f a)) x) | <= 
+     expRat (Pr[a <-$ c; ret (negb (P a))]) n.
+
+Theorem compMap_head : 
+  forall (A B : Set)(eqd : EqDec B)(f : A -> Comp B)(ls : list A) x,
+    (forall a, In a ls -> well_formed_comp (f a)) ->
+    evalDist (ls' <-$ compMap _ f ls; ret (head ls')) x ==
+    evalDist (match (head ls) with
+                  | None => ret None
+                  | Some a => b <-$ f a; ret (Some b)
+              end) x.
+
+Theorem compMap_filter : 
+  forall (A B : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list A)(c : A -> Comp B)(P : A -> bool) x,  
+    (forall a, In a ls -> well_formed_comp (c a)) ->
+    evalDist (compMap _ c (filter P ls)) x ==
+    evalDist (ps <-$ compMap _ (fun a => b <-$ (c a); ret (a, b)) ls; ret (snd (unzip (filter (fun p => P (fst p)) ps)))) x.
+
+Theorem prob_sum_le : 
+  forall (A : Set)(ls : list A)(c : A -> Comp bool),
+    Pr 
+      [compFold _ (fun b a => x <-$ c a; ret (b || x)) false ls] <=
+    sumList ls (fun a => Pr [c a]).
+
+Theorem prob_sum_le_mult : 
+  forall (n : nat)(c : Comp bool),
+    Pr 
+      [compFold _ (fun b a => x <-$ c; ret (b || x)) false (forNats n)] <=
+    n/1 * Pr [c].
+
+Theorem compMap_Q_eq_compFold : 
+  forall (B : Set)(eqdb : EqDec B)(Q : B -> bool) n1  (c : Comp B) z,
+    Pr[ls <-$ compMap _ (fun _ => c) (forNats n1); ret (fold_left (fun b x => b || (Q x)) ls z)] == 
+    Pr[compFold _ (fun b _ => z <-$ (x <-$ c; ret Q x); ret b || z) z (forNats n1)].
+
+Theorem Repeat_unroll_n : 
+  forall n (A : Set)(eqda : EqDec A)(c : Comp A)(P : A -> bool) a,
+    well_formed_comp c ->
+    (exists x, In x (filter P (getSupport c))) ->
+    evalDist (Repeat c P) a == 
+    evalDist (x <-$ compMap _ (fun _ => c) (forNats n);
+              match (hd_error (filter P x)) with
+                | None => Repeat c P
+                | Some z => ret z
+              end) a.
+
+Theorem compFold_ret_eq : 
+  forall (A B : Set)(eqdb : EqDec B)(ls : list A)(f : B -> A -> B) init,
+    comp_spec eq
+              (compFold _ (fun b a => ret (f b a)) init ls)
+              (ret (fold_left f ls init)).
+
+Theorem prob_fold_add_false_0 :
+  forall (A B : Set)(c : Comp A)(ls : list B)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) false ls] == 0.
+
+Theorem sumList_support_bool':
+  forall (c : Comp bool) (f : bool -> Rat),
+    sumList (getSupport c) (fun x => evalDist c x * f x) == 
+    Pr  [c ] * (f true) + (evalDist c false * (f false)).
+
+Theorem prob_fold_and_eq_exp_h : 
+  forall (A B : Set)(c : Comp A)(ls : list B)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) true ls] ==
+    expRat (Pr[x <-$c; ret (P x)]) (length ls).
+
+Theorem prob_fold_and_eq_exp : 
+  forall (A : Set)(c : Comp A)(n : nat)(P : A -> bool),
+    Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) true (forNats n)] ==
+    expRat (Pr[x <-$c; ret (P x)]) n. *)
+
+
+
+Open Scope list_scope.
+
+
+
+Section DistSingle.
+
+
+
+  Variable A B : Set.
+
+  Hypothesis B_EqDec : EqDec B.
+
+  Variable c1 c2 : A -> Comp B.
+
+  Variable A_State : Set.
+
+  Variable A1 : Comp (A * A_State).
+
+  Variable A2 : A_State -> B -> Comp bool.
+
+
+
+  Definition DistSingle_G(c : A -> Comp B) :=
+
+    [a, s_A] <-$2 A1;
+
+    b <-$ c a;
+
+    A2 s_A b.
+
+
+
+  Definition DistSingle_Adv :=
+
+    | Pr[DistSingle_G c1] - Pr[DistSingle_G c2] |.
+
+
+
+End DistSingle.
+
+
+
+Section ListHybrid.
+
+
+
+  Variable A B State : Set.
+
+  Variable defA : A.
+
+  Variable c1 c2 : A -> Comp B.
+
+  Hypothesis c1_wf : forall a, well_formed_comp (c1 a).
+
+  Hypothesis c2_wf : forall a, well_formed_comp (c2 a).
+
+  Hypothesis A_EqDec : EqDec A.
+
+  Hypothesis B_EqDec : EqDec B.
+
+  Hypothesis State_EqDec : EqDec State.
+
+  Variable A1 : Comp ((list A) * State).
+
+  Variable A2 : State -> list B -> Comp bool.
+
+
+
+  Variable maxA : nat.
+
+  Hypothesis maxA_correct : 
+
+    forall ls s_A, 
+
+      In (ls, s_A) (getSupport A1) ->
+
+      (length ls <= maxA)%nat.
+
+
+
+  Definition ListHybrid_G (c : A -> Comp B) :=
+
+    [lsA, s_A] <-$2 A1;
+
+    lsB <-$ compMap _ c lsA;
+
+    A2 s_A lsB.
+
+
+
+  Definition ListHybrid_Advantage :=
+
+    | Pr[ListHybrid_G c1] - Pr[ListHybrid_G c2] |.
+
+
+
+  Definition G_hybrid i :=
+
+    [lsA, s_A] <-$2 A1;
+
+    lsA1 <- firstn i lsA;
+
+    lsA2 <- skipn i lsA;
+
+    lsB1 <-$ compMap _ c1 lsA1;
+
+    lsB2 <-$ compMap _ c2 lsA2;
+
+    A2 s_A (lsB1 ++ lsB2).
+
+  
+
+  Theorem G_2_hybrid_eq : 
+
+    Pr[ListHybrid_G c2] == Pr[G_hybrid 0].
+
+    
+
+    unfold ListHybrid_G, G_hybrid.
+
+    comp_skip.
+
+    comp_simp.
+
+    eapply comp_spec_eq_impl_eq.
+
+    simpl.
+
+    comp_simp.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+    
+
+  Qed.
+
+
+
+  Theorem skipn_ge_nil : 
+
+    forall (A : Type)(ls : list A)(n : nat),
+
+      n >= length ls ->
+
+      skipn n ls = nil.
+
+    
+
+    induction ls; destruct n; intuition; simpl in *.
+
+    omega.
+
+    eapply IHls.
+
+    omega.
+
+    
+
+  Qed.
+
+
+
+  Theorem G_1_hybrid_eq : 
+
+    Pr[ListHybrid_G c1] == Pr[G_hybrid maxA].
+
+    
+
+    unfold ListHybrid_G, G_hybrid.
+
+    comp_skip.
+
+    comp_simp.
+
+    rewrite firstn_ge_all.
+
+    comp_skip.     
+
+
+
+    rewrite skipn_ge_nil.
+
+    eapply comp_spec_eq_impl_eq.
+
+    simpl.
+
+    comp_simp.
+
+    rewrite app_nil_r.
+
+    eapply comp_spec_eq_refl.
+
+    eauto.
+
+    eauto.
+
+    
+
+  Qed.                             
+
+
+
+  Definition B1 i :=
+
+    [lsA, s_A] <-$2 A1;
+
+    lsA1 <- firstn i lsA;
+
+    a <- nth i lsA defA;
+
+    lsA2 <- skipn (S i) lsA;
+
+    incla <- if (lt_dec i (length lsA)) then true else false;
+
+    ret (a, (incla, lsA1, lsA2, s_A)).                                                
+
+
+
+  Definition B2 (e : bool * _ * _ * _) b :=
+
+      let '(incla, lsA1, lsA2, s_A) := e in 
+
+      lsB1 <-$ compMap _ c1 lsA1;
+
+        lsB2 <-$ compMap _ c2 lsA2;
+
+        lsB <- if incla then (lsB1 ++ (b :: lsB2)) else lsB1;
+
+      A2 s_A lsB.
+
+
+
+  Local Open Scope list_scope.
+
+
+
+  Theorem compMap_unroll : 
+
+    forall (A B : Set)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A)(def : A),
+
+      ls <> nil ->
+
+      comp_spec eq (compMap _ c ls) (x <-$ c (hd def ls); y <-$ compMap _ c (tl ls); ret (x :: y)).
+
+    
+
+    induction ls; intuition; simpl in *.
+
+    comp_skip.
+
+    
+
+  Qed.
+
+
+
+  Theorem skipn_lt_nil_false : 
+
+    forall (A : Type)(ls : list A)(n : nat),
+
+      n < length ls ->
+
+      skipn n ls = nil ->
+
+      False.
+
+    
+
+    induction ls; intuition; simpl in *.
+
+    omega.
+
+    destruct n; simpl in *; intuition.
+
+    discriminate.
+
+    eapply IHls; eauto.
+
+    omega.
+
+    
+
+  Qed.
+
+
+
+  Theorem hd_skip_eq_nth : 
+
+    forall (A : Type)(def : A)(ls : list A)(n : nat),
+
+      hd def (skipn n ls) = nth n ls def.
+
+    
+
+    induction ls; destruct n; intuition; simpl in *.
+
+    eauto.
+
+    
+
+  Qed.
+
+
+
+  Theorem tl_skipn_eq : 
+
+    forall (A : Type)(ls : list A)(n : nat),
+
+      tl (skipn n ls) = skipn (S n) ls.
+
+    
+
+    induction ls; intuition; simpl in *.
+
+    rewrite skipn_nil.
+
+    trivial.
+
+    
+
+    destruct n; simpl in *.
+
+    trivial.
+
+    eauto.
+
+
+
+  Qed.
+
+
+
+  Theorem skipn_gt_nil : 
+
+    forall (A : Type)(ls : list A)(n : nat),
+
+      n >= length ls ->
+
+      skipn n ls = nil.
+
+    
+
+    induction ls; destruct n; intuition; simpl in *.
+
+    omega.
+
+    eapply IHls; eauto.
+
+    omega.
+
+    
+
+  Qed.
+
+
+
+  Theorem G_hybrid_DistSingle_eq : 
+
+    forall i,
+
+      Pr[G_hybrid i] == Pr[DistSingle_G (B1 i) B2 c2].
+
+
+
+    intuition.
+
+    unfold G_hybrid, DistSingle_G, B1, B2.
+
+    inline_first.
+
+    comp_skip.
+
+    comp_simp.
+
+    comp_swap_r.
+
+    comp_skip.
+
+
+
+    eapply comp_spec_eq_impl_eq.
+
+    destruct (lt_dec i (length l)).
+
+    eapply comp_spec_eq_trans.
+
+    eapply comp_spec_seq_eq; eauto with inhabited.
+
+    eapply compMap_unroll.
+
+    intuition.
+
+    
+
+    eapply skipn_lt_nil_false;
+
+      eauto.
+
+
+
+    intuition.
+
+    eapply comp_spec_eq_refl.
+
+    inline_first.
+
+    comp_skip.
+
+
+
+    rewrite hd_skip_eq_nth.
+
+    eapply comp_spec_eq_refl.
+
+    subst.
+
+    inline_first.
+
+
+
+    rewrite tl_skipn_eq.
+
+    comp_skip.
+
+
+
+    rewrite skipn_gt_nil; intuition.
+
+    simpl.
+
+    comp_simp.
+
+    rewrite app_nil_r.
+
+    comp_irr_r.
+
+    comp_irr_r.
+
+    eapply compMap_wf.
+
+    intuition.
+
+  Qed.
+
+     
+
+  Theorem compMap_unroll_tl : 
+
+    forall (A B : Set)(def : A)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A) n,
+
+      length ls = S n ->
+
+      comp_spec eq (compMap _ c ls) (y <-$ compMap _ c (firstn n ls); x <-$ c (nth n ls def); ret (y ++ x :: nil)).
+
+    
+
+    induction ls; intuition; simpl in *.
+
+    omega.
+
+    
+
+    destruct n.
+
+    destruct ls.
+
+    simpl in *.
+
+    comp_simp.
+
+    comp_skip.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+    simpl in*.
+
+    omega.
+
+    
+
+    simpl.
+
+    inline_first.
+
+    comp_skip.
+
+    eapply comp_spec_eq_trans.
+
+    eapply comp_spec_seq_eq; eauto with inhabited.
+
+    intros.
+
+    eapply comp_spec_eq_refl.
+
+    inline_first.
+
+    comp_skip.
+
+    inline_first.
+
+    comp_simp.
+
+    comp_skip.
+
+    rewrite <- app_comm_cons.
+
+    eapply comp_spec_eq_refl.
+
+    
+
+  Qed.
+
+             
+
+  Theorem firstn_firstn : 
+
+    forall (A : Type)(ls : list A)(n1 n2 : nat),
+
+      (n1 <= n2)%nat ->
+
+      firstn n1 (firstn n2 ls) = firstn n1 ls.
+
+    
+
+    induction ls; destruct n1; destruct n2; intuition; simpl in *.
+
+    omega.
+
+    
+
+    f_equal.
+
+    eapply IHls.
+
+    omega.
+
+       
+
+  Qed.
+
+
+
+  Theorem nth_firstn : 
+
+    forall (A : Set)(def : A)(ls : list A)(n1 n2 : nat),
+
+      (n1 < n2)%nat ->
+
+      nth n1 (firstn n2 ls) def = nth n1 ls def.
+
+    
+
+    induction ls; destruct n1; destruct n2; intuition; simpl in *.
+
+    omega.
+
+    omega.
+
+    eapply IHls.
+
+    omega.
+
+  Qed.
+
+
+
+  Theorem G_hybrid_DistSingle_S_eq : 
+
+    forall i,
+
+      Pr[G_hybrid (S i)] == Pr[DistSingle_G (B1 i) B2 c1].
+
+
+
+    intuition.
+
+    unfold G_hybrid, DistSingle_G, B1, B2.
+
+    inline_first.
+
+    comp_skip.
+
+    comp_simp.
+
+    eapply comp_spec_eq_impl_eq.
+
+    destruct (lt_dec i (length l)).
+
+
+
+    eapply comp_spec_eq_trans.
+
+    eapply comp_spec_seq_eq; eauto with inhabited.
+
+    eapply compMap_unroll_tl.
+
+    rewrite firstn_length.
+
+    eapply min_l.
+
+    omega.
+
+    intuition.
+
+    eapply comp_spec_eq_refl.
+
+    inline_first.
+
+
+
+    rewrite firstn_firstn.
+
+    comp_swap_r.
+
+    comp_skip.
+
+    inline_first.
+
+
+
+    rewrite nth_firstn.
+
+    comp_skip.
+
+    comp_skip.
+
+    rewrite <- app_assoc.
+
+    rewrite <- app_comm_cons.
+
+    simpl.
+
+    eapply comp_spec_eq_refl.
+
+    omega.
+
+    omega.
+
+
+
+    comp_irr_r.
+
+
+
+    repeat rewrite firstn_ge_all.
+
+    comp_skip.
+
+    comp_skip.
+
+    rewrite skipn_gt_nil in H3.
+
+    simpl in *.
+
+    intuition.
+
+    subst.
+
+    rewrite app_nil_r.
+
+    eapply comp_spec_eq_refl.
+
+    omega.
+
+    omega.
+
+    omega.
+
+    
+
+  Qed.
+
+        
+
+  Theorem hybrid_incr_close : 
+
+    forall i,
+
+  | Pr[G_hybrid i] - Pr[G_hybrid (S i)] | == DistSingle_Adv c1 c2 (B1 i) B2. 
+
+    
+
+    intuition.
+
+    unfold DistSingle_Adv.
+
+
+
+    rewrite G_hybrid_DistSingle_eq.
+
+    rewrite G_hybrid_DistSingle_S_eq.
+
+    eapply ratDistance_comm.
+
+  Qed.
+
+         
+
+  Theorem ratDistance_sequence_sum : 
+
+    forall (f : nat -> Rat)(n : nat),
+
+  | f O - f n | <= sumList (forNats n) (fun i => | f i - f (S i) |).
+
+    
+
+    induction n; intuition; simpl in *.
+
+    unfold sumList.
+
+    simpl.
+
+    eapply eqRat_impl_leRat.
+
+    rewrite <- ratIdentityIndiscernables.
+
+    intuition.
+
+    
+
+    eapply leRat_trans.
+
+    2:{
+
+      eapply eqRat_impl_leRat.
+
+      symmetry.
+
+      eapply sumList_cons.
+
+    }
+
+    simpl.
+
+    eapply leRat_trans.
+
+    eapply ratDistance_le_trans.
+
+    eapply IHn.
+
+    eapply leRat_refl.
+
+    rewrite ratAdd_comm.
+
+    intuition.
+
+    
+
+  Qed.
+
+  
+
+  Theorem Single_impl_ListHybrid_sum :
+
+    ListHybrid_Advantage
+
+    <=
+
+    sumList (forNats maxA) (fun i => DistSingle_Adv c1 c2 (B1 i) B2).
+
+
+
+    unfold ListHybrid_Advantage.
+
+    rewrite G_1_hybrid_eq.
+
+    rewrite G_2_hybrid_eq.
+
+    rewrite ratDistance_comm.
+
+    rewrite (@ratDistance_sequence_sum (fun i => Pr[G_hybrid i])); intuition.
+
+    eapply sumList_le.
+
+    intuition.
+
+    eapply eqRat_impl_leRat.
+
+    eapply hybrid_incr_close.
+
+
+
+  Qed.
+
+
+
+  Variable maxDistance : Rat.
+
+  Hypothesis maxDistance_correct : 
+
+    forall i, DistSingle_Adv c1 c2 (B1 i) B2 <= maxDistance.
+
+
+
+  Theorem Single_impl_ListHybrid : 
+
+    ListHybrid_Advantage <= maxA / 1 * maxDistance.
+
+
+
+    rewrite Single_impl_ListHybrid_sum.
+
+    eapply leRat_trans.
+
+    eapply sumList_le.
+
+    intros.
+
+    eapply maxDistance_correct.
+
+    rewrite sumList_body_const.
+
+    rewrite forNats_length.
+
+    rewrite ratMult_comm.
+
+    intuition.
+
+
+
+  Qed.
+
+End ListHybrid.
+

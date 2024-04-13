@@ -1,0 +1,2456 @@
+Load loadpath.
+
+Require Import ZArith Coq.Lists.List Permutation.
+
+Require Import VST.msl.Axioms veric.Coqlib2.
+(* VST.msl.Axioms:
+Require Coq.Logic.ClassicalFacts.
+
+Require Export Coq.Logic.FunctionalExtensionality.
+
+Lemma extensionality:
+  forall (A B: Type) (f g : A -> B),  (forall x, f x = g x) -> f = g.
+
+Arguments extensionality [A B] _ _ _.
+
+Axiom prop_ext: ClassicalFacts.prop_extensionality.
+Arguments prop_ext [A B] _.
+
+Lemma proof_irr: ClassicalFacts.proof_irrelevance.
+Proof.
+  exact (ClassicalFacts.ext_prop_dep_proof_irrel_cic prop_ext).
+Arguments proof_irr [A] _ _. *)
+
+Require Import VST.msl.predicates_sa.
+(* VST.msl.predicates_sa:
+Require Import VST.msl.base.
+Require Import VST.msl.sepalg.
+
+Require Import Coq.funind.Recdef.
+Require Coq.Wellfounded.Wellfounded. 
+Delimit Scope pred with pred.
+Local Open Scope pred.
+
+Definition pred (A:Type) := A -> Prop.
+Bind Scope pred with pred.
+
+Definition derives (A:Type) (P Q:pred A) := forall a:A, P a -> Q a.
+Arguments derives [A] _ _.
+
+Lemma pred_ext : forall A (P Q:pred A),
+  derives P Q -> derives Q P -> P = Q.
+
+Lemma derives_cut {A}  : forall Q P R : pred A,
+  derives P Q ->
+  derives Q R ->
+  derives P R.
+
+Definition prop {A: Type}  (P: Prop) : pred A := (fun _  => P).
+Hint Unfold prop.
+
+Definition TT {A}: pred A := prop True.
+Definition FF  {A}: pred A := prop False.
+
+Set Implicit Arguments.
+
+Definition imp {A}  (P Q:pred A) :=
+   fun a:A => P a -> Q a.
+Definition orp {A} (P Q:pred A) :=
+   fun a:A => P a \/ Q a.
+Definition andp {A} (P Q:pred A) :=
+   fun a:A => P a /\ Q a.
+
+Definition allp {A B: Type} (f: B -> pred A) : pred A
+  := fun a => forall b, f b a.
+Definition exp {A B: Type} (f: B -> pred A) : pred A
+  := fun a => exists b, f b a.
+
+Notation "'emp'" := identity.
+
+Definition sepcon {A} {JA: Join A}(p q:pred A) := fun z:A =>
+  exists x:A, exists y:A, join x y z /\ p x /\ q y.
+Definition wand {A}  {JA: Join A}  (p q:pred A) := fun y =>
+  forall x z, join x y z -> p x -> q z.
+
+Notation "P '|--' Q" := (derives P Q) (at level 80, no associativity).
+Notation "'EX'  x ':' T ',' P " := (exp (fun x:T => P%pred)) (at level 65, x at level 99) : pred.
+Notation "'ALL'  x ':' T  ',' P " := (allp (fun x:T => P%pred)) (at level 65, x at level 99) : pred.
+Infix "||" := orp (at level 50, left associativity) : pred.
+Infix "&&" := andp (at level 40, left associativity) : pred.
+Notation "P '-->' Q" := (imp P Q) (at level 55, right associativity) : pred.
+Notation "P '<-->' Q" := (andp (imp P Q) (imp Q P)) (at level 57, no associativity) : pred.
+Notation "P '*' Q" := (sepcon P Q) : pred.
+Notation "P '-*' Q" := (wand P Q) (at level 60, right associativity) : pred.
+Notation "'!!' e" := (prop e) (at level 25) : pred.
+
+Definition precise {A}  {JA: Join A}{PA: Perm_alg A}  (P: pred A) : Prop :=
+     forall w w1 w2, P w1 -> P w2 -> join_sub w1 w -> join_sub w2 w -> w1=w2.
+
+Definition precise2  {A} {JA: Join A}{PA: Perm_alg A}  (P: pred A) : Prop :=
+     forall Q R, P * (Q && R) = (P * Q) && (P * R).
+
+Lemma precise_eq {A}  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Canc_alg A}:
+     precise =
+                 fun P : pred A => forall Q R, P * (Q && R) = (P * Q) && (P * R).
+
+Lemma derives_precise {A} {JA: Join A}{PA: Perm_alg A}:
+  forall P Q, (P |-- Q) -> precise Q -> precise P.
+
+Lemma prop_true_and:
+  forall (P: Prop) A (Q: pred A), P -> (!! P && Q = Q).
+
+Lemma prop_andp_e {A}:  forall P Q (w:A), (!! P && Q) w -> P /\ Q w.
+
+Lemma prop_andp_i {A}:  forall P Q (w:A), P /\ Q w -> (!! P && Q) w.
+
+Lemma derives_trans {A}:  forall (P Q R: pred A), P |-- Q -> Q |-- R -> P |-- R.
+
+Lemma and_i {A}: forall (P Q R: pred A),
+    P |-- Q -> P |-- R -> P |-- Q && R.
+
+Lemma andp_derives {A}  :
+  forall P Q P' Q': pred A, P |-- P' -> Q |-- Q' -> P && Q |-- P' && Q'.
+
+Lemma sepcon_assoc {A} {JA: Join A}{PA: Perm_alg A}:
+  forall p q r, (((p * q) * r) = (p * (q * r))).
+
+Lemma sepcon_comm {A} {JA: Join A}{PA: Perm_alg A}:  forall (P Q: pred A) , P * Q = Q * P.
+
+Lemma sepcon_emp {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall P, (P * emp) = P.
+
+Lemma emp_sepcon {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+    forall P, (emp*P) = P.
+
+Lemma precise_emp {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+     precise emp.
+
+Definition exactly {A} (x: A) : pred A := fun w => w=x.
+
+Lemma join_exactly {A} {JA: Join A}{PA: Perm_alg A}:
+  forall w1 w2 w3, join w1 w2 w3 -> exactly w1 * exactly w2 = exactly w3.
+
+Lemma exists_and1 {A: Type} : forall {T: Type} (P: T -> pred A) (Q: pred A),
+                   exp P && Q = EX x:T, P x && Q.
+
+Lemma andp_comm {A: Type}: forall (P Q: pred A), P && Q = Q && P.
+
+Lemma andp_assoc {A}: forall (P Q R: pred A),
+                 ((P && Q) && R = P && (Q && R)).
+
+Lemma True_andp_eq {A}:
+  forall (P: Prop) (Q: pred A), P -> (!!P && Q)%pred = Q.
+
+Lemma TT_i  {A} : forall w: A,  TT w.
+
+Hint Resolve @TT_i.
+
+Lemma TT_and {A}: forall (Q: pred A), TT && Q = Q.
+
+Lemma andp_TT {A}: forall (P: pred A), P && TT = P.
+
+Lemma emp_wand {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+    forall P, emp -* P = P.
+
+Lemma wand_derives {A} {JA: Join A}{PA: Perm_alg A}:
+  forall P P' Q Q',  P' |-- P -> Q |-- Q' -> P -* Q |-- P' -* Q'.
+
+Lemma TT_sepcon_TT {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: TT * TT = TT.
+
+Definition ewand {A} {JA: Join A} (P Q: pred A) : pred A :=
+  fun w => exists w1, exists w2, join w1 w w2 /\ P w1 /\ Q w2.
+
+Lemma emp_ewand {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:  forall P, ewand emp P = P.
+
+Lemma exists_sepcon1 {A} {JA: Join A}{PA: Perm_alg A}:
+  forall T (P: T ->  pred A) Q,  exp P * Q = exp (fun x => P x * Q).
+
+Lemma derives_refl {A: Type}:
+  forall (P: pred A), (P |-- P).
+
+Hint Resolve @derives_refl.
+
+Lemma derives_TT {A}: forall (P: pred A), P |-- TT.
+Hint Resolve @derives_TT.
+
+Lemma sepcon_derives {A} {JA: Join A}{PA: Perm_alg A}:
+  forall p q p' q', (p |-- p') -> (q |-- q') -> (p * q |-- p' * q').
+
+Lemma derives_e {A: Type}: forall p q (st: A),
+      (p |-- q) -> p st -> q st.
+
+Lemma exp_derives {A} :
+       forall B (P: B -> pred A) Q , (forall x:B, P x |-- Q x) -> (exp P |-- exp Q).
+
+Lemma unmodus_wand {A}  {JA: Join A}{PA: Perm_alg A}:
+ forall P Q R, Q = P * R ->  Q |-- P * (P -* Q).
+
+Definition superprecise {A}  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A} (P: pred A) :=
+   forall w1 w2, P w1 -> P w2 -> comparable w1 w2 -> w1=w2.
+
+Lemma modus_ewand {A}  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A} :  forall P Q, superprecise P -> P * (ewand P Q) |-- Q.
+
+Lemma exists_expand_sepcon {A}  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall B (p: B -> pred A) q, (exp p * q)%pred = (exp (fun x => p x * q))%pred.
+
+Lemma exists_expand_sepcon' {A}  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall B p (q: B -> pred A), (p * exp q)%pred = (exp (fun x => p * q x))%pred.
+
+Lemma exists_expand_and {A}  {JA: Join A}:
+ forall B (p: B -> pred A) q, (exp p && q)%pred = (exp (fun x => p x && q))%pred.
+
+Lemma exists_expand_and' {A} {JA: Join A}:
+ forall B p (q: B -> pred A), (p && exp q)%pred = (exp (fun x => p && q x))%pred.
+
+Lemma allp_derives_right {A} : forall B p (q: B -> pred A),
+  ((p |-- allp q) <-> (forall x, p |-- q x)).
+
+Lemma wand_exists {A} {JA: Join A}{PA: Perm_alg A}:
+   forall B P Q,  (EX x: B, P -* Q x) |-- (P -* EX x : B, Q x).
+
+Lemma modus_wand {A} {JA: Join A}{PA: Perm_alg A}:
+  forall P Q,  P * (P -* Q) |-- Q.
+
+Lemma distrib_sepcon_andp {A} {JA: Join A}{PA: Perm_alg A}:
+  forall P Q R, P * (Q && R) |-- (P * Q) && (P * R).
+
+Lemma andp_r {A: Type} : forall (P Q R: pred A), P |-- Q -> P |-- R -> P |-- Q && R.
+
+Definition list_sepcon {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A} : list (pred A) -> pred A := fold_right sepcon emp.
+
+Lemma sepcon_andp_prop {A} {JA: Join A}{PA: Perm_alg A}: forall P Q R, P * (!!Q && R) = !!Q && (P * R).
+
+Require Import VST.msl.cross_split.
+
+Lemma exactly_i {A} : forall x: A, exactly x x.
+Hint Resolve @exactly_i.
+
+Lemma superprecise_exactly {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall x, superprecise (exactly x).
+Hint Resolve @superprecise_exactly.
+
+Lemma find_overlap {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+     Cross_alg A ->
+     forall S P Q R, (S * P) && (Q * R) |--
+                          EX SQ:_, EX SR:_, EX PQ:_, EX PR:_,
+                            (((SQ* SR) && S)*((PQ* PR) && P)) &&
+                            (((SQ* PQ) && Q)*((SR* PR) && R)) &&
+                            !! (superprecise SQ /\ superprecise SR /\ superprecise PQ /\ superprecise PR).
+
+Lemma modus_ponens {A} : forall (X P Q:pred A),
+  X |-- P ->
+  X |-- (P --> Q) ->
+  X |-- Q.
+
+Lemma and_intro {A}  : forall (X P Q:pred A),
+  X |-- P ->
+  X |-- Q ->
+  X |-- P && Q.
+
+Lemma and1 {A}  : forall (X P Q:pred A),
+  X |-- P && Q --> P.
+
+Lemma and2 {A}  : forall (X P Q:pred A),
+  X |-- P && Q --> Q.
+
+Lemma and3 {A}  : forall (X P Q R:pred A),
+  X |-- (P --> Q) --> (P --> R) --> (P --> Q && R).
+
+Lemma or1 {A}  : forall (X P Q:pred A),
+  X |-- P --> P || Q.
+
+Lemma or2 {A}  : forall (X P Q:pred A),
+  X |-- Q --> P || Q.
+
+Lemma or3 {A}  : forall (X P Q R:pred A),
+  X |-- (P --> R) --> (Q --> R) --> (P || Q --> R).
+
+Lemma TTrule {A}  : forall X (P: pred A),
+  X |-- P --> TT.
+
+Lemma FFrule {A}  : forall X (P: pred A),
+  X |-- FF --> P.
+
+Lemma distribution {A}  : forall (X P Q R:pred A),
+  X |-- P && (Q || R) --> (P && Q) || (P && R).
+
+Lemma wand_sepcon_adjoint {A} {JA: Join A}{PA: Perm_alg A} : forall (P Q R:pred A),
+  ((P * Q) |-- R) = (P |-- (Q -* R)).
+
+Lemma ewand_sepcon {A} {JA: Join A}{PA: Perm_alg A}: forall P Q R,
+      (ewand (P * Q) R = ewand P (ewand Q R))%pred.
+
+Lemma andp_right {A}  : forall (X P Q:pred A),
+  X |-- P ->
+  X |-- Q ->
+  X |-- P && Q.
+
+Lemma andp_left1{A}: forall P Q R: pred A,  P |-- R -> P && Q |-- R.
+
+Lemma andp_left2{A}: forall P Q R: pred A,  Q |-- R -> P && Q |-- R.
+
+Lemma orp_left{A}: forall P Q R: pred A,  P |-- R -> Q |-- R -> P || Q |-- R.
+
+Lemma orp_right1{A}: forall P Q R: pred A,  P |-- Q -> P |-- Q || R.
+
+Lemma orp_right2{A}: forall P Q R: pred A,  P |-- R -> P |-- Q || R.
+
+Lemma exp_right:
+  forall {B A: Type}(x:B) p (q: B -> pred A),
+    p |-- q x ->
+    p |-- exp q.
+
+Lemma exp_left:
+  forall {B A: Type}(p: B -> pred A) q,
+  (forall x, p x |-- q) ->
+   exp p |-- q.
+
+Lemma allp_right {B A: Type}:
+  forall (P: pred A) (Q: B -> pred A),
+  (forall v, P |-- Q v) ->
+   P |-- allp Q.
+
+Lemma allp_left {B}{A}:
+   forall (P: B -> pred A) x Q, P x |-- Q -> allp P |-- Q.
+
+Lemma imp_andp_adjoint {A}  : forall (P Q R:pred A),
+  (P && Q) |-- R <-> P |-- (Q --> R).
+
+Lemma exp_andp1 {A} :
+ forall B (p: B -> pred A) q, (exp p && q)%pred = (exp (fun x => p x && q))%pred.
+
+Lemma exp_sepcon1 {A}  {JA: Join A}{PA: Perm_alg A}:
+  forall T (P: T ->  pred A) Q,  (exp P * Q = exp (fun x => P x * Q))%pred.
+
+Definition pure {A}{JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}
+     (P: pred A) : Prop :=
+   P |-- emp.
+
+Lemma sepcon_pure_andp {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall P Q, pure P -> pure Q -> ((P * Q) = (P && Q)).
+
+Lemma pure_sepcon_TT_andp {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall P Q, pure P -> (P * TT) && Q = (P*Q).
+
+Lemma ewand_conflict {T}{JT: Join T}{PT: Perm_alg T}{ST: Sep_alg T}:
+       forall P Q R, sepcon P Q |-- FF -> andp P (ewand Q R) |-- FF.
+
+Lemma ewand_TT_sepcon {T}{JT: Join T}{PT: Perm_alg T}{ST: Sep_alg T}:
+      forall P Q R,
+(P * Q && ewand R (!!True))%pred |-- (P && ewand R (!!True) * (Q && ewand R (!!True)))%pred. *)
+
+Require Import veristar.datatypes veristar.clauses veristar.clause_lemmas
+(* veristar.datatypes:
+Require Import ZArith List.
+Require Import veristar.variables.
+
+Definition var : Type := Ident.t.
+
+Inductive expr := Nil | Var : var -> expr.
+
+Inductive pn_atom := Equ : expr -> expr -> pn_atom | Nequ : expr -> expr -> pn_atom.
+
+Inductive space_atom :=
+| Next : expr -> expr -> space_atom
+| Lseg : expr -> expr -> space_atom.
+
+Inductive assertion : Type :=
+  Assertion : forall (pi : list pn_atom) (sigma : list space_atom), assertion.
+
+Inductive entailment : Type :=
+  Entailment : assertion -> assertion -> entailment.
+
+Definition subst_var (i: var) (t: expr) (j: var) :=
+  if Ident.eq_dec i j then t else Var j.
+
+Definition subst_expr (i: var) (t: expr) (t': expr) :=
+  match t' with
+    | Nil => Nil
+    | Var j => if Ident.eq_dec i j then t else t'
+  end.
+
+Definition subst_pn (i: var) (t: expr) (a: pn_atom) :=
+ match a with
+   | Equ t1 t2 => Equ (subst_expr i t t1) (subst_expr i t t2)
+   | Nequ t1 t2 => Nequ (subst_expr i t t1) (subst_expr i t t2)
+ end.
+
+Definition subst_pns (i: var) (t: expr) (pa: list pn_atom)
+  : list pn_atom := map (subst_pn i t) pa.
+
+Definition subst_space (i: var) (t: expr) (a: space_atom) :=
+  match a with
+    | Next t1 t2 => Next (subst_expr i t t1) (subst_expr i t t2)
+    | Lseg t1 t2 => Lseg (subst_expr i t t1) (subst_expr i t t2)
+  end.
+
+Definition subst_spaces (i: var) (t: expr)
+  : list space_atom -> list space_atom := map (subst_space i t).
+
+Definition subst_assertion (i: var) (e: expr) (a: assertion) :=
+ match a with Assertion pi sigma =>
+   Assertion (subst_pns i e pi) (subst_spaces i e sigma)
+ end. *)
+(* veristar.clauses:
+Load loadpath.
+Require Import ZArith List Recdef Coq.MSets.MSetInterface Coq.Sorting.Mergesort
+               Permutation Coq.MSets.MSetAVL.
+Require Import veristar.basic veristar.tactics veristar.variables veristar.datatypes
+               veristar.compare veristar.redblack.
+
+Inductive pure_atom := Eqv : expr -> expr -> pure_atom.
+
+Let var1 : var := Z2id 1.
+Let var0 : var := Z2id 0.
+Let var2 : var := Z2id 2.
+
+Fixpoint list_prio {A} (weight: var) (l: list A) (p: var) : var :=
+  match l with
+  | nil => p
+  | _::l' => list_prio weight l' (add_id weight p)
+  end.
+
+Definition prio (gamma delta: list pure_atom) : var :=
+    list_prio var2 gamma (list_prio var1 delta var0).
+
+Inductive clause : Type :=
+| PureClause : forall (gamma : list pure_atom) (delta : list pure_atom)
+                         (priority : var)
+                         (prio_ok: prio gamma delta = priority), clause
+| PosSpaceClause : forall (gamma : list pure_atom) (delta : list pure_atom)
+  (sigma : list space_atom), clause
+| NegSpaceClause : forall (gamma : list pure_atom) (sigma : list space_atom)
+  (delta : list pure_atom), clause.
+
+Definition expr_cmp e e' :=
+ match e, e' with
+   | Nil , Nil => Eq
+   | Nil, _ => Lt
+   | _, Nil => Gt
+   | Var v, Var v' => Ident.compare v v'
+ end.
+
+Lemma var_cspec : StrictCompSpec (@Logic.eq var) Ident.lt Ident.compare.
+
+Hint Resolve var_cspec.
+
+Lemma expr_cspec: CompSpec' expr_cmp.
+
+Hint Resolve expr_cspec.
+
+Definition pure_atom_cmp (a a': pure_atom) : comparison :=
+ match a, a' with
+   | Eqv e1 e2, Eqv e1' e2' =>
+     match expr_cmp e1 e1' with
+       Eq => expr_cmp e2 e2' | c => c
+     end
+ end.
+
+Hint Rewrite @comp_refl using solve[auto] : comp.
+
+Ltac comp_tac :=
+    progress (autorewrite with comp in *; auto)
+  || discriminate
+  || solve [eapply comp_trans;  eauto]
+  || subst
+ || match goal with
+  | H: Lt = ?A |- context [?A] => rewrite <- H
+  | H: Gt = ?A |- context [?A] => rewrite <- H
+  | H: Eq = ?A |- context [?A] => rewrite <- H
+ end.
+
+Lemma pure_atom_cspec: CompSpec' pure_atom_cmp.
+
+Hint Resolve pure_atom_cspec.
+
+Lemma pure_atom_cmp_eq a b : a = b <-> Eq = pure_atom_cmp a b.
+Hint Resolve pure_atom_cmp_eq.
+
+Definition expr_order (t t': expr) := isGe (expr_cmp t t').
+
+Inductive max_expr (t : expr) : pure_atom -> Prop :=
+| mexpr_left : forall t', expr_order t t' -> max_expr t (Eqv t t')
+| mexpr_right : forall t', expr_order t t' -> max_expr t (Eqv t' t).
+
+Definition order_eqv_pure_atom (a: pure_atom) :=
+  match a with
+    | Eqv i j => match expr_cmp i j with Lt => Eqv j i | _ => Eqv i j end
+  end.
+
+Definition nonreflex_atom a :=
+  match a with Eqv i j => match expr_cmp i j with Eq => false | _ => true end
+  end.
+
+Definition normalize_atoms pa :=
+  rsort_uniq pure_atom_cmp (map order_eqv_pure_atom pa).
+
+Definition mkPureClause (gamma delta: list pure_atom) : clause :=
+  PureClause gamma delta _ (eq_refl _).
+
+Definition order_eqv_clause (c: clause) :=
+  match c with
+  | PureClause pa pa' _ _ =>
+        mkPureClause (normalize_atoms (filter nonreflex_atom pa)) (normalize_atoms pa')
+  | PosSpaceClause pa pa' sa' =>
+    PosSpaceClause (normalize_atoms (filter nonreflex_atom pa))
+                   (normalize_atoms pa') sa'
+  | NegSpaceClause pa sa pa' =>
+    NegSpaceClause (normalize_atoms (filter nonreflex_atom pa)) sa
+                   (normalize_atoms pa')
+  end.
+
+Definition mk_pureL (a: pn_atom) : clause :=
+ match a with
+ | Equ x y => mkPureClause nil (order_eqv_pure_atom(Eqv x y)::nil)
+ | Nequ x y => mkPureClause (order_eqv_pure_atom(Eqv x y)::nil) nil
+ end.
+
+Fixpoint mk_pureR (al: list pn_atom) : list pure_atom * list pure_atom :=
+ match al with
+ | nil => (nil,nil)
+ | Equ x y :: l' => match mk_pureR l' with (p,n) =>
+                      (order_eqv_pure_atom(Eqv x y)::p, n) end
+ | Nequ x y :: l' => match mk_pureR l' with (p,n) =>
+                       (p, order_eqv_pure_atom(Eqv x y)::n) end
+ end.
+
+Definition cnf (en: entailment) : list clause :=
+ match en with
+  Entailment (Assertion pureL spaceL) (Assertion pureR spaceR) =>
+   match mk_pureR pureR with (p,n) =>
+     map mk_pureL pureL ++ (PosSpaceClause nil nil spaceL :: nil) ++
+       match spaceL, spaceR with
+       | nil, nil => mkPureClause p n :: nil
+       | _, _ => NegSpaceClause p spaceR n :: nil
+       end
+   end
+  end.
+
+Definition pure_atom_geq a b := isGeq (pure_atom_cmp a b).
+Definition pure_atom_gt a b := match pure_atom_cmp a b with Gt => true | _ => false end.
+Definition pure_atom_eq a b := match pure_atom_cmp a b with Eq => true | _ => false end.
+Definition expr_lt a b := match expr_cmp a b with Lt => true | _ => false end.
+Definition expr_eq a b := match expr_cmp a b with Eq => true | _ => false end.
+Definition expr_geq a b := match expr_cmp a b with Lt => false | _ => true end.
+
+Definition norm_pure_atom (a : pure_atom) :=
+  match a with
+    | Eqv i j => if expr_lt i j then Eqv j i else Eqv i j
+  end.
+
+Definition subst_pure (i: var) (t: expr) (a: pure_atom) :=
+ match a with
+   | Eqv t1 t2 => Eqv (subst_expr i t t1) (subst_expr i t t2)
+ end.
+
+Definition subst_pures (i: var) (t: expr) (pa: list pure_atom)
+  : list pure_atom := map (subst_pure i t) pa.
+
+Definition compare_space_atom (a b : space_atom) : comparison :=
+ match a , b with
+  | Next i j , Next i' j' => match expr_cmp i i' with Eq => expr_cmp j j' | c => c end
+  | Next i j, Lseg i' j' =>
+    match expr_cmp i i' with
+    | Lt => Lt
+    | Eq => Lt
+    | Gt => Gt
+    end
+  | Lseg i j, Next i' j' =>
+    match expr_cmp i i' with
+    | Lt => Lt
+    | Eq => Gt
+    | Gt => Gt
+    end
+  | Lseg i j , Lseg i' j' => match expr_cmp i i' with Eq => expr_cmp j j' | c => c end
+  end.
+
+Lemma space_atom_cspec: CompSpec' compare_space_atom.
+
+Hint Resolve space_atom_cspec.
+
+Definition compare_clause (cl1 cl2 : clause) : comparison :=
+  match cl1 , cl2 with
+  | PureClause neg pos _ _ , PureClause neg' pos' _ _ =>
+    match compare_list pure_atom_cmp neg neg' with
+    | Eq => compare_list pure_atom_cmp pos pos'
+    | c => c
+    end
+  | PureClause _ _ _ _ , _ => Lt
+  | _ , PureClause _ _ _ _ => Gt
+  | PosSpaceClause gamma delta sigma , PosSpaceClause gamma' delta' sigma'
+  | NegSpaceClause gamma sigma delta , NegSpaceClause gamma' sigma' delta' =>
+    match compare_list pure_atom_cmp gamma gamma' with
+    | Eq => match compare_list pure_atom_cmp delta delta' with
+                 | Eq => compare_list compare_space_atom sigma sigma'
+                 | c => c
+                 end
+    | c => c
+    end
+  | PosSpaceClause _ _ _ , NegSpaceClause _ _ _ => Lt
+  | NegSpaceClause _ _ _ , PosSpaceClause _ _ _ => Gt
+  end.
+
+Lemma clause_cspec: CompSpec' compare_clause.
+
+Hint Resolve clause_cspec.
+
+Definition rev_cmp {A : Type} (cmp : A -> A -> comparison) :=
+  fun a b => match cmp a b with Eq => Eq | Lt => Gt | Gt => Lt end.
+
+Lemma rev_cmp_cspec {A} (c: A -> A -> comparison) :
+  CompSpec' c -> CompSpec' (rev_cmp c).
+
+Lemma rev_cmp_eq : forall {A : Type} (cmp : A -> A -> comparison) (x y : A),
+  (forall x0 y0 : A, Eq = cmp x0 y0 -> x0 = y0) ->
+  Eq = rev_cmp cmp x y -> x = y.
+
+Definition prio1000 := Z2id 1000.
+Definition prio1001 := Z2id 1001.
+
+Definition clause_prio (cl : clause) : var :=
+  match cl with
+  | PureClause gamma delta prio _ => prio
+  | PosSpaceClause _ _ _ => prio1000
+  | NegSpaceClause gamma sigma delta => prio1001
+  end%Z.
+
+Definition compare_clause' (cl1 cl2 : clause) : comparison :=
+  match Ident.compare (clause_prio cl1) (clause_prio cl2) with
+  | Eq => compare_clause cl1 cl2
+  | c => c
+  end.
+
+Lemma clause_cspec': CompSpec' compare_clause'.
+
+Hint Resolve clause_cspec'.
+
+Definition clause_length (cl : clause) : Z :=
+  match cl with
+  | PureClause gamma delta _ _ => Zlength gamma + Zlength delta
+  | PosSpaceClause gamma delta sigma =>
+      Zlength gamma + Zlength delta + Zlength sigma
+  | NegSpaceClause gamma sigma delta =>
+      Zlength gamma + Zlength sigma + Zlength delta
+  end%Z.
+
+Definition compare_clause_length (cl1 cl2 : clause) :=
+   Zcompare (clause_length cl1) (clause_length cl2).
+
+Definition compare_clause'1 (cl1 cl2 : clause) : comparison :=
+  match compare_clause_length cl1 cl2 with
+  | Eq => compare_clause cl1 cl2
+  | c => c
+  end.
+
+Lemma clause_cspec'1: CompSpec' compare_clause'1.
+
+Hint Resolve clause_cspec'1.
+
+Module OrderedClause <: OrderedType
+  with Definition t:=clause
+  with Definition compare:=compare_clause'.
+
+Definition t := clause.
+
+Definition eq : clause -> clause -> Prop := Logic.eq.
+
+Lemma eq_equiv : Equivalence eq.
+
+Definition lt (c1 c2 : clause) := Lt = compare_clause' c1 c2.
+
+Lemma lt_compat : Proper (eq ==> eq ==> iff) lt.
+
+Definition compare := compare_clause'.
+
+Lemma compare_spec : forall x y, CompSpec eq lt x y (compare x y).
+
+Lemma eq_dec : forall x y, {eq x y}+{~eq x y}.
+
+Lemma lt_strorder : StrictOrder lt.
+
+End OrderedClause.
+
+Module M1 : redblack.MSetPlus
+   with Definition E.t := OrderedClause.t
+   with Definition E.compare := OrderedClause.compare
+   with Definition E.eq := OrderedClause.eq
+   with Definition E.lt := OrderedClause.lt
+   with Definition E.compare := OrderedClause.compare.
+ Include MSetAVL.Make(OrderedClause).
+ Definition delete_min (s: t) : option (elt * t) :=
+   match min_elt s with
+   | Some x => Some (x, remove x s)
+   | None => None
+  end.
+ Lemma delete_min_spec1: forall (s: t) k s',
+    delete_min s = Some (k,s') <->
+    (min_elt s = Some k /\ remove k s = s').
+ Lemma delete_min_spec2: forall s, delete_min s = None <-> Empty s.
+Definition mem_add (x: elt) (s: t) : option t :=
+ if mem x s then None else Some (add x s).
+
+Lemma mem_add_spec:
+    forall x s, mem_add x s = if mem x s then None else Some (add x s).
+End M1.
+
+Module M := redblack.Make(OrderedClause).
+
+Definition clause_list2set (l : list clause) : M.t :=
+  fold_left (fun s0 c => M.add c s0) l M.empty.
+
+Definition empty_clause : clause := mkPureClause nil nil.
+
+Definition remove_trivial_atoms := filter (fun a =>
+  match a with
+  | Eqv e1 e2 => match expr_cmp e1 e2 with
+                 | Eq => false
+                 | _ => true
+                 end
+  end).
+
+Definition subst_pures_delete (i: var) (e: expr)
+  : list pure_atom -> list pure_atom :=
+  remove_trivial_atoms oo subst_pures i e.
+
+Definition isEq cc := match cc with Eq => true | _ => false end.
+
+Definition eq_space_atom (a b : space_atom) : bool :=
+  isEq (compare_space_atom a b).
+
+Definition eq_space_atomlist (a b : list space_atom) : bool :=
+  isEq (compare_list compare_space_atom a b).
+
+Definition eq_var i j : bool := isEq (Ident.compare i j).
+
+Definition drop_reflex_lseg : list space_atom -> list space_atom :=
+  filter (fun sa =>
+                    match sa with
+                    | Lseg (Var x) (Var y) => negb (eq_var x y)
+                    | Lseg Nil Nil => false
+                    | _ => true
+                    end).
+
+Definition order_eqv_pure_atoms := map order_eqv_pure_atom.
+
+Definition greater_than_expr (i: var) (e: expr) :=
+  match e with Var j => match Ident.compare i j with Gt => true | _ => false end
+                        | Nil => true
+  end.
+
+Definition greatereq_than_expr (i: var) (e: expr) :=
+  match e with
+  | Var j => match Ident.compare i j with Gt => true | Eq => true | Lt => false
+             end
+  | Nil => true
+  end.
+
+Definition greater_than_atom (s u : pure_atom) :=
+  match s , u with
+  | Eqv s t , Eqv u v =>
+    ((expr_lt u s && (expr_geq s v || expr_geq t v)) ||
+      (expr_lt v s && (expr_geq s u || expr_geq t u))) ||
+    ((expr_lt u t && (expr_geq s v || expr_geq t v)) ||
+      (expr_lt v t && (expr_geq s u || expr_geq t u)))
+  end.
+
+Definition greater_than_atoms (s : pure_atom) (delta : list pure_atom) :=
+  forallb (fun u => greater_than_atom s u) delta.
+
+Definition greater_than_all (i: var) : list pure_atom -> bool :=
+  forallb (fun a => match a with Eqv x y =>
+             andb (greater_than_expr i x) (greater_than_expr i y) end).
+
+Definition subst_clause i e cl : clause :=
+  match cl with
+  | PureClause pa pa' _ _ =>
+      mkPureClause (subst_pures_delete i e pa) (subst_pures i e pa')
+  | NegSpaceClause pa sa pa' =>
+      NegSpaceClause (subst_pures_delete i e pa) (subst_spaces i e sa)
+                     (subst_pures i e pa')
+  | PosSpaceClause pa pa' sa' =>
+      PosSpaceClause (subst_pures_delete i e pa) (subst_pures i e pa')
+                     (subst_spaces i e sa')
+  end.
+
+Definition var_eqZ v v' := Ident.eq v v'.
+
+Lemma eq_pos_var_eqZ v v' : true = eq_var v v' -> var_eqZ v v'.
+
+Definition ocons {A : Type} (o : option A) l :=
+  match o with Some a => a :: l | None => l end.
+
+Fixpoint omapl {A B : Type} (f : A -> option B) (l : list A) : list B :=
+  match l with
+  | a :: l' => ocons (f a) (omapl f l')
+  | nil => nil
+  end.
+
+Fixpoint merge {A: Type} (cmp : A -> A -> comparison) l1 l2 :=
+  let fix merge_aux l2 :=
+  match l1, l2 with
+  | [], _ => l2
+  | _, [] => l1
+  | a1::l1', a2::l2' =>
+      match cmp a1 a2 with
+      | Eq => a1 :: merge cmp l1' l2'
+      | Gt => a1 :: merge cmp l1' l2
+      | _ => a2 :: merge_aux l2' end
+  end
+  in merge_aux l2.
+
+Notation sortu_atms := (rsort_uniq pure_atom_cmp).
+Notation insu_atm := (insert_uniq pure_atom_cmp).
+Notation sortu_clauses := (rsort_uniq compare_clause).
+
+Lemma compare_clause_eq_equivalence:
+     RelationClasses.Equivalence (fun c1 c2 => Eq = compare_clause c1 c2).
+
+Lemma pure_clause_ext:
+  forall gamma delta p Pp p' Pp',
+     PureClause gamma delta p Pp = PureClause gamma delta p' Pp'.
+
+Lemma expr_eq_eq' : forall e1 e2, true = expr_eq e1 e2 -> e1=e2.
+
+Lemma mem_spec': forall s x, M.mem x s = false <-> ~M.In x s.
+
+Lemma is_empty_spec': forall s, M.is_empty s = false <-> ~M.Empty s.
+
+Lemma empty_set_elems':
+  forall s, M.Empty s <-> M.elements s = nil.
+
+Lemma Melements_spec1: forall (s: M.t) x, List.In x (M.elements s) <-> M.In x s.
+
+Require Import Finite_sets_facts.
+Require Import VST.msl.Axioms.
+
+Lemma Mcardinal_spec': forall s,   cardinal _ (Basics.flip M.In s) (M.cardinal s).
+
+Lemma remove_decreases:
+  forall giv unselected,
+  M.In giv unselected ->
+
+Definition pure_atom2pn_atom (b : bool) (a : pure_atom) :=
+  match a with
+  | Eqv e1 e2 => if b then Equ e1 e2 else Nequ e1 e2
+  end.
+
+Definition pn_atom_cmp (a1 a2 : pn_atom) : comparison :=
+  match a1, a2 with
+  | Equ e1 e2, Equ e1' e2' => pure_atom_cmp (Eqv e1 e2) (Eqv e1' e2')
+  | Nequ e1 e2, Equ e1' e2' =>
+    if expr_eq e1 e1' then Gt else pure_atom_cmp (Eqv e1 e2) (Eqv e1' e2')
+  | Equ e1 e2, Nequ e1' e2' =>
+    if expr_eq e1 e1' then Lt else pure_atom_cmp (Eqv e1 e2) (Eqv e1' e2')
+  | Nequ e1 e2, Nequ e1' e2' => pure_atom_cmp (Eqv e1 e2) (Eqv e1' e2')
+  end.
+
+Definition pure_clause2pn_list (c : clause) :=
+  match c with
+  | PureClause gamma delta _ _ =>
+    rsort pn_atom_cmp
+      (map (pure_atom2pn_atom false) gamma ++ map (pure_atom2pn_atom true) delta)
+  | _ => nil
+  end.
+
+Definition compare_clause2 (cl1 cl2 : clause) :=
+  match cl1, cl2 with
+  | PureClause _ _ _ _, PureClause _ _ _ _ =>
+    compare_list pn_atom_cmp (pure_clause2pn_list cl1) (pure_clause2pn_list cl2)
+  | _, _ => compare_clause cl1 cl2
+  end.
+
+Lemma compare_clause_eq cl1 cl2 : Eq = compare_clause cl1 cl2 -> cl1 = cl2.
+
+Inductive ce_type := CexpL | CexpR | CexpEf.
+
+Module DebuggingHooks.
+
+Definition print_new_pures_set (s: M.t) := s.
+
+Definition print_wf_set (s: M.t) := s.
+
+Definition print_unfold_set (s: M.t) := s.
+
+Definition print_inferred_list (l: list clause) := l.
+
+Definition print_pures_list (l: list clause) := l.
+
+Definition print_eqs_list (l: list clause) := l.
+
+Definition print_spatial_model (c: clause) (R: list (var * expr)) := c.
+
+Definition print_spatial_model2 (c c': clause) (R: list (var * expr)) := c'.
+
+Definition print_ce_clause (R: list (var * expr)) (cl : clause) (ct : ce_type)
+  := (R, cl, ct).
+
+End DebuggingHooks.
+
+Export DebuggingHooks.
+
+Hint Unfold print_new_pures_set print_wf_set print_inferred_list print_spatial_model
+            print_pures_list print_eqs_list
+  : DEBUG_UNFOLD. *)
+(* veristar.clause_lemmas:
+Load loadpath.
+Require Import ZArith Coq.Lists.List Permutation.
+Require Import VST.msl.Axioms msl.Coqlib2.
+Require Import VST.msl.predicates_sa.
+Require Import veristar.datatypes veristar.clauses
+               veristar.list_denote veristar.heapresolve
+               veristar.model_type veristar.model veristar.compare.
+Require Import veristar.superpose.
+
+Module Type CL_SOUND.
+
+Declare Module VSM : VERISTAR_MODEL. Import VSM VeriStarLogic.
+
+Axiom order_eqv_sound : forall a,
+  pure_atom_denote a = pure_atom_denote (order_eqv_pure_atom a).
+
+Axiom order_eqv_clause_sound : forall c s,
+  clause_denote (order_eqv_clause c) s <-> clause_denote c s.
+
+Axiom clause_setd_listd : forall l b s,
+  listd clause_denote inter b l s ->
+  setd clause_denote inter b (clause_list2set l) s.
+
+Axiom rev_cmp_eq : forall {A:Type} (f : A -> A -> comparison) (a1 a2 : A),
+  Eq = rev_cmp f a1 a2 -> rev_cmp f a1 a2 = f a1 a2.
+
+Axiom in_sort_uniq : forall c l,
+  In c (rsort_uniq (rev_cmp compare_clause) l) -> In c l.
+
+End CL_SOUND.
+
+Module CL_Sound (VSM : VERISTAR_MODEL) : CL_SOUND with Module VSM := VSM.
+Module VSM := VSM.
+Import VSM VeriStarLogic.
+
+Import sepalg.
+
+Lemma order_eqv_sound a :
+  pure_atom_denote a = pure_atom_denote (order_eqv_pure_atom a).
+
+Lemma list_denote_intersection_filter_nonreflex (B: spred) (l: list pure_atom) :
+  listd pure_atom_denote inter B l =
+  listd pure_atom_denote inter B (filter nonreflex_atom l).
+
+Lemma list_denote_normalize_pure_atoms :
+  forall Q (B:spred) (l:list pure_atom)
+     (Qassoc: forall x y z , Q x (Q y z) = Q (Q x y) z)
+     (Qsymm: forall x y, Q x y = Q y x)
+     (Hcmp: forall x y, Eq = pure_atom_cmp x y ->
+       (forall P, Q (pure_atom_denote x) (Q (pure_atom_denote y) P) =
+                  Q (pure_atom_denote y) P)),
+  list_denote pure_atom_denote Q B l =
+  list_denote pure_atom_denote Q B (normalize_atoms l).
+
+Lemma list_denote_intersection_normalize_pure_atoms B l :
+  list_denote pure_atom_denote inter B l =
+  list_denote pure_atom_denote inter B (normalize_atoms l).
+
+Lemma list_denote_union_normalize_pure_atoms B l :
+  list_denote pure_atom_denote un B l =
+  list_denote pure_atom_denote un B (normalize_atoms l).
+
+Lemma list_denote_normalize_filter_nonreflex_atom B l :
+  list_denote pure_atom_denote inter B
+      (normalize_atoms (filter nonreflex_atom l)) =
+  list_denote pure_atom_denote inter B l.
+
+Lemma order_eqv_clause_sound c s :
+  clause_denote (order_eqv_clause c) s <-> clause_denote c s.
+
+Lemma clause_setd_listd l b s :
+  listd clause_denote inter b l s ->
+  setd clause_denote inter b (clause_list2set l) s.
+
+Lemma rev_cmp_eq {A:Type} (f : A -> A -> comparison) (a1 a2 : A) :
+  Eq = rev_cmp f a1 a2 -> rev_cmp f a1 a2 = f a1 a2.
+
+Lemma in_insert_uniq c c' l :
+  In c (insert_uniq (rev_cmp compare_clause) c' l) ->
+  c' = c \/ In c l.
+
+Lemma compare_clause_refl d : Eq = rev_cmp compare_clause d d.
+
+Lemma in_sort_uniq c l :
+  In c (rsort_uniq (rev_cmp compare_clause) l) -> In c l.
+
+End CL_Sound.
+
+Lemma positive_base_case: forall n, 0 = nat_of_P n - 1 -> n=1%positive. *)
+
+               veristar.list_denote veristar.superpose veristar.basic
+
+               veristar.compare.
+
+Import Superposition.
+
+Require Import veristar.model_type veristar.model.
+(* veristar.model_type:
+Load loadpath.
+Require Import VST.msl.base VST.msl.sepalg.
+Require Import veristar.variables.
+
+Module Type VERISTAR_LOGIC.
+
+Parameters loc val : Type.
+Declare Instance Join_val: Join val.
+Declare Instance Perm_val: Perm_alg val.
+Declare Instance Sep_val: Sep_alg val.
+Declare Instance Canc_val: Canc_alg val.
+Parameter val2loc : val -> option loc.
+Parameter nil_val : val.
+Axiom nil_not_loc : val2loc nil_val = None.
+
+Parameter empty_val : val.
+Axiom emp_empty_val : forall v, identity v <-> v = empty_val.
+Definition full (v : val) := forall v2, joins v v2 -> identity v2.
+Axiom val2loc_full : forall v l, val2loc v = Some l -> full v.
+Axiom nil_full : full nil_val.
+Axiom empty_not_full : ~full empty_val.
+Axiom val2loc_inj : forall v1 v2 l,
+  val2loc v1 = Some l ->  val2loc v2 = Some l -> v1=v2.
+Axiom loc_eq_dec : forall l1 l2 : loc, Decidable.decidable (l1=l2).
+Axiom nil_dec : forall v, Decidable.decidable (v=nil_val).
+
+Definition var : Type := Ident.t.
+Parameter env : Type.
+Parameter env_get : env -> var -> val.
+Parameter env_set : var -> val -> env -> env.
+Axiom gss_env : forall (x : var) (v : val) (s : env),
+  v<>empty_val -> env_get (env_set x v s) x = v.
+Axiom gso_env : forall (x y : var) (v : val) (s : env),
+  x<>y -> env_get (env_set x v s) y = env_get s y.
+
+Axiom env_reset : forall s x, env_set x (env_get s x) s = s.
+Axiom env_reset2 : forall s x z, env_set x (env_get s x) (env_set x z s) = s.
+
+Parameter heap : Type.
+Declare Instance Join_heap: Join heap.
+Declare Instance Perm_heap: Perm_alg heap.
+Declare Instance Sep_heap: Sep_alg heap.
+Declare Instance Canc_heap: Canc_alg heap.
+Parameter rawnext: forall (x: loc) (y : val) (s : heap), Prop.
+Parameter emp_at : forall (l: loc) (h: heap), Prop.
+Axiom heap_gempty : forall h l, identity h -> emp_at l h.
+Definition nil_or_loc (v: val) := v=nil_val \/ exists l, val2loc v = Some l.
+Axiom mk_heap_rawnext : forall h x0 x y, val2loc (x0) = Some x ->
+  nil_or_loc y -> exists h', rawnext x y h' /\ comparable h h'.
+Axiom rawnext_out : forall {x x0 x' y h},
+  rawnext x y h -> val2loc x0 = Some x' -> x'<>x -> emp_at x' h.
+
+Definition rawnext' x y h := exists h0, join_sub h0 h /\ rawnext x y h0.
+
+Axiom rawnext_at1 : forall {x y h1 h2 h},
+  rawnext' x y h1 -> join h1 h2 h -> emp_at x h2 /\ rawnext' x y h.
+
+Axiom rawnext_at2 : forall {x y h1 h2 h},
+  join h1 h2 h -> rawnext' x y h -> emp_at x h2 -> rawnext' x y h1.
+
+Axiom  rawnext_not_emp : forall {x y h}, rawnext' x y h -> ~emp_at x h.
+
+Axiom emp_at_join: forall {h1 h2 h},
+  join h1 h2 h -> forall l, (emp_at l h1 /\ emp_at l h2) <-> emp_at l h.
+
+Axiom rawnext_unique : forall x z z' s s' t t' r,
+  rawnext x z s -> rawnext x z' s' -> join s t r -> join s' t' r ->
+  z' = z /\ s'=s.
+
+Axiom vars_defined_locs : forall z (e : env),
+  exists v, env_get e z = v /\ nil_or_loc v.
+
+End VERISTAR_LOGIC. *)
+(* veristar.model:
+Load loadpath.
+Require Import Coq.ZArith.ZArith Coq.Lists.List.
+Require Import VST.msl.base msl.sepalg VST.msl.sepalg_generators msl.Axioms
+               VST.msl.predicates_sa.
+Require Import veristar.datatypes veristar.clauses veristar.model_type veristar.list_denote.
+
+Module Type VERISTAR_MODEL.
+Declare Module VeriStarLogic : VERISTAR_LOGIC.
+Import VeriStarLogic.
+
+Inductive lseg : val -> val -> heap -> Prop :=
+| lseg_nil : forall x s, identity s -> nil_or_loc x -> lseg x x s
+| lseg_cons : forall x x' y s h0 h1 z,
+  x<>y -> val2loc x = Some x' ->
+  rawnext x' z h0 -> lseg z y h1 -> join h0 h1 s ->
+  lseg x y s.
+
+Axiom rawnext2rawnext' : forall {x y h}, rawnext x y h -> rawnext' x y h.
+
+Notation stack := env.
+
+Instance Join_stack : Join stack := Join_equiv stack.
+Instance Perm_stack : Perm_alg stack := Perm_equiv stack.
+Instance Sep_stack : Sep_alg stack := Sep_equiv stack.
+Instance Canc_stack : Canc_alg stack := Canc_equiv stack.
+
+Definition stack_get (s : stack) (x : option var) : val :=
+  match x with
+  | Some i => env_get s i
+  | None => empty_val
+  end.
+
+Definition upd_stack (x : var) (v : val) (s : stack) : stack :=
+ env_set x v s.
+
+Axiom stack_nil : forall s : stack, stack_get s None = empty_val.
+
+Inductive state := State: forall (s: stack) (h: heap), state.
+
+Definition stk (st : state) := match st with State s h => s end.
+
+Definition hp  (st : state) := match st with State s h => h end.
+
+Instance Join_state : Join state :=
+   fun (s1 s2 s3 : state) =>
+    join (stk s1) (stk s2) (stk s3) /\ join (hp s1) (hp s2) (hp s3).
+
+Definition state_bij: bijection (heap * stack) state.
+
+Axiom join_state_eq:
+  Join_state = Join_bij _ _ _ state_bij.
+
+Declare Instance Perm_state: Perm_alg state.
+Declare Instance Sep_state: Sep_alg state.
+Declare Instance Canc_state: Canc_alg state.
+
+Definition expr_denote (e : expr) (s : state) : val :=
+  match e with Nil => nil_val | Var x => stack_get (stk s) (Some x) end.
+
+Definition var_eq (x y : expr) (s : state) := expr_denote x s = expr_denote y s.
+Hint Unfold var_eq : spred.
+Infix "===" := var_eq (at level 35, no associativity).
+
+Axiom var_eq_refl : forall x s, (x === x) s.
+
+Axiom var_eq_trans : forall x y z s, (x === y) s -> (y === z) s -> (x === z) s.
+
+Axiom var_eq_sym : forall x y s, (x === y) s -> (y === x) s.
+
+Axiom var_eq_sym' : forall x y, (x === y) = (y === x).
+
+Notation spred := (state -> Prop).
+
+Definition neg (P : spred) : spred := fun s : state => ~P s.
+Hint Unfold neg : spred.
+
+Axiom empstate_empheap: forall (s:state), emp s <-> emp (hp s).
+
+Definition pn_atom_denote (a : pn_atom) : spred :=
+  match a with Equ e1 e2 => e1 === e2 | Nequ e1 e2 => neg (e1 === e2) end.
+
+Definition pure_atom_denote (a : pure_atom) : spred :=
+  match a with Eqv e1 e2 => e1 === e2 end.
+
+Definition space_atom_denote (a : space_atom) : spred :=
+  match a with
+  | Next x y =>
+      fun s => match val2loc (expr_denote x s) with
+      | Some l' =>  rawnext l' (expr_denote y s) (hp s)
+                          /\ nil_or_loc (expr_denote y s)
+      | None => False
+      end
+  | Lseg x y =>
+      fun s => lseg (expr_denote x s) (expr_denote y s) (hp s)
+  end.
+
+Definition space_denote (sigma : list space_atom) : spred :=
+  list_denote space_atom_denote sepcon emp sigma.
+
+Definition clause_denote (c : clause) : spred := fun s : state =>
+  match c with
+  | PureClause p p' _ _ =>
+      list_denote pure_atom_denote (@andp state) TT p s ->
+      list_denote pure_atom_denote (@orp state) FF p' s
+  | NegSpaceClause p space p' =>
+      list_denote pure_atom_denote (@andp state) (space_denote space) p s ->
+      list_denote pure_atom_denote (@orp state) FF p' s
+  | PosSpaceClause p p' space' =>
+      list_denote pure_atom_denote (@andp state) TT p s ->
+      list_denote pure_atom_denote (@orp state) (space_denote space') p' s
+  end.
+
+Definition assertion_denote (f : assertion) : spred :=
+  match f with Assertion pi space =>
+    let sd := space_denote space in
+    list_denote pn_atom_denote (@andp state) sd pi
+  end.
+
+Definition entailment_denote (e : entailment) : Prop :=
+  match e with
+  | Entailment F G => assertion_denote F |-- assertion_denote G
+  end.
+
+Axiom var_nil_or_loc : forall (z : var) (e : env), nil_or_loc (env_get e z).
+
+End VERISTAR_MODEL.
+
+Module VeriStarModel (VSLog : VERISTAR_LOGIC) : VERISTAR_MODEL
+  with Module VeriStarLogic := VSLog.
+
+Module VeriStarLogic := VSLog. Import VSLog.
+
+Inductive lseg : val -> val -> heap -> Prop :=
+| lseg_nil : forall x s, identity s -> nil_or_loc x -> lseg x x s
+| lseg_cons : forall x x' y s h0 h1 z,
+  x<>y -> val2loc x = Some x' ->
+  rawnext x' z h0 -> lseg z y h1 -> join h0 h1 s ->
+  lseg x y s.
+
+Lemma rawnext2rawnext' : forall {x y h}, rawnext x y h -> rawnext' x y h.
+
+Lemma var_nil_or_loc : forall (z : var) (e : env), nil_or_loc (env_get e z).
+
+Notation stack := env.
+
+Instance Join_stack : Join stack := Join_equiv stack.
+Instance Perm_stack : Perm_alg stack := Perm_equiv stack.
+Instance Sep_stack : Sep_alg stack := Sep_equiv stack.
+Instance Canc_stack : Canc_alg stack := Canc_equiv stack.
+
+Definition stack_get (s: stack) (x: option var) : val :=
+  match x with
+  | Some i => env_get s i
+  | None => empty_val
+  end.
+
+Definition upd_stack (x : var) (v : val) (s : stack) : stack :=
+  env_set x v s.
+
+Lemma stack_nil : forall s : stack, stack_get s None = empty_val.
+
+Inductive state := State: forall (s: stack) (h: heap), state.
+
+Definition stk (st : state) := match st with State s h => s end.
+
+Definition hp  (st : state) := match st with State s h => h end.
+
+Instance Join_state : Join state :=
+   fun (s1 s2 s3 : state) =>
+    join (stk s1) (stk s2) (stk s3) /\ join (hp s1) (hp s2) (hp s3).
+
+Definition state_bij: bijection (heap * stack) state.
+
+Lemma join_state_eq:
+  Join_state = Join_bij _ _ _ state_bij.
+
+Definition expr_denote (e : expr) (s : state) : val :=
+  match e with Nil => nil_val | Var x => stack_get (stk s) (Some x) end.
+
+Definition var_eq (x y : expr) (s : state) := expr_denote x s = expr_denote y s.
+Hint Unfold var_eq : spred.
+
+Infix "===" := var_eq (at level 35, no associativity).
+
+Lemma var_eq_refl : forall x s, (x === x) s.
+
+Lemma var_eq_trans : forall x y z s, (x === y) s -> (y === z) s -> (x === z) s.
+
+Lemma var_eq_sym : forall x y s, (x === y) s -> (y === x) s.
+
+Lemma var_eq_sym' : forall x y, (x === y) = (y === x).
+
+Notation spred := (state -> Prop).
+
+Lemma empstate_empheap : forall (s:state), emp s <-> emp (hp s).
+
+Definition neg (P : spred) : spred := fun s : state => ~P s.
+Hint Unfold neg : spred.
+
+Definition pn_atom_denote (a : pn_atom) : spred :=
+  match a with Equ e1 e2 => e1 === e2 | Nequ e1 e2 => neg (e1 === e2) end.
+
+Definition pure_atom_denote (a : pure_atom) : spred :=
+  match a with Eqv e1 e2 => e1 === e2 end.
+
+Definition space_atom_denote (a : space_atom) : spred :=
+  match a with
+  | Next x y =>
+      fun s => match val2loc (expr_denote x s) with
+      | Some l' =>  rawnext l' (expr_denote y s) (hp s)
+                          /\ nil_or_loc (expr_denote y s)
+      | None => False
+      end
+  | Lseg x y =>
+      fun s => lseg (expr_denote x s) (expr_denote y s) (hp s)
+  end.
+
+Definition space_denote (sigma : list space_atom) : spred :=
+  list_denote space_atom_denote sepcon emp sigma.
+
+Definition clause_denote (c : clause) : spred := fun s : state =>
+  match c with
+  | PureClause p p' _ _ =>
+      list_denote pure_atom_denote (@andp state) TT p s ->
+      list_denote pure_atom_denote (@orp state) FF p' s
+  | NegSpaceClause p space p' =>
+      list_denote pure_atom_denote (@andp state) (space_denote space) p s ->
+      list_denote pure_atom_denote (@orp state) FF p' s
+  | PosSpaceClause p p' space' =>
+      list_denote pure_atom_denote (@andp state) TT p s ->
+      list_denote pure_atom_denote (@orp state) (space_denote space') p' s
+  end.
+
+Definition assertion_denote (f : assertion) : spred :=
+  match f with Assertion pi space =>
+    let sd := space_denote space in
+    list_denote pn_atom_denote (@andp state) sd pi
+  end.
+
+Definition entailment_denote (e : entailment) : Prop :=
+  match e with
+  | Entailment F G => assertion_denote F |-- assertion_denote G
+  end.
+
+End VeriStarModel. *)
+
+
+
+Module Type SP_SOUND.
+
+Declare Module VSM : VERISTAR_MODEL.
+
+Import VSM VeriStarLogic.
+
+
+
+Axiom check_clauseset_Valid_sound: forall init g u,
+
+  check_clauseset init = (Valid, g, u) ->
+
+  setd clause_denote inter TT init |-- clause_denote empty_clause.
+
+
+
+Axiom check_clauseset_Cexample_sound: forall init final empty R selected,
+
+  check_clauseset init = (C_example R selected, final, empty) ->
+
+  setd clause_denote inter TT init |--
+
+    setd clause_denote inter TT selected &&
+
+    setd clause_denote inter TT final.
+
+
+
+End SP_SOUND.
+
+
+
+Module SP_Sound (VSM : VERISTAR_MODEL) : SP_SOUND with Module VSM := VSM.
+
+Module VSM := VSM.
+
+Import VSM VeriStarLogic.
+
+
+
+Implicit Arguments list_denote [A T].
+
+Local Notation "'listd'" := list_denote.
+
+
+
+Implicit Arguments andp [A].
+
+Local Notation "'inter'" := (@andp _). 
+
+
+
+Require Import Bool.
+
+
+
+Definition positive_superposition (c d : clause) l0 : list clause :=
+
+  match c , d with
+
+  | PureClause nil (Eqv s t :: pos) _ _ ,
+
+    PureClause nil (Eqv s' v :: pos') _ _ =>
+
+    if expr_eq s s' && expr_lt t s && expr_lt v s' &&
+
+       pure_atom_gt1 (Eqv s t) pos && pure_atom_gt1 (Eqv s' v) pos' &&
+
+       pure_atom_gt (Eqv s' v) (Eqv s t)
+
+    then mkPureClause nil (insert_uniq pure_atom_cmp (norm_pure_atom (Eqv t v))
+
+                          (merge pure_atom_cmp pos pos')) :: l0
+
+    else l0
+
+  | _ , _ => l0
+
+  end.
+
+
+
+Definition negative_superposition (c d : clause) l0 : list clause :=
+
+  match c , d with
+
+  | PureClause nil (Eqv s t :: pos) _ _,
+
+    PureClause (Eqv s' v :: neg') pos' _ _ =>
+
+    if expr_eq s s' && expr_lt t s && expr_lt v s'
+
+    then mkPureClause (insert_uniq pure_atom_cmp (norm_pure_atom (Eqv t v)) neg')
+
+                      (merge pure_atom_cmp pos pos') :: l0
+
+    else l0
+
+  | _ , _ => l0
+
+  end.
+
+
+
+Definition reflexivity_resolution (d : clause) l0 : list clause :=
+
+  match d with
+
+  | PureClause (Eqv u v :: neg) pos _ _ =>
+
+    if expr_eq u v then mkPureClause neg pos :: l0 else l0
+
+  | _ => l0
+
+  end.
+
+
+
+Definition ordered_factoring (c : clause) l0 : list clause :=
+
+  match c with
+
+  | PureClause nil (Eqv s t :: Eqv u v :: pos) _ _ =>
+
+    if pure_atom_eq (Eqv s t) (Eqv u v)
+
+    then mkPureClause nil
+
+            (insert_uniq pure_atom_cmp (norm_pure_atom (Eqv s t)) pos)
+
+                :: l0
+
+    else l0
+
+  | _ => l0
+
+  end.
+
+
+
+Definition equality_factoring (c : clause) l0 : list clause :=
+
+  match c with
+
+  | PureClause nil (Eqv u v :: Eqv s t :: pos) _ _ =>
+
+    if expr_eq s u && pure_atom_gt (Eqv u v) (Eqv s t)
+
+    then mkPureClause [norm_pure_atom (Eqv v t)]
+
+               (insert_uniq pure_atom_cmp (norm_pure_atom (Eqv u t)) pos) :: l0
+
+    else l0
+
+  | _ => l0
+
+  end.
+
+
+
+Lemma positive_superposition_sound c d l0 s :
+
+  clause_denote c s -> clause_denote d s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (positive_superposition c d l0) s.
+
+Proof with simpl; auto.
+
+intros A B; destruct c as [gamma delta| |]; destruct d as [gamma' delta'| |]...
+
+2: simpl; destruct gamma, delta... 2: destruct p...
+
+2: simpl; destruct gamma, delta... 2: destruct p...
+
+destruct gamma, delta as [|atm delta]...
+
+destruct atm as [e1 e2], delta'...  simpl in A; spec A...
+
+destruct gamma'... destruct gamma'... destruct p...
+
+remember (expr_eq e1 e) as b; destruct b. 2: simpl; auto.
+
+if_tac... split... intro H1. specialize (B H1). simpl in B.
+
+rewrite (@listd_insert_uniq_un _ state)... 2: apply pure_atom_cmp_eq.
+
+destruct A as [A|A];destruct B as [B|B]... rewrite <-(expr_eq_eq' _ _ Heqb) in B.
+
+assert (C: (e0 === e2) s) by (eapply var_eq_trans; apply var_eq_sym in B; eauto).
+
+left; if_tac... solve[apply var_eq_sym; auto].
+
+right; apply listd_merge_un2... solve[apply pure_atom_cmp_eq].
+
+right; apply listd_merge_un1... solve[apply pure_atom_cmp_eq].
+
+right; apply listd_merge_un2... solve[apply pure_atom_cmp_eq].
+
+Qed.
+
+
+
+Lemma negative_superposition_sound c d l0 s :
+
+  clause_denote c s -> clause_denote d s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (negative_superposition c d l0) s.
+
+Proof with simpl; auto.
+
+intros A B; destruct c as [gamma delta| |]; destruct d as [gamma' delta'| |]...
+
+2: simpl; destruct gamma, delta... 2: destruct p...
+
+2: simpl; destruct gamma, delta... 2: destruct p...
+
+destruct gamma, delta... destruct p... destruct gamma'... destruct p...
+
+remember (expr_eq e e1) as b; destruct b. 2: simpl; auto.
+
+if_tac; [simpl|simpl; auto]; rewrite interS; simpl. intro H3. split...
+
+rewrite (@listd_insert_uniq_inter _ state)... 2: apply pure_atom_cmp_eq.
+
+intros [H1 H2].
+
+assert ((e2 === e0) s). if_tac in H1; simpl in H1... apply var_eq_sym...
+
+simpl in A; spec A... inversion A.
+
+simpl in B; spec B. split... apply expr_eq_eq' in Heqb; subst e1.
+
+eapply var_eq_trans; eapply var_eq_sym in H; eauto.
+
+apply listd_merge_un2... solve[apply pure_atom_cmp_eq].
+
+apply listd_merge_un1... solve[apply pure_atom_cmp_eq].
+
+Qed.
+
+
+
+Lemma reflexivity_resolution_sound c l0 s :
+
+  clause_denote c s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (reflexivity_resolution c l0) s.
+
+Proof with
+
+try solve [simpl; destruct delta as [|p]; simpl; auto; destruct p; simpl; auto].
+
+intros A; destruct c as [gamma delta| |]...
+
+simpl; destruct gamma as [|p]; simpl; auto; destruct p...
+
+remember (expr_eq e e0) as b; destruct b; simpl; try split; auto.
+
+intro Hyp; apply A; rewrite (expr_eq_eq' _ _ Heqb); simpl; split; auto.
+
+solve[apply var_eq_refl].
+
+Qed.
+
+
+
+Lemma ordered_factoring_sound c l0 s :
+
+  clause_denote c s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (ordered_factoring c l0) s.
+
+Proof with
+
+simpl; auto;
+
+try solve [simpl; destruct delta as [|p]; simpl; auto; destruct p; simpl; auto].
+
+intros A; destruct c as [gamma delta| |]...
+
+destruct gamma... destruct delta... destruct p... destruct delta... destruct p...
+
+
+
+remember (expr_eq e e1) as b1; remember (expr_eq e0 e2) as b2.
+
+destruct b1, b2...
+
+if_tac... simpl; split; auto. intro Hyp.
+
+rewrite (listd_insert_uniq_un pure_atom_denote FF). 2: apply pure_atom_cmp_eq.
+
+rewrite (expr_eq_eq' _ _ Heqb1), (expr_eq_eq' _ _ Heqb2) in A |- *.
+
+simpl in A; destruct A as [A|[A|A]]; [auto| | |right; auto].
+
+solve [left; if_tac; simpl; solve[auto | apply var_eq_sym; auto]].
+
+solve [left; if_tac; simpl; solve[auto | apply var_eq_sym; auto]].
+
+replace (pure_atom_eq (Eqv e e0) (Eqv e1 e2)) with false; auto.
+
+unfold pure_atom_eq; simpl.
+
+unfold expr_eq in Heqb1. destruct (expr_cmp e e1); simpl; try congruence.
+
+unfold expr_eq in Heqb2. destruct (expr_cmp e0 e2);simpl; try congruence.
+
+replace (pure_atom_eq (Eqv e e0) (Eqv e1 e2)) with false; auto.
+
+unfold pure_atom_eq; simpl.
+
+unfold expr_eq in Heqb1. destruct (expr_cmp e e1); simpl; try congruence.
+
+replace (pure_atom_eq (Eqv e e0) (Eqv e1 e2) ) with false; auto.
+
+unfold pure_atom_eq; simpl.
+
+unfold expr_eq in Heqb1. destruct (expr_cmp e e1); simpl; try congruence.
+
+Qed.
+
+
+
+Lemma equality_factoring_sound c l0 s :
+
+  clause_denote c s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (equality_factoring c l0) s.
+
+Proof with
+
+simpl; auto;
+
+try solve [simpl; destruct gamma as [|p]; simpl; auto; destruct p; simpl; auto].
+
+intros A; destruct c as [gamma delta| |]... simpl.
+
+destruct gamma... destruct delta... destruct p... destruct delta... destruct p...
+
+remember (expr_eq e1 e) as b; destruct b...
+
+if_tac... simpl; split; auto. intro Hyp.
+
+rewrite (listd_insert_uniq_un pure_atom_denote FF). 2: apply pure_atom_cmp_eq.
+
+destruct Hyp as [B C].
+
+simpl in A; destruct A as [A|[A|A]]; [auto| | |right; auto].
+
+assert (D : (e === e2) s).
+
+  if_tac in B; simpl in B;
+
+  apply (var_eq_trans _ _ _ _ A); [apply var_eq_sym; auto | auto].
+
+solve[left; if_tac; simpl; [apply var_eq_sym; auto | auto]].
+
+assert (D : (e === e2) s).
+
+  rewrite <- (expr_eq_eq' _ _ Heqb) .
+
+  if_tac in B; simpl in B;
+
+  apply (var_eq_trans _ _ _ _ A); [apply var_eq_sym; auto | auto];
+
+    apply var_eq_refl.
+
+solve[left; if_tac; simpl; [apply var_eq_sym; auto | auto]].
+
+Qed.
+
+
+
+Lemma sp_sound c d l0 s :
+
+  clause_denote c s -> clause_denote d s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (sp c d l0) s.
+
+Proof with simpl; auto.
+
+intros H1 H2 H3.
+
+generalize (negative_superposition_sound c d l0 s) as H4; intro.
+
+generalize (positive_superposition_sound c d l0 s) as H5; intro.
+
+generalize (equality_factoring_sound c l0 s) as H6; intro.
+
+generalize (ordered_factoring_sound c l0 s) as H7; intro.
+
+specialize (H4 H1 H2 H3); specialize (H5 H1 H2 H3).
+
+specialize (H6 H1 H3); specialize (H7 H1 H3).
+
+rewrite (@listd_unfold_inter _ state). split...
+
+destruct c, d... simpl in H4, H5, H6.
+
+destruct gamma, delta... destruct p...
+
+destruct gamma0, delta0... destruct p... if_tac... split... intros _.
+
+destruct H5 as [H5 _].
+
+rewrite (@listd_unfold_un _ state). left. apply H5...
+
+Qed.
+
+
+
+Lemma superpose_sound c d l0 s :
+
+  clause_denote c s -> clause_denote d s -> listd clause_denote inter TT l0 s ->
+
+  listd clause_denote inter TT (superpose c d l0) s.
+
+Proof with simpl; auto.
+
+intros H1 H2 H3. unfold superpose. apply sp_sound... apply sp_sound...
+
+Qed.
+
+
+
+Lemma remove_trivial_atoms_sound b atms s :
+
+  listd pure_atom_denote inter b atms s ->
+
+  listd pure_atom_denote inter b (remove_trivial_atoms atms) s.
+
+Proof.
+
+intro A; induction atms; auto.
+
+destruct a; simpl in A |- *; destruct A as [A1 A2]; specialize (IHatms A2).
+
+solve [remember (expr_cmp e e0) as b'; destruct b'; simpl; try split; auto].
+
+Qed.
+
+
+
+Lemma remove_trivial_atoms_equiv b atms s :
+
+  listd pure_atom_denote inter b (remove_trivial_atoms atms) s <->
+
+  listd pure_atom_denote inter b atms s.
+
+Proof.
+
+split; intro A;
+
+[ |solve[apply remove_trivial_atoms_sound; auto]].
+
+induction atms; auto; destruct a; simpl in A |- *.
+
+remember (expr_cmp e e0) as b'; destruct b'; simpl in A;
+
+[ |solve[destruct A as [A1 A2]; specialize (IHatms A2); split; auto]
+
+  |solve[destruct A as [A1 A2]; specialize (IHatms A2); split; auto]].
+
+apply comp_eq in Heqb'; auto. subst e0.
+
+specialize (IHatms A).
+
+split; auto.
+
+solve[apply var_eq_refl].
+
+Qed.
+
+
+
+Lemma delete_resolved_sound c s :
+
+  clause_denote c s -> clause_denote (delete_resolved c) s.
+
+Proof with simpl; auto.
+
+intro H1. destruct c... intros H2.
+
+2: intros; left; unfold var_eq; auto.
+
+2: intros; left; unfold var_eq; auto.
+
+rewrite (@listd_sort_uniq_inter _ state), remove_trivial_atoms_equiv in H2.
+
+rewrite (@listd_sort_uniq_un _ state). apply (H1 H2).
+
+intros x y; rewrite <-pure_atom_cmp_eq; auto.
+
+intros x y; rewrite <-pure_atom_cmp_eq; auto.
+
+Qed.
+
+
+
+Lemma rewrite_by_eqv s t atm st :
+
+  (s === t) st ->
+
+  pure_atom_denote atm st = pure_atom_denote (rewrite_by s t atm) st.
+
+Proof with simpl; auto.
+
+intro H1. apply prop_ext; split. intro H2.
+
+destruct atm as [e1 e2]. simpl.
+
+remember (expr_eq s e1) as b1; remember (expr_eq s e2) as b2.
+
+destruct b1. destruct b2...
+
+assert (H3: (t === t) st) by (apply var_eq_refl). if_tac...
+
+assert (H3: (t === e2) st).
+
+  apply var_eq_trans with (y := s). apply var_eq_sym...
+
+  apply expr_eq_eq' in Heqb1; subst s.
+
+  apply var_eq_trans with (y := e1)... apply var_eq_refl.
+
+if_tac... apply var_eq_sym...
+
+destruct b2...
+
+assert (H3: (e1 === t) st).
+
+  apply var_eq_trans with (y := e2)...
+
+  apply var_eq_trans with (y := s)...
+
+  apply expr_eq_eq' in Heqb2; subst s. apply var_eq_refl.
+
+if_tac... apply var_eq_sym...
+
+
+
+intro H2; destruct atm as [e1 e2]. simpl.
+
+ simpl in H2. remember (expr_eq s e1) as b1; remember (expr_eq s e2) as b2.
+
+destruct b1. destruct b2... if_tac in H2.
+
+apply expr_eq_eq' in Heqb1. apply expr_eq_eq' in Heqb2.
+
+subst. subst e1. apply var_eq_refl.
+
+apply expr_eq_eq' in Heqb1. apply expr_eq_eq' in Heqb2.
+
+subst. subst e1. apply var_eq_refl.
+
+apply expr_eq_eq' in Heqb1. subst s. simpl in H2. if_tac in H2.
+
+simpl in H2. apply var_eq_trans with (y := t)... apply var_eq_sym...
+
+simpl in H2.  apply var_eq_trans with (y := t)... apply var_eq_sym...
+
+simpl in H2. destruct b2. apply expr_eq_eq' in Heqb2. subst s.
+
+if_tac in H2; simpl in H2.
+
+apply var_eq_trans with (y := t)...
+
+apply var_eq_trans with (y := t)... apply var_eq_sym...
+
+simpl in H2. apply var_eq_sym...
+
+Qed.
+
+
+
+Lemma rewrite_by_sound s t atm st :
+
+  (s === t) st -> pure_atom_denote atm st ->
+
+  pure_atom_denote (rewrite_by s t atm) st.
+
+Proof with simpl; auto.
+
+intro H1; rewrite <-rewrite_by_eqv...
+
+Qed.
+
+
+
+Lemma rewrite_by_complete s t atm st :
+
+  (s === t) st -> pure_atom_denote (rewrite_by s t atm) st ->
+
+  pure_atom_denote atm st.
+
+Proof with simpl; auto.
+
+intro H1; rewrite <-rewrite_by_eqv...
+
+Qed.
+
+
+
+Lemma demodulate_sound c d s :
+
+  clause_denote c s -> clause_denote d s ->
+
+  clause_denote (demodulate c d) s.
+
+Proof with simpl; auto.
+
+intros H1 H2. destruct c... destruct gamma, delta...
+
+ destruct p... destruct delta... destruct d... intro H3.
+
+simpl in H1; spec H1; auto.
+
+inversion H1. 2: inversion H. clear H1.
+
+subst priority0.
+
+induction gamma. simpl in H2; spec H2; auto. induction delta...
+
+inversion H2. left. apply rewrite_by_sound... right. apply IHdelta...
+
+destruct H3 as [H3 H4]. apply IHgamma... intro H5. simpl in H2; spec H2.
+
+split... rewrite <-rewrite_by_eqv in H3... auto.
+
+Qed.
+
+
+
+Lemma clause_denote_foldl (f: clause -> clause -> clause) l c0 s :
+
+  listd clause_denote inter TT l s -> clause_denote c0 s ->
+
+  (forall c d, clause_denote c s -> clause_denote d s ->
+
+               clause_denote (f c d) s) ->
+
+  clause_denote (fold_left f l c0) s.
+
+Proof with simpl; auto.
+
+intros H1 H2 H3. revert c0 H2. induction l... intros c0 H2.
+
+inversion H1; apply IHl...
+
+Qed.
+
+
+
+Lemma simplify_sound l c s :
+
+  listd clause_denote inter TT l s -> clause_denote c s ->
+
+  clause_denote (simplify l c) s.
+
+Proof with simpl; auto.
+
+intros H1 H2. unfold simplify. apply delete_resolved_sound.
+
+apply clause_denote_foldl...
+
+intros c0 d H3 H4; apply demodulate_sound...
+
+Qed.
+
+
+
+Lemma infer_list_sound c l s :
+
+  clause_denote c s -> listd clause_denote inter TT l s ->
+
+  listd clause_denote inter TT (infer_list c l) s.
+
+Proof with simpl; auto.
+
+intros A B; unfold infer_list. autounfold with DEBUG_UNFOLD.
+
+apply listd_filter_pred.
+
+apply listd_map_pred with (f := clause_denote).
+
+solve[intros d H1; apply simplify_sound; auto].
+
+apply listd_fold_left... intros d cls H1 H2.
+
+apply superpose_sound...
+
+Qed.
+
+
+
+Lemma insert_uniq_In {A} cmp (l : list A) a a' :
+
+  In a' (insert_uniq cmp a l) -> a = a' \/ In a' l.
+
+Proof with auto.
+
+revert a'; induction l... intro a'. simpl. destruct (cmp a a0)...
+
+simpl; intros [B | B]... specialize (IHl a' B). destruct IHl...
+
+Qed.
+
+
+
+Lemma rsort_uniq_In {A} cmp (l : list A) a : In a (rsort_uniq cmp l) -> In a l.
+
+Proof with simpl; auto.
+
+revert a; induction l; intro a'... intro B.
+
+cut (a = a' \/ In a' (rsort_uniq cmp l)); [intro C|].
+
+destruct C... eapply insert_uniq_In; eauto.
+
+Qed.
+
+
+
+Lemma pick_In (cls : M.t) cl :
+
+  M.min_elt cls = Some cl -> In cl (M.elements cls).
+
+Proof with try inversion 1; auto.
+
+unfold setd.
+
+remember (M.min_elt cls) as b. destruct b... symmetry in Heqb.
+
+apply M.min_elt_spec1 in Heqb; rewrite <- M.elements_spec1 in Heqb.
+
+rewrite SetoidList.InA_alt in Heqb. destruct Heqb as [y [B C]].
+
+subst. subst. auto.
+
+Qed.
+
+
+
+Lemma pick_sound (cls : M.t) c s :
+
+  setd clause_denote inter TT cls s -> M.min_elt cls = Some c ->
+
+  clause_denote c s.
+
+Proof with try inversion 1; auto.
+
+intro A. remember (M.min_elt cls) as b. destruct b...
+
+eapply listd_In_inv_pred; eauto. solve[rewrite Heqb in H; eapply pick_In; eauto].
+
+Qed.
+
+
+
+Lemma setd_mem_add c cls cls' s :
+
+  clause_denote c s -> setd clause_denote inter TT cls s ->
+
+  mem_add c cls = Some cls' ->
+
+  setd clause_denote inter TT cls' s.
+
+Proof.
+
+intros H1 H2 H3. rewrite mem_add_spec in H3. if_tac in H3; [congruence|].
+
+inversion H3; subst. apply setd_add; auto.
+
+Qed.
+
+
+
+Lemma one_inference_step_sound given unselected given' unselected' s :
+
+  setd clause_denote inter TT given s ->
+
+  setd clause_denote inter TT unselected s ->
+
+  one_inference_step (given, unselected) = (given', unselected') ->
+
+  setd clause_denote inter TT given' s /\
+
+  setd clause_denote inter TT unselected' s.
+
+Proof with simpl; auto.
+
+unfold one_inference_step; intros A B C.
+
+
+
+autounfold with DEBUG_UNFOLD in *.
+
+
+
+remember (M.delete_min unselected) as b. destruct b as [[c unselected'']| ].
+
+2: inversion C; subst; split; auto.
+
+symmetry in Heqb.
+
+apply M.delete_min_spec1 in Heqb.
+
+  destruct Heqb as [Heqb ?]. subst unselected''.
+
+remember (mem_add (simplify (M.elements given) c) given) as q.
+
+  destruct q as [new_given|].
+
+if_tac in C. inversion C; subst. split. clear C.
+
+symmetry in Heqq; eapply setd_mem_add with (cls := given); eauto.
+
+apply simplify_sound; auto. eapply pick_sound; eauto.
+
+apply setd_fold_left...
+
+clear C. intros until s0. intros H1 H2. if_tac... solve[apply setd_add; auto].
+
+apply infer_list_sound... apply simplify_sound... eapply pick_sound; eauto.
+
+apply setd_remove; auto.
+
+inversion C; subst; split; auto. apply setd_remove; auto.
+
+if_tac in C; inversion C; subst. split; auto. apply setd_remove; auto.
+
+split; auto. apply setd_remove; auto.
+
+Qed.
+
+
+
+Lemma simple_loop_induction (P : M.t*M.t -> Prop)
+
+                            given unselected r given' unselected' :
+
+  (forall g u g' u',
+
+    P (g, u) ->
+
+    one_inference_step (g, u) = (g', u') -> P (g', u')) ->
+
+  P (given, unselected) ->
+
+  loop (given, unselected) = (r, given', unselected') -> P (given', unselected').
+
+Proof.
+
+set (P' := fun (g_u : M.t * M.t) (res: superposition_result * M.t*M.t) =>
+
+                P g_u ->
+
+                P (snd (fst res), snd res)).
+
+generalize (loop_ind P'). intros H1 H2. unfold P' in H1. intros H3 H4.
+
+assert (given' = snd (fst (loop (given, unselected)))) as -> by (rewrite H4; auto).
+
+assert (unselected' = snd (loop (given, unselected))) as -> by (rewrite H4; auto).
+
+apply H1; auto; intros ? ? ? ?; inversion 1; subst; auto;
+
+                   intros ? ? H7 _; simpl; [intros R sel ? H8|intro H8].
+
+solve[apply (H2 _ _ _ _ H8 H7); auto].
+
+solve[intros H10; apply H8; auto; apply (H2 _ _ _ _ H10 H7); auto].
+
+Qed.
+
+
+
+Lemma loop_sound given unselected given' unselected' r s :
+
+  setd clause_denote inter TT given s ->
+
+  setd clause_denote inter TT unselected s ->
+
+  loop (given, unselected) = (r, given', unselected') ->
+
+  setd clause_denote inter TT given' s /\
+
+  setd clause_denote inter TT unselected' s.
+
+Proof.
+
+intros H1 H2.
+
+set (P := fun (g_u: M.t*M.t) =>
+
+               setd clause_denote inter TT (fst g_u) s /\
+
+               setd clause_denote inter TT (snd g_u) s).
+
+generalize (simple_loop_induction P). unfold P; intros H3.
+
+specialize (H3 given unselected r given' unselected').
+
+intros H4. apply H3; auto.
+
+intros ? ? ? ? [? ?] ?; apply one_inference_step_sound
+
+      with (given := g) (unselected := u); auto.
+
+Qed.
+
+
+
+Lemma loop_Valid_empty_clause g u g' u' :
+
+  loop (g, u) = (Valid, g', u') -> M.In empty_clause g' \/ M.In empty_clause u'.
+
+Proof.
+
+set (P' := fun (g_u : M.t * M.t) (res: superposition_result * M.t*M.t) =>
+
+              res = (Valid, g', u') ->
+
+              M.In empty_clause g' \/ M.In empty_clause u').
+
+generalize (loop_ind P'). intros H1 H2. unfold P' in H1.
+
+apply H1 with (given_unselected := (g, u)); auto; intros [? ?] ? ?;
+
+  inversion 1; subst.
+
+autounfold with DEBUG_UNFOLD.
+
+intros H3; inversion 1; subst. rewrite orb_true_iff in H3.
+
+inversion H3 as [H4|H4]; rewrite M.mem_spec in H4; auto.
+
+congruence.
+
+Qed.
+
+
+
+Lemma clauses_gen_sound1 R R' cs cs' s :
+
+  listd clause_denote inter TT cs s -> clauses_generate R cs = (R', cs') ->
+
+  setd clause_denote inter TT cs' s.
+
+Proof with simpl; auto; try congruence.
+
+revert R R' cs'; induction cs...
+
+ intros. inversion H0; clear H0; subst. apply setd_empty_set.
+
+intros R R' cs'; destruct (clause_generate R a); intros [A B].
+
+destruct p; destruct p; intro C.
+
+remember (clauses_generate ((v, e) :: R) cs) as h; destruct h.
+
+inversion C; subst. clear C.
+
+apply setd_add; auto.
+
+solve [apply IHcs with (R := (v, e) :: R) (R' := R'); auto].
+
+solve [apply IHcs; auto].
+
+Qed.
+
+
+
+Lemma loop_Cexample_model given unselected given' unselected' R sel :
+
+  loop (given, unselected) = (C_example R sel, given', unselected') ->
+
+  (R, sel) = clauses_generate nil
+
+    (rsort_uniq (rev_cmp compare_clause) (M.elements given')).
+
+Proof with try congruence.
+
+set (P' := fun (g_u : M.t * M.t) (res: superposition_result * M.t*M.t) =>
+
+              res = (C_example R sel, given', unselected') ->
+
+  (R, sel) = clauses_generate nil
+
+    (rsort_uniq (rev_cmp compare_clause) (M.elements given'))).
+
+generalize (loop_ind P'). intros H1 H2. unfold P' in H1.
+
+apply H1 with (given_unselected := (given, unselected)); auto; intros [? ?] ? ?;
+
+  inversion 1; subst...
+
+Qed.
+
+
+
+Lemma loop_Cexample_sel g u g' u' s R sel :
+
+  setd clause_denote inter TT g s ->
+
+  setd clause_denote inter TT u s ->
+
+  loop (g, u) = (C_example R sel, g', u') ->
+
+  setd clause_denote inter TT sel s.
+
+Proof.
+
+intros H1 H2 H3. generalize H3 as H3'; intro.
+
+apply loop_Cexample_model in H3. symmetry in H3.
+
+apply clauses_gen_sound1 with (s:=s) in H3; auto. clear H3.
+
+rewrite (@listd_sort_uniq_inter _ state).
+
+apply loop_sound with (s:=s) in H3'; destruct H3'; auto.
+
+intros x y; apply rev_cmp_eq. apply compare_clause_eq.
+
+Qed.
+
+
+
+Lemma loop_Valid_sound given unselected given' unselected' s :
+
+  setd clause_denote inter TT given s ->
+
+  setd clause_denote inter TT unselected s ->
+
+  loop (given, unselected) = (Valid, given', unselected') ->
+
+  clause_denote empty_clause s.
+
+Proof.
+
+intros H1 H2 H3. generalize H3 as H3'; intro.
+
+apply loop_Valid_empty_clause in H3.
+
+inversion H3 as [H7|H7]; rewrite <-elements_In in H7.
+
+destruct (loop_sound _ _ _ _ _ _ H1 H2 H3') as [H0 H].
+
+apply (listd_In_inv_pred _ _ _ _ H0 H7).
+
+destruct (loop_sound _ _ _ _ _ _ H1 H2 H3') as [H0 H].
+
+apply (listd_In_inv_pred _ _ _ _ H H7).
+
+Qed.
+
+
+
+Lemma loop_Cexample_sound given unselected given' unselected' s R selected :
+
+  setd clause_denote inter TT given s ->
+
+  setd clause_denote inter TT unselected s ->
+
+  loop (given, unselected) = (C_example R selected, given', unselected') ->
+
+  setd clause_denote inter TT selected s /\
+
+  setd clause_denote inter TT given' s.
+
+Proof.
+
+intros H1 H2 H3; destruct (loop_sound _ _ _ _ _ _ H1 H2 H3) as [H0 H].
+
+split; auto; apply loop_Cexample_sel with (s:=s) in H3; auto.
+
+Qed.
+
+
+
+Lemma check_clauseset_Valid_sound init g u :
+
+  check_clauseset init = (Valid, g, u) ->
+
+  setd clause_denote inter TT init |-- clause_denote empty_clause.
+
+Proof.
+
+unfold check_clauseset; intros C s B.
+
+generalize (setd_empty_set _ clause_denote s); intro A.
+
+assert (H: setd clause_denote inter TT (M.filter not_taut init) s) by
+
+  (apply setd_filter; auto).
+
+apply (loop_Valid_sound _ _ _ _ _ A H C).
+
+Qed.
+
+
+
+Lemma check_clauseset_Cexample_model init final empty R selected :
+
+  check_clauseset init = (C_example R selected, final, empty) ->
+
+  (R, selected) = clauses_generate nil
+
+    (rsort_uniq (rev_cmp compare_clause) (M.elements final)).
+
+Proof. solve[unfold check_clauseset; apply loop_Cexample_model]. Qed.
+
+
+
+Lemma check_clauseset_Cexample_sound init final u R selected :
+
+  check_clauseset init = (C_example R selected, final, u) ->
+
+  setd clause_denote inter TT init |--
+
+    setd clause_denote inter TT selected &&
+
+    setd clause_denote inter TT final.
+
+Proof.
+
+unfold check_clauseset; intros C s B.
+
+generalize (setd_empty_set _ clause_denote s); intro A.
+
+assert (H: setd clause_denote inter TT (M.filter not_taut init) s) by
+
+  (apply setd_filter; auto).
+
+destruct (loop_Cexample_sound _ _ _ _ _ _ _ A H C). split; auto.
+
+Qed.
+
+
+
+End SP_Sound.
+

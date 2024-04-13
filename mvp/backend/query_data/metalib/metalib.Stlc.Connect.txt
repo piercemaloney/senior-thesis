@@ -1,0 +1,2242 @@
+
+
+Require Import Metalib.Metatheory.
+(* Metalib.Metatheory:
+Require Export Coq.Arith.Arith.
+Require Export Coq.FSets.FSets.
+Require Export Coq.Lists.List.
+
+Require Export Metalib.AssocList.
+Require Export Metalib.CoqListFacts.
+Require Export Metalib.LibTactics.
+Require Export Metalib.MetatheoryAtom.
+
+Notation "E [=] F" :=
+  (AtomSetImpl.Equal E F)
+  (at level 70, no associativity)
+  : set_scope.
+
+Notation "E [<=] F" :=
+  (AtomSetImpl.Subset E F)
+  (at level 70, no associativity)
+  : set_scope.
+
+Notation "{}" :=
+  (AtomSetImpl.empty)
+  : set_scope.
+
+Notation "{{  x  }}" :=
+  (AtomSetImpl.singleton x)
+  : set_scope.
+
+Notation "x `in` E" :=
+  (AtomSetImpl.In x E)
+  (at level 70)
+  : set_hs_scope.
+
+Notation "x `notin` E" :=
+  (~ AtomSetImpl.In x E)
+  (at level 70)
+  : set_hs_scope.
+
+Notation "E `union` F" :=
+  (AtomSetImpl.union E F)
+  (at level 65, right associativity, format "E  `union`  '/' F")
+  : set_hs_scope.
+
+Notation add := AtomSetImpl.add.
+Notation empty := AtomSetImpl.empty.
+Notation remove := AtomSetImpl.remove.
+Notation singleton := AtomSetImpl.singleton.
+Notation union := AtomSetImpl.union.
+
+Open Scope set_scope.
+Open Scope set_hs_scope.
+
+Module Export EnvImpl := AssocList.Make Atom AtomSetImpl.
+
+Ltac simpl_env :=
+  simpl_alist.
+
+Tactic Notation "simpl_env" "in" hyp(H) :=
+  simpl_alist in H.
+
+Tactic Notation "simpl_env" "in" "*" :=
+  simpl_alist in *.
+
+Tactic Notation "rewrite_env" constr(E) :=
+  rewrite_alist E.
+
+Tactic Notation "rewrite_env" constr(E) "in" hyp(H) :=
+  rewrite_alist E in H.
+
+Tactic Notation "env" "induction" ident(E) :=
+  alist induction E.
+
+Tactic Notation "env" "induction" ident(E) "as" simple_intropattern(P) :=
+  alist induction E as P.
+
+Notation "[ x ]" := (EnvImpl.one x) : env_scope.
+
+Open Scope env_scope.
+
+Tactic Notation
+  "pick" "fresh" ident(atom_name)
+  "excluding" constr(L)
+  "and" "apply" constr(H)
+  :=
+    first [apply (@H L) | eapply (@H L)];
+      match goal with
+        | |- forall _, _ `notin` _ -> _ =>
+          let Fr := fresh "Fr" in intros atom_name Fr
+        | |- forall _, _ `notin` _ -> _ =>
+          fail 1 "because" atom_name "is already defined"
+        | _ =>
+          idtac
+      end.
+
+Tactic Notation
+  "pick" "fresh" ident(atom_name)
+  "and" "apply" constr(H)
+  :=
+    let L := gather_atoms in
+    let L := beautify_fset L in
+    pick fresh atom_name excluding L and apply H.
+
+Notation uniq_one := uniq_one_1.
+Notation uniq_cons := uniq_cons_3.
+Notation uniq_app := uniq_app_4.
+Notation uniq_map := uniq_map_2.
+
+Notation binds_one := binds_one_3.
+Notation binds_cons := binds_cons_3.
+Notation binds_app_l := binds_app_2.
+Notation binds_app_r := binds_app_3.
+Notation binds_map := binds_map_2.
+
+Notation notin_empty := notin_empty_1.
+Notation notin_add := notin_add_3.
+Notation notin_singleton := notin_singleton_2.
+Notation notin_union := notin_union_3.
+
+Ltac hint_extern_solve_notin :=
+  try eassumption;
+  autorewrite with rewr_dom in *;
+  destruct_notin;
+  repeat first [ apply notin_union_3
+               | apply notin_add_3
+               | apply notin_singleton_2
+               | apply notin_empty_1
+               ];
+  try tauto.
+
+Hint Extern 1 (_ <> _ :> _) => hint_extern_solve_notin.
+
+Hint Extern 1 (_ `notin` _) => hint_extern_solve_notin.
+
+Hint Resolve
+  AtomSetImpl.add_1 AtomSetImpl.add_2 AtomSetImpl.remove_1
+  AtomSetImpl.remove_2 AtomSetImpl.singleton_2 AtomSetImpl.union_2
+  AtomSetImpl.union_3 AtomSetImpl.inter_3 AtomSetImpl.diff_3.
+
+Require Export Metalib.CoqEqDec.
+
+Notation " x  == y " := (eq_dec x y) (at level 70) : coqeqdec_scope.
+
+Open Scope coqeqdec_scope.
+
+Notation var := atom (only parsing).
+
+Notation vars := atoms (only parsing).
+
+Notation eq_var := eq_dec (only parsing).
+
+Notation "x  ===  y" :=
+  (x == y)
+  (at level 70, only parsing)
+  : coqeqdec_scope.
+
+Notation "x \in s" :=
+  (x `in` s)
+  (at level 70, only parsing)
+  : set_sl_scope.
+
+Notation "x \notin s" :=
+  (x `notin` s)
+  (at level 70, only parsing)
+  : set_sl_scope.
+
+Notation "s \u t" :=
+  (s `union` t)
+  (at level 65, right associativity, only parsing)
+  : set_sl_scope.
+
+Open Scope set_sl_scope.
+
+Ltac gather_vars_with F := gather_atoms_with.
+
+Ltac pick_fresh_gen L Y := pick fresh Y for L.
+
+Tactic Notation "auto" "*" := auto.
+
+Ltac apply_fresh_base H gather_vars atom_name :=
+  let L := gather_vars in
+  let L := beautify_fset L in
+  pick fresh x excluding L and apply H.
+
+Set Implicit Arguments.
+Definition union_map (A:Set) (f:A -> vars) (l:list A) :=
+ (List.fold_right (fun t acc => f t \u acc) {}) l. *)
+
+
+
+Require Import Stlc.Definitions.
+(* Stlc.Definitions:
+Require Import Metalib.Metatheory.
+
+Inductive typ : Set :=  
+ | typ_base : typ
+ | typ_arrow (T1:typ) (T2:typ).
+
+Inductive exp : Set :=  
+ | var_b (_:nat)
+ | var_f (x:var)
+ | abs (e:exp)
+ | app (e1:exp) (e2:exp).
+
+Fixpoint subst_exp (u:exp) (y:var) (e:exp) {struct e} : exp :=
+  match e with
+  | (var_b n)   => var_b n
+  | (var_f x)   => (if x == y then u else (var_f x))
+  | (abs e1)    => abs (subst_exp u y e1)
+  | (app e1 e2) => app (subst_exp u y e1) (subst_exp u y e2)
+end.
+
+Fixpoint fv_exp (e_5:exp) : vars :=
+  match e_5 with
+  | (var_b nat)   => {}
+  | (var_f x)   => {{x}}
+  | (abs e)     => fv_exp e
+  | (app e1 e2) => fv_exp e1 \u fv_exp e2
+end.
+
+Fixpoint open_exp_wrt_exp_rec (k:nat) (u:exp) (e:exp) {struct e}: exp :=
+  match e with
+  | (var_b n) =>
+      match lt_eq_lt_dec n k with
+        | inleft (left _) => var_b n
+        | inleft (right _) => u
+        | inright _ => var_b (n - 1)
+      end
+  | (var_f x) => var_f x
+  | (abs e) => abs (open_exp_wrt_exp_rec (S k) u e)
+  | (app e1 e2) => app (open_exp_wrt_exp_rec k u e1)
+                      (open_exp_wrt_exp_rec k u e2)
+end.
+
+Definition open_exp_wrt_exp e u := open_exp_wrt_exp_rec 0 u e.
+
+Module StlcNotations.
+Notation "[ z ~> u ] e" := (subst_exp u z e) (at level 0) : exp_scope.
+Notation open e1 e2     := (open_exp_wrt_exp e1 e2).
+Notation "e ^ x"        := (open_exp_wrt_exp e (var_f x)) : exp_scope.
+End StlcNotations.
+Import StlcNotations.
+Open Scope exp_scope.
+
+Inductive lc_exp : exp -> Prop :=
+ | lc_var_f : forall (x:var),
+     lc_exp (var_f x)
+ | lc_abs : forall (e:exp),
+      (forall x , lc_exp (open e (var_f x)))  ->
+     lc_exp (abs e)
+ | lc_app : forall (e1 e2:exp),
+     lc_exp e1 ->
+     lc_exp e2 ->
+     lc_exp (app e1 e2).
+
+Definition ctx : Set := list (atom * typ).
+
+Inductive typing : ctx -> exp -> typ -> Prop :=
+ | typing_var : forall (G:ctx) (x:var) (T:typ),
+     uniq G ->
+     binds x T G  ->
+     typing G (var_f x) T
+ | typing_abs : forall (L:vars) (G:ctx) (T1:typ) (e:exp) (T2:typ),
+     (forall x , x \notin L -> typing ([(x,T1)] ++ G) (e ^ x) T2)  ->
+     typing G (abs e) (typ_arrow T1 T2)
+ | typing_app : forall (G:ctx) (e1 e2:exp) (T2 T1:typ),
+     typing G e1 (typ_arrow T1 T2) ->
+     typing G e2 T1 ->
+     typing G (app e1 e2) T2 .
+
+Definition is_value (e : exp) : Prop :=
+  match e with
+  | abs _   => True
+  | _       => False
+  end.
+
+Inductive step : exp -> exp -> Prop :=
+ | step_beta : forall (e1 e2:exp),
+     lc_exp (abs e1) ->
+     lc_exp e2 ->
+     step (app  (abs e1) e2)  (open e1 e2)
+ | step_app : forall (e1 e2 e1':exp),
+     lc_exp e2 ->
+     step e1 e1' ->
+     step (app e1 e2) (app e1' e2).
+
+Hint Constructors typing step lc_exp. *)
+
+Require Import Stlc.Lemmas.
+(* Stlc.Lemmas:
+Require Import Coq.Logic.FunctionalExtensionality.
+Require Import Coq.Program.Equality.
+
+Require Export Metalib.Metatheory.
+Require Export Metalib.LibLNgen.
+
+Require Export Stlc.Definitions.
+
+Scheme typ_ind' := Induction for typ Sort Prop.
+
+Definition typ_mutind :=
+  fun H1 H2 H3 =>
+  typ_ind' H1 H2 H3.
+
+Scheme typ_rec' := Induction for typ Sort Set.
+
+Definition typ_mutrec :=
+  fun H1 H2 H3 =>
+  typ_rec' H1 H2 H3.
+
+Scheme exp_ind' := Induction for exp Sort Prop.
+
+Definition exp_mutind :=
+  fun H1 H2 H3 H4 H5 =>
+  exp_ind' H1 H2 H3 H4 H5.
+
+Scheme exp_rec' := Induction for exp Sort Set.
+
+Definition exp_mutrec :=
+  fun H1 H2 H3 H4 H5 =>
+  exp_rec' H1 H2 H3 H4 H5.
+
+Fixpoint close_exp_wrt_exp_rec (n1 : nat) (x1 : var) (e1 : exp) {struct e1} : exp :=
+  match e1 with
+    | abs e2 => abs (close_exp_wrt_exp_rec (S n1) x1 e2)
+    | var_f x2 => if (x1 == x2) then (var_b n1) else (var_f x2)
+    | var_b n2 => if (lt_ge_dec n2 n1) then (var_b n2) else (var_b (S n2))
+    | app e2 e3 => app (close_exp_wrt_exp_rec n1 x1 e2) (close_exp_wrt_exp_rec n1 x1 e3)
+  end.
+
+Definition close_exp_wrt_exp x1 e1 := close_exp_wrt_exp_rec 0 x1 e1.
+
+Fixpoint size_typ (T1 : typ) {struct T1} : nat :=
+  match T1 with
+    | typ_base => 1
+    | typ_arrow T2 T3 => 1 + (size_typ T2) + (size_typ T3)
+  end.
+
+Fixpoint size_exp (e1 : exp) {struct e1} : nat :=
+  match e1 with
+    | abs e2 => 1 + (size_exp e2)
+    | var_f x1 => 1
+    | var_b n1 => 1
+    | app e2 e3 => 1 + (size_exp e2) + (size_exp e3)
+  end.
+
+Inductive degree_exp_wrt_exp : nat -> exp -> Prop :=
+  | degree_wrt_exp_abs : forall n1 e1,
+    degree_exp_wrt_exp (S n1) e1 ->
+    degree_exp_wrt_exp n1 (abs e1)
+  | degree_wrt_exp_var_f : forall n1 x1,
+    degree_exp_wrt_exp n1 (var_f x1)
+  | degree_wrt_exp_var_b : forall n1 n2,
+    lt n2 n1 ->
+    degree_exp_wrt_exp n1 (var_b n2)
+  | degree_wrt_exp_app : forall n1 e1 e2,
+    degree_exp_wrt_exp n1 e1 ->
+    degree_exp_wrt_exp n1 e2 ->
+    degree_exp_wrt_exp n1 (app e1 e2).
+
+Scheme degree_exp_wrt_exp_ind' := Induction for degree_exp_wrt_exp Sort Prop.
+
+Definition degree_exp_wrt_exp_mutind :=
+  fun H1 H2 H3 H4 H5 =>
+  degree_exp_wrt_exp_ind' H1 H2 H3 H4 H5.
+
+Hint Constructors degree_exp_wrt_exp : core lngen.
+
+Scheme lc_exp_ind' := Induction for lc_exp Sort Prop.
+
+Definition lc_exp_mutind :=
+  fun H1 H2 H3 H4 =>
+  lc_exp_ind' H1 H2 H3 H4.
+
+Hint Constructors lc_exp : core lngen.
+
+Definition body_exp_wrt_exp e1 := forall x1, lc_exp (open_exp_wrt_exp e1 (var_f x1)).
+
+Hint Unfold body_exp_wrt_exp.
+
+Hint Resolve @plus_le_compat : lngen.
+
+Ltac default_case_split ::=
+  first
+    [ progress destruct_notin
+    | progress destruct_sum
+    | progress safe_f_equal
+    ].
+
+Ltac default_auto ::= auto with arith lngen; tauto.
+Ltac default_autorewrite ::= fail.
+
+Lemma size_typ_min_mutual :
+(forall T1, 1 <= size_typ T1).
+
+Lemma size_typ_min :
+forall T1, 1 <= size_typ T1.
+
+Hint Resolve size_typ_min : lngen.
+
+Lemma size_exp_min_mutual :
+(forall e1, 1 <= size_exp e1).
+
+Lemma size_exp_min :
+forall e1, 1 <= size_exp e1.
+
+Hint Resolve size_exp_min : lngen.
+
+Lemma size_exp_close_exp_wrt_exp_rec_mutual :
+(forall e1 x1 n1,
+  size_exp (close_exp_wrt_exp_rec n1 x1 e1) = size_exp e1).
+
+Lemma size_exp_close_exp_wrt_exp_rec :
+forall e1 x1 n1,
+  size_exp (close_exp_wrt_exp_rec n1 x1 e1) = size_exp e1.
+
+Hint Resolve size_exp_close_exp_wrt_exp_rec : lngen.
+Hint Rewrite size_exp_close_exp_wrt_exp_rec using solve [auto] : lngen.
+
+Lemma size_exp_close_exp_wrt_exp :
+forall e1 x1,
+  size_exp (close_exp_wrt_exp x1 e1) = size_exp e1.
+
+Hint Resolve size_exp_close_exp_wrt_exp : lngen.
+Hint Rewrite size_exp_close_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma size_exp_open_exp_wrt_exp_rec_mutual :
+(forall e1 e2 n1,
+  size_exp e1 <= size_exp (open_exp_wrt_exp_rec n1 e2 e1)).
+
+Lemma size_exp_open_exp_wrt_exp_rec :
+forall e1 e2 n1,
+  size_exp e1 <= size_exp (open_exp_wrt_exp_rec n1 e2 e1).
+
+Hint Resolve size_exp_open_exp_wrt_exp_rec : lngen.
+
+Lemma size_exp_open_exp_wrt_exp :
+forall e1 e2,
+  size_exp e1 <= size_exp (open_exp_wrt_exp e1 e2).
+
+Hint Resolve size_exp_open_exp_wrt_exp : lngen.
+
+Lemma size_exp_open_exp_wrt_exp_rec_var_mutual :
+(forall e1 x1 n1,
+  size_exp (open_exp_wrt_exp_rec n1 (var_f x1) e1) = size_exp e1).
+
+Lemma size_exp_open_exp_wrt_exp_rec_var :
+forall e1 x1 n1,
+  size_exp (open_exp_wrt_exp_rec n1 (var_f x1) e1) = size_exp e1.
+
+Hint Resolve size_exp_open_exp_wrt_exp_rec_var : lngen.
+Hint Rewrite size_exp_open_exp_wrt_exp_rec_var using solve [auto] : lngen.
+
+Lemma size_exp_open_exp_wrt_exp_var :
+forall e1 x1,
+  size_exp (open_exp_wrt_exp e1 (var_f x1)) = size_exp e1.
+
+Hint Resolve size_exp_open_exp_wrt_exp_var : lngen.
+Hint Rewrite size_exp_open_exp_wrt_exp_var using solve [auto] : lngen.
+
+Ltac default_auto ::= auto with lngen; tauto.
+Ltac default_autorewrite ::= fail.
+
+Lemma degree_exp_wrt_exp_S_mutual :
+(forall n1 e1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp (S n1) e1).
+
+Lemma degree_exp_wrt_exp_S :
+forall n1 e1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp (S n1) e1.
+
+Hint Resolve degree_exp_wrt_exp_S : lngen.
+
+Lemma degree_exp_wrt_exp_O :
+forall n1 e1,
+  degree_exp_wrt_exp O e1 ->
+  degree_exp_wrt_exp n1 e1.
+
+Hint Resolve degree_exp_wrt_exp_O : lngen.
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp_rec_mutual :
+(forall e1 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp (S n1) (close_exp_wrt_exp_rec n1 x1 e1)).
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp_rec :
+forall e1 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp (S n1) (close_exp_wrt_exp_rec n1 x1 e1).
+
+Hint Resolve degree_exp_wrt_exp_close_exp_wrt_exp_rec : lngen.
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp :
+forall e1 x1,
+  degree_exp_wrt_exp 0 e1 ->
+  degree_exp_wrt_exp 1 (close_exp_wrt_exp x1 e1).
+
+Hint Resolve degree_exp_wrt_exp_close_exp_wrt_exp : lngen.
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp_rec_inv_mutual :
+(forall e1 x1 n1,
+  degree_exp_wrt_exp (S n1) (close_exp_wrt_exp_rec n1 x1 e1) ->
+  degree_exp_wrt_exp n1 e1).
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp_rec_inv :
+forall e1 x1 n1,
+  degree_exp_wrt_exp (S n1) (close_exp_wrt_exp_rec n1 x1 e1) ->
+  degree_exp_wrt_exp n1 e1.
+
+Hint Immediate degree_exp_wrt_exp_close_exp_wrt_exp_rec_inv : lngen.
+
+Lemma degree_exp_wrt_exp_close_exp_wrt_exp_inv :
+forall e1 x1,
+  degree_exp_wrt_exp 1 (close_exp_wrt_exp x1 e1) ->
+  degree_exp_wrt_exp 0 e1.
+
+Hint Immediate degree_exp_wrt_exp_close_exp_wrt_exp_inv : lngen.
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp_rec_mutual :
+(forall e1 e2 n1,
+  degree_exp_wrt_exp (S n1) e1 ->
+  degree_exp_wrt_exp n1 e2 ->
+  degree_exp_wrt_exp n1 (open_exp_wrt_exp_rec n1 e2 e1)).
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp_rec :
+forall e1 e2 n1,
+  degree_exp_wrt_exp (S n1) e1 ->
+  degree_exp_wrt_exp n1 e2 ->
+  degree_exp_wrt_exp n1 (open_exp_wrt_exp_rec n1 e2 e1).
+
+Hint Resolve degree_exp_wrt_exp_open_exp_wrt_exp_rec : lngen.
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp :
+forall e1 e2,
+  degree_exp_wrt_exp 1 e1 ->
+  degree_exp_wrt_exp 0 e2 ->
+  degree_exp_wrt_exp 0 (open_exp_wrt_exp e1 e2).
+
+Hint Resolve degree_exp_wrt_exp_open_exp_wrt_exp : lngen.
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp_rec_inv_mutual :
+(forall e1 e2 n1,
+  degree_exp_wrt_exp n1 (open_exp_wrt_exp_rec n1 e2 e1) ->
+  degree_exp_wrt_exp (S n1) e1).
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp_rec_inv :
+forall e1 e2 n1,
+  degree_exp_wrt_exp n1 (open_exp_wrt_exp_rec n1 e2 e1) ->
+  degree_exp_wrt_exp (S n1) e1.
+
+Hint Immediate degree_exp_wrt_exp_open_exp_wrt_exp_rec_inv : lngen.
+
+Lemma degree_exp_wrt_exp_open_exp_wrt_exp_inv :
+forall e1 e2,
+  degree_exp_wrt_exp 0 (open_exp_wrt_exp e1 e2) ->
+  degree_exp_wrt_exp 1 e1.
+
+Hint Immediate degree_exp_wrt_exp_open_exp_wrt_exp_inv : lngen.
+
+Ltac default_auto ::= auto with lngen brute_force; tauto.
+Ltac default_autorewrite ::= fail.
+
+Lemma close_exp_wrt_exp_rec_inj_mutual :
+(forall e1 e2 x1 n1,
+  close_exp_wrt_exp_rec n1 x1 e1 = close_exp_wrt_exp_rec n1 x1 e2 ->
+  e1 = e2).
+
+Lemma close_exp_wrt_exp_rec_inj :
+forall e1 e2 x1 n1,
+  close_exp_wrt_exp_rec n1 x1 e1 = close_exp_wrt_exp_rec n1 x1 e2 ->
+  e1 = e2.
+
+Hint Immediate close_exp_wrt_exp_rec_inj : lngen.
+
+Lemma close_exp_wrt_exp_inj :
+forall e1 e2 x1,
+  close_exp_wrt_exp x1 e1 = close_exp_wrt_exp x1 e2 ->
+  e1 = e2.
+
+Hint Immediate close_exp_wrt_exp_inj : lngen.
+
+Lemma close_exp_wrt_exp_rec_open_exp_wrt_exp_rec_mutual :
+(forall e1 x1 n1,
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp_rec n1 x1 (open_exp_wrt_exp_rec n1 (var_f x1) e1) = e1).
+
+Lemma close_exp_wrt_exp_rec_open_exp_wrt_exp_rec :
+forall e1 x1 n1,
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp_rec n1 x1 (open_exp_wrt_exp_rec n1 (var_f x1) e1) = e1.
+
+Hint Resolve close_exp_wrt_exp_rec_open_exp_wrt_exp_rec : lngen.
+Hint Rewrite close_exp_wrt_exp_rec_open_exp_wrt_exp_rec using solve [auto] : lngen.
+
+Lemma close_exp_wrt_exp_open_exp_wrt_exp :
+forall e1 x1,
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp x1 (open_exp_wrt_exp e1 (var_f x1)) = e1.
+
+Hint Resolve close_exp_wrt_exp_open_exp_wrt_exp : lngen.
+Hint Rewrite close_exp_wrt_exp_open_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma open_exp_wrt_exp_rec_close_exp_wrt_exp_rec_mutual :
+(forall e1 x1 n1,
+  open_exp_wrt_exp_rec n1 (var_f x1) (close_exp_wrt_exp_rec n1 x1 e1) = e1).
+
+Lemma open_exp_wrt_exp_rec_close_exp_wrt_exp_rec :
+forall e1 x1 n1,
+  open_exp_wrt_exp_rec n1 (var_f x1) (close_exp_wrt_exp_rec n1 x1 e1) = e1.
+
+Hint Resolve open_exp_wrt_exp_rec_close_exp_wrt_exp_rec : lngen.
+Hint Rewrite open_exp_wrt_exp_rec_close_exp_wrt_exp_rec using solve [auto] : lngen.
+
+Lemma open_exp_wrt_exp_close_exp_wrt_exp :
+forall e1 x1,
+  open_exp_wrt_exp (close_exp_wrt_exp x1 e1) (var_f x1) = e1.
+
+Hint Resolve open_exp_wrt_exp_close_exp_wrt_exp : lngen.
+Hint Rewrite open_exp_wrt_exp_close_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma open_exp_wrt_exp_rec_inj_mutual :
+(forall e2 e1 x1 n1,
+  x1 `notin` fv_exp e2 ->
+  x1 `notin` fv_exp e1 ->
+  open_exp_wrt_exp_rec n1 (var_f x1) e2 = open_exp_wrt_exp_rec n1 (var_f x1) e1 ->
+  e2 = e1).
+
+Lemma open_exp_wrt_exp_rec_inj :
+forall e2 e1 x1 n1,
+  x1 `notin` fv_exp e2 ->
+  x1 `notin` fv_exp e1 ->
+  open_exp_wrt_exp_rec n1 (var_f x1) e2 = open_exp_wrt_exp_rec n1 (var_f x1) e1 ->
+  e2 = e1.
+
+Hint Immediate open_exp_wrt_exp_rec_inj : lngen.
+
+Lemma open_exp_wrt_exp_inj :
+forall e2 e1 x1,
+  x1 `notin` fv_exp e2 ->
+  x1 `notin` fv_exp e1 ->
+  open_exp_wrt_exp e2 (var_f x1) = open_exp_wrt_exp e1 (var_f x1) ->
+  e2 = e1.
+
+Hint Immediate open_exp_wrt_exp_inj : lngen.
+
+Ltac default_auto ::= auto with lngen brute_force; tauto.
+Ltac default_autorewrite ::= autorewrite with lngen.
+
+Lemma degree_exp_wrt_exp_of_lc_exp_mutual :
+(forall e1,
+  lc_exp e1 ->
+  degree_exp_wrt_exp 0 e1).
+
+Lemma degree_exp_wrt_exp_of_lc_exp :
+forall e1,
+  lc_exp e1 ->
+  degree_exp_wrt_exp 0 e1.
+
+Hint Resolve degree_exp_wrt_exp_of_lc_exp : lngen.
+
+Lemma lc_exp_of_degree_size_mutual :
+forall i1,
+(forall e1,
+  size_exp e1 = i1 ->
+  degree_exp_wrt_exp 0 e1 ->
+  lc_exp e1).
+
+Lemma lc_exp_of_degree :
+forall e1,
+  degree_exp_wrt_exp 0 e1 ->
+  lc_exp e1.
+
+Hint Resolve lc_exp_of_degree : lngen.
+
+Ltac typ_lc_exists_tac :=
+  repeat (match goal with
+            | H : _ |- _ =>
+              fail 1
+          end).
+
+Ltac exp_lc_exists_tac :=
+  repeat (match goal with
+            | H : _ |- _ =>
+              let J1 := fresh in pose proof H as J1; apply degree_exp_wrt_exp_of_lc_exp in J1; clear H
+          end).
+
+Lemma lc_abs_exists :
+forall x1 e1,
+  lc_exp (open_exp_wrt_exp e1 (var_f x1)) ->
+  lc_exp (abs e1).
+
+Hint Extern 1 (lc_exp (abs _)) =>
+  let x1 := fresh in
+  pick_fresh x1;
+  apply (lc_abs_exists x1).
+
+Lemma lc_body_exp_wrt_exp :
+forall e1 e2,
+  body_exp_wrt_exp e1 ->
+  lc_exp e2 ->
+  lc_exp (open_exp_wrt_exp e1 e2).
+
+Hint Resolve lc_body_exp_wrt_exp : lngen.
+
+Lemma lc_body_abs_1 :
+forall e1,
+  lc_exp (abs e1) ->
+  body_exp_wrt_exp e1.
+
+Hint Resolve lc_body_abs_1 : lngen.
+
+Ltac default_auto ::= auto with lngen; tauto.
+Ltac default_autorewrite ::= fail.
+
+Lemma close_exp_wrt_exp_rec_degree_exp_wrt_exp_mutual :
+(forall e1 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp_rec n1 x1 e1 = e1).
+
+Lemma close_exp_wrt_exp_rec_degree_exp_wrt_exp :
+forall e1 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp_rec n1 x1 e1 = e1.
+
+Hint Resolve close_exp_wrt_exp_rec_degree_exp_wrt_exp : lngen.
+Hint Rewrite close_exp_wrt_exp_rec_degree_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma close_exp_wrt_exp_lc_exp :
+forall e1 x1,
+  lc_exp e1 ->
+  x1 `notin` fv_exp e1 ->
+  close_exp_wrt_exp x1 e1 = e1.
+
+Hint Resolve close_exp_wrt_exp_lc_exp : lngen.
+Hint Rewrite close_exp_wrt_exp_lc_exp using solve [auto] : lngen.
+
+Lemma open_exp_wrt_exp_rec_degree_exp_wrt_exp_mutual :
+(forall e2 e1 n1,
+  degree_exp_wrt_exp n1 e2 ->
+  open_exp_wrt_exp_rec n1 e1 e2 = e2).
+
+Lemma open_exp_wrt_exp_rec_degree_exp_wrt_exp :
+forall e2 e1 n1,
+  degree_exp_wrt_exp n1 e2 ->
+  open_exp_wrt_exp_rec n1 e1 e2 = e2.
+
+Hint Resolve open_exp_wrt_exp_rec_degree_exp_wrt_exp : lngen.
+Hint Rewrite open_exp_wrt_exp_rec_degree_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma open_exp_wrt_exp_lc_exp :
+forall e2 e1,
+  lc_exp e2 ->
+  open_exp_wrt_exp e2 e1 = e2.
+
+Hint Resolve open_exp_wrt_exp_lc_exp : lngen.
+Hint Rewrite open_exp_wrt_exp_lc_exp using solve [auto] : lngen.
+
+Ltac default_auto ::= auto with set lngen; tauto.
+Ltac default_autorewrite ::= autorewrite with lngen.
+
+Lemma fv_exp_close_exp_wrt_exp_rec_mutual :
+(forall e1 x1 n1,
+  fv_exp (close_exp_wrt_exp_rec n1 x1 e1) [=] remove x1 (fv_exp e1)).
+
+Lemma fv_exp_close_exp_wrt_exp_rec :
+forall e1 x1 n1,
+  fv_exp (close_exp_wrt_exp_rec n1 x1 e1) [=] remove x1 (fv_exp e1).
+
+Hint Resolve fv_exp_close_exp_wrt_exp_rec : lngen.
+Hint Rewrite fv_exp_close_exp_wrt_exp_rec using solve [auto] : lngen.
+
+Lemma fv_exp_close_exp_wrt_exp :
+forall e1 x1,
+  fv_exp (close_exp_wrt_exp x1 e1) [=] remove x1 (fv_exp e1).
+
+Hint Resolve fv_exp_close_exp_wrt_exp : lngen.
+Hint Rewrite fv_exp_close_exp_wrt_exp using solve [auto] : lngen.
+
+Lemma fv_exp_open_exp_wrt_exp_rec_lower_mutual :
+(forall e1 e2 n1,
+  fv_exp e1 [<=] fv_exp (open_exp_wrt_exp_rec n1 e2 e1)).
+
+Lemma fv_exp_open_exp_wrt_exp_rec_lower :
+forall e1 e2 n1,
+  fv_exp e1 [<=] fv_exp (open_exp_wrt_exp_rec n1 e2 e1).
+
+Hint Resolve fv_exp_open_exp_wrt_exp_rec_lower : lngen.
+
+Lemma fv_exp_open_exp_wrt_exp_lower :
+forall e1 e2,
+  fv_exp e1 [<=] fv_exp (open_exp_wrt_exp e1 e2).
+
+Hint Resolve fv_exp_open_exp_wrt_exp_lower : lngen.
+
+Lemma fv_exp_open_exp_wrt_exp_rec_upper_mutual :
+(forall e1 e2 n1,
+  fv_exp (open_exp_wrt_exp_rec n1 e2 e1) [<=] fv_exp e2 `union` fv_exp e1).
+
+Lemma fv_exp_open_exp_wrt_exp_rec_upper :
+forall e1 e2 n1,
+  fv_exp (open_exp_wrt_exp_rec n1 e2 e1) [<=] fv_exp e2 `union` fv_exp e1.
+
+Hint Resolve fv_exp_open_exp_wrt_exp_rec_upper : lngen.
+
+Lemma fv_exp_open_exp_wrt_exp_upper :
+forall e1 e2,
+  fv_exp (open_exp_wrt_exp e1 e2) [<=] fv_exp e2 `union` fv_exp e1.
+
+Hint Resolve fv_exp_open_exp_wrt_exp_upper : lngen.
+
+Lemma fv_exp_subst_exp_fresh_mutual :
+(forall e1 e2 x1,
+  x1 `notin` fv_exp e1 ->
+  fv_exp (subst_exp e2 x1 e1) [=] fv_exp e1).
+
+Lemma fv_exp_subst_exp_fresh :
+forall e1 e2 x1,
+  x1 `notin` fv_exp e1 ->
+  fv_exp (subst_exp e2 x1 e1) [=] fv_exp e1.
+
+Hint Resolve fv_exp_subst_exp_fresh : lngen.
+Hint Rewrite fv_exp_subst_exp_fresh using solve [auto] : lngen.
+
+Lemma fv_exp_subst_exp_lower_mutual :
+(forall e1 e2 x1,
+  remove x1 (fv_exp e1) [<=] fv_exp (subst_exp e2 x1 e1)).
+
+Lemma fv_exp_subst_exp_lower :
+forall e1 e2 x1,
+  remove x1 (fv_exp e1) [<=] fv_exp (subst_exp e2 x1 e1).
+
+Hint Resolve fv_exp_subst_exp_lower : lngen.
+
+Lemma fv_exp_subst_exp_notin_mutual :
+(forall e1 e2 x1 x2,
+  x2 `notin` fv_exp e1 ->
+  x2 `notin` fv_exp e2 ->
+  x2 `notin` fv_exp (subst_exp e2 x1 e1)).
+
+Lemma fv_exp_subst_exp_notin :
+forall e1 e2 x1 x2,
+  x2 `notin` fv_exp e1 ->
+  x2 `notin` fv_exp e2 ->
+  x2 `notin` fv_exp (subst_exp e2 x1 e1).
+
+Hint Resolve fv_exp_subst_exp_notin : lngen.
+
+Lemma fv_exp_subst_exp_upper_mutual :
+(forall e1 e2 x1,
+  fv_exp (subst_exp e2 x1 e1) [<=] fv_exp e2 `union` remove x1 (fv_exp e1)).
+
+Lemma fv_exp_subst_exp_upper :
+forall e1 e2 x1,
+  fv_exp (subst_exp e2 x1 e1) [<=] fv_exp e2 `union` remove x1 (fv_exp e1).
+
+Hint Resolve fv_exp_subst_exp_upper : lngen.
+
+Ltac default_auto ::= auto with lngen brute_force; tauto.
+Ltac default_autorewrite ::= autorewrite with lngen.
+
+Lemma subst_exp_close_exp_wrt_exp_rec_mutual :
+(forall e2 e1 x1 x2 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  x1 <> x2 ->
+  x2 `notin` fv_exp e1 ->
+  subst_exp e1 x1 (close_exp_wrt_exp_rec n1 x2 e2) = close_exp_wrt_exp_rec n1 x2 (subst_exp e1 x1 e2)).
+
+Lemma subst_exp_close_exp_wrt_exp_rec :
+forall e2 e1 x1 x2 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  x1 <> x2 ->
+  x2 `notin` fv_exp e1 ->
+  subst_exp e1 x1 (close_exp_wrt_exp_rec n1 x2 e2) = close_exp_wrt_exp_rec n1 x2 (subst_exp e1 x1 e2).
+
+Hint Resolve subst_exp_close_exp_wrt_exp_rec : lngen.
+
+Lemma subst_exp_close_exp_wrt_exp :
+forall e2 e1 x1 x2,
+  lc_exp e1 ->  x1 <> x2 ->
+  x2 `notin` fv_exp e1 ->
+  subst_exp e1 x1 (close_exp_wrt_exp x2 e2) = close_exp_wrt_exp x2 (subst_exp e1 x1 e2).
+
+Hint Resolve subst_exp_close_exp_wrt_exp : lngen.
+
+Lemma subst_exp_degree_exp_wrt_exp_mutual :
+(forall e1 e2 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp n1 e2 ->
+  degree_exp_wrt_exp n1 (subst_exp e2 x1 e1)).
+
+Lemma subst_exp_degree_exp_wrt_exp :
+forall e1 e2 x1 n1,
+  degree_exp_wrt_exp n1 e1 ->
+  degree_exp_wrt_exp n1 e2 ->
+  degree_exp_wrt_exp n1 (subst_exp e2 x1 e1).
+
+Hint Resolve subst_exp_degree_exp_wrt_exp : lngen.
+
+Lemma subst_exp_fresh_eq_mutual :
+(forall e2 e1 x1,
+  x1 `notin` fv_exp e2 ->
+  subst_exp e1 x1 e2 = e2).
+
+Lemma subst_exp_fresh_eq :
+forall e2 e1 x1,
+  x1 `notin` fv_exp e2 ->
+  subst_exp e1 x1 e2 = e2.
+
+Hint Resolve subst_exp_fresh_eq : lngen.
+Hint Rewrite subst_exp_fresh_eq using solve [auto] : lngen.
+
+Lemma subst_exp_fresh_same_mutual :
+(forall e2 e1 x1,
+  x1 `notin` fv_exp e1 ->
+  x1 `notin` fv_exp (subst_exp e1 x1 e2)).
+
+Lemma subst_exp_fresh_same :
+forall e2 e1 x1,
+  x1 `notin` fv_exp e1 ->
+  x1 `notin` fv_exp (subst_exp e1 x1 e2).
+
+Hint Resolve subst_exp_fresh_same : lngen.
+
+Lemma subst_exp_fresh_mutual :
+(forall e2 e1 x1 x2,
+  x1 `notin` fv_exp e2 ->
+  x1 `notin` fv_exp e1 ->
+  x1 `notin` fv_exp (subst_exp e1 x2 e2)).
+
+Lemma subst_exp_fresh :
+forall e2 e1 x1 x2,
+  x1 `notin` fv_exp e2 ->
+  x1 `notin` fv_exp e1 ->
+  x1 `notin` fv_exp (subst_exp e1 x2 e2).
+
+Hint Resolve subst_exp_fresh : lngen.
+
+Lemma subst_exp_lc_exp :
+forall e1 e2 x1,
+  lc_exp e1 ->
+  lc_exp e2 ->
+  lc_exp (subst_exp e2 x1 e1).
+
+Hint Resolve subst_exp_lc_exp : lngen.
+
+Lemma subst_exp_open_exp_wrt_exp_rec_mutual :
+(forall e3 e1 e2 x1 n1,
+  lc_exp e1 ->
+  subst_exp e1 x1 (open_exp_wrt_exp_rec n1 e2 e3) = open_exp_wrt_exp_rec n1 (subst_exp e1 x1 e2) (subst_exp e1 x1 e3)).
+
+Lemma subst_exp_open_exp_wrt_exp_rec :
+forall e3 e1 e2 x1 n1,
+  lc_exp e1 ->
+  subst_exp e1 x1 (open_exp_wrt_exp_rec n1 e2 e3) = open_exp_wrt_exp_rec n1 (subst_exp e1 x1 e2) (subst_exp e1 x1 e3).
+
+Hint Resolve subst_exp_open_exp_wrt_exp_rec : lngen.
+
+Lemma subst_exp_open_exp_wrt_exp :
+forall e3 e1 e2 x1,
+  lc_exp e1 ->
+  subst_exp e1 x1 (open_exp_wrt_exp e3 e2) = open_exp_wrt_exp (subst_exp e1 x1 e3) (subst_exp e1 x1 e2).
+
+Hint Resolve subst_exp_open_exp_wrt_exp : lngen.
+
+Lemma subst_exp_open_exp_wrt_exp_var :
+forall e2 e1 x1 x2,
+  x1 <> x2 ->
+  lc_exp e1 ->
+  open_exp_wrt_exp (subst_exp e1 x1 e2) (var_f x2) = subst_exp e1 x1 (open_exp_wrt_exp e2 (var_f x2)).
+
+Hint Resolve subst_exp_open_exp_wrt_exp_var : lngen.
+
+Lemma subst_exp_spec_rec_mutual :
+(forall e1 e2 x1 n1,
+  subst_exp e2 x1 e1 = open_exp_wrt_exp_rec n1 e2 (close_exp_wrt_exp_rec n1 x1 e1)).
+
+Lemma subst_exp_spec_rec :
+forall e1 e2 x1 n1,
+  subst_exp e2 x1 e1 = open_exp_wrt_exp_rec n1 e2 (close_exp_wrt_exp_rec n1 x1 e1).
+
+Hint Resolve subst_exp_spec_rec : lngen.
+
+Lemma subst_exp_spec :
+forall e1 e2 x1,
+  subst_exp e2 x1 e1 = open_exp_wrt_exp (close_exp_wrt_exp x1 e1) e2.
+
+Hint Resolve subst_exp_spec : lngen.
+
+Lemma subst_exp_subst_exp_mutual :
+(forall e1 e2 e3 x2 x1,
+  x2 `notin` fv_exp e2 ->
+  x2 <> x1 ->
+  subst_exp e2 x1 (subst_exp e3 x2 e1) = subst_exp (subst_exp e2 x1 e3) x2 (subst_exp e2 x1 e1)).
+
+Lemma subst_exp_subst_exp :
+forall e1 e2 e3 x2 x1,
+  x2 `notin` fv_exp e2 ->
+  x2 <> x1 ->
+  subst_exp e2 x1 (subst_exp e3 x2 e1) = subst_exp (subst_exp e2 x1 e3) x2 (subst_exp e2 x1 e1).
+
+Hint Resolve subst_exp_subst_exp : lngen.
+
+Lemma subst_exp_close_exp_wrt_exp_rec_open_exp_wrt_exp_rec_mutual :
+(forall e2 e1 x1 x2 n1,
+  x2 `notin` fv_exp e2 ->
+  x2 `notin` fv_exp e1 ->
+  x2 <> x1 ->
+  degree_exp_wrt_exp n1 e1 ->
+  subst_exp e1 x1 e2 = close_exp_wrt_exp_rec n1 x2 (subst_exp e1 x1 (open_exp_wrt_exp_rec n1 (var_f x2) e2))).
+
+Lemma subst_exp_close_exp_wrt_exp_rec_open_exp_wrt_exp_rec :
+forall e2 e1 x1 x2 n1,
+  x2 `notin` fv_exp e2 ->
+  x2 `notin` fv_exp e1 ->
+  x2 <> x1 ->
+  degree_exp_wrt_exp n1 e1 ->
+  subst_exp e1 x1 e2 = close_exp_wrt_exp_rec n1 x2 (subst_exp e1 x1 (open_exp_wrt_exp_rec n1 (var_f x2) e2)).
+
+Hint Resolve subst_exp_close_exp_wrt_exp_rec_open_exp_wrt_exp_rec : lngen.
+
+Lemma subst_exp_close_exp_wrt_exp_open_exp_wrt_exp :
+forall e2 e1 x1 x2,
+  x2 `notin` fv_exp e2 ->
+  x2 `notin` fv_exp e1 ->
+  x2 <> x1 ->
+  lc_exp e1 ->
+  subst_exp e1 x1 e2 = close_exp_wrt_exp x2 (subst_exp e1 x1 (open_exp_wrt_exp e2 (var_f x2))).
+
+Hint Resolve subst_exp_close_exp_wrt_exp_open_exp_wrt_exp : lngen.
+
+Lemma subst_exp_abs :
+forall x2 e2 e1 x1,
+  lc_exp e1 ->
+  x2 `notin` fv_exp e1 `union` fv_exp e2 `union` singleton x1 ->
+  subst_exp e1 x1 (abs e2) = abs (close_exp_wrt_exp x2 (subst_exp e1 x1 (open_exp_wrt_exp e2 (var_f x2)))).
+
+Hint Resolve subst_exp_abs : lngen.
+
+Lemma subst_exp_intro_rec :
+forall e1 x1 e2 n1,
+  x1 `notin` fv_exp e1 ->
+  open_exp_wrt_exp_rec n1 e2 e1 = subst_exp e2 x1 (open_exp_wrt_exp_rec n1 (var_f x1) e1).
+
+Hint Resolve subst_exp_intro_rec : lngen.
+Hint Rewrite subst_exp_intro_rec using solve [auto] : lngen.
+
+Lemma subst_exp_intro :
+forall x1 e1 e2,
+  x1 `notin` fv_exp e1 ->
+  open_exp_wrt_exp e1 e2 = subst_exp e2 x1 (open_exp_wrt_exp e1 (var_f x1)).
+
+Hint Resolve subst_exp_intro : lngen.
+
+Ltac default_auto ::= auto; tauto.
+Ltac default_autorewrite ::= fail. *)
+
+
+
+Require Import Stlc.Nominal.
+(* Stlc.Nominal:
+Require Export Omega.
+
+Require Export Metalib.Metatheory.
+
+Require Export Metalib.LibLNgen.
+
+Notation X := (fresh nil).
+Notation Y := (fresh (X :: nil)).
+Notation Z := (fresh (X :: Y :: nil)).
+
+Inductive n_exp : Set :=
+ | n_var (x:atom)
+ | n_abs (x:atom) (t:n_exp)
+ | n_app (t1:n_exp) (t2:n_exp).
+
+Definition demo_rep1 := n_abs X (n_app (n_var Y) (n_var X)).
+
+Definition demo_rep2 := n_abs Z (n_app (n_var Y) (n_var Z)).
+
+Fixpoint fv_nom (n : n_exp) : atoms :=
+  match n with
+  | n_var x => {{x}}
+  | n_abs x n => remove x (fv_nom n)
+  | n_app t1 t2 => fv_nom t1 `union` fv_nom t2
+  end.
+
+Definition swap_var (x:atom) (y:atom) (z:atom) :=
+  if (z == x) then y else if (z == y) then x else z.
+
+Fixpoint swap (x:atom) (y:atom) (t:n_exp) : n_exp :=
+  match t with
+  | n_var z     => n_var (swap_var x y z)
+  | n_abs z t1  => n_abs (swap_var x y z) (swap x y t1)
+  | n_app t1 t2 => n_app (swap x y t1) (swap x y t2)
+  end.
+
+Lemma swap_id : forall n x,
+    swap x x n = n.
+
+Lemma fv_nom_swap : forall z y n,
+  z `notin` fv_nom n ->
+  y `notin` fv_nom (swap y z n).
+
+Lemma shuffle_swap : forall w y n z,
+    w <> z -> y <> z ->
+    (swap w y (swap y z n)) = (swap w z (swap w y n)).
+
+Lemma swap_symmetric : forall t x y,
+    swap x y t = swap y x t.
+
+Lemma swap_involutive : forall t x y,
+    swap x y (swap x y t) = t.
+
+Lemma swap_var_equivariance : forall v x y z w,
+    swap_var x y (swap_var z w v) =
+    swap_var (swap_var x y z) (swap_var x y w) (swap_var x y v).
+
+Lemma swap_equivariance : forall t x y z w,
+    swap x y (swap z w t) = swap (swap_var x y z) (swap_var x y w) (swap x y t).
+
+Lemma notin_fv_nom_equivariance : forall x0 x y t ,
+  x0 `notin` fv_nom t ->
+  swap_var x y x0  `notin` fv_nom (swap x y t).
+
+Lemma in_fv_nom_equivariance : forall x y x0 t,
+  x0 `in` fv_nom t ->
+  swap_var x y x0 `in` fv_nom (swap x y t).
+
+Lemma aeq_equivariance : forall x y t1 t2,
+    aeq t1 t2 ->
+    aeq (swap x y t1) (swap x y t2).
+
+Definition heap := list (atom * n_exp).
+
+Inductive frame : Set := | n_app2 : n_exp -> frame.
+Notation  stack := (list frame).
+
+Definition configuration := (heap * n_exp * stack)%type.
+
+Inductive Step a := Error    : Step a
+                  | Done     : Step a
+                  | TakeStep : a -> Step a.
+
+Definition isVal (t : n_exp) :=
+  match t with
+  | n_abs _ _ => true
+  | _         => false
+  end.
+
+Definition machine_step (avoid : atoms) (c : configuration) : Step configuration :=
+  match c with
+    (h, t, s) =>
+    if isVal t then
+      match s with
+      | nil => Done _
+      | n_app2 t2 :: s' =>
+        match t with
+        | n_abs x t1 =>
+          
+          if AtomSetProperties.In_dec x (dom h `union` avoid)  then
+            let (y,_) := atom_fresh (dom h `union` avoid) in
+             TakeStep _ ((y,t2)::h, swap x y t1, s')
+          else
+            TakeStep _ ((x,t2)::h, t1, s')
+        | _ => Error _ 
+        end
+      end
+    else match t with
+         | n_var x => match get x h with
+                     | Some t1  => TakeStep _ (h, t1, s)
+                     | None    => Error _ 
+                     end
+         | n_app t1 t2 => TakeStep _ (h, t1, n_app2 t2 :: s)
+         | _ => Error _ 
+         end
+  end.
+
+Definition initconf (t : n_exp) : configuration := (nil,t,nil).
+
+Lemma values_are_done : forall D t,
+    isVal t = true -> machine_step D (initconf t) = Done _.
+
+Fixpoint size (t : n_exp) : nat :=
+  match t with
+  | n_var x => 1
+  | n_abs x t => 1 + size t
+  | n_app t1 t2 => 1 + size t1 + size t2
+  end.
+
+Lemma swap_size_eq : forall x y t,
+    size (swap x y t) = size t.
+
+Hint Rewrite swap_size_eq.
+
+Lemma nominal_induction_size :
+     forall n, forall t, size t <= n ->
+     forall P : n_exp -> Type,
+    (forall x, P (n_var x)) ->
+    (forall x t, (forall y, P (swap x y t)) -> P (n_abs x t)) ->
+    (forall t1 t2, P t1 -> P t2 -> P (n_app t1 t2)) ->
+    P t.
+
+Definition nominal_induction
+  : forall (P : n_exp -> Type),
+    (forall x : atom, P (n_var x)) ->
+    (forall (x : atom) (t : n_exp),
+        (forall y : atom, P (swap x y t)) -> P (n_abs x t)) ->
+    (forall t1 t2 : n_exp, P t1 -> P t2 -> P (n_app t1 t2)) ->
+    forall t : n_exp, P t :=
+  fun P VAR APP ABS t =>
+  nominal_induction_size (size t) t ltac:(auto) P VAR APP ABS.
+
+Fixpoint subst_rec (n:nat) (t:n_exp) (u :n_exp) (x:atom)  : n_exp :=
+  match n with
+  | 0 => t
+  | S m => match t with
+          | n_var y => if (x == y) then u else t
+          | n_abs y t1 => if (x == y) then t
+                        else let (z,_) := atom_fresh (fv_nom u \u fv_nom t) in
+                             n_abs z (subst_rec m (swap y z t1) u x)
+          | n_app t1 t2 => n_app (subst_rec m t1 u x) (subst_rec m t2 u x)
+          end
+  end.
+
+Definition subst (u : n_exp) (x:atom) (t:n_exp) :=
+  subst_rec (size t) t u x.
+
+Lemma subst_size : forall n (u : n_exp) (x:atom) (t:n_exp),
+    size t <= n -> subst_rec n t u x = subst_rec (size t) t u x.
+
+Lemma subst_eq_var : forall u x,
+    subst u x (n_var x) = u.
+
+Lemma subst_neq_var : forall u x y,
+    x <> y ->
+    subst u x (n_var y) = n_var y.
+
+Lemma subst_app : forall u x t1 t2,
+    subst u x (n_app t1 t2) = n_app (subst u x t1) (subst u x t2).
+
+Lemma subst_abs : forall u x y t1,
+    subst u x (n_abs y t1) =
+       if (x == y) then (n_abs y t1)
+       else let (z,_) := atom_fresh (fv_nom u \u fv_nom (n_abs y t1)) in
+       n_abs z (subst u x (swap y z t1)).
+
+Fixpoint aeq_f  (n: nat) (L : atoms) (t1 : n_exp) (t2 : n_exp) : bool :=
+  match n with
+  | 0 => false
+  | S m =>
+    match t1 , t2 with
+    | n_var x , n_var y => if (x == y) then true else false
+    | n_abs x1 t1, n_abs x2 t2 =>
+      if (x1 == x2) then aeq_f m L t1 t2
+      else let (y,_) := atom_fresh L in
+           aeq_f m ({{y}} \u L) (swap y x1 t1) (swap y x2 t2)
+  | n_app t1 t2 , n_app t1' t2' =>
+    if aeq_f m L t1 t1' then aeq_f m L t2 t2' else false
+  | _ , _ => false
+    end
+end.
+
+Definition is_aeq t1 t2 := aeq_f (size t1) (fv_nom t1 \u fv_nom t2).
+
+Lemma aeq_refl : forall n, aeq n n.
+
+Lemma subst_equivariance : forall u x y z t,
+    swap x y (subst u z t) = subst (swap x y u) (swap_var x y z) (swap x y t).
+
+Lemma subst_same : forall t y, aeq (subst (n_var y) y t)  t.
+
+Lemma aeq_fv_nom : forall t1 t2,
+    aeq t1 t2 ->
+    fv_nom t1 [=] fv_nom t2.
+
+Lemma aeq_sym : forall t1 t2,
+    aeq t1 t2 -> aeq t2 t1.
+
+Lemma swap_fresh : forall t x0 y0 z,
+  z `notin` fv_nom t -> x0 `notin` fv_nom t -> z <> y0 -> z <> x0 ->
+  aeq (swap z x0 (swap y0 z t)) (swap y0 x0 t).
+
+Lemma aeq_trans_aux : forall n t2 t1 t3, size t2 <= n -> aeq t1 t2 -> aeq t2 t3 -> aeq t1 t3. *)
+
+
+
+Import StlcNotations.
+
+
+
+Fixpoint nom_to_exp (ne : n_exp) : exp :=
+
+  match ne with
+
+  | n_var x => var_f x
+
+  | n_app e1 e2 => app (nom_to_exp e1) (nom_to_exp e2)
+
+  | n_abs x e1 => abs (close_exp_wrt_exp x (nom_to_exp e1))
+
+end.
+
+
+
+Fixpoint apply_heap (h : heap) (e : exp) : exp  :=
+
+  match h with
+
+  | nil => e
+
+  | (x , e') :: h' => apply_heap h' ([x ~> nom_to_exp e'] e)
+
+  end.
+
+
+
+Fixpoint apply_stack h (s : list frame) (e :exp) : exp :=
+
+  match s with
+
+  | nil => e
+
+  | n_app2 e' :: s' => apply_stack h s' (app e (apply_heap h (nom_to_exp e')))
+
+  end.
+
+
+
+Definition decode (c:configuration) : exp  :=
+
+  match c with
+
+  | (h,e,s) => apply_stack h s (apply_heap h (nom_to_exp e))
+
+  end.
+
+
+
+Definition conf1 := ([(Y,n_var Z)], n_abs X (n_var X), [n_app2 (n_var Y)]).
+
+
+
+Example decode1 : decode conf1 = (app (abs (var_b 0)) (var_f Z)).
+
+Proof. 
+
+  default_simp.
+
+  unfold close_exp_wrt_exp.
+
+  default_simp.
+
+Qed. 
+
+
+
+Lemma fv_nom_fv_exp_eq : forall n,
+
+    fv_nom n [=] fv_exp (nom_to_exp n).
+
+Proof.
+
+  induction n; intros; simpl; autorewrite with lngen; fsetdec.
+
+Qed.
+
+
+
+Hint Rewrite fv_nom_fv_exp_eq : lngen.
+
+Hint Resolve fv_nom_fv_exp_eq : lngen.
+
+
+
+Ltac default_auto        ::= auto with lngen.
+
+Ltac default_autorewrite ::= autorewrite with lngen.
+
+
+
+Hint Rewrite subst_exp_open_exp_wrt_exp : lngen.
+
+Hint Rewrite swap_size_eq : lngen.
+
+Hint Resolve le_S_n : lngen.
+
+
+
+Lemma nom_to_exp_lc : forall t, lc_exp (nom_to_exp t).
+
+Proof.
+
+  induction t; default_steps.
+
+Qed.
+
+Hint Resolve nom_to_exp_lc : lngen.
+
+
+
+Lemma apply_heap_lc : forall h e,
+
+    lc_exp e -> lc_exp (apply_heap h e).
+
+Proof.
+
+  alist induction h; default_simp.
+
+Qed.
+
+Hint Resolve apply_heap_lc : lngen.
+
+
+
+Lemma apply_stack_lc : forall s h e,
+
+    lc_exp e -> lc_exp (apply_stack h s e).
+
+Proof.
+
+  induction s; try destruct a; default_simp.
+
+Qed.
+
+Hint Resolve apply_stack_lc : lngen.
+
+
+
+Lemma decode_lc : forall c, lc_exp (decode c).
+
+Proof.
+
+  intros [[h e] s]; default_simp.
+
+  
+
+Qed. 
+
+
+
+Lemma apply_heap_abs : forall h e,
+
+  apply_heap h (abs e) = abs (apply_heap h e).
+
+Proof.
+
+  alist induction h; default_simp.
+
+Qed.
+
+
+
+Hint Rewrite apply_heap_abs : lngen.
+
+
+
+Lemma apply_heap_app : forall h e1 e2,
+
+  apply_heap h (app e1 e2) = app (apply_heap h e1) (apply_heap h e2).
+
+Proof.
+
+  alist induction h; default_simp.
+
+Qed.
+
+
+
+Hint Rewrite apply_heap_app : lngen.
+
+
+
+Lemma apply_heap_open : forall h e e0,
+
+    lc_exp e0 ->
+
+    apply_heap h (open e e0)  =
+
+       open (apply_heap h e) (apply_heap h e0).
+
+Proof.
+
+
+
+  alist induction h; intros; default_simp.
+
+Qed. 
+
+
+
+Hint Rewrite apply_heap_open : lngen.
+
+
+
+Lemma combine : forall h x e e',
+
+  apply_heap h ([x ~> nom_to_exp e] e') = (apply_heap ((x,e)::h) e').
+
+Proof.
+
+  simpl. auto.
+
+Qed.
+
+
+
+Lemma apply_stack_cong : forall s h e e',
+
+    step e e' ->
+
+    step (apply_stack h s e) (apply_stack h s e').
+
+Proof.
+
+  induction s; intros; try destruct a; default_simp.
+
+Qed.
+
+
+
+Lemma close_exp_wrt_exp_freshen : forall x y e,
+
+    y `notin` fv_exp e ->
+
+    close_exp_wrt_exp x e =
+
+    close_exp_wrt_exp y ([x ~> var_f y] e).
+
+Proof.
+
+
+
+  intros x y e.
+
+  unfold close_exp_wrt_exp.
+
+  generalize 0 as k.
+
+  generalize e. clear e.
+
+  induction e; default_simp.
+
+Qed. 
+
+
+
+Lemma swap_spec_aux : forall m t w y,
+
+    size t <= m ->
+
+    y `notin` fv_exp (nom_to_exp t) ->
+
+    w <> y ->
+
+    [w ~> var_f y] (nom_to_exp t) =
+
+    nom_to_exp (swap w y t).
+
+Proof.
+
+  induction m; intros t w y SZ;
+
+  destruct t; simpl in *; try omega;
+
+  intros.
+
+  + unfold swap_var; default_simp.
+
+  + unfold swap_var; default_simp.
+
+    { 
+
+      rewrite subst_exp_fresh_eq; default_simp.
+
+      autorewrite with lngen in *.
+
+      rewrite (close_exp_wrt_exp_freshen w y); try fsetdec.
+
+      rewrite IHm; default_simp.  }
+
+    { 
+
+       autorewrite with lngen in *.
+
+       
+       pick fresh z for (
+
+              fv_exp (nom_to_exp t) \u
+
+              fv_exp (nom_to_exp (swap w y t)) \u {{w}} \u {{y}}).
+
+
+
+       rewrite (close_exp_wrt_exp_freshen y z); auto.
+
+       rewrite (close_exp_wrt_exp_freshen w z); auto.
+
+
+
+       rewrite subst_exp_close_exp_wrt_exp; auto.
+
+
+
+       rewrite IHm with (y:=z); default_steps.
+
+       rewrite IHm with (y:=z); default_steps.
+
+       rewrite IHm with (y:=y); default_steps.
+
+
+
+       rewrite shuffle_swap; auto.
+
+
+
+       rewrite <- fv_nom_fv_exp_eq.
+
+       apply fv_nom_swap.
+
+       rewrite fv_nom_fv_exp_eq.
+
+       fsetdec.
+
+    }
+
+    { 
+
+       rewrite <- IHm; default_steps.
+
+       autorewrite with lngen in *.
+
+       fsetdec.
+
+    }
+
+  + rewrite IHm; auto; try omega; try fsetdec.
+
+    rewrite IHm; auto; try omega; try fsetdec.
+
+Qed.
+
+
+
+Lemma swap_spec : forall t w y,
+
+    y `notin` fv_exp (nom_to_exp t) ->
+
+    w <> y ->
+
+    [w ~> var_f y] (nom_to_exp t) =
+
+    nom_to_exp (swap w y t).
+
+Proof.
+
+  intros.
+
+  eapply swap_spec_aux with (t:=t)(m:=size t); auto.
+
+Qed.
+
+
+
+Lemma aeq_nom_to_exp : forall n1 n2, aeq n1 n2 -> nom_to_exp n1 = nom_to_exp n2.
+
+Proof.
+
+  
+
+  induction 1; default_simp;
+
+  autorewrite with lngen in *.
+
+  - congruence.
+
+  - rewrite (close_exp_wrt_exp_freshen y x); auto.
+
+    rewrite swap_spec; auto.
+
+    congruence.
+
+Qed. 
+
+
+
+Lemma nom_to_exp_eq_aeq : forall n1 n2, nom_to_exp n1 = nom_to_exp n2 -> aeq n1 n2.
+
+Proof.
+
+  
+
+  induction n1; intro n2; destruct n2; default_simp.
+
+  destruct (x == x0).
+
+  - subst. eauto with lngen.
+
+  - assert (FX : x `notin` fv_exp (nom_to_exp n2)).
+
+    { intro IN.
+
+      assert (x `in` fv_exp (nom_to_exp (n_abs x0 n2))).
+
+      { simpl. autorewrite with lngen. fsetdec. }
+
+      simpl in *.
+
+      rewrite <- H0 in H.
+
+      autorewrite with lngen in *.
+
+      fsetdec. }
+
+    eapply aeq_abs_diff; auto.
+
+    + autorewrite with lngen. auto.
+
+    + eapply IHn1.
+
+      rewrite <- swap_spec; eauto.
+
+      rewrite subst_exp_spec.
+
+      rewrite <- H0.
+
+      autorewrite with lngen.
+
+      auto.
+
+Qed. 
+
+
+
+Inductive scoped_heap (D : atoms) : heap -> Prop :=
+
+  | scoped_nil  : scoped_heap D nil
+
+  | scoped_cons : forall x e h,
+
+      x `notin` dom h \u D ->
+
+      fv_exp (nom_to_exp e) [<=] dom h \u D ->
+
+      scoped_heap D h ->
+
+      scoped_heap D ((x,e)::h).
+
+
+
+Lemma scoped_get : forall h D1 D2 x e,
+
+  scoped_heap D1 h ->
+
+  get x h = Some e ->
+
+  dom h \u D1 [<=] D2 ->
+
+  fv_exp (nom_to_exp e) [<=] D2.
+
+Proof.
+
+  induction 1; intros; default_simp.
+
+  fsetdec.
+
+  eapply IHscoped_heap; auto; fsetdec.
+
+Qed.
+
+
+
+Lemma apply_heap_get :  forall h D x e,
+
+    scoped_heap D h ->
+
+    get x h = Some e ->
+
+    apply_heap h (var_f x) = apply_heap h (nom_to_exp e).
+
+Proof.
+
+  induction 1; intros; default_simp.
+
+  - Case "x is at the current heap location".
+
+    rewrite subst_exp_fresh_eq; auto. fsetdec.
+
+  - Case "x is later in the heap".
+
+    rewrite subst_exp_fresh_eq; auto.
+
+    
+
+    rewrite scoped_get with (D2:= dom h\u D ); default_simp; eauto.
+
+Qed. 
+
+
+
+Fixpoint fv_stack s :=
+
+  match s with
+
+    nil => {}
+
+  | n_app2 e :: s => fv_exp (nom_to_exp e) \u fv_stack s
+
+  end.
+
+
+
+Lemma apply_stack_fresh_eq : forall s x e1 h ,
+
+    x `notin` fv_stack s ->
+
+    apply_stack ((x, e1) :: h) s = apply_stack h s.
+
+Proof.
+
+  
+
+  induction s; intros; try destruct a; default_simp.
+
+  rewrite IHs; auto.
+
+Qed. 
+
+
+
+Inductive scoped_conf : atoms -> configuration -> Prop :=
+
+  scoped_conf_witness : forall D h e s,
+
+    scoped_heap D h ->
+
+    fv_exp (nom_to_exp e) [<=] dom h \u D ->
+
+    fv_stack s [<=] dom h \u D  ->
+
+    scoped_conf D (h,e,s).
+
+
+
+Lemma simulate_step : forall D h e s h' e' s' ,
+
+    machine_step D (h,e,s) = TakeStep _ (h',e',s') ->
+
+    scoped_conf D (h,e,s) ->
+
+    decode (h,e,s) = decode (h',e',s') \/
+
+    step (decode (h,e,s)) (decode (h',e',s')).
+
+Proof.
+
+  intros D h e s h' e' s' STEP SCOPE.
+
+  inversion SCOPE; subst; clear SCOPE.
+
+  simpl in *.
+
+  destruct (isVal e) eqn:?.
+
+  destruct s.
+
+  - inversion STEP.
+
+  - destruct f eqn:?.
+
+    + destruct e eqn:?; try solve [inversion STEP].
+
+      right.
+
+      destruct AtomSetProperties.In_dec.
+
+      * 
+
+
+        destruct atom_fresh.
+
+        inversion STEP; subst; clear STEP.
+
+
+
+        simpl in *; autorewrite with lngen in *.
+
+        
+
+        rewrite combine.
+
+
+
+        rewrite apply_stack_fresh_eq; auto; try fsetdec.
+
+        
+        apply apply_stack_cong.
+
+
+
+        simpl.
+
+
+
+        assert (x <> x0) by fsetdec.
+
+        rewrite <- swap_spec; auto; try fsetdec.
+
+        rewrite (subst_exp_spec _ _ x).
+
+        autorewrite with lngen; auto with lngen.
+
+        default_simp.
+
+        rewrite subst_exp_fresh_eq; autorewrite with lngen; auto.
+
+
+
+        apply step_beta; auto with lngen.
+
+        rewrite <- apply_heap_abs.
+
+        eapply apply_heap_lc.
+
+        auto with lngen.
+
+
+
+        rewrite H4. fsetdec.
+
+      * 
+
+
+        inversion STEP; subst; clear STEP;
+
+          simpl in *;
+
+          rewrite combine;
+
+          rewrite apply_stack_fresh_eq; auto; try fsetdec.
+
+        apply apply_stack_cong;
+
+          autorewrite with lngen in *;
+
+          simpl.
+
+        rewrite subst_exp_spec.
+
+        rewrite apply_heap_open; auto with lngen.
+
+
+
+        apply step_beta; auto with lngen.
+
+        rewrite <- apply_heap_abs.
+
+        eapply apply_heap_lc.
+
+        auto with lngen.
+
+        
+
+  - destruct e eqn:?; try solve [inversion STEP].
+
+    + 
+
+      destruct (get x h) eqn:?; inversion STEP; subst; clear STEP.
+
+      left.
+
+      f_equal.
+
+      apply apply_heap_get with (D:= D); auto.
+
+    + 
+
+      inversion STEP; subst; clear STEP.
+
+      left.
+
+      simpl.
+
+      rewrite apply_heap_app.
+
+      auto.
+
+ Qed. 
+
+
+
+Lemma simulate_done : forall D h e s,
+
+    machine_step (dom h \u D) (h,e,s) = Done _ ->
+
+    scoped_conf D (h,e,s) ->
+
+    is_value (nom_to_exp e).
+
+Proof. 
+
+  intros.
+
+  inversion H0; subst.
+
+  simpl in *.
+
+  destruct (isVal e) eqn:?.
+
+  destruct s eqn:?.
+
+  - destruct e; simpl in Heqb; inversion Heqb.
+
+    econstructor; eauto.
+
+  - destruct f eqn:?.
+
+     + destruct e eqn:?; simpl; try solve [inversion H].
+
+       econstructor; eauto.
+
+  - destruct e; inversion H.
+
+    simpl in Heqb. destruct (get x h); inversion H.
+
+Qed. 
+
+
+
+Lemma apply_heap_get_none : forall x h,
+
+    get x h = None ->
+
+    apply_heap h (var_f x) = var_f x.
+
+Proof.
+
+  intros.
+
+  alist induction h; simpl in *; auto.
+
+  default_simp.
+
+Qed.
+
+
+
+Lemma no_step_stack : forall s h e0,
+
+  not (is_value e0) ->
+
+  not (exists e0', step e0 e0') ->
+
+  not (exists e1, step (apply_stack h s e0) e1).
+
+Proof.
+
+  induction s; intros; try destruct a; simpl in *; auto.
+
+  intros [e1 STEP].
+
+  assert (K1: not (exists e1', step (app e0 (apply_heap h (nom_to_exp n))) e1')).
+
+  { intros [e1' SS].
+
+    inversion SS. subst. simpl in *. contradiction.
+
+    subst. eauto. }
+
+  assert (K2: not (is_value (app e0 (apply_heap h (nom_to_exp n))))).
+
+  { simpl. auto. }
+
+  pose (K := IHs h _ K2 K1). clearbody K.
+
+  eauto.
+
+Qed.
+
+
+
+Lemma simulate_error : forall D h e s,
+
+    machine_step (dom h \u D) (h,e,s) = Error _ ->
+
+    scoped_conf D (h,e,s) ->
+
+    not (exists e0, step (decode (h,e,s)) e0).
+
+Proof.
+
+
+
+  intros.
+
+  simpl in *.
+
+  destruct (isVal e) eqn:?.
+
+  destruct s.
+
+  - destruct e; try solve [inversion H]; simpl in Heqb; inversion Heqb.
+
+  - destruct f eqn:?.
+
+    destruct e eqn:?; try solve [inversion H]; simpl in Heqb; inversion Heqb.
+
+    destruct (AtomSetProperties.In_dec).
+
+    + destruct atom_fresh. inversion H.
+
+    + inversion H.
+
+  - destruct e; try solve [inversion H]; simpl in Heqb; inversion Heqb.
+
+    destruct (get x h) eqn:?. inversion H.
+
+    intros [e0 STEP].
+
+    simpl in *.
+
+    rewrite apply_heap_get_none in STEP; auto.
+
+    eapply no_step_stack with (e0 := var_f x); auto.
+
+       intros [e0' SS]. inversion SS. eauto.
+
+Qed. 
+
+
+
+Lemma machine_is_scoped: forall D h e s conf',
+
+    machine_step (dom h \u D) (h,e,s) = TakeStep _ conf' ->
+
+    scoped_conf D (h,e,s) ->
+
+    scoped_conf D conf'.
+
+Proof.
+
+  
+
+  intros.
+
+  simpl in H.
+
+  inversion H0. subst.
+
+  destruct (isVal e) eqn:?.
+
+  destruct s eqn:?.
+
+  - inversion H.
+
+  - destruct f eqn:?.
+
+     + destruct e eqn:?; try solve [inversion H].
+
+       destruct AtomSetProperties.In_dec.
+
+       ++ destruct atom_fresh.
+
+          inversion H; subst; clear H.
+
+          simpl in *.
+
+          econstructor.
+
+            -- econstructor; eauto. fsetdec.
+
+            -- assert (x <> x0). fsetdec.
+
+               autorewrite with lngen in *.
+
+               rewrite <- swap_spec; try fsetdec.
+
+               rewrite fv_exp_subst_exp_upper.
+
+               simpl.
+
+               fsetdec.
+
+            -- simpl. fsetdec.
+
+       ++ inversion H; subst; clear H.
+
+          simpl in *.
+
+          autorewrite with lngen in *.
+
+          econstructor.
+
+          -- econstructor; eauto. fsetdec.
+
+          -- simpl.
+
+             assert ((union (add x (dom h)) D) [=] (add x (union (dom h) D))).
+
+             fsetdec. rewrite H.
+
+             rewrite <- H6.
+
+             eapply FSetDecideTestCases.test_Subset_add_remove.
+
+          -- simpl. fsetdec.
+
+  - destruct e eqn:?; try solve [inversion H].
+
+    destruct (get x h) eqn:?;
+
+    inversion H; subst; clear H.
+
+    + split. auto.
+
+      simpl in *.
+
+      eapply scoped_get; eauto.
+
+      fsetdec.
+
+      auto.
+
+    + simpl in *.
+
+    inversion H; subst; clear H.
+
+    econstructor.
+
+    auto.
+
+    fsetdec.
+
+    simpl. fsetdec.
+
+Qed. 
+

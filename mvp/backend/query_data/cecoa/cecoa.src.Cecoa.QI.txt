@@ -1,0 +1,3883 @@
+Require Import Le Max List Bool Cecoa.Lib Cecoa.Syntax Cecoa.CBV_cache NPeano Omega Cecoa.OptionMonad.
+(* Cecoa.Lib:
+Require Import Bool Arith Max Omega Psatz List NPeano Permutation.
+Import List.ListNotations.
+
+Require Import Unicode.Utf8_core.
+Require Import Unicode.Utf8.
+Notation "x ≤ y ≤ z" := (x ≤ y ∧ y ≤ z) (at level 70, y at next level).
+Notation "x < y ≤ z" := (x < y ∧ y ≤ z) (at level 70, y at next level).
+Notation "x ≤ y < z" := (x ≤ y ∧ y < z) (at level 70, y at next level).
+
+Infix "∈" := In (at level 70).
+
+Infix "=?" := beq_nat (at level 70, no associativity).
+
+Obligation Tactic := idtac.
+
+Scheme Equality for prod.
+Scheme Equality for list.
+
+Set Implicit Arguments.
+
+Section Trivial.
+Lemma S_is_suc n: S n = n+1.
+Lemma or_idem: ∀ A, A ↔ A ∨ A.
+Lemma and_idem: ∀ A, A ↔ A ∧ A.
+Lemma and_left: ∀ A B, A ∧ B → A.
+Lemma or_false_idem: ∀ A, A ↔ A ∨ False.
+
+Definition fmono (f: nat → nat):= ∀ x y, x ≤ y → f x ≤ f y.
+
+Lemma forall_and {A:Type} (P Q:A→Prop):
+  (∀ x, P x ∧ Q x) ↔ ((∀ x, P x) ∧ (∀ x, Q x)).
+Lemma forall_impl_and {A:Type} (R:A→Prop) (P Q:A→Prop):
+  (∀ x, R x → P x ∧ Q x) ↔
+  ((∀ x, R x → P x) ∧ (∀ x, R x → Q x)).
+Lemma forall_impl2_and {A B:Type} (P Q R : A → B → Prop):
+  (∀ x y, R x y → P x y ∧ Q x y) ↔ 
+  ((∀ x y, R x y → P x y) ∧ (∀ x y, R x y → Q x y)).
+
+Lemma eqb_subst_neq x y:
+  x ≠ y → (x =? y) = false.
+Lemma neq_lt_gt_iff (m n:nat):
+  m ≠ n ↔ (m < n ∨ n < m).
+
+Lemma length_nil : forall A (l : list A),
+  length l = 0 -> l = nil.
+End Trivial.
+
+Lemma prod_beq_eq A B
+  (A_beq : A -> A -> bool) (B_beq : B -> B -> bool)
+  (A_beq_eq : forall a1 a2, A_beq a1 a2 = true <-> a1 = a2) (B_beq_eq : forall b1 b2, B_beq b1 b2 = true <-> b1 = b2)
+  p1 p2 : prod_beq _ _ A_beq B_beq p1 p2 = true <-> p1 = p2.
+
+Lemma list_beq_eq A
+  (A_beq : A -> A -> bool) l1 l2 (A_beq_eq : forall a1 a2, In a1 l1 -> In a2 l2 -> (A_beq a1 a2 = true <-> a1 = a2)) :
+  list_beq _ A_beq l1 l2 = true <-> l1 = l2.
+
+Lemma list_beq_refl (A : Type) (A_beq : A -> A -> bool) l :
+  (forall a1 a2 : A, In a1 l -> In a2 l -> (A_beq a1 a2 = true <-> a1 = a2)) ->
+  list_beq _ A_beq l l = true.
+
+Lemma eq_None_neq_Some (A : Type) (x : option A) :
+  x = None <-> forall v, x <> Some v.
+
+Lemma neq_None_eq_Some :
+  forall (A: Type) (x: option A), x <> None <-> (exists a, x = Some a).
+
+Lemma app_insert_r (A : Type) (l1 l1' l l2 l2' : list A):
+  l1 ++ l2 = l1' ++ l2' -> length l2 = length l2' -> l1 ++ l ++ l2 = l1' ++ l ++ l2'.
+
+Section assoc.
+
+Fixpoint assoc {A B : Type}(eq : A -> A -> bool)(x : A)(l : list (A * B)) : option B :=
+  match l with
+  | nil => None
+  | (x', y) :: l' => if eq x x' then Some y else assoc eq x l'
+  end.
+
+Definition assoc_default {A B : Type}
+  (eqA : A -> A -> bool) (d : B) (l : list (A * B)) (x : A) : B :=
+  match assoc eqA x l with
+  | None => d
+  | Some b => b
+  end.
+
+Lemma assoc_in {A B:Type} beq k (l: list (A * B)) {v}:
+  (∀ a b:A, beq a b = true ↔ a=b) →
+  assoc beq k l = Some v → (k,v) ∈ l.
+
+Lemma assoc_None_not_in {A B:Type} beq k (l:list (A*B)):
+  (∀ a b : A, beq a b = true ↔ a = b) →
+  assoc beq k l = None ↔ ¬ k ∈ map fst l.
+
+Lemma in_assoc_neq_None (A B: Type) (beq: A -> A -> bool) (k: A) (l: list (A * B)):
+  (forall a b:A, a = b -> beq a b = true) ->
+  In k (map (@fst _ _) l) ->
+  assoc beq k l <> None.
+
+Lemma assoc_in_Some {A B:Type} (beq:A→A→bool) (k:A) (l: list (A*B)):
+  (∀ a b, beq a b = true ↔ a=b) →
+  k ∈ map fst l ↔ ∃ v, v ∈ map snd l ∧ assoc beq k l = Some v.
+
+Lemma assoc_in_Some_simple {A B:Type} beq k (l: list (A*B)):
+  (∀ a b:A, beq a b = true ↔ a = b) →
+  k ∈ map fst l ↔ (∃ v, assoc beq k l = Some v).
+
+Lemma assoc_app_eq_None (A B:Type) (eq: A -> A -> bool) (x: A) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) = None <-> (assoc eq x l1 = None /\ assoc eq x l2 = None).
+
+Lemma assoc_app_neq_None (A B:Type) (eq: A -> A -> bool) (x: A) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) <> None <-> (assoc eq x l1 <> None \/ assoc eq x l2 <> None).
+
+Lemma assoc_app_eq_Some (A B:Type) (eq: A -> A -> bool) (x: A) (v : B) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) = Some v <->
+  (assoc eq x l1 = Some v \/ (assoc eq x l1 = None /\ assoc eq x l2 = Some v)).
+
+Lemma assoc_app_in {K V:Type} beq k (l1 l2: list (K*V)):
+  (∀ a b : K, beq a b = true ↔ a = b) →
+  k ∈ map fst l1 → assoc beq k (l1++l2) = assoc beq k l1.
+
+Lemma assoc_app_out {K V:Type} beq k (l1 l2: list (K*V)):
+  (∀ a b : K, beq a b = true ↔ a = b) →
+  ¬ k ∈ map fst l1 → assoc beq k (l1++l2) = assoc beq k l2.
+
+Lemma assoc_in_concat {K V:Type} beq (k:K) ll (v:V):
+  assoc beq k (concat ll) = Some v →
+  ∃ l : list (K * V), l ∈ ll ∧ assoc beq k l = Some v.
+
+End assoc.
+
+Lemma map_in_ext :
+  forall (A B : Type) (f g : A -> B) (l : list A),
+  (forall a : A, In a l -> f a = g a) -> map f l = map g l.
+
+Lemma incl_cons_cons A: forall (a:A) (l1 l2: list A), incl l1 l2 -> incl (a::l1) (a::l2).
+
+Lemma map_incl A B (f : A -> B) l1 l2 : incl l1 l2 -> incl (map f l1) (map f l2).
+
+Lemma map_flat_map (A B C : Type) (f : A -> list B) (g : B -> C) (l : list A) :
+map g (flat_map f l) = flat_map (fun a => map g (f a)) l.
+
+Lemma incl_filter (A : Type) (f : A -> bool) l:
+  incl (filter f l) l.
+
+Lemma filter_ext_In {A : Type} f g (l : list A): (forall a , In a l -> f a = g a)-> filter f l = filter g l.
+
+Lemma filter_app A (f : A -> bool) l1 l2 : filter f (l1 ++ l2) = filter f l1 ++ filter f l2.
+
+Lemma filter_flat_map A B f (g : A -> list B) l : filter f (flat_map g l) = flat_map (fun x => filter f (g x)) l.
+
+Lemma flat_map_in_ext  A B (f g : A -> list B) l : 
+  (forall a : A, In a l -> f a = g a) -> flat_map f l = flat_map g l.
+
+Lemma NoDup_filter A f (l : list A) : NoDup l -> NoDup (filter f l).
+
+Lemma map_cons (A B : Type)(f : A -> B) a l : map f (a :: l) = f a :: map f l.
+
+Lemma length_remove A eq_A_dec (a: A) l :
+  length (remove eq_A_dec a l) <= length l.
+
+Lemma length_cons_remove A eq_A_dec (a: A) l :
+  In a l -> length (a :: remove eq_A_dec a l) <= length l.
+
+Lemma neq_in_in_remove A eq_A_dec (a a': A) l:
+  a' <> a -> In a l -> In a (remove eq_A_dec a' l).
+
+Lemma incl_remove_app A l l1 l2 (x : A) : ~ In x l -> incl l (l1 ++ x :: l2) -> incl l (l1 ++ l2).
+
+Lemma flat_map_nil (A B: Type) (f: A -> list B) (xs: list A):
+  (forall x, In x xs -> f x = []) ->
+  flat_map f xs = [].
+
+Lemma flat_map_comp (A B C : Type) (f : A -> B) (g : B -> list C) (h : A -> list C) (l : list A) :
+  (forall x, In x l -> h x = g (f x)) -> flat_map h l = flat_map g (map f l).
+
+Lemma flat_map_app (A B : Type) (f : A -> list B) l1 l2 :
+  flat_map f (l1 ++ l2) = flat_map f l1 ++ flat_map f l2.
+
+Lemma comp_flat_map (A B C : Type) (f : A -> list B) (g : B -> list C) h l :
+  (forall a, In a l -> h a = flat_map g (f a)) -> flat_map h l = flat_map g (flat_map f l).
+
+Fixpoint andl (l : list Prop) : Prop :=
+  match l with
+  | nil => True
+  | P :: l' => P /\ andl l'
+  end.
+
+Lemma andl_cons: forall a l, andl (a::l) <-> a /\ (andl l).
+
+Lemma andl_in : forall l P, andl l -> In P l -> P.
+
+Lemma andl_in_map (A:Type): forall l (a:A) P, andl (map P l) -> In a l -> P a.
+
+Lemma andl_map (A : Type) (f g : A -> Prop) l :
+  andl (map f l) -> (forall a, In a l -> f a -> g a) -> andl (map g l).
+
+Lemma andl_app l1 l2 : andl (l1 ++ l2) <-> andl l1 /\ andl l2.
+
+Fixpoint orl (l : list Prop) : Prop :=
+  match l with
+  | nil => False
+  | P :: l' => P \/ orl l'
+  end.
+
+Lemma andl_concat l:
+  andl (concat l) <-> forall l', In l' l -> andl l'.
+
+Lemma orl_map (A : Type) (P : A -> Prop) l : orl (map P l) <-> exists x, In x l /\ P x.
+
+Section Maxl.
+Fixpoint maxl (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => max n (maxl l')
+  end.
+
+Lemma maxl_is_max :
+  forall l n, In n l -> n <= maxl l.
+
+Lemma all_max_le l y :
+  (forall x, In x l -> x <= y) -> maxl l <= y.
+
+Lemma maxl_app : forall (l1 l2 : list nat), maxl (l1 ++ l2) = max (maxl l1) (maxl l2).
+
+Lemma in_maxl (l : list nat) : l<>nil -> In (maxl l) l.
+
+Lemma all_maxl P xs: xs <> [] -> (forall x, In x xs -> P x) -> P (maxl xs).
+
+Lemma maxl_le_maxl A f g (l : list A) :
+(forall x, In x l -> f x <= g x) -> maxl (map f l) <= maxl (map g l).
+
+Lemma maxl_map_const {A:Type} l (f: A → nat) n:
+  (∀ x, x ∈ l → (f x) = n) →
+  l ≠ [] → maxl (map f l) = n.
+
+Lemma maxl_map_0 A l (f : A -> nat) : 
+  (forall x, In x l -> (f x) = 0) ->
+  maxl (map f l) = 0.
+
+Lemma maxl_map_plus_le A f g (l : list A) :
+  maxl (map (fun x => f x + g x) l) <= maxl (map f l) + maxl (map g l).
+
+Lemma maxl_concat: forall l,
+  maxl (concat l) = maxl (map maxl l).
+
+Lemma maxl_map_lt_iff (A:Type): forall (l:list A) f n,
+  0<n -> maxl (map f l) < n <-> (forall m, In m l -> (f m) < n).
+
+Lemma maxl_map_le_iff (A:Type): forall (l:list A) f n,
+  maxl (map f l) <= n <-> (forall m, In m l -> (f m) <= n).
+
+Lemma maxl_map_is_max_map (A:Type): forall (l:list A) f a,
+  In a l -> (f a) <= maxl (map f l).
+
+Lemma maxl_eq_maxl {A:Type} f g (l:list A):
+  (∀ x : A, x ∈ l → f x = g x) →
+  maxl (map f l) = maxl (map g l).
+End Maxl.
+
+Lemma in_concat_iff (A:Type) x (l:list (list A)):
+  x ∈ concat l <-> exists l', l' ∈ l /\ x ∈ l'.
+
+Lemma incl_le_maxl :
+  forall (l1 l2 : list nat), incl l1 l2 -> maxl l1 <= maxl l2.
+
+Lemma maxl_cons : forall n l, maxl (n::l) = max n (maxl l).
+
+Lemma forall2_le_maxl :
+  forall (l1 l2 : list nat), Forall2 le l1 l2 -> maxl l1 <= maxl l2.
+
+Lemma incl_flat_map (A B : Type) (f g : A -> list B) l :
+  (forall a, In a l -> incl (f a) (g a)) ->
+  incl (flat_map f l) (flat_map g l).
+
+Section suml.
+
+Fixpoint suml (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => n + suml l'
+  end.
+
+Lemma suml_cons n l : suml (n :: l) = n + suml l.
+
+Lemma suml_map_const A n (l : list A) : suml (map (fun _ => n) l) = n * length l.
+
+Lemma mult_suml_r m l : m * suml l = suml (map (fun n => m * n) l).
+
+Lemma suml_app l1 l2 : suml (l1 ++ l2) = suml l1 + suml l2.
+
+Lemma suml_flat_map (A : Type)(f : A -> list nat)(l :list A) :
+  suml (flat_map f l) = suml (map suml (map f l)).
+
+Lemma suml_flat_map_map (A B : Type) (f : A -> list B) (g : B -> nat) l :
+  suml (flat_map (fun x => map g (f x)) l) = suml (map (fun x => suml (map g (f x))) l).
+
+Lemma suml_map_plus (A : Type)(f g : A -> nat)(l : list A) : suml (map (fun x => f x + g x) l) = suml (map f l) + suml (map g l).
+
+Lemma suml_map_le :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x <= g x) -> suml (map f l) <= suml (map g l).
+
+Lemma suml_map_eq :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x = g x) -> suml (map f l) = suml (map g l).
+
+Lemma suml_map_le_plus_length :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x <= g x + 1) -> suml (map f l) <= suml (map g l) + length l.
+
+Lemma suml_le_len_times_bound l b :
+  (forall x, In x l -> x <= b) -> suml l <= length l * b.
+
+Lemma in_le_suml :
+  forall (n : nat)(l : list nat),
+  In n l -> n <= suml l.
+
+Lemma maxl_le_suml l: maxl l <= suml l.
+
+Lemma forall2_le_suml :
+  forall (l1 l2 : list nat), Forall2 le l1 l2 -> suml l1 <= suml l2.
+
+Lemma maxl_le_suml_map (A B : Type) (f : A -> list B) (g : B -> nat) (h : A -> nat) (l : list A) :
+  (forall a, In a l -> maxl (map g (f a)) <= h a) ->
+  maxl (map g (flat_map f l)) <= suml (map h l).
+
+Lemma suml_map_mult_le_suml_mult_maxl (A : Type) f g (l : list A) :
+  suml (map (fun x => f x * g x) l) <= suml (map f l) * maxl (map g l).
+
+Lemma suml_map_mult_le_suml_mult_suml (A : Type) f g (l : list A) :
+  suml (map (fun x => f x * g x) l) <= suml (map f l) * suml (map g l).
+
+Lemma length_flat_map (A B : Type) ( f : A -> list B) (l : list A) :
+  length (flat_map f l) = suml (map (@length _) (map f l)).
+
+Lemma seq_Succ n m : seq n (S m) = seq n m ++ [m + n].
+
+Lemma Permutation_filter {A : Type} f (l : list A) : Permutation l (filter f l ++ filter (fun x => negb (f x)) l).
+
+Lemma filter_compose {A : Type} f g (l : list A) : 
+  (forall x, In x l -> ( f x = true -> g x = true)) ->
+  filter f (filter g l) = filter f l.
+
+Lemma in_seq : forall len start n : nat,
+       In n (seq start len) <-> start <= n < start + len.
+
+Lemma Permutation_partition_list_nat b n l :
+ (forall x, In x l -> b <= x < b + n) ->
+ Permutation l (flat_map (fun n => filter (beq_nat n) l) (seq b n)).
+
+Lemma length_suml_filter b n l:
+ (forall x, In x l -> b <= x < b + n) ->
+ suml (map (fun r => length(filter (beq_nat r) l )) (seq b n)) = length l.
+
+End suml.
+
+Section prodl.
+
+Fixpoint prodl (l : list nat) : nat :=
+  match l with
+  | nil => 1
+  | n :: l' => n * prodl l'
+  end.
+
+Lemma prodl_bound (l : list nat) (b : nat) : 
+  (forall x, In x l -> x <= b) -> prodl l <= Nat.pow b  (length l).
+
+End prodl.
+
+Definition clos_refl {A : Type} (R : A -> A -> Prop) (x y : A) : Prop :=
+  R x y \/ x = y.
+
+Lemma clos_refl_trans (A: Type) (R: A -> A -> Prop) t1 t2 t3:
+    (R t1 t2 -> R t2 t3 -> R t1 t3) ->
+    clos_refl R t1 t2 -> clos_refl R t2 t3 -> clos_refl R t1 t3.
+
+Lemma Forall2_eq_clos_refl (A:Type) (R: A -> A -> Prop) (l1 :list A) :
+  Forall2 (clos_refl R) l1 l1.
+
+Lemma Forall_In_l (A : Type) (P : A -> Prop) x xs:
+  Forall P xs -> In x xs -> P x.
+
+Lemma Forall2_In_l (A B : Type) (R : A -> B -> Prop) x xs ys :
+  Forall2 R xs ys -> In x xs -> exists y, In y ys /\ R x y.
+
+Lemma Forall2_In_r (A B : Type) (R : A -> B -> Prop) y xs ys :
+  Forall2 R xs ys -> In y ys -> exists x, In x xs /\ R x y.
+
+Lemma Forall2_conj (A B : Type) (R1 R2 : A -> B -> Prop) xs ys :
+  Forall2 R1 xs ys -> Forall2 R2 xs ys -> Forall2 (fun x y => R1 x y /\ R2 x y) xs ys.
+
+Lemma Forall2_trans (A: Type) (R: A -> A -> Prop) xs ys zs :
+    (forall x y z, In x xs -> In y ys -> In z zs -> R x y -> R y z -> R x z) ->
+    Forall2 R xs ys -> Forall2 R ys zs -> Forall2 R xs zs.
+
+Lemma Forall2_length A B (R : A -> B -> Prop) xs ys :
+  Forall2 R xs ys -> length xs = length ys.
+
+Lemma Forall2_map (A:Type) (B:Type): forall l f g (R:B->B->Prop),
+  (forall (x:A), In x l -> R (f x) (g x)) -> Forall2 R (map f l) (map g l).
+
+Lemma Forall2_flat_map (A B C D: Type) (R: C -> D -> Prop) (f: A -> list C) (g: B -> list D) (xs: list A) (ys: list B) :
+  Forall2 (fun x y => Forall2 R (f x) (g y)) xs ys ->
+  Forall2 R (flat_map f xs) (flat_map g ys).
+
+Lemma Forall2_forall A (d: A) (R: A -> A -> Prop) (xs ys: list A) :
+  Forall2 R xs ys ->
+  forall i, i < length xs -> R (nth i xs d) (nth i ys d).
+
+Inductive Exists2 {A B} (R: A -> B -> Prop) : list A -> list B -> Prop :=
+ | Exists2_cons_hd : forall x xs y ys, R x y -> Exists2 R (x::xs) (y::ys)
+ | Exists2_cons_tl : forall x xs y ys, Exists2 R xs ys -> Exists2 R (x::xs) (y::ys).
+Hint Constructors Exists2.
+
+Lemma Exists2_exists A (d: A) (R: A -> A -> Prop) (xs ys: list A) :
+  Exists2 R xs ys ->
+  exists i, i < length xs /\ R (nth i xs d) (nth i ys d).
+
+Lemma app_eq_compat_l {A: Type} (xs ys zs: list A) : ys = zs -> xs ++ ys = xs ++ zs.
+
+Lemma In_prefix_suffix (A : Type) (a : A) l :
+  In a l -> exists l1 l2, l = l1 ++ a :: l2.
+
+Lemma forall_exists_list (A B : Type) (P : A -> Prop) (Q : A -> B -> Prop) (l : list A) :
+  (forall a, In a l -> P a -> exists b, Q a b) ->
+  (Forall P l -> exists l', Forall2 Q l l').
+
+Lemma forall_andl (A: Type) (P: A -> Prop) (l: list A):
+  Forall P l <-> andl (map P l).
+
+Fixpoint revflatten {A: Type} (xss: list (list A)) : list A :=
+  match xss with
+  | []       => []
+  | xs::xss' => revflatten xss' ++ xs
+  end.
+
+Lemma Permutation_flat_map_ext A B  : forall l (f g : A -> list B),
+  (forall x, In x l -> Permutation (f x) (g x)) -> Permutation (flat_map f l) (flat_map g l).
+
+Lemma Permutation_revflatten A B (f : A -> list B) l : Permutation(revflatten (map f l)) (flat_map f l).
+
+Lemma In_seq n start len : In n (seq start len) <-> start <= n < start+len.
+
+Lemma seq_S start len : seq start (S len) = seq start len ++ [start + len].
+
+Lemma plus_eq_compat_l x y1 y2 : y1 = y2 -> x + y1 = x + y2.
+
+Lemma plus_eq_compat_r x1 x2 y : x1 = x2 -> x1 + y = x2 + y.
+
+Section count_occ.
+
+Lemma count_occ_remove_O A eq_dec (a: A) l :
+  count_occ eq_dec (remove eq_dec a l) a = 0.
+
+Lemma count_occ_remove_neq A eq_dec (a a': A) l :
+  a<>a' -> count_occ eq_dec (remove eq_dec a' l) a = count_occ eq_dec l a.
+
+Lemma suml_map_count_occ_remove A eq_dec (a: A) l1 l2 :
+  ~In a l2 ->
+  suml (map (count_occ eq_dec (remove eq_dec a l1)) l2) =
+  suml (map (count_occ eq_dec l1) l2).
+
+Lemma length_remove_count_occ A eq_dec (a: A) l:
+  length l = length (remove eq_dec a l) + count_occ eq_dec l a.
+
+Lemma in_remove_neq A eq_dec (a a': A) l :
+  In a' (remove eq_dec a l) -> In a' l.
+
+Lemma length_count_occ a b l :
+  (forall n, In n l -> a <= n < a + b) ->
+  length l = suml (map (count_occ eq_nat_dec l) (seq a b)).
+
+Lemma count_occ_cons A eq_dec (a a': A) l :
+  count_occ eq_dec (a::l) a' =
+  if eq_dec a a' then S (count_occ eq_dec l a') else count_occ eq_dec l a'.
+
+Lemma count_occ_app A eq_dec (a :A) l l' :
+  count_occ eq_dec (l ++ l') a = count_occ eq_dec l a + count_occ eq_dec l' a.
+
+Lemma count_occ_flat_map A B eq_B_dec (f: A -> list B) b l :
+  count_occ eq_B_dec (flat_map f l) b =
+  suml (map (fun a => count_occ eq_B_dec (f a) b) l).
+
+End count_occ.
+
+Lemma tl_incl (A:Type): forall (a:A) l l', incl (a::l') l -> incl l' l.
+
+Section NoDup.
+
+Lemma NoDup_app (A: Type) (l1 l2: list A):
+  (forall x, In x l1 -> ~ In x l2) ->
+  NoDup l1 ->
+  NoDup l2 ->
+  NoDup (l1 ++ l2).
+
+Lemma NoDup_split (A: Type) (l1 l2: list A):
+  NoDup (l1 ++ l2) ->
+  NoDup l1.
+
+Lemma NoDup_split_right : forall (A : Type) (l1 l2 : list A), NoDup (l1 ++ l2) -> NoDup l2.
+
+Theorem NoDup_cons_iff {A:Type} (a: A) (l: list A):
+  NoDup (a::l) <-> ~ In a l /\ NoDup l.
+
+Lemma NoDup_app_in_l A l l' :
+  NoDup (l ++ l') -> forall x : A, (In x l) -> ~ (In x l').
+
+Lemma NoDup_Permutation_NoDup A l l' : @NoDup A l -> Permutation.Permutation l l' -> NoDup l'.
+
+Lemma NoDup_incl_le_length (A: Type)
+  (l1 l2: list A):
+  NoDup l1 -> incl l1 l2 -> length l1 <= length l2.
+
+Lemma NoDup_flat_map A B (f : A -> list B) l :
+  (forall x, In x l -> NoDup (f x)) ->
+  NoDup l ->
+  (forall x y, In x l -> In y l -> x <> y -> (forall z, In z (f x) <-> ~ In z (f y))) ->
+  NoDup (flat_map f l).
+
+End NoDup.
+
+Definition uniquify A (d : forall a b : A, { a = b} + { a <> b}) (l:list A) : list A :=
+list_rect (fun _ : list A => list A) []
+  (fun (a : A) (_ l' : list A) => let s := in_dec d a l' in if s then l' else a :: l') l.
+
+Section pow.
+
+Lemma lt_0_pow x n : 0 < x ->  0 < Nat.pow x n.
+
+Lemma pow_le_compat x y n:
+  x <= y -> Nat.pow x n <= Nat.pow y n.
+
+End pow.
+
+Lemma length_filter (A B : Type) (c : B -> bool) (f : A -> B) (xs : list A) :
+  length (filter (fun x => c (f x)) xs) =
+  length (filter c (map f xs)).
+
+Section Sublist.
+
+Inductive sublist (A : Type) : (list A) -> (list A) -> Prop :=
+| sublist_refl : forall l, sublist l l
+| sublist_skip : forall l1 h t, sublist l1 t -> sublist l1 (h :: t)
+| sublist_cons : forall h t1 t2, sublist t1 t2 -> sublist (h :: t1) (h :: t2).
+
+Hint Constructors sublist.
+
+Lemma sublist_nil A (l : list A) : sublist [] l.
+
+Lemma sublist_incl A (l1 l2 : list A) : sublist l1 l2 -> incl l1 l2.
+
+Lemma sublist_app_skip A (l1 l2 l3 : list A) : sublist l1 l3 -> sublist l1 (l2 ++ l3).
+
+Lemma sublist_app_left A (l1 l2 l3 : list A) : sublist l1 l3 -> sublist (l2 ++ l1) (l2 ++ l3).
+
+Lemma sublist_app_compat A (l1 l2 l3 l4 : list A) :
+  sublist l1 l3 -> 
+  sublist l2 l4 ->
+  sublist (l1 ++ l2) (l3 ++ l4).
+
+Lemma sublist_flatmap_in_ext A B (f : A -> list B) g l: 
+  (forall x : A , In x l -> sublist (f x) (g x)) ->
+  sublist (flat_map f l) (flat_map g l).
+
+Lemma NoDup_sublist A (l1 l2 : list A) : sublist l1 l2 -> NoDup l2 -> NoDup l1.
+
+End Sublist.
+
+Section Compat.
+
+Lemma NoDup_map_inv A B (f:A->B) l : NoDup (map f l) -> NoDup l.
+
+End Compat.
+
+Lemma In_In_list_decompose {A} (x y : A) l : In x l -> In y l ->
+  x = y \/
+  exists l1 l2 l3, (l = l1 ++ x :: l2 ++ y :: l3) \/ (l = l1 ++ y :: l2 ++ x :: l3).
+
+Section Lexicographic_Product.
+
+Variables A B : Type.
+
+Variable ltA : A -> A -> Prop.
+
+Variable ltB : B -> B -> Prop.
+
+Hypothesis wf_ltA : well_founded ltA.
+
+Hypothesis wf_ltB : well_founded ltB.
+
+Inductive lexprod : A*B -> A*B -> Prop :=
+| lex_l : forall a a' b b', ltA a a' -> lexprod (a, b) (a', b')
+| lex_r : forall a    b b', ltB b b' -> lexprod (a, b) (a,  b').
+
+Lemma acc_lex a b : Acc ltA a -> Acc ltB b -> Acc lexprod (a, b).
+
+Lemma lexprod_trans :
+  (forall a1 a2 a3, ltA a1 a2 -> ltA a2 a3 -> ltA a1 a3) ->
+  (forall b1 b2 b3, ltB b1 b2 -> ltB b2 b3 -> ltB b1 b3) ->
+  forall x1 x2 x3, lexprod x1 x2 -> lexprod x2 x3 -> lexprod x1 x3.
+
+Lemma wf_lexprod : well_founded lexprod.
+
+Definition lex_prod_dec: 
+  (forall a1 a2 : A, {a1 = a2} + {a1 <> a2}) ->
+  (forall a1 a2, {ltA a1 a2} + {~ltA a1 a2}) ->
+  (forall b1 b2, {ltB b1 b2} + {~ltB b1 b2}) ->
+  (forall x y, {lexprod x y} + {~ lexprod x y}).
+
+End Lexicographic_Product.
+
+Section Last.
+
+Lemma non_empty_last (A:Type) d d' (l:list A):
+  l <> [] -> (last l d) = (last l d').
+
+Lemma cons_cons_last (A:Type) (a b:A) l x:
+  last (a::b::l) x = last (b::l) x.
+
+Lemma cons_last (A:Type) (a:A) l x:
+  last (a::l) x = last l a.
+
+Lemma last_in (A:Type) (l:list A) x:
+  (last l x = x) \/ (In (last l x) l).
+
+End Last.
+
+Lemma beq_eq_dec {A : Type} {beq : A -> A -> bool} (Hbeq : forall x y, beq x y = true <-> x = y) : forall (x y : A), {x = y} + {~ x = y}.
+
+Section Firstn_skipn.
+Lemma firstn_map {A B : Type} (f : A -> B) l n : 
+  firstn n (map f l) = map f (firstn n l).
+
+Lemma skipn_map {A B : Type} (f : A -> B) l n : 
+  skipn n (map f l) = map f (skipn n l).
+
+Lemma skipn_app_length {A : Type} (l1 l2 : list A) : skipn (length l1) (l1 ++ l2) = l2.
+
+Lemma firstn_app_length {A : Type} (l1 l2 : list A) : firstn (length l1) (l1 ++ l2) = l1.
+
+Lemma skipn_nil : forall {A} n (x : list A),
+  length x <= n -> skipn n x = nil.
+
+Lemma firstn_seq n start len :
+  firstn n (seq start len) = seq start (min n len).
+
+Lemma skipn_seq n start len :
+  skipn n (seq start len) = seq (start+n) (len-n).
+
+Lemma skipn_firstn {A:Type} n (l:list A):
+  skipn n (firstn n l) = [].
+
+Lemma skipn_incl {A:Type} (l:list A) n:
+  incl (skipn n l) l.
+
+Lemma skipn_app2 {A : Type} (l l' : list A) n:
+  length l = n → skipn n (l ++ l') = l'.
+
+Lemma firstn_app {A} (l l' : list A) : 
+  firstn (length l) (l ++ l') = l.
+
+Lemma firstn_app2 : forall (A : Type) (l l' : list A) n, 
+ length l = n -> firstn n (l ++ l') = l .
+End Firstn_skipn.
+
+Section Ints.
+Definition ints (n m:nat):list nat := seq n (m-n). 
+Lemma ints_bounded : ∀ (x n m:nat),
+  n ≤ m → x ∈ (ints n m) → n ≤ x < m.
+
+Lemma ints_bounds : ∀ (x n m:nat),
+  n ≤ x < m → x ∈ (ints n m).
+
+Lemma ints_bounds_iff: ∀ x n m,
+  n ≤ m → (n ≤ x < m ↔ x ∈ (ints n m)).
+
+Lemma ints_length : ∀ n m,
+  n ≤ m → length (ints n m) = m-n.
+End Ints.
+
+Section Forall.
+Lemma Forall_cons_iff {A:Type} (x:A) (xs:list A) (P:A→Prop):
+  Forall P (x::xs) ↔ P x ∧ Forall P xs.
+Lemma Forall_map_iff {A B:Type} (f: A → B) l (P: B → Prop):
+  (∀ x, x ∈ l → P (f x)) ↔ Forall P (map f l).
+Lemma Forall_app_iff {A:Type} (P:A→Prop) l1 l2:
+  Forall P (l1++l2) ↔ Forall P l1 ∧ Forall P l2.
+
+Lemma Forall_unary {A:Type} (P:A→Prop) a:
+  Forall P [a] ↔ P a.
+
+Lemma Forall_flat_map {A B:Type} (P:B → Prop) (f:A → list B) l:
+  Forall P (flat_map f l) ↔ Forall (λ x, Forall P (f x)) l.
+End Forall.
+
+Section Concat.
+Lemma concat_unary_is_map {A B:Type}: ∀ l (f:A→B),
+  concat (map (λ x, [f x]) l) = map f l.
+Lemma in_concat_const_is_in {A B:Type} (a:A) lfix l:
+  a ∈ concat (map (λ _ : B, lfix) l) ↔ l ≠ [] ∧ a ∈ lfix.
+End Concat.
+
+Section Incl.
+Lemma incl_nil {A:Type} (l:list A): incl [] l.
+
+Lemma incl_map_flat_map {A B:Type} (xs:list A) (f:A → B) g:
+  (∀ x : A, x ∈ xs → f x ∈ g x) →
+  incl (map f xs) (flat_map g xs).
+
+Lemma incl_flat_map_incl {A B C:Type} (xs:list A) (r:A→list B) (rh:B→list C) lh:
+  (∀ x : A, x ∈ xs → incl (flat_map rh (r x)) (lh x)) →
+  incl (flat_map rh (concat (map r xs))) (flat_map lh xs).
+End Incl.
+
+Section Append.
+Lemma app_length_eq {A:Type}:
+  ∀ (l1 l2 l1' l2': list A),
+  length l1 = length l1' → (l1++l2) = (l1'++l2') →
+  l1 = l1' ∧ l2 = l2'.
+End Append.
+
+Section Forall2.
+Lemma Forall2_le_refl l: Forall2 le l l.
+
+Lemma Forall2_app_inv {A B:Type} (P:A→B→Prop) la1 la2 lb1 lb2:
+  length la1 = length lb1 → Forall2 P (la1++la2) (lb1++lb2) →
+  Forall2 P la1 lb1 ∧ Forall2 P la2 lb2.
+
+Lemma Forall2_firstn {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb → Forall2 P (firstn n la) (firstn n lb).
+
+Lemma Forall2_skipn {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb → Forall2 P (skipn n la) (skipn n lb).
+
+Lemma Forall2_firstn_skipn_iff {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb ↔ Forall2 P (firstn n la) (firstn n lb) ∧ Forall2 P (skipn n la) (skipn n lb).
+
+Lemma Forall2_tail {A B:Type} (P:A→B→Prop) la lb:
+  Forall2 P la lb → Forall2 P (tl la) (tl lb).
+End Forall2. *)
+(* Cecoa.Syntax:
+Require Import Bool Arith Max List.
+Import List.ListNotations.
+Require Import Omega.
+Require Import Cecoa.Lib.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+
+Section Syntax.
+
+Variables variable function constructor : Type.
+Variable max_arity : nat.
+
+Inductive value : Type :=
+| c_capply : constructor -> list value -> value.
+
+Inductive term : Type :=
+| var : variable -> term
+| capply : constructor -> list term -> term
+| fapply : function -> list term -> term.
+
+Inductive pattern : Type :=
+| p_var : variable -> pattern
+| p_capply : constructor -> list pattern -> pattern.
+
+Inductive rule : Type :=
+| rule_intro : function -> list pattern -> term -> rule.
+
+Lemma value_ind2_gen :
+  forall (P : value -> Type)(Q : list value -> Type),
+  Q nil ->
+  (forall v l, P v -> Q l -> Q (v :: l)) ->
+  (forall c l, Q l -> P (c_capply c l)) ->
+  forall v, P v.
+
+Lemma term_ind2_gen :
+  forall (P : term -> Prop)(Q : list term -> Prop),
+  Q nil ->
+  (forall t l, P t -> Q l -> Q (t :: l)) ->
+  (forall x, P (var x)) ->
+  (forall c l, Q l -> P (capply c l)) ->
+  (forall f l, Q l -> P (fapply f l)) ->
+  forall t, P t.
+
+Lemma term_ind2 :
+  forall (P : term -> Prop),
+  (forall x, P (var x)) ->
+  (forall c l, (forall t, In t l -> P t) -> P (capply c l)) ->
+  (forall f l, (forall t, In t l -> P t) -> P (fapply f l)) ->
+  forall t, P t.
+
+Lemma pattern_ind2_gen :
+  forall (P : pattern -> Prop)(Q : list pattern -> Prop),
+  Q nil ->
+  (forall p l, P p -> Q l -> Q (p :: l)) ->
+  (forall x, P (p_var x)) ->
+  (forall c l, Q l -> P (p_capply c l)) ->
+  forall p, P p.
+
+Lemma pattern_ind2 :
+  forall (P : pattern -> Prop),
+  (forall x, P (p_var x)) ->
+  (forall c l, (forall p, In p l -> P p) -> P (p_capply c l)) ->
+  forall p, P p.
+
+Variable variable_eq_dec : forall (x1 x2 : variable), {x1=x2}+{x1<>x2}.
+
+Definition variable_beq (x1 x2 : variable) : bool :=
+  if variable_eq_dec x1 x2 then true else false.
+
+Lemma variable_beq_eq : forall x1 x2, variable_beq x1 x2 = true <-> x1 = x2.
+
+Variable function_eq_dec : forall (x1 x2 : function), {x1=x2}+{x1<>x2}.
+
+Definition function_beq (x1 x2 : function) : bool :=
+  if function_eq_dec x1 x2 then true else false.
+
+Lemma function_beq_eq : forall x1 x2, function_beq x1 x2 = true <-> x1 = x2.
+
+Variable constructor_eq_dec : forall (x1 x2 : constructor), {x1=x2}+{x1<>x2}.
+
+Definition constructor_beq (x1 x2 : constructor) : bool :=
+  if constructor_eq_dec x1 x2 then true else false.
+
+Lemma constructor_beq_eq : forall x1 x2, constructor_beq x1 x2 = true <-> x1 = x2.
+
+Fixpoint value_beq (v1 v2 : value) : bool :=
+  match v1, v2 with
+  | c_capply c lv, c_capply c' lv' => constructor_beq c c' && list_beq _ value_beq lv lv'
+  end.
+
+Lemma value_ind2 :
+  forall (P : value -> Prop),
+  (forall c l, (forall v, In v l -> P v) -> P (c_capply c l)) ->
+  forall v, P v.
+
+Lemma value_beq_eq v1 v2 : value_beq v1 v2 = true <-> v1 = v2.
+
+Fixpoint term_beq (t1 t2 : term) : bool :=
+  match t1, t2 with
+  | var x, var x' => variable_beq x x'
+  | capply c lt, capply c' lt' => constructor_beq c c' && list_beq _ term_beq lt lt'
+  | fapply f lt, fapply f' lt' => function_beq f f' && list_beq _ term_beq lt lt'
+  | _, _ => false
+  end.
+
+Lemma term_beq_eq t1 t2 : term_beq t1 t2 = true <-> t1 = t2.
+
+Fixpoint pattern_from_value (v : value) : pattern  :=
+  match v with
+    | c_capply c lv => p_capply c (map pattern_from_value lv)
+  end.
+
+Fixpoint term_from_value (v : value) : term :=
+  match v with
+  | c_capply c lc => capply c (map term_from_value lc)
+  end.
+
+Coercion term_from_value : value >-> term.
+
+Lemma term_from_value_not_var : forall v x, ~ term_from_value v = var x.
+
+Lemma term_from_value_not_fapply : forall v f lt, ~ term_from_value v = fapply f lt.
+
+Lemma term_from_value_injective (v v': value) :
+  term_from_value v = term_from_value v' -> v = v'.
+
+Fixpoint term_from_pattern (p : pattern) : term :=
+  match p with
+  | p_var v => var v
+  | p_capply c lp => capply c (map term_from_pattern lp)
+  end.
+
+Coercion term_from_pattern : pattern >-> term.
+
+Lemma term_from_pattern_not_fapply : forall v f lt, ~ term_from_pattern v = fapply f lt.
+
+Fixpoint term_value (t: term) : Prop :=
+  match t with
+    | capply _ lt => andl (map term_value lt)
+    | _ => False
+  end.
+
+Lemma term_value_eqv (t: term) :
+  term_value t <-> exists (v: value), t = term_from_value v.
+
+Fixpoint vars_of_term (t : term) : list variable :=
+  match t with
+  | var x => [x]
+  | capply _ lt => flat_map vars_of_term lt
+  | fapply _ lt => flat_map vars_of_term lt
+  end.
+
+Fixpoint vars_of_pattern (p : pattern) : list variable :=
+  match p with
+  | p_var x => [x]
+  | p_capply _ lp => flat_map vars_of_pattern lp
+  end.
+
+Lemma vars_of_pattern_term p : vars_of_pattern p = vars_of_term (term_from_pattern p).
+
+Fixpoint functions_of_term (t:term) : list function :=
+  match t with
+    | var _       => []
+    | capply _ lt => flat_map functions_of_term lt
+    | fapply f lt => f :: flat_map functions_of_term lt
+  end.
+
+Fixpoint fapplies_in_term (t: term) : list term :=
+  match t with
+  | var _       => []
+  | capply _ lt =>      flat_map fapplies_in_term lt
+  | fapply _ lt => t :: flat_map fapplies_in_term lt
+  end.
+
+Lemma fapplies_in_term_are_fapplies t1 t2 :
+  In t1 (fapplies_in_term t2) ->
+  exists f lt, t1 = fapply f lt.
+
+Lemma fapplies_in_value_nil (v: value) :
+  fapplies_in_term (@term_from_value v) = [].
+
+Fixpoint max_arity_pattern (p : pattern) : nat :=
+  match p with
+  | p_var _ => 0
+  | p_capply _ lp => max (length lp) (maxl (map max_arity_pattern lp))
+  end.
+
+Fixpoint max_arity_term (t : term) : nat :=
+  match t with
+    | var _ => 0
+    | capply _ lt => max (length lt) (maxl (map max_arity_term lt))
+    | fapply _ lt => max (length lt) (maxl (map max_arity_term lt))
+  end.
+
+Definition max_arity_rule (r : rule) : nat :=
+  match r with
+  | rule_intro _ lp t => max (max_arity_term t) (max (length lp) (maxl (map max_arity_pattern lp)))
+  end.
+
+Definition max_arity_prog (prog : list rule) : nat :=
+  maxl (map max_arity_rule prog).
+
+Definition rule_vars_defined (r : rule) : Prop :=
+  match r with
+  | rule_intro _ lp t => incl (vars_of_term t) (flat_map vars_of_pattern lp)
+  end.
+
+Definition wf_prog (prog : list rule) : Prop :=
+  andl (map rule_vars_defined prog) /\ max_arity_prog prog <= max_arity.
+
+Fixpoint subst (s : variable -> value)(t : term) : term :=
+  match t with
+  | var x => s x
+  | capply c lt => capply c (map (subst s) lt)
+  | fapply f lt => fapply f (map (subst s) lt)
+  end.
+
+Fixpoint psubst (s : variable -> value)(p : pattern) : value :=
+  match p with
+  | p_var x => s x
+  | p_capply c lp => c_capply c (map (psubst s) lp)
+  end.
+
+Lemma subst_not_var : forall s t x, ~ subst s t = var x.
+
+Lemma subst_psubst s p : subst s (term_from_pattern p) = term_from_value (psubst s p).
+
+Fixpoint value_size (v : value) : nat :=
+  match v with
+  | c_capply _ lv => 1 + suml (map value_size lv)
+  end.
+
+Fixpoint term_size (t : term) :=
+  match t with
+  | var _ => 1
+  | capply _ lt => 1 + suml (map term_size lt)
+  | fapply _ lt => 1 + suml (map term_size lt)
+  end.
+
+Lemma gt_term_size_O t : term_size t > 0.
+
+Lemma in_capply_term_size_lt c (t : term) lt :
+  In t lt ->
+  term_size t < term_size (capply c lt).
+
+Lemma in_fapply_term_size_lt f (t : term) lt :
+  In t lt ->
+  term_size t < term_size (fapply f lt).
+
+Definition rhs_of_rule (r : rule) : term :=
+  match r with rule_intro _ _ t => t end.
+
+Definition lhs_of_rule (r : rule) : term :=
+  match r with rule_intro f lp _ => fapply f (map term_from_pattern lp) end.
+
+Definition max_rhs (prog : list rule) : nat :=
+  maxl (map term_size (map rhs_of_rule prog)).
+
+Lemma compatible_sizes: forall v, term_size (term_from_value v) = value_size v.
+
+Definition max_size_image_subst (t : term) (s : variable -> value) : nat :=
+  maxl (map value_size (map s (vars_of_term t))).
+
+Lemma incl_le_max_size_image_subst :
+  forall s t u,
+  incl (vars_of_term t) (vars_of_term u) -> max_size_image_subst t s <= max_size_image_subst u s.
+
+Lemma step_one: forall s t, term_size (subst s t) <= term_size t * (1 + max_size_image_subst t s).
+
+Lemma size_subst_var_le_size_value:
+  forall p s (x:variable) v, v = psubst s p -> In x (vars_of_pattern p) -> value_size (s x) <= value_size v.
+
+Lemma max_size_image_subst_bounded :
+  forall t s, max_size_image_subst t s <= term_size (subst s t).
+
+Definition activation_bound (prog : list rule) : nat -> nat :=
+  fun x => max_rhs prog * (1 + x).
+
+Lemma activation_bound_monotone (prog : list rule) :
+  forall x y, x <= y -> activation_bound prog x <= activation_bound prog y.
+
+Definition nb_rhs_functions (r: rule) :=
+  match r with
+    | rule_intro _ _ t => length (functions_of_term t)
+  end.
+
+Definition max_nb_rhs_functions (prog : list rule) : nat :=
+  maxl (map nb_rhs_functions prog).
+
+Lemma no_func_in_pattern p:
+  functions_of_term (term_from_pattern p) = [].
+
+Lemma no_funcs_in_patterns l:
+  flat_map functions_of_term (map term_from_pattern l) = [].
+
+End Syntax.
+
+Arguments var [variable function constructor].
+
+Arguments p_var [variable constructor]. *)
+(* Cecoa.CBV_cache:
+Require Import Omega Psatz.
+Require Import Bool Arith Compare_dec Max List Permutation.
+Import List.ListNotations.
+Require Import Cecoa.Lib Cecoa.Syntax.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+
+Section CBV.
+
+Variables variable function constructor : Type.
+
+Variable variable_eq_dec : forall (x1 x2 : variable), {x1=x2}+{x1<>x2}.
+
+Variable function_eq_dec : forall (x1 x2 : function), {x1=x2}+{x1<>x2}.
+
+Variable constructor_eq_dec : forall (x1 x2 : constructor), {x1=x2}+{x1<>x2}.
+
+Notation value := (Syntax.value constructor).
+Notation term := (Syntax.term variable function constructor).
+Notation pattern := (Syntax.pattern variable constructor).
+Notation rule := (Syntax.rule variable function constructor).
+Notation term_beq := (term_beq variable_eq_dec function_eq_dec constructor_eq_dec).
+
+Definition cache : Type := list (term * value).
+
+Notation assoc_cache := (assoc term_beq).
+
+Definition cache_beq (C C' : cache) : bool :=
+  list_beq _ (prod_beq _ _ term_beq (value_beq constructor_eq_dec)) C C'.
+
+Lemma cache_beq_eq c1 c2 : cache_beq c1 c2 = true <-> c1 = c2.
+
+Lemma function_beq_refl (f : function) :
+  forall p, function_beq p f f = true.
+
+Lemma value_beq_refl (v : value) :
+  value_beq constructor_eq_dec v v = true.
+
+Lemma cache_beq_refl C :
+  cache_beq C C = true.
+
+Inductive cbv : Type :=
+| cbv_constr : list cbv -> cache -> term -> cache -> value -> cbv
+| cbv_split : list cbv -> cbv -> cache -> term -> cache -> value -> cbv
+| cbv_update : nat -> (variable -> value) -> cbv -> cache -> term -> cache -> value -> cbv
+| cbv_read : cache -> term -> value -> cbv.
+
+Lemma cbv_ind2_gen :
+  forall (P : cbv -> Prop)(Q : list cbv -> Prop),
+  Q nil ->
+  (forall p lp, P p -> Q lp -> Q (p :: lp)) ->
+  (forall lp c1 t c2 v, Q lp -> P (cbv_constr lp c1 t c2 v)) ->
+  (forall lp p c1 t c2 v, Q lp -> P p -> P (cbv_split lp p c1 t c2 v)) ->
+  (forall n s p c1 t c2 v, P p -> P (cbv_update n s p c1 t c2 v)) ->
+  (forall c t v, P (cbv_read c t v)) ->
+  forall p, P p.
+
+Lemma cbv_ind2 :
+  forall (P : cbv -> Prop),
+  (forall lp c1 t c2 v, (forall p, In p lp -> P p) -> P (cbv_constr lp c1 t c2 v)) ->
+  (forall lp p c1 t c2 v, (forall p, In p lp -> P p) -> P p -> P (cbv_split lp p c1 t c2 v)) ->
+  (forall n s p c1 t c2 v, P p -> P (cbv_update n s p c1 t c2 v)) ->
+  (forall c t v, P (cbv_read c t v)) ->
+  forall p, P p.
+
+Fixpoint InCBV p proof_tree : Prop :=
+  p = proof_tree \/
+  match proof_tree with
+      | cbv_constr lp _ _ _ _ => orl (map (InCBV p) lp)
+      | cbv_split lp p' _ _ _ _ => InCBV p p' \/ orl (map (InCBV p) lp)
+      | cbv_update _ _ p' _ _ _ _ => InCBV p p'
+      | cbv_read _ _ _ => False
+  end.
+
+Lemma InCBV_refl p : InCBV p p.
+
+Lemma InCBV_trans p p' p'': InCBV p p' -> InCBV p' p'' -> InCBV p p''.
+
+Lemma cbv_reverse_induction :
+  forall (P : cbv -> Prop) proof_tree,
+  P proof_tree ->
+  (forall lp c1 t c2 v, InCBV (cbv_constr lp c1 t c2 v) proof_tree -> P (cbv_constr lp c1 t c2 v) -> forall p, In p lp -> P p) ->
+  (forall lp p c1 t c2 v, InCBV (cbv_split lp p c1 t c2 v) proof_tree -> P (cbv_split lp p c1 t c2 v) -> forall p', (p' = p \/ In p' lp) -> P p') ->
+  (forall i s p c1 t c2 v, InCBV (cbv_update i s p c1 t c2 v) proof_tree -> P (cbv_update i s p c1 t c2 v) -> P p) ->
+  forall p, InCBV p proof_tree -> P p.
+
+Definition rule_subst_of_cbv_update ( subst_default : variable -> value) (proof_tree : cbv) : nat * (variable -> value) :=
+  match proof_tree with
+  | cbv_update i s _ _ _ _ _ => (i, s)
+  | _ => (0, subst_default) 
+  end.
+
+Definition proj_left (proof_tree : cbv) : term :=
+  match proof_tree with
+    | cbv_constr _ _ t _ _ => t
+    | cbv_split _ _ _ t _ _ => t
+    | cbv_update _ _ _ _ t _ _ => t
+    | cbv_read _ t _ => t
+  end.
+
+Definition proj_right (proof_tree : cbv) : value :=
+  match proof_tree with
+    | cbv_constr _ _ _ _ v => v
+    | cbv_split _ _ _ _ _ v => v
+    | cbv_update _ _ _ _ _ _ v => v
+    | cbv_read _ _ v => v
+  end.
+
+Definition cache_left (proof_tree : cbv) : cache :=
+  match proof_tree with
+    | cbv_constr _ c _ _ _ => c
+    | cbv_split _ _ c _ _ _ => c
+    | cbv_update _ _ _ c _ _ _ => c
+    | cbv_read c _ _ => c
+  end.
+
+Definition cache_right (proof_tree : cbv) : cache :=
+  match proof_tree with
+    | cbv_constr _ _ _ c _ => c
+    | cbv_split _ _ _ _ c _ => c
+    | cbv_update _ _ _ _ _ c _ => c
+    | cbv_read c _ _ => c
+  end.
+
+Fixpoint cache_path (C C' : cache)(l : list cbv) : bool :=
+  match l with
+  | nil => cache_beq C C' 
+  | p :: l' => cache_beq C (cache_left p) && cache_path (cache_right p) C' l'
+  end.
+
+Lemma cache_path_cons c1 c2 p lp :
+  cache_path c1 c2 (p :: lp) = true <->
+  cache_path c1 (cache_right p) [p] = true /\ cache_path (cache_right p) c2 lp = true.
+
+Lemma cache_path_app c1 c2 lp p lp' :
+  cache_path c1 c2 (lp ++ p :: lp') = true <-> 
+  cache_path c1 (cache_left p) lp = true /\ cache_path (cache_left p) c2 (p :: lp') = true.
+
+Lemma cache_path_ind (P : cache -> cache -> list cbv -> Prop) C :
+  (P C C []) ->
+  (forall p lp, cache_path (cache_left p) C (p :: lp) = true -> P (cache_right p) C lp ->
+   P (cache_left p) C (p :: lp)) ->
+  forall lp C', cache_path C' C lp = true -> P C' C lp.
+
+Lemma cache_path_revflatten c1 c2 lp Clp :
+  cache_path c1 c2 lp = true ->
+  Forall2 (fun p C => cache_right p = C ++ cache_left p) lp Clp ->
+  c2 = revflatten Clp ++ c1.
+
+Lemma cache_path_transitivity_left c c' l: forall P:cache-> Prop, 
+      cache_path c c' l = true ->
+      P c ->(forall p, In p l -> 
+      P (cache_left p) ->  
+      P (cache_right p)) -> 
+     (forall p, In p l -> P (cache_left p)).
+
+Lemma cache_path_transitivity c c' l: forall P:cache-> Prop, 
+      cache_path c c' l = true ->
+      P c ->(forall p, In p l -> 
+      P (cache_left p) ->  
+      P (cache_right p)) -> P c'.
+
+Fixpoint cache_lookup (C: cache) (t: term) : term :=
+  match t with
+  | var _       => t
+  | capply c lt => capply c (map (cache_lookup C) lt)
+  | fapply f lt => match assoc_cache (fapply f (map (cache_lookup C) lt)) C with
+                   | Some v => @term_from_value _ _ _ v
+                   | None   => t
+                   end
+  end.
+
+Lemma cache_lookup_value (C: cache) (v: value):
+  let t := @term_from_value _ _ _ v in cache_lookup C t = t.
+
+Lemma map_cache_lookup_value (C: cache) (lv: list value):
+  let lt := map (@term_from_value _ _ _) lv in map (cache_lookup C) lt = lt.
+
+Variable rule_default : rule.
+
+Variable prog : list rule.
+
+Variable max_arity : nat.
+
+Fixpoint wf (proof_tree : cbv) : Prop :=
+  match proof_tree with
+    | cbv_constr l C (capply c lt) C' (c_capply c' lv) =>
+        cache_path C C' l = true /\
+        c = c' /\
+        lt = map proj_left l /\ lv = map proj_right l /\
+        andl (map wf  l) /\ List.length l <= max_arity
+    | cbv_split l ((cbv_update _ _ _ C' (fapply f lv) C'' v) as p) C (fapply f' lt) C''' v' =>
+        C''' = C'' /\
+        cache_path C C' l = true /\
+        lt = map proj_left l /\ lv = map (@term_from_value _ _ _) (map proj_right l) /\
+        andl (map wf  l) /\
+        f = f' /\ v = v' /\
+        wf  p /\ length l <= max_arity
+    | cbv_split l ((cbv_read C' (fapply f lv) v) as p) C (fapply f' lt) C'' v' =>
+        C'' = C' /\
+        cache_path C C' l = true /\
+        lt = map proj_left l /\ lv = map (@term_from_value _ _ _) (map proj_right l) /\
+        andl (map wf  l) /\
+        f = f' /\ v = v' /\
+        wf  p /\ length l <= max_arity
+    | cbv_update i s p C (fapply f lv as t0) C' v =>
+        assoc term_beq t0 C = None /\
+        exists lp t,
+        i < length prog /\
+        nth i prog rule_default = rule_intro f lp t /\
+        lv = map (@term_from_value _ _ _) (map (psubst s) lp) /\
+        proj_left p = subst s t /\ proj_right p = v /\
+        cache_left p = C /\  True /\
+        C' = (t0, v) :: cache_right p /\ 
+        wf  p /\ length lv <= max_arity
+    | cbv_read C (fapply _ lv as t) v =>
+        assoc term_beq t C = Some v /\
+        exists lv', lv = map (@term_from_value _ _ _) lv'
+    | _ => False
+  end.
+
+Lemma wf_cbv_update i s p c1 t c2 v : wf (cbv_update i s p c1 t c2 v) -> wf p.
+
+Lemma wf_InCBV_wf p proof_tree: wf proof_tree -> InCBV p proof_tree -> wf p.
+
+Definition cache_size (c : cache) : nat :=
+  suml (map (fun tv => term_size (fst tv) + value_size (snd tv)) c).
+
+Fixpoint size_rec (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr l c1 t c2 v => term_size t + value_size v + suml (map size_rec l)
+  | cbv_split l p c1 t c2 v => term_size t + value_size v + size_rec p + suml (map size_rec l)
+  | cbv_update _ _ p c1 t c2 v => size_rec p + term_size t + value_size v
+  | cbv_read c t v => term_size t + value_size v
+  end.
+
+Definition size (proof_tree : cbv) : nat :=
+  size_rec proof_tree + cache_size (cache_left proof_tree).
+
+Fixpoint max_active_size (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => maxl (map max_active_size lp)
+  | cbv_split lp p _ _ _ _ => max (max_active_size p) (maxl (map max_active_size lp)) 
+  | cbv_update _ _ p _ t _ v => max (term_size t + value_size v) (max_active_size p)
+  | cbv_read c t v => 0
+  end.
+
+Fixpoint max_judgement_size (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp c1 t c2 v => max (term_size t + value_size v) (maxl (map max_judgement_size lp))
+  | cbv_split lp p c1 t c2 v => max (term_size t + value_size v) (max (max_judgement_size p) (maxl (map max_judgement_size lp)))
+  | cbv_update _ _ p c1 t c2 v => max (term_size t + value_size v) (max_judgement_size p)
+  | cbv_read c t v => term_size t + value_size v
+  end.
+
+Fixpoint sub_trees (proof_tree : cbv) : list cbv :=
+  proof_tree :: (
+    match proof_tree with
+    | cbv_constr lp _ _ _ _ => flat_map sub_trees lp
+    | cbv_split lp p _ _ _ _ => flat_map sub_trees (p :: lp)
+    | cbv_update _ _ p _ _ _ _ => sub_trees p
+    | cbv_read _ _ _ => []
+    end ).
+
+Lemma sub_trees_neq_nil : forall p, sub_trees p <> [].
+
+Lemma InCBV_In_sub_trees p p' : InCBV p p' <-> In p (sub_trees p').
+
+Lemma sub_trees_size_rec_le p proof_tree :
+  In p (sub_trees proof_tree) -> size_rec p <= size_rec proof_tree.
+
+Fixpoint proj_left_max_size_list (default : cbv) (proof_trees : list cbv) : cbv :=
+  match proof_trees with
+    | [] => default
+    | [p] => p
+    | p :: ps =>
+      let p' := proj_left_max_size_list default ps in
+      if leb (term_size (proj_left p)) (term_size (proj_left p')) then p' else p
+  end.
+
+Lemma In_proj_left_max_size_list p lp : lp <> [] -> In (proj_left_max_size_list p lp) lp.
+
+Lemma proj_left_size_le_max_gen default proof_trees proof_tree:
+  In proof_tree proof_trees ->
+  term_size (proj_left proof_tree) <= term_size (proj_left (proj_left_max_size_list default proof_trees)).
+
+Definition proj_left_max_size (proof_tree : cbv) : cbv :=
+  proj_left_max_size_list (proof_tree) (sub_trees proof_tree).
+
+Lemma proj_left_size_le_max proof_tree:
+  forall p, InCBV p proof_tree ->
+  term_size (proj_left p) <= term_size (proj_left (proj_left_max_size proof_tree)).
+
+Lemma InCBV_proj_left_max_size p : InCBV (proj_left_max_size p) p.
+
+Fixpoint max_proj_right_size (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ t _ v => max (value_size v) (maxl (map max_proj_right_size lp))
+  | cbv_split lp p _ t _ v => max (value_size v) (max (max_proj_right_size p) (maxl (map max_proj_right_size lp)))
+  | cbv_update _ _ p _ t _ v => max (value_size v) (max_proj_right_size p)
+  | cbv_read _ t v => value_size v
+  end.
+
+Lemma judgement_size_le_projs_size p :
+  max_judgement_size p <= term_size (proj_left (proj_left_max_size p)) + max_proj_right_size p.
+
+Fixpoint activations (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => flat_map activations lp
+  | cbv_split lp p _ _ _ _ => activations p ++ flat_map activations lp
+  | cbv_update _ _ p _ _ _ _ as p' => p' :: activations p
+  | cbv_read _ _ _ => []
+  end.
+
+Fixpoint activations_cache_order (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => revflatten (map activations_cache_order lp)
+  | cbv_split lp p _ _ _ _ => activations_cache_order p ++ revflatten (map activations_cache_order lp)
+  | cbv_update _ _ p _ _ _ _ as p' => p' :: activations_cache_order p
+  | cbv_read _ _ _ => []
+  end.
+
+Lemma activations_cache_order_are_activations (p: cbv) :
+  Permutation (activations p) (activations_cache_order p).
+
+Lemma activations_are_subtrees: forall p pi:cbv,
+   In p (activations pi) -> In p (sub_trees pi).
+
+Corollary activations_inCBV: forall p pi:cbv,
+   In p (activations pi) -> InCBV p pi.
+
+Definition functions_of_prog : list function :=
+  map (fun x => match x with | rule_intro f _ _ => f end) prog.
+
+Lemma activation_is_function :
+  forall proof_tree p,
+  In p (activations proof_tree) -> exists i s p' c1 t c2 v, p = cbv_update i s p' c1 t c2 v.
+
+Lemma cbv_update_in_activations_InCBV proof_tree sub_proof_tree i s p c1 t c2 v:
+  sub_proof_tree = cbv_update i s p c1 t c2 v ->
+  InCBV sub_proof_tree proof_tree ->
+  In sub_proof_tree (activations proof_tree).
+
+Lemma activations_wf : forall proof_tree p, wf proof_tree -> In p (activations proof_tree) -> wf p.
+
+Lemma le_max_active_size proof_tree p :
+  In p (activations proof_tree) ->
+  term_size (proj_left p) + value_size (proj_right p) <= max_active_size proof_tree.
+
+Hypothesis prog_is_wf : wf_prog max_arity prog.
+
+Lemma activation_bound_spec ( subst_default : variable -> value) :
+  forall proof_tree, wf proof_tree -> forall p, In p (activations proof_tree) ->
+  let (i, s) := rule_subst_of_cbv_update subst_default p in
+  term_size (subst s (rhs_of_rule (nth i prog rule_default))) <= activation_bound prog (term_size (proj_left p)).
+
+Fixpoint nb_judgements (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => 1 + suml (map nb_judgements lp)
+  | cbv_split lp p _ _ _ _ => 1 + nb_judgements p + suml (map nb_judgements lp)
+  | cbv_update _ _ p _ _ _ _ => 1 + nb_judgements p
+  | cbv_read _ _ _=> 1
+  end.
+
+Fixpoint nb_judgements_sub_rec (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => 1 + suml (map nb_judgements_sub_rec lp)
+  | cbv_split lp p _ _ _ _ => 1 + nb_judgements_sub_rec p + suml (map nb_judgements_sub_rec lp)
+  | cbv_update _ _ _ _ _ _ _ => 0
+  | cbv_read _ _ _ => 0
+  end.
+
+Definition nb_judgements_sub (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr _ _ _ _ _ => 0
+  | cbv_split _ _ _ _ _ _ => 0
+  | cbv_update _ _ p _ _ _ _ => nb_judgements_sub_rec p
+ | cbv_read _ _ _ => 0
+  end.
+
+Fixpoint nb_nodes (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr [] _ _ _ _ => 0
+  | cbv_constr lp _ _ _ _ => 1 + suml (map nb_nodes lp)
+  | cbv_split lp p _ _ _ _ => 1 + nb_nodes p + suml (map nb_nodes lp)
+  | cbv_update _ _ p _ _ _ _ => 1 + nb_nodes p
+  | cbv_read _ _ _ => 0
+  end.
+
+Fixpoint nb_read (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => suml (map nb_read lp)
+  | cbv_split lp p _ _ _ _ => nb_read p + suml (map nb_read lp)
+  | cbv_update _ _ p _ _ _ _ => nb_read p
+  | cbv_read _ _ _ => 1
+  end.
+
+Definition arity_cbv (proof_tree : cbv) : nat :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _  => length lp
+  | cbv_split lp p _ _ _ _ => 1 + length lp
+  | cbv_update _ _ p _ _ _ _ => 1
+  | cbv_read _ _ _ => 0
+  end.
+
+Lemma wf_arity p : wf p -> arity_cbv p <= S max_arity.
+
+Lemma nb_read_bound : forall p,
+   wf p ->
+  nb_read p <= S (max_arity * nb_nodes p).
+
+Fixpoint first_activations_rec (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => flat_map first_activations_rec lp
+  | cbv_split lp p _ _ _ _ => first_activations_rec p ++ flat_map first_activations_rec lp
+  | cbv_update _ _ _ _ _ _ _ as p' => [p']
+  | cbv_read _ _ _ => []
+  end.
+
+Definition first_activations (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _ => []
+  | cbv_split lp p _ _ _ _ => []
+  | cbv_update _ _ p _ _ _ _ => first_activations_rec p
+  | cbv_read _ _ _ => []
+  end.
+
+Definition strict_activations (proof_tree: cbv) :=
+  flat_map activations (first_activations proof_tree).
+
+Lemma first_activation_rec_is_update proof_tree p :
+  In p (first_activations_rec proof_tree) -> exists i s p' c1 t c2 v, p = cbv_update i s p' c1 t c2 v.
+
+Lemma first_activation_is_update proof_tree p :
+  In p (first_activations proof_tree) -> exists i s p' c1 t c2 v, p = cbv_update i s p' c1 t c2 v.
+
+Lemma in_first_activations_rec_nb_judgements_le p proof_tree :
+  In p (first_activations_rec proof_tree) -> nb_judgements p <= nb_judgements proof_tree.
+
+Lemma in_first_activations_nb_judgements_lt p proof_tree :
+  In p (first_activations proof_tree) -> nb_judgements p < nb_judgements proof_tree.
+
+Lemma first_activations_rec_incl_activations (p: cbv) :
+  incl (first_activations_rec p) (activations p).
+
+Lemma first_activations_incl_activations (p: cbv) :
+  incl (first_activations p) (activations p).
+
+Fixpoint first_activations_and_semi_rec (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _          => flat_map first_activations_and_semi_rec lp
+  | cbv_split lp p _ _ _ _         => first_activations_and_semi_rec p ++ flat_map first_activations_and_semi_rec lp
+  | cbv_update _ _ _ _ _ _ _ as p' => [p']
+  | cbv_read _ _ _ as p'           => [p']
+  end.
+
+Definition first_activations_and_semi (proof_tree : cbv) : list cbv :=
+  match proof_tree with
+  | cbv_constr lp _ _ _ _    => []
+  | cbv_split lp p _ _ _ _   => []
+  | cbv_update _ _ p _ _ _ _ => first_activations_and_semi_rec p
+  | cbv_read _ _ _           => []
+  end.
+
+Lemma incl_first_activations_semi p :
+  incl (first_activations p) (first_activations_and_semi p).
+
+Lemma first_activations_and_semi_rec_incl_sub_trees p :
+  incl (first_activations_and_semi_rec p) (sub_trees p).
+
+Lemma first_activations_and_semi_incl_sub_trees p :
+  incl (first_activations_and_semi p) (sub_trees p).
+
+Lemma cbv_big_induction :
+  forall (P : cbv -> Prop),
+  (forall i s p c1 t c2 v, (forall p', In p' (first_activations (cbv_update i s p c1 t c2 v)) -> P p') -> P (cbv_update i s p c1 t c2 v)) ->
+  forall i s p c1 t c2 v, P (cbv_update i s p c1 t c2 v).
+
+Lemma activations_first_activations i s p' c1 t c2 v :
+  let p := cbv_update i s p' c1 t c2 v in
+  activations p = p :: flat_map activations (first_activations p).
+
+Lemma cache_consistent p :
+  wf p ->
+  exists C,
+    cache_beq (cache_right p) (C ++ cache_left p) = true /\
+    (forall t, assoc_cache t C <> None -> assoc_cache t (cache_left p) = None).
+
+Lemma cache_path_consistent c1 c2 lp :
+  andl (map wf lp) ->
+  cache_path c1 c2 lp = true ->
+  forall p, In p lp ->
+    exists c3,
+      c2 = c3 ++ cache_right p /\
+      (forall t, assoc_cache t c3 <> None -> assoc_cache t (cache_right p) = None).
+
+Lemma cache_path_consistent_head C p lp :
+  wf p -> andl (map wf lp) ->
+  cache_path (cache_right p) C lp = true ->
+    exists C',
+      C = C' ++ cache_right p /\
+      (forall t, assoc_cache t C' <> None -> assoc_cache t (cache_right p) = None).
+
+Lemma assoc_cache_hd (f: function) (lv: list term) (v: value) (C: cache) :
+  assoc_cache (fapply f lv) ((fapply f lv, v) :: C) = Some v.
+
+Definition valid_cache_extension (ext base: cache) : Prop :=
+  forall t: term, assoc_cache t ext <> None -> assoc_cache t base = None.
+
+Lemma cache_extension_app (ext' ext base: cache) :
+  valid_cache_extension ext' (ext ++ base) ->
+  valid_cache_extension ext base ->
+  valid_cache_extension (ext' ++ ext) base.
+
+Definition cbv_cache_entry (proof_tree : cbv) := (proj_left proof_tree, proj_right proof_tree).
+
+Lemma cache_content (proof_tree : cbv) :
+  wf proof_tree ->
+  cache_right proof_tree =
+  map cbv_cache_entry (activations_cache_order proof_tree) ++
+      cache_left proof_tree.
+
+Lemma cache_content_on_path c1 c2 lp:
+  andl (map wf lp) ->
+  cache_path c1 c2 lp = true ->
+  c2 = map cbv_cache_entry (revflatten (map activations_cache_order lp)) ++ c1.
+
+Lemma cache_path_proj_left_in_tail_not_in_head t p lp c1 c2 :
+  cache_path c1 c2 (p :: lp) = true ->
+  andl (map wf (p :: lp)) ->
+  In t (map proj_left (revflatten (map activations_cache_order lp))) ->
+  ~ In t (map proj_left (activations_cache_order p)).
+
+Lemma whole_cache_path_consistent lp : forall c1 c2,
+  cache_path c1 c2 lp = true ->
+  andl (map wf lp) ->
+  exists C,
+    cache_beq c2 (C ++ c1) = true /\
+    (forall t, assoc_cache t C <> None -> assoc_cache t c1 = None).
+
+Lemma cache_path_proj_left_not_in_init t lp c1 c2 :
+  cache_path c1 c2 lp = true ->
+  andl (map wf lp) ->
+  In t (map proj_left (revflatten (map activations_cache_order lp))) ->
+  ~ In t (map fst c1).
+
+Lemma cache_lookup_term (p: cbv) (ext: cache):
+  wf p ->
+  (forall t: term, assoc_cache t ext <> None -> assoc_cache t (cache_right p) = None) ->
+  cache_lookup (ext ++ cache_right p) (proj_left p) = @term_from_value _ _ _ (proj_right p).
+
+Lemma first_activations_residues_activation i s p c1 t c2 v :
+  let proof_tree := cbv_update i s p c1 t c2 v in
+  wf proof_tree ->
+  Forall2 (fun p' t' =>
+    match (proj_left p', t') with
+    | (fapply f lv, fapply f' lt) =>
+      f = f' /\
+      Forall2 (fun t v => cache_lookup (cache_left p') t = v) lt lv
+    | _ => False
+    end)
+    (first_activations_and_semi proof_tree)
+    (fapplies_in_term (proj_left p)).
+
+Lemma nb_nodes_bound i s p' c1 t c2 v :
+  let p := cbv_update i s p' c1 t c2 v in
+  nb_nodes p <= suml (map nb_judgements_sub (activations p)) + length (activations p).
+
+Lemma nb_judgements_bound i s p' c1 t c2 v :
+  let p := cbv_update i s p' c1 t c2 v in
+  nb_judgements p <= suml (map nb_judgements_sub (activations p)) + length (activations p) + nb_read p.
+
+Lemma nb_judgements_sub_rec_bound p :
+  wf p -> nb_judgements_sub_rec p <= term_size (proj_left p).
+
+Lemma nb_judgements_sub_bound i s p c1 t c2 v :
+  wf (cbv_update i s p c1 t c2 v) ->
+  nb_judgements_sub (cbv_update i s p c1 t c2 v) <= activation_bound prog (term_size t).
+
+Lemma right_from_activation_or_from_left p : wf p ->
+  maxl (map (fun tv : term * value => value_size (snd tv)) (cache_right p)) <=
+  max (max_active_size p) (maxl (map (fun tv : term * value => value_size (snd tv)) (cache_left p))).
+
+Lemma right_from_activation_or_from_left_path lp c1 c2 : andl (map wf lp) ->
+  cache_path c1 c2 lp = true ->
+  maxl (map (fun tv : term * value => value_size (snd tv)) c2) <=
+  max (maxl (map max_active_size lp)) (maxl (map (fun tv : term * value => value_size (snd tv)) c1)).
+
+Lemma value_size_bounded_by_nb_judgements p :
+  wf p -> value_size (proj_right p) <= (1 + max (max_active_size p) (maxl (map (fun tv => value_size (snd tv)) (cache_left p)))) * nb_judgements p.
+
+Lemma size_bounded_nb_size_judgements p :
+  size p <= nb_judgements p * max_judgement_size p + cache_size (cache_left p).
+
+Lemma nb_judgements_sub_bound_gen : forall p p',
+  let S := max_active_size p in
+  wf p ->
+  In p' (activations p) -> nb_judgements_sub p' <= activation_bound prog S.
+
+Lemma nb_judgements_bound_gen : forall i s p' c1 t c2 v,
+  let p := cbv_update i s p' c1 t c2 v in
+  let A := length (activations p) in
+  let S := max_active_size p in
+  wf p ->
+  nb_judgements p <= A * activation_bound prog S + A + (Datatypes.S (max_arity * nb_nodes p)).
+
+Lemma cache_path_incl : forall lp c1 c2, 
+  andl (map wf lp) -> cache_path c1 c2 lp = true -> incl c1 c2.
+
+Lemma InCBV_cache_right_incl p proof_tree :
+  wf proof_tree ->
+  InCBV p proof_tree ->
+  incl (cache_right p) (cache_right proof_tree).
+
+Lemma InCBV_read_cache_right c t v p:
+  wf p ->
+  InCBV (cbv_read c t v) p ->
+  In (t, v) (cache_right p).
+
+Lemma term_size_proj_left_bound : forall i s p' c1 t c2 v,
+  let p := cbv_update i s p' c1 t c2 v in
+  let S := max_active_size p in
+  wf p ->
+  forall p',
+  InCBV p' p -> term_size (proj_left p') <= activation_bound prog S + S + cache_size c1.
+
+Lemma nb_nodes_bound_gen i s p' c1 t c2 v :
+  let p := cbv_update i s p' c1 t c2 v in
+  let A := length (activations p) in
+  let S := max_active_size p in
+  wf p ->
+  nb_nodes p <= A * (1 + activation_bound prog S).
+
+Lemma size_judgement : forall i s p' c1 t c2 v,
+  let p := cbv_update i s p' c1 t c2 v in
+  let A := length (activations p) in
+  let S := max_active_size p in
+  let C := maxl (map (fun tv : term * value => value_size (snd tv)) c1) in
+  wf p ->
+  max_judgement_size p <=
+  activation_bound prog S + S + cache_size c1 +
+  (1 + max S C) * (1 + (A * activation_bound prog S + A) + max_arity * (A * activation_bound prog S + A)).
+
+Theorem size_bound_gen : forall i s p' c1 t c2 v,
+  let p := cbv_update i s p' c1 t c2 v in
+  let A := length (activations p) in
+  let S := max_active_size p in
+  wf p ->
+  size p <=
+  (A * activation_bound prog S + A + 1 + (max_arity * A * (1 + activation_bound prog S))) *
+  (activation_bound prog S + S + cache_size c1 +
+  (1 + max S (maxl (map (fun tv : term * value => value_size (snd tv)) c1))) *
+  (1 + (A * activation_bound prog S + A) + max_arity * (A * activation_bound prog S + A))) +
+  cache_size c1.
+
+Corollary size_bound : forall i s p' t c v,
+  let p := cbv_update i s p' [] t c v in
+  let A := length (activations p) in
+  let S := max_active_size p in
+  wf p ->
+  size p <=
+  (A * activation_bound prog S + A + 1 + (max_arity * A * (1 + activation_bound prog S))) *
+  (activation_bound prog S + S +
+  (1 + S) *
+  (1 + (A * activation_bound prog S + A) + max_arity * (A * activation_bound prog S + A))).
+
+End CBV. *)
+(* Cecoa.OptionMonad:
+Require Import List.
+
+Definition option_bind {A B: Type} (f : A -> option B) (x : option A) :=
+  match x with | None => None | Some y => f y end.
+
+Fixpoint option_list_map {A : Type} (l : list (option A)) : option (list A) :=
+match l with 
+| nil => Some nil
+| Some h :: t => option_map (cons h) (option_list_map t)
+| _ => None
+end.
+
+Lemma option_list_map_Some {A : Type} (l : list (option A)) v:
+ option_list_map l = Some v ->
+ forall x, In x l -> exists vx, x = Some vx.
+
+Lemma option_list_map_map {A : Type} (l : list (option A)) f :
+  (forall x, In x l -> x = Some (f x)) ->
+    option_list_map l = Some (map f l).
+
+Definition complete_option {A : Type} x0 (x : option A) : A :=
+match x with
+| None => x0
+| Some x => x
+end.
+
+Definition option_le x y : Prop := 
+ exists vx vy, x = Some vx /\ y = Some vy /\ le vx vy.
+
+Notation "x ≤p y" := (option_le x y) (at level 60).
+
+Definition option_choice {A B: Type} (f g: A -> option B) x :=
+match f x with 
+| Some v => Some v
+| None => g x
+end.
+
+Notation " f ;; g " := (option_choice f g) (at level 60).
+
+Lemma option_choice_assoc {A B: Type} (f g h : A -> option B) x:
+ (f;;(g;;h)) x = (f;;g;;h) x.
+
+Lemma option_choice_none_right {A B: Type} (f : A -> option B) x:
+ (f;;fun _ => None) x = f x.
+
+Lemma option_choice_none_left {A B: Type} (f : A -> option B) x :
+ ((fun _ => None) ;; f) x = f x.
+
+Lemma option_choice_ext_left {A B: Type} (f f' g: A -> option B) x:
+  (forall x, f x = f' x) ->
+  (f;;g) x = (f';; g) x.
+
+Lemma option_choice_ext_right {A B: Type} (f f' g: A -> option B) x:
+  (forall x, f x = f' x) ->
+  (g;;f) x = (g;;f') x.
+
+Lemma option_map_Some {A B : Type} (f : A -> B) x v:
+  option_map f x = Some v -> exists v', x = Some v'.
+
+Lemma option_bind_Some {A B : Type} (f : A -> option B) x v:
+ option_bind f x = Some v -> exists v', x = Some v' /\ f v' = Some v. *)
+
+
+
+Section QI.
+
+
+
+Variables variable function constructor : Type.
+
+
+
+Notation value := (Syntax.value constructor).
+
+Notation term := (Syntax.term variable function constructor).
+
+Notation pattern := (Syntax.pattern variable constructor).
+
+Notation rule := (Syntax.rule variable function constructor).
+
+Notation term_from_value := (Syntax.term_from_value variable function (constructor:=constructor)).
+
+Notation term_from_pattern := (Syntax.term_from_pattern (variable:=variable) function (constructor:=constructor)).
+
+Variable prog : list rule.
+
+Variable max_arity:nat.
+
+Variable rule_default : rule.
+
+
+
+Variable variable_eq_dec : forall (x1 x2 : variable), {x1=x2}+{x1<>x2}.
+
+Variable function_eq_dec : forall (x1 x2 : function), {x1=x2}+{x1<>x2}.
+
+Variable constructor_eq_dec : forall (x1 x2 : constructor), {x1=x2}+{x1<>x2}.
+
+
+
+Notation cache := (CBV_cache.cache variable function constructor).
+
+Notation cache_path := (CBV_cache.cache_path variable_eq_dec function_eq_dec constructor_eq_dec).
+
+
+
+Notation cache_path_transitivity := 
+
+           (@CBV_cache.cache_path_transitivity _ _ _ variable_eq_dec function_eq_dec constructor_eq_dec).
+
+Notation cache_path_transitivity_left :=
+
+           (@CBV_cache.cache_path_transitivity_left _ _ _ variable_eq_dec function_eq_dec constructor_eq_dec).
+
+Notation cbv := (CBV_cache.cbv variable function constructor).
+
+Notation wf := (CBV_cache.wf variable_eq_dec  function_eq_dec constructor_eq_dec rule_default
+
+                prog max_arity).
+
+
+
+Definition assignment_constructor := constructor -> list nat -> nat.
+
+Definition assignment_function := function -> list nat -> nat.
+
+
+
+Variable mcs: nat.
+
+
+
+Definition constructor_non_zero cs :=
+
+   forall c:constructor, cs  c > 0. 
+
+
+
+Definition additive (qic:assignment_constructor) cs :=
+
+   forall c:constructor, forall l, qic c l=(suml l)+(cs c).
+
+
+
+Definition mcs_is_max_constructor_size cs :=
+
+    forall c:constructor, cs c <= mcs.
+
+
+
+Lemma monotonicity_qic qic cs: additive qic cs -> forall c:constructor,
+
+  forall lx ly, Forall2 le lx ly -> qic c lx <= qic c ly.
+
+Proof.
+
+intro additivity;intros.
+
+unfold additive in additivity.
+
+rewrite additivity;rewrite additivity.
+
+apply Plus.plus_le_compat_r;trivial.
+
+induction H;auto;simpl.
+
+apply Plus.plus_le_compat;trivial.
+
+Qed.
+
+
+
+Fixpoint value_assignment (qic:assignment_constructor) (v:value) {struct v}:=
+
+   match v with
+
+  | c_capply c lv => qic c (map (value_assignment qic) lv)
+
+   end.
+
+
+
+Lemma value_size_le_QI qic cs: 
+
+  additive qic cs -> constructor_non_zero cs ->
+
+  forall v:value, value_size v <= value_assignment qic v.
+
+Proof.
+
+intros additivity non_zero.
+
+unfold additive in additivity. unfold constructor_non_zero in non_zero.
+
+induction v using value_ind2.
+
+simpl.
+
+apply le_trans with (m:=suml (map (value_assignment qic) l)+1).
+
+- apply le_trans with (m:=S (suml (map (value_assignment qic) l)));try omega. 
+
+  rewrite <- Nat.succ_le_mono.
+
+  apply suml_map_le;trivial.
+
+- rewrite additivity.
+
+  apply Plus.plus_le_compat_l.
+
+  apply (non_zero c).
+
+Qed.
+
+
+
+Lemma QI_le_value_size qic cs: 
+
+  additive qic cs -> mcs_is_max_constructor_size cs ->
+
+  forall v:value, 
+
+  value_assignment qic v <= mcs*(value_size v).
+
+Proof.
+
+intros additivity max_cs.
+
+unfold additive in additivity. unfold mcs_is_max_constructor_size in max_cs.
+
+induction v using value_ind2.
+
+simpl.
+
+rewrite additivity.
+
+apply le_trans with (m:=suml (map (value_assignment qic) l)+mcs).
+
+- apply Plus.plus_le_compat_l.
+
+  apply max_cs.
+
+- replace (S (suml (map (value_size (constructor:=constructor)) l))) 
+
+          with ((suml (map (value_size (constructor:=constructor)) l)+1));try omega.
+
+  
+
+  rewrite Mult.mult_plus_distr_l;rewrite Mult.mult_1_r;apply Plus.plus_le_compat_r.
+
+  rewrite mult_suml_r;rewrite map_map.
+
+  apply suml_map_le;trivial.
+
+Qed.
+
+
+
+Definition subterm (qif:assignment_function) := forall f l x, In x l -> x <= qif f l.
+
+
+
+Definition monotonicity_qif (qif:assignment_function) :=
+
+  forall f lx ly, Forall2 le lx ly -> qif f lx <= qif f ly.
+
+
+
+Fixpoint term_assignment (qic:assignment_constructor) (qif:assignment_function)
+
+(t:term) {struct t}:=
+
+   match t with
+
+  | var v=> 0 
+
+  | capply c lt => qic c (map (term_assignment qic qif) lt)
+
+  | fapply f lt=> qif f (map (term_assignment qic qif)  lt) 
+
+ end.
+
+
+
+Definition compatible_QI qic qif := forall f lp t, forall s:variable -> value,
+
+  let ru := rule_intro f lp t in 
+
+  (In ru prog) -> 
+
+  term_assignment qic qif (subst s t) <= term_assignment qic qif (subst s (lhs_of_rule ru)). 
+
+  
+
+Definition valid_QI qic qif cs :=
+
+  (additive qic cs) /\ (mcs_is_max_constructor_size cs) /\ (constructor_non_zero cs) /\
+
+  (subterm qif) /\ (monotonicity_qif qif) /\ (compatible_QI qic qif).
+
+
+
+Definition cache_bounded qic qif (c:cache): Prop  := 
+
+  Forall (fun t => value_assignment qic (snd t) <= term_assignment qic qif (fst t)) c.
+
+
+
+Lemma value_as_term_assignment qic qif: forall v:value,
+
+  (term_assignment qic qif (term_from_value v)) = (value_assignment qic v).
+
+Proof.
+
+induction v using value_ind2.
+
+simpl.
+
+rewrite map_map.
+
+apply f_equal2;trivial.
+
+apply map_in_ext;trivial.
+
+Qed.
+
+
+
+Lemma qi_fapply_right_le_qi_fapply_left qic qif : forall proof_tree lp f c1,
+
+  monotonicity_qif qif ->
+
+  let l := map (proj_left (constructor:=constructor)) lp in
+
+  let l' := map term_from_value (map (proj_right (constructor:=constructor)) lp) in
+
+  let c := cache_left proof_tree in let v := proj_right proof_tree in
+
+  (forall p, In p lp -> cache_bounded qic qif (cache_left p) -> 
+
+             value_assignment qic (proj_right p) <= term_assignment qic qif (proj_left p) /\ 
+
+             cache_bounded qic qif (cache_right p)) ->
+
+  cache_bounded qic qif c1 -> cache_path c1 c lp = true -> andl (map wf lp) -> 
+
+  (term_assignment qic qif (fapply f l')) <= (term_assignment qic qif (fapply f l)).
+
+Proof.
+
+intros proof_tree lp f c1 monotonicity l l' c v.
+
+intros lp_bound c1_bound c_path wf_lp.
+
+simpl.
+
+unfold monotonicity_qif in monotonicity.
+
+apply monotonicity.
+
+unfold l;unfold l';clear l l'.
+
+rewrite map_map;rewrite map_map;rewrite map_map.
+
+apply Forall2_map.
+
+intros.
+
+rewrite value_as_term_assignment.
+
+apply lp_bound;auto.
+
+apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);auto.
+
+apply lp_bound.
+
+Qed.
+
+
+
+Lemma qi_right_le_qi_fapply_left qic qif: forall proof_tree lp f c1,
+
+  monotonicity_qif qif -> wf proof_tree ->
+
+  let l := map (proj_left (constructor:=constructor)) lp in
+
+  let l' := map term_from_value (map (proj_right (constructor:=constructor)) lp) in
+
+  let c := cache_left proof_tree in let c' := cache_right proof_tree in
+
+  let v := proj_right proof_tree in
+
+  proj_left proof_tree = fapply f l' -> 
+
+  (forall p, In p lp -> cache_bounded qic qif (cache_left p) -> wf p ->
+
+             value_assignment qic (proj_right p) <= term_assignment qic qif (proj_left p) /\ 
+
+             cache_bounded qic qif (cache_right p)) ->
+
+  (cache_bounded qic qif c -> value_assignment qic v <= term_assignment qic qif (fapply f l')) ->
+
+  cache_bounded qic qif c1 -> cache_bounded qic qif c' -> cache_path c1 c lp = true ->
+
+    andl (map wf lp) -> 
+
+  value_assignment qic v <= term_assignment qic qif (fapply f l).
+
+Proof.
+
+intros proof_tree lp f c1 monotonicity well_formed l l' c c' v.
+
+intros pl lp_bound val_bound c1_bound c'_bound c_path wf_lp.
+
+apply le_trans with (m:=term_assignment qic qif (fapply f l'));auto.
+
+- apply val_bound;auto.
+
+  apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);auto.
+
+  intros;apply lp_bound;auto.
+
+  apply andl_in_map with (l:=lp);auto.
+
+- apply qi_fapply_right_le_qi_fapply_left with (proof_tree:=proof_tree) (c1:=c1);try tauto.
+
+  intros.
+
+  apply lp_bound;try tauto.
+
+  apply andl_in_map with (l:=lp);auto.
+
+Qed.
+
+
+
+Lemma left_bound_to_right_bound qic qif cs:forall pi:cbv,
+
+    valid_QI qic qif cs -> (wf pi) ->
+
+    cache_bounded qic qif (cache_left pi) ->
+
+    (value_assignment qic (proj_right pi) <= term_assignment qic qif (proj_left pi)
+
+     /\ cache_bounded qic qif (cache_right pi)).
+
+Proof.
+
+intros pi valid.
+
+unfold valid_QI in valid.
+
+destruct valid as (additivity & mcs_is_max & non_zero & sub & mono & compat).
+
+induction pi using cbv_ind2;
+
+          unfold cache_left;unfold proj_right;unfold proj_left;unfold cache_right;
+
+          intros well_formed cache.
+
+- 
+
+  assert (cache_bounded qic qif c2).
+
+  + 
+
+    simpl in well_formed;destruct t;destruct v;try tauto.
+
+    destruct well_formed as (cpath & Hc & Hl & Hl0 & wf_list & arity).
+
+    apply cache_path_transitivity with (c:=c1) (c':=c2) (l:=lp);auto.
+
+    intros;apply H;auto.
+
+    apply andl_in_map with (l:=lp);auto.
+
+  + 
+
+    split;auto.
+
+    simpl in well_formed;destruct t;destruct v;try tauto.
+
+    destruct well_formed as (cpath & Hc & Hl & Hl0 & wf_list & arity).
+
+    subst c.
+
+    simpl;apply (monotonicity_qic qic cs);trivial.
+
+    subst l l0.
+
+    rewrite map_map;rewrite map_map.
+
+    apply Forall2_map.
+
+    intros.
+
+    apply H;auto.
+
+    * apply andl_in_map with (l:=lp);auto. 
+
+    * apply cache_path_transitivity_left with (c:=c1) (c':=c2) (l:=lp);auto.
+
+      intros.
+
+      apply H;auto.
+
+      apply andl_in_map with (l:=lp);auto.
+
+- 
+
+  destruct t;simpl in well_formed;destruct pi;destruct t;try tauto.
+
+  + 
+
+    assert (cache_bounded qic qif c2).
+
+    * 
+
+      destruct well_formed as (Hc2 & cpath &  Hl & Hl0 & wf_list & Hf & Hv & well_formed & arity).
+
+      unfold cache_left in IHpi;unfold cache_right in IHpi.
+
+      subst c2.
+
+      apply IHpi;auto.
+
+      apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);auto.
+
+      intros;apply H;auto.
+
+      apply andl_in_map with (l:=lp);auto.
+
+    * 
+
+      split;auto.
+
+      destruct well_formed as (Hc2 & cpath &  Hl & Hl0 & wf_list & Hf & Hv & well_formed & arity).
+
+      unfold cache_left, cache_right, proj_left, proj_right in IHpi.
+
+      subst c2 l f0 v1.
+
+      set (proof_tree:=cbv_update n v0 pi c (fapply f l0) c0 v).
+
+      subst l0.
+
+      apply qi_right_le_qi_fapply_left with (proof_tree:=proof_tree) (c1:=c1);try tauto.
+
+      intros;apply H;trivial.
+
+  + 
+
+    assert (cache_bounded qic qif c2).
+
+    * 
+
+      destruct well_formed as (Hc2 & cpath &  Hl & Hl0 & wf_list & Hf & Hv & well_formed & arity).
+
+      subst c2.
+
+      apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);auto.
+
+      intros;apply H;auto.
+
+      apply andl_in_map with (l:=lp);auto.
+
+    * 
+
+      split;auto.
+
+      destruct well_formed as (Hc2 & cpath &  Hl & Hl0 & wf_list & Hf & Hv & well_formed & arity).
+
+      unfold cache_left in IHpi;unfold cache_right in IHpi.
+
+      subst c2 l f0 v0.
+
+      set (proof_tree:=cbv_read c (fapply f l0) v).
+
+      subst l0.
+
+      apply qi_right_le_qi_fapply_left with (proof_tree:=proof_tree) (c1:=c1);try tauto.
+
+      intros;apply H;trivial.
+
+- 
+
+  assert (value_assignment qic v <= term_assignment qic qif t).
+
+  + 
+
+    revert well_formed.
+
+    elim t;simpl;try tauto.
+
+    intros.
+
+    destruct well_formed as (_ & lp & r & length & rule & Hl & pl & pr & cl & _ & _ & wf_pi & _).
+
+    rewrite cl in *;clear cl.
+
+    rewrite pl in *;clear pl.
+
+    rewrite pr in *;clear pr.
+
+    generalize (IHpi wf_pi cache).
+
+    generalize (compat f lp r s).
+
+    intros.
+
+    replace (qif f (map (term_assignment qic qif) l)) with 
+
+	    (term_assignment qic qif (subst s (lhs_of_rule (rule_intro f lp r)))).
+
+    * apply le_trans with (m:=term_assignment qic qif (subst s r));try tauto.
+
+      apply H.
+
+      rewrite <- rule;apply nth_In;auto.
+
+    * simpl.
+
+      rewrite Hl.
+
+      rewrite (map_map (term_from_pattern) (subst s) lp).
+
+      rewrite (map_map (psubst s) (term_from_value) lp).
+
+      f_equal;f_equal.
+
+      clear.
+
+      induction lp as [ | p lp IH];simpl;trivial.
+
+      rewrite IH.
+
+      f_equal;apply subst_psubst.
+
+ + 
+
+   split;auto.
+
+   simpl in well_formed.
+
+   destruct t;try tauto.
+
+   destruct well_formed as (_ & _ & _ & _  & _ & _ & _ & _ & cl & _ & new_cache & wf_pi & _).
+
+   subst c2.
+
+   unfold cache_bounded.
+
+   apply Forall_cons.
+
+   * unfold fst, snd;auto.
+
+   * apply IHpi;auto.
+
+     rewrite cl;auto.
+
+- 
+
+  split;auto.
+
+  simpl in well_formed;destruct t;try tauto.
+
+  destruct well_formed as (c_hit & lv'& Hl).
+
+  unfold cache_bounded in cache.
+
+  apply (Forall_In_l ((fapply f l),v) cache).
+
+  apply (assoc_in (term_beq variable_eq_dec function_eq_dec constructor_eq_dec)
+
+         (fapply f l) c);auto.
+
+  apply (term_beq_eq variable_eq_dec function_eq_dec constructor_eq_dec).
+
+Qed.
+
+
+
+Lemma QI_never_increase_global qic qif cs: forall pi proof_tree:cbv, 
+
+  valid_QI qic qif cs -> wf proof_tree -> 
+
+  cache_bounded qic qif (cache_left proof_tree) -> InCBV pi proof_tree -> 
+
+  term_assignment qic qif (proj_left pi) <= term_assignment qic qif (proj_left proof_tree).
+
+Proof.
+
+intros pi proof_tree valid well_formed cache subtree.
+
+unfold valid_QI in valid.
+
+destruct valid as (additivity & max_cs & non_zero & sub & mono & compat).
+
+
+
+induction proof_tree using cbv_ind2.
+
+- 
+
+  simpl in subtree;destruct subtree as [equal | strict].
+
+  + 
+
+    subst pi;trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct t;destruct v;try tauto.
+
+    destruct well_formed as (cpath & Hc & Hl & Hl0 & wf_list & arity).
+
+    rewrite orl_map in strict.
+
+    destruct strict as (x & inlist & intree).    
+
+    apply le_trans with (m:=term_assignment qic qif (proj_left x)).
+
+    * { apply H;trivial.
+
+        - apply andl_in_map with (l:=lp);trivial.
+
+        - apply cache_path_transitivity_left with (c:=c1) (c':=c2) (l:=lp);trivial.
+
+          intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+          + unfold valid_QI;tauto.
+
+          + apply andl_in_map with (l:=lp);trivial.
+
+      }
+
+    * simpl;subst l.
+
+      rewrite additivity;rewrite map_map.
+
+      apply Plus.le_plus_trans.
+
+      apply in_le_suml.
+
+      apply in_map with (f:=fun x0 => term_assignment qic qif (proj_left x0));trivial.
+
+- 
+
+  simpl in subtree;destruct subtree as [equal | [single | strict]].
+
+  + 
+
+    subst pi;trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct proof_tree;destruct t0;destruct t;try tauto;intuition; 
+
+    
+
+             subst f0 c2;try subst v1;try subst v0.
+
+    * 
+
+      { simpl;simpl in cache;simpl in H8.
+
+        simpl in single;destruct single as [equal | strict]. 
+
+        
+
+        - apply le_trans with (m:=qif f (map (term_assignment qic qif) l)).
+
+          + apply H8;auto.
+
+            apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);trivial.
+
+            intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+            * unfold valid_QI;tauto.
+
+            * apply andl_in_map with (l:=lp);trivial.
+
+          + apply mono.
+
+            subst l l0.
+
+            rewrite map_map;rewrite map_map;rewrite map_map.
+
+            apply Forall2_map.
+
+            intros.
+
+            apply le_trans with (m:=value_assignment qic (proj_right x)). 
+
+            * apply Nat.eq_le_incl.
+
+              apply value_as_term_assignment.
+
+            * apply (left_bound_to_right_bound qic qif cs);trivial.
+
+              unfold valid_QI;tauto.
+
+              apply andl_in_map with (l:=lp);trivial.
+
+              apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);trivial.
+
+              intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+              unfold valid_QI;tauto.
+
+              apply andl_in_map with (l:=lp);trivial.
+
+        - apply le_trans with (m:=qif f (map (term_assignment qic qif) l)).
+
+          + apply H8;auto.
+
+            apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);trivial.
+
+            intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+            * unfold valid_QI;tauto.
+
+            * apply andl_in_map with (l:=lp);trivial.
+
+          + apply mono.
+
+            subst l l0.
+
+            rewrite map_map;rewrite map_map;rewrite map_map.
+
+            apply Forall2_map.
+
+            intros.
+
+            apply le_trans with (m:=value_assignment qic (proj_right x)).
+
+            * apply Nat.eq_le_incl.
+
+              apply value_as_term_assignment.
+
+            * apply (left_bound_to_right_bound qic qif cs);trivial.
+
+              unfold valid_QI;tauto.
+
+              apply andl_in_map with (l:=lp);trivial.
+
+              apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);trivial.
+
+              intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+              unfold valid_QI;tauto.
+
+              apply andl_in_map with (l:=lp);trivial.
+
+      }
+
+    * 
+
+      simpl in cache;simpl in single;simpl in H8.
+
+      destruct single as [equal | false];try tauto.
+
+      subst pi;simpl in *.
+
+      apply mono.
+
+      subst l l0.
+
+      rewrite map_map;rewrite map_map;rewrite map_map.
+
+      apply Forall2_map.
+
+      intros.
+
+      { apply le_trans with (m:=value_assignment qic (proj_right x)).  
+
+        - apply Nat.eq_le_incl.
+
+          apply value_as_term_assignment.
+
+        - apply (left_bound_to_right_bound qic qif cs);trivial.
+
+          + unfold valid_QI;tauto.
+
+          + apply andl_in_map with (l:=lp);trivial.
+
+          + apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);trivial.
+
+            intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+            * unfold valid_QI;tauto.
+
+            * apply andl_in_map with (l:=lp);trivial.
+
+      }
+
+  + 
+
+    simpl in well_formed.
+
+    destruct proof_tree;destruct t0;destruct t;try tauto;intuition;
+
+    
+
+             simpl;simpl in H9;simpl in cache;subst c2 f0;try subst v1;try subst v0.
+
+    
+
+    * 
+
+      { rewrite orl_map in strict.
+
+        destruct strict as (x & inlist & intree).
+
+        apply le_trans with (m:=term_assignment qic qif (proj_left x)).
+
+        - apply H;trivial.
+
+          + apply andl_in_map with (l:=lp);trivial.
+
+          + apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);trivial.
+
+            intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+            * unfold valid_QI;tauto.
+
+            * apply andl_in_map with (l:=lp);trivial.
+
+        - subst l0;rewrite map_map.
+
+          apply sub.
+
+          apply in_map with (f:=fun x0 => term_assignment qic qif (proj_left x0));trivial.
+
+      }
+
+    * 
+
+      { rewrite orl_map in strict.
+
+        destruct strict as (x & inlist & intree).
+
+        apply le_trans with (m:=term_assignment qic qif (proj_left x)).
+
+        - apply H;trivial.
+
+          + apply andl_in_map with (l:=lp);trivial.
+
+          + apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);trivial.
+
+            intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+            * unfold valid_QI;tauto.
+
+            * apply andl_in_map with (l:=lp);trivial.
+
+        - subst l0;rewrite map_map.
+
+          apply sub.
+
+          apply in_map with (f:=fun x0 => term_assignment qic qif (proj_left x0));trivial.
+
+      }
+
+- 
+
+  simpl;simpl in cache.
+
+  simpl in subtree;destruct subtree as [equal | strict].
+
+  + 
+
+    subst pi;trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct t;try tauto.
+
+    destruct well_formed as (_ & lp & t & n_le_lp & rule & Hl & pl & pr & cl & _ & _ & wf_ind & _).
+
+    apply le_trans with (m:=term_assignment qic qif (proj_left proof_tree)).
+
+    * subst c1;apply IHproof_tree;trivial.
+
+    * rewrite pl.
+
+      simpl;unfold compatible_QI in compat.
+
+      { replace l with (map (subst s) (map term_from_pattern lp)).
+
+        - apply compat.
+
+          rewrite <- rule;apply nth_In;trivial.
+
+        - subst l.
+
+          rewrite map_map;rewrite map_map.
+
+          apply map_ext.
+
+          intros;apply subst_psubst.
+
+      }
+
+- 
+
+  simpl in subtree;destruct subtree as [equal | impossible];try tauto.
+
+  subst pi;trivial.
+
+Qed.
+
+
+
+Lemma cache_left_bounded_global qic qif cs: forall pi proof_tree:cbv,
+
+  valid_QI qic qif cs -> wf proof_tree -> 
+
+  cache_bounded qic qif (cache_left proof_tree) -> InCBV pi proof_tree ->
+
+  cache_bounded qic qif (cache_left pi).
+
+Proof.
+
+intros pi proof_tree valid well_formed cache subtree.
+
+induction proof_tree using cbv_ind2.
+
+- 
+
+  simpl in subtree;destruct subtree as [ equal | strict].
+
+  + 
+
+    subst pi;trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct t;destruct v;try tauto.
+
+    destruct well_formed as (cpath & Hc & Hl & Hl0 & wf_list & arity).
+
+    rewrite orl_map in strict.
+
+    destruct strict as (x & inlist & intree).
+
+    apply H with (p:=x);auto.
+
+    * apply andl_in_map with (l:=lp);trivial.
+
+    * apply cache_path_transitivity_left with (c:=c1) (c':=c2) (l:=lp);auto.
+
+      intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+      apply andl_in_map with (l:=lp);trivial.
+
+- 
+
+  simpl in subtree;destruct subtree as [equal | [single | strict]].
+
+  + 
+
+    subst pi;trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct proof_tree;destruct t0;destruct t;try tauto;intuition;simpl in cache.
+
+    
+
+    * 
+
+      apply H8;auto.
+
+      simpl.
+
+      apply cache_path_transitivity with (c:=c1) (l:=lp);auto.
+
+      intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+      apply andl_in_map with (l:=lp);trivial.
+
+    * 
+
+      simpl in single;destruct single as [equal | impossible];try tauto.
+
+      subst pi;simpl.
+
+      apply cache_path_transitivity with (c:=c1) (c':=c) (l:=lp);auto.
+
+      intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+      apply andl_in_map with (l:=lp);trivial.
+
+  + 
+
+    simpl in well_formed.
+
+    destruct proof_tree;destruct t0;destruct t;try tauto;intuition.
+
+    
+
+    * 
+
+      { rewrite orl_map in strict.
+
+        destruct strict as (x & inlist & intree).
+
+        apply H with (p:=x);auto.
+
+        - apply andl_in_map with (l:=lp);trivial.
+
+        - apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);auto.
+
+          intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+          apply andl_in_map with (l:=lp);trivial.
+
+      }
+
+    * 
+
+      { rewrite orl_map in strict.
+
+        destruct strict as (x & inlist & intree).
+
+        apply H with (p:=x);auto.
+
+        - apply andl_in_map with (l:=lp);trivial.
+
+        - apply cache_path_transitivity_left with (c:=c1) (c':=c) (l:=lp);auto.
+
+          intros;apply (left_bound_to_right_bound qic qif cs);trivial.
+
+          apply andl_in_map with (l:=lp);trivial.
+
+      }
+
+- 
+
+  simpl in well_formed.
+
+  destruct t;try tauto.
+
+  simpl in cache.
+
+  destruct well_formed as (_ & _ & _ & _ & _ & _ & _ & _ & cl & _ & _ & wf_ind & _).
+
+  simpl in subtree.
+
+  destruct subtree as [equal | strict].
+
+  + subst pi;simpl;tauto.
+
+  + apply IHproof_tree;auto.
+
+    rewrite cl;trivial.   
+
+- 
+
+  simpl in subtree.
+
+  destruct subtree as [equal | impossible];try tauto.
+
+  subst pi;simpl;trivial.
+
+Qed.
+
+
+
+Definition judgsize (p:cbv) := term_size (proj_left p) + value_size (proj_right p).
+
+
+
+Lemma qi_active_bounded_by_size qic qif cs: forall f lval lt,
+
+  valid_QI qic qif cs ->
+
+  let t :=  (fapply f lt) in
+
+  let l := (map (fun x=> mcs * (term_size t)) lt) in
+
+  
+  lt = map term_from_value lval ->
+
+  term_assignment qic qif t <= (qif f l).
+
+Proof.
+
+intros f lval lt valid.
+
+unfold valid_QI in valid.
+
+destruct valid as (additivity & max_cs & non_zero & sub & mono & compat).
+
+intros.
+
+apply le_trans with (m:=qif f (map (fun v => mcs*(term_size v)) lt)).
+
+apply le_trans with (m:=qif f (map (term_assignment qic qif) lt)).
+
+- simpl;auto.
+
+- apply mono.
+
+  subst lt.
+
+  rewrite map_map;rewrite map_map.
+
+  apply Forall2_map.
+
+  intros.
+
+  rewrite compatible_sizes.
+
+  rewrite value_as_term_assignment.
+
+  apply (QI_le_value_size qic cs);trivial.
+
+- unfold l.
+
+  apply mono.
+
+  
+
+  apply Forall2_map.
+
+  intros.
+
+  apply Mult.mult_le_compat_l.
+
+  simpl.
+
+  apply le_trans with (m:=suml (map (term_size (constructor:=constructor)) lt)).
+
+  apply le_trans with (m:=maxl (map (term_size (constructor:=constructor)) lt)).
+
+  + apply maxl_is_max.
+
+    apply in_map;trivial.
+
+  + apply maxl_le_suml.
+
+  + omega. 
+
+Qed.
+
+
+
+Lemma active_size_bound qic qif cs: forall i sub p c f lv d v, forall pi,
+
+  valid_QI qic qif cs ->
+
+  let t :=  (fapply f lv) in
+
+  let proof_tree := cbv_update i sub p c t d v in 
+
+  let l:= (map (fun x=> mcs * (term_size t)) lv) in
+
+  wf proof_tree -> In pi (activations proof_tree) -> cache_bounded qic qif c -> 
+
+  judgsize pi <= (max_arity + 1) * (qif f l) + 1.
+
+Proof.
+
+intros i sub p c f lv d v pi valid t proof_tree l well_formed active cache.
+
+unfold valid_QI in valid;destruct valid as (additivity & max_cs & non_zero & subt & mono & compat).
+
+
+
+assert (InCBV pi proof_tree) as subtree.
+
+apply activations_inCBV;trivial.
+
+assert (wf pi) as sub_wf.
+
+apply wf_InCBV_wf with (proof_tree:=proof_tree);trivial.
+
+
+
+apply activation_is_function in active.
+
+destruct active as (i' & sub' & p' & c1 & t0 & c2 & v0 & pi_is_upd).
+
+destruct pi;try discriminate pi_is_upd.
+
+simpl.
+
+simpl in sub_wf;destruct t1;try tauto.
+
+destruct sub_wf as (_ & lp & _ & _ & _ & Hl0 & _ & _ & _ & _ & _ & _ & arity).
+
+set (s:=fapply f0 l0);set (u:=v2).
+
+
+
+apply le_trans with (m:=(max_arity+1) * (term_assignment qic qif (fapply f lv)) + 1).
+
+apply le_trans with (m:=(max_arity+1)*(term_assignment qic qif s) + 1).
+
+apply le_trans with (m:=(length l0)*(term_assignment qic qif s) + (term_assignment qic qif s) + 1).
+
+apply le_trans with (m:=suml (map (fun t => term_assignment qic qif s) l0) + (term_assignment qic qif s) + 1).
+
+apply le_trans with (m:=suml (map (term_assignment qic qif) l0) + (term_assignment qic qif s) + 1).
+
+apply le_trans with (m:=suml (map (@term_size _ _ _) l0) + (term_assignment qic qif s) + 1).
+
+apply le_trans with (m:=(term_size s) + (term_assignment qic qif s)).
+
+apply le_trans with (m:=(term_size s) + (value_assignment qic u)).
+
+apply le_trans with (m:=(term_size s) + (value_size u)).
+
+
+
+- auto.
+
+- apply Plus.plus_le_compat_l.
+
+  apply (value_size_le_QI qic cs);auto.
+
+- apply Plus.plus_le_compat_l.
+
+  apply (left_bound_to_right_bound qic qif cs) with (pi:=cbv_update n v1 pi c0 s c3 u);trivial. 
+
+  + unfold valid_QI;tauto.
+
+  + apply wf_InCBV_wf with (proof_tree:=proof_tree);trivial.
+
+  + apply (cache_left_bounded_global qic qif cs) with (proof_tree:=proof_tree);auto.
+
+    unfold valid_QI;tauto.
+
+- simpl;omega.
+
+- apply Plus.plus_le_compat_r;apply Plus.plus_le_compat_r.
+
+  subst l0.
+
+  apply suml_map_le;intros.
+
+  rewrite in_map_iff in H;destruct H;destruct H as (eq & inl).
+
+  subst x.
+
+  rewrite compatible_sizes.
+
+  rewrite value_as_term_assignment.
+
+  apply (value_size_le_QI qic cs);trivial.
+
+- apply Plus.plus_le_compat_r;apply Plus.plus_le_compat_r.
+
+  apply suml_map_le;intros.
+
+  unfold s;simpl.
+
+  apply subt.
+
+  apply in_map;trivial.
+
+- apply Plus.plus_le_compat_r;apply Plus.plus_le_compat_r.
+
+  rewrite Mult.mult_comm.
+
+  apply Nat.eq_le_incl.
+
+  apply suml_map_const.
+
+- apply Plus.plus_le_compat_r.
+
+  rewrite Mult.mult_plus_distr_r.
+
+  rewrite Mult.mult_1_l.
+
+  apply Plus.plus_le_compat_r;apply Mult.mult_le_compat_r;trivial.
+
+- apply Plus.plus_le_compat_r;apply Mult.mult_le_compat_l.
+
+  apply (QI_never_increase_global qic qif cs) with 
+
+        (pi:=cbv_update n v1 pi c0 s c3 u) (proof_tree:=proof_tree);auto.
+
+  unfold valid_QI;tauto.
+
+- apply Plus.plus_le_compat_r;apply Mult.mult_le_compat_l.
+
+  unfold proof_tree in *;clear proof_tree.
+
+  unfold t in *;clear t.
+
+  simpl in well_formed.
+
+  destruct well_formed as (_ & lp0 & t' & _ & _ & Hlv & _ & _ & _ & _ & _ & wfp & _).
+
+  apply (qi_active_bounded_by_size qic qif cs) with (lval:=map (psubst sub) lp0) (lt:=lv);auto.
+
+  unfold valid_QI;tauto.
+
+Qed.
+
+
+
+Lemma active_size_bound_max qic qif cs: forall i s p c f lv d v,
+
+  valid_QI qic qif cs ->
+
+  let t :=  (fapply f lv) in
+
+  let pi := cbv_update i s p c t d v in 
+
+  let la := (activations pi)  in
+
+  let l:= (map (fun x=> mcs * (term_size t)) lv) in
+
+  wf pi -> cache_bounded qic qif c -> forall la', incl la' la -> 
+
+  maxl (map judgsize la') <= (max_arity + 1) * qif f l + 1.
+
+Proof.
+
+intros i s p c f lv d v valid t pi la l Hwf Hcb la' Hsslist.
+
+induction la';simpl.
+
+- apply le_0_n.
+
+- apply max_lub.
+
+  + apply (active_size_bound qic qif cs i s p c f lv d v a);auto.
+
+    apply (Hsslist a);apply in_eq.
+
+  + apply IHla'.
+
+    apply tl_incl with (a:=a);trivial.
+
+Qed.
+
+
+
+Lemma max_active_size_sublist: forall c c' lp lp',
+
+  andl (map wf lp) -> cache_path c c' lp = true -> incl lp' lp ->
+
+  (forall p : cbv, In p lp -> wf p ->
+
+   max_active_size p <= maxl (map judgsize (activations p))) ->
+
+   maxl (map (@max_active_size _ _ _) lp') <= 
+
+   maxl (map judgsize (flat_map (activations (constructor:=constructor)) lp')).
+
+Proof.
+
+induction lp'.
+
+- 
+
+  simpl;intros;auto. 
+
+- 
+
+  intros.
+
+  simpl.
+
+  rewrite map_app.
+
+  rewrite maxl_app.
+
+  apply Nat.max_le_compat.
+
+  + 
+
+    apply (H2 a).
+
+    unfold incl in H1;apply H1;simpl;auto.
+
+    apply andl_in_map with (l:=lp);auto.
+
+    unfold incl in H1;apply (H1 a);simpl;auto.
+
+  + 
+
+    apply IHlp';intros;auto.
+
+    apply tl_incl with (a:=a);trivial.
+
+Qed.
+
+
+
+Lemma max_active_size_is_max: forall pi,
+
+   let S := max_active_size pi in
+
+   wf pi -> S <= maxl (map judgsize (activations pi)).
+
+Proof.
+
+induction pi using cbv_ind2;intros;auto.
+
+- 
+
+  unfold S;simpl.  
+
+  simpl in H0;destruct t;destruct v;try tauto.
+
+  destruct H0 as (cpath & Hc & HGl & Hl0 & wf_list & arity).
+
+  apply max_active_size_sublist with (c:=c1) (c':=c2) (lp:=lp);auto.
+
+  apply incl_refl.
+
+- 
+
+  unfold S;simpl.
+
+  rewrite map_app.
+
+  rewrite maxl_app.  
+
+  apply Nat.max_le_compat.
+
+  + 
+
+    apply IHpi.
+
+    simpl in H0.
+
+    destruct pi;destruct t0;destruct t;tauto.
+
+  + 
+
+    simpl in H0;destruct pi;destruct t0;destruct t;try tauto;
+
+          destruct H0 as (Hc & cpath & Hl0 & Hl & wf_list & Hf & Hv & wfp & arity);
+
+          apply max_active_size_sublist with (c:=c1) (c':=c) (lp:=lp);auto;apply incl_refl.
+
+- 
+
+  simpl activations.
+
+  rewrite map_cons.
+
+  simpl maxl.
+
+  simpl in S.
+
+  apply Nat.max_le_compat;auto.
+
+  apply IHpi.
+
+  simpl in H.
+
+  destruct t;try tauto.
+
+  destruct H as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & H & _);trivial.
+
+Qed.
+
+
+
+Theorem max_active_size_bound qic qif cs: forall i s p c f lv d v,
+
+  valid_QI qic qif cs ->
+
+  let t :=  (fapply f lv) in
+
+  let pi := cbv_update i s p c t d v in 
+
+  let l:= (map (fun x=> mcs * (term_size t)) lv) in
+
+  let S := max_active_size pi in
+
+  wf pi -> cache_bounded qic qif c -> S <= (max_arity + 1) * (qif f l) + 1.
+
+Proof.
+
+intros i s p c f lv d v valid;intros.
+
+generalize (max_active_size_is_max pi H).
+
+unfold S, pi,t.
+
+intros.
+
+apply le_trans with (m:=maxl (map judgsize (activations pi)));auto.
+
+apply (active_size_bound_max qic qif cs i s p c f lv d v);auto.
+
+apply incl_refl.
+
+Qed.
+
+
+
+Definition p_assignment_function := function -> option(list nat -> nat).
+
+
+
+Fixpoint p_term_assignment (qic:assignment_constructor) (qif:p_assignment_function)
+
+(t:term) {struct t} : option nat:=
+
+   match t with
+
+  | var v=> Some 0 
+
+  | capply c lt => option_map (qic c) (option_list_map(map (p_term_assignment qic qif) lt))
+
+  | fapply f lt=> option_bind (fun g => option_map g (option_list_map(map (p_term_assignment qic qif)  lt)))
+
+                              (qif f)
+
+end.
+
+
+
+Definition complete_p_QI (qif : p_assignment_function) f := 
+
+  complete_option maxl (qif f).
+
+
+
+Lemma p_term_assignment_term_assignment qic qif t v:
+
+  p_term_assignment qic qif t = Some v ->
+
+  term_assignment qic (complete_p_QI qif) t = v.
+
+Proof.
+
+revert v; induction t using term_ind2.
+
+- intros n H; now inversion H.
+
+- unfold option_map; intros v H0; simpl p_term_assignment in H0.
+
+  simpl term_assignment.
+
+  case_eq (option_list_map (map (p_term_assignment qic qif) l));
+
+    [| intro H1; rewrite H1 in H0; inversion H0].
+
+  intros lv Hlv.
+
+  rewrite option_list_map_map with (f := complete_option 0) in H0.
+
+  + simpl option_map in H0; inversion H0.
+
+    rewrite map_map; f_equal; apply map_ext_in; intros a Ha.
+
+    apply option_list_map_Some with (x := p_term_assignment qic qif a) in Hlv.
+
+    * destruct Hlv as (va & Hva); rewrite Hva; auto.
+
+    * now apply in_map.
+
+  + intros x Hx.
+
+    eapply option_list_map_Some in Hlv; eauto.
+
+    now destruct Hlv as [vx Hvx]; rewrite Hvx.
+
+- unfold option_map, complete_p_QI; intros v H0; simpl p_term_assignment in H0.
+
+  case_eq (qif f); [ | intro Hf; rewrite Hf in H0; inversion H0].
+
+  intros g Hg; rewrite Hg in *; simpl in H0.
+
+  simpl term_assignment.
+
+  case_eq (option_list_map (map (p_term_assignment qic qif) l));
+
+    [| intro H1; rewrite H1 in H0; inversion H0].
+
+  intros lv Hlv.
+
+  rewrite Hg; simpl.
+
+  rewrite Hlv in H0.
+
+  inversion H0.
+
+  subst v.
+
+  f_equal.
+
+  assert(Heq : Some (map
+
+  (term_assignment qic
+
+     (fun f0 : function => complete_option maxl (qif f0)))
+
+  l) = Some lv); [ | now inversion Heq].
+
+  rewrite <- Hlv.
+
+  erewrite option_list_map_map.
+
+  + rewrite map_map.
+
+    instantiate (1 := complete_option 0).
+
+    f_equal.
+
+    apply map_ext_in.
+
+    intros a Ha.
+
+    apply option_list_map_Some with (x := p_term_assignment qic qif a) in Hlv.
+
+    * destruct Hlv as (va & Hva); rewrite Hva; auto.
+
+    * now apply in_map.
+
+  + intros x Hx.
+
+    eapply option_list_map_Some in Hlv; eauto.
+
+    now destruct Hlv as [vx Hvx]; rewrite Hvx.
+
+Qed.
+
+
+
+Definition p_compatible_QI qic qif:= forall f lp t, forall s:variable -> value,
+
+  let ru := rule_intro f lp t in
+
+  (In ru prog) -> 
+
+    p_term_assignment qic qif (subst s t) ≤p 
+
+    p_term_assignment qic qif (subst s (lhs_of_rule ru)).
+
+
+
+Lemma p_compatible_compatible qic:
+
+  {pqif | p_compatible_QI qic pqif} -> {qif | compatible_QI qic qif}.
+
+Proof.
+
+unfold compatible_QI, p_compatible_QI.
+
+intros [qif H]; exists (complete_p_QI qif).
+
+intros f lp t s Hr.
+
+assert (H' := H f lp t s Hr).
+
+destruct H' as (v1 & v2 & Hv1 & Hv2 & Heq).
+
+apply p_term_assignment_term_assignment in Hv1.
+
+apply p_term_assignment_term_assignment in Hv2.
+
+now subst.
+
+Qed.
+
+
+
+Lemma p_term_assignment_ext qic f f': 
+
+ (forall x, f x = f' x) ->
+
+ forall t, p_term_assignment qic f t= p_term_assignment qic f' t.
+
+Proof.
+
+intro Heq.
+
+induction t using term_ind2.
+
+- trivial.
+
+- simpl p_term_assignment; f_equal; f_equal; now apply map_ext_in.
+
+- simpl p_term_assignment.
+
+  rewrite <- Heq.
+
+  destruct (f f0) as [v |]; trivial.
+
+  simpl; f_equal; f_equal; now apply map_ext_in.
+
+Qed.
+
+
+
+Lemma p_compatible_QI_ext qic f f': 
+
+ (forall x, f x = f' x) ->
+
+ p_compatible_QI qic f ->
+
+ p_compatible_QI qic f'.
+
+Proof.
+
+intros Heq Hf; unfold p_compatible_QI in *.
+
+intros;
+
+do 2(rewrite <- p_term_assignment_ext with (f := f) (f' := f'); trivial).
+
+auto.
+
+Qed.
+
+
+
+Lemma p_compatible_QI_split qic f h:
+
+  {g | p_compatible_QI qic (f;;h;;g)} -> {g | p_compatible_QI qic (f;;g)}.
+
+Proof.
+
+- intro H.
+
+destruct H as (g & Hhg).
+
+exists (h;;g); eapply p_compatible_QI_ext; [ | exact Hhg].
+
+intro; now rewrite option_choice_assoc.
+
+Qed.
+
+
+
+Lemma p_term_assignment_first_choice qic f t v:
+
+  p_term_assignment qic f t = Some v ->
+
+  forall g, p_term_assignment qic (f;;g) t = Some v.
+
+Proof.
+
+revert v.
+
+induction t using term_ind2.
+
+- intros; assumption.
+
+- intros v Hv g; simpl in *.
+
+  rewrite <- Hv; do 2 f_equal.
+
+  apply map_ext_in; intros a Ha.
+
+  apply option_map_Some in Hv; destruct Hv as (v' & Hv').
+
+  apply option_list_map_Some with (x := p_term_assignment qic f a) in Hv';
+
+  [ | now apply in_map].
+
+  destruct Hv' as (v'' & Hv''); rewrite Hv''.
+
+  apply H; assumption.
+
+- intros v Hv g; simpl in *.
+
+  rewrite <- Hv.
+
+  simpl option_choice.
+
+  case_eq (f f0); [| intro Hnone; rewrite Hnone in Hv; inversion Hv].
+
+  intros v' Hv'.
+
+  assert (Hfg : (f;; g) f0 = Some v') by
+
+    (unfold option_choice; now rewrite Hv').
+
+  rewrite Hfg.
+
+  simpl.
+
+  do 2 f_equal.
+
+  apply map_ext_in.
+
+  intros a Ha.
+
+  apply option_bind_Some in Hv.
+
+  destruct Hv as (v'' & _ & Hv).
+
+  apply option_map_Some in Hv.
+
+  destruct Hv as (v'''' & Hv).
+
+  apply option_list_map_Some with (x := p_term_assignment qic f a) in Hv.
+
+  + destruct Hv as (lv & Hlv).
+
+    erewrite H; eauto.
+
+  + now apply in_map.
+
+Qed.
+
+
+
+Lemma value_as_p_term_assignment qic qif: forall v:value,
+
+  (p_term_assignment qic qif (term_from_value v)) = Some (value_assignment qic v).
+
+Proof.
+
+induction v using value_ind2.
+
+simpl.
+
+unfold option_map, option_list_map.
+
+rewrite map_map.
+
+rewrite option_list_map_map with 
+
+  (f := fun x => match x with Some v => v | None => 0 end).
+
+- do 2 f_equal; rewrite map_map; apply map_ext_in.
+
+  intros; rewrite H; trivial.
+
+- intros x Hx.
+
+  apply in_map_iff in Hx.
+
+  destruct Hx as (n & Hn1 & Hn2).
+
+  rewrite H in Hn1; trivial.
+
+  rewrite <- Hn1; trivial.
+
+Qed.
+
+
+
+Definition p_subterm (qif : p_assignment_function) : Prop :=
+
+forall (f : function) (l : list nat) (x : nat), x ∈ l ->
+
+  match qif f with 
+
+  | None => True 
+
+  | Some f0 => (x <= f0 l)
+
+  end.
+
+
+
+Definition p_monotonicity (qif : p_assignment_function) : Prop :=
+
+  forall (f : function) (lx ly : list nat),
+
+    Forall2 le lx ly -> 
+
+    match qif f with 
+
+    | None => True 
+
+    | Some f0 => f0 lx <= f0 ly
+
+    end.
+
+
+
+Definition p_smc qic (qif : p_assignment_function) : Prop :=
+
+ p_subterm qif /\ p_monotonicity qif /\ p_compatible_QI qic qif.
+
+
+
+Lemma p_smc_split f h qic:
+
+  {g | p_smc qic (f;;h;;g)} -> {g | p_smc qic (f;;g)}.
+
+Proof.
+
+intro H.
+
+unfold p_smc in *.
+
+destruct H as (g & Hhgs & Hhgm & Hhgc).
+
+exists (h;;g).
+
+unfold p_subterm, p_monotonicity, p_compatible_QI in *.
+
+repeat split; intros f0 l x Hin.
+
+- assert (H := Hhgs f0 l x Hin); now rewrite <- option_choice_assoc in H.
+
+- assert (H := Hhgm f0 l x Hin); now rewrite <- option_choice_assoc in H.
+
+- eapply p_compatible_QI_ext; [ | exact Hhgc]; intro; now rewrite option_choice_assoc.
+
+Qed.
+
+
+
+Lemma p_smc_smc qic :
+
+  {pqif | p_smc qic ((fun _ => None);; pqif)} -> 
+
+  {qif | subterm qif /\ monotonicity_qif qif /\ compatible_QI qic qif}.
+
+Proof.
+
+unfold p_smc, compatible_QI, p_compatible_QI, p_subterm, subterm, 
+
+       monotonicity_qif, p_monotonicity.
+
+intros (qif & Hs & Hm & Hc); exists (complete_p_QI qif).
+
+repeat split.
+
+- intros f l x Hin.
+
+  assert (H' := Hs f l x Hin).
+
+  unfold complete_p_QI, complete_option.
+
+  unfold option_choice in H'.
+
+  destruct (qif f); trivial.
+
+  now apply maxl_is_max.
+
+- intros f l x Hin.
+
+  assert (H' := Hm f l x Hin).
+
+  unfold complete_p_QI, complete_option.
+
+  unfold option_choice in H'.
+
+  destruct (qif f); trivial.
+
+  now apply forall2_le_maxl.
+
+- intros f lp t s Hr.
+
+  assert (H' := Hc f lp t s Hr).
+
+  destruct H' as (v1 & v2 & Hv1 & Hv2 & Heq).
+
+  apply p_term_assignment_term_assignment in Hv1.
+
+  apply p_term_assignment_term_assignment in Hv2.
+
+  now subst.
+
+Qed.
+
+
+
+End QI.
+
+
+
+Section Partial_QI.
+
+
+
+Variables variable function constructor : Type.
+
+
+
+Notation p_compatible_QI := (p_compatible_QI variable function constructor).
+
+Notation term_from_value := (Syntax.term_from_value variable function (constructor:=constructor)).
+
+Notation p_smc := (p_smc variable function constructor).
+
+
+
+Lemma p_compatible_QI_app f prog1 prog2 qic:
+
+  p_compatible_QI prog1 qic f ->
+
+  {g | p_compatible_QI prog2 qic (f;;g)} ->
+
+  {g | p_compatible_QI (prog1 ++ prog2) qic (f;;g)}.
+
+Proof.
+
+intros Hf [g Hg]; exists g.
+
+unfold p_compatible_QI; intros f0 lp t s Hrule.
+
+apply in_app_iff in Hrule; destruct Hrule as [Hr1 | Hr2]; auto.
+
+eapply (Hf f0 lp t s) in Hr1.
+
+destruct Hr1 as (v1 & v2 & Hv1 & Hv2 & Heq);
+
+exists v1; exists v2; intuition;
+
+now apply p_term_assignment_first_choice.
+
+Qed.
+
+
+
+Lemma p_smc_QI_app f prog1 prog2 qic:
+
+  p_compatible_QI prog1 qic f ->
+
+  {g | p_smc prog2 qic (f;;g)} ->
+
+  {g | p_smc (prog1 ++ prog2) qic (f;;g)}.
+
+Proof.
+
+unfold p_smc.
+
+intros Hfc (g & Hs & Hm & Hc); exists g; repeat split.
+
+- unfold p_subterm in *; intros h l x Hin.
+
+  assert (H' := Hs h l x Hin).
+
+  unfold option_choice in *; destruct (f h); trivial.
+
+- unfold p_monotonicity in *; intros h l x Hin.
+
+  assert (H' := Hm h l x Hin).
+
+  unfold option_choice in *; destruct (f h); trivial.
+
+- intros f0 lp t s r Hrule.
+
+  apply in_app_iff in Hrule; destruct Hrule as [Hr1 | Hr2].
+
+  + eapply (Hfc f0 lp t s) in Hr1.
+
+    destruct Hr1 as (v1 & v2 & Hv1 & Hv2 & Heq);
+
+    exists v1; exists v2; intuition;
+
+    now apply p_term_assignment_first_choice.
+
+  + now apply Hc.
+
+Qed.
+
+
+
+End Partial_QI.

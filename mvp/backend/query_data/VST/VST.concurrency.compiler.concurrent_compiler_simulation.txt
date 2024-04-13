@@ -1,0 +1,559 @@
+
+
+Require Import VST.concurrency.compiler.HybridMachine_simulation.
+(* VST.concurrency.compiler.HybridMachine_simulation:
+Require Import compcert.common.Memory.
+Require Import compcert.common.AST.     
+Require Import compcert.common.Values. 
+Require Import compcert.common.Events.
+Require Import compcert.common.Globalenvs.
+Require Import compcert.lib.Integers.
+Require Import compcert.common.Values.
+
+Require Import VST.msl.Axioms.
+Require Import Coq.ZArith.ZArith.
+Require Import VST.sepcomp.semantics.
+Require Import VST.sepcomp.event_semantics.
+Require Export VST.concurrency.common.semantics.
+Require Export VST.concurrency.common.lksize.
+Require Import VST.concurrency.common.threadPool. Export threadPool.
+
+Require Import VST.concurrency.common.machine_semantics.
+Require Import VST.concurrency.common.permissions.
+Require Import VST.concurrency.common.bounded_maps.
+Require Import VST.concurrency.common.addressFiniteMap.
+
+Require Import VST.concurrency.common.scheduler.
+Require Import Coq.Program.Program.
+
+Require Import VST.concurrency.compiler.safety.
+
+Require Import VST.concurrency.compiler.coinductive_safety.
+
+Require Import VST.concurrency.common.HybridMachineSig.
+
+Require Import VST.veric.res_predicates.
+
+Require Import VST.concurrency.common.HybridMachine.
+
+Require Import VST.concurrency.compiler.CoreSemantics_sum.
+
+Require Import compcert.common.Smallstep.
+
+Require Import VST.concurrency.common.machine_semantics_lemmas.
+
+Import Events.
+
+Set Implicit Arguments.
+
+Section HybridSimulation. 
+
+  Context (SG TG TID SCH SC TC R1 R2 : Type).
+  Variable SourceHybridMachine: @ConcurSemantics SG TID SCH (list machine_event) SC mem R1.
+  Variable TargetHybridMachine: @ConcurSemantics TG TID SCH (list machine_event) TC mem R2.
+  Variable opt_init_mem_source : option Memory.Mem.mem.
+  Variable opt_init_mem_target : option Memory.Mem.mem.
+
+  Inductive inject_address (f : meminj) : address -> address -> Prop :=
+  | inj_addr : forall b1 o1 b2 ofs, f b1 = Some (b2, ofs) ->
+      inject_address f (b1, o1) (b2, o1 + ofs).
+
+  Inductive inject_sync_event (f : meminj) : sync_event -> sync_event -> Prop :=
+  | inj_release : forall l1 l2 r1 r2, inject_address f l1 l2 ->
+      match r1, r2 with
+      | Some (a1), Some (a2) => inject_delta_content f a1 a2
+      | None, None => True
+      | _, _ => False
+      end ->
+      inject_sync_event f (release l1 r1) (release l2 r2)
+  | inj_acquire : forall l1 l2 r1 r2, inject_address f l1 l2 ->
+      match r1, r2 with
+      | Some (a1), Some (a2) => inject_delta_content f a1 a2
+      | None, None => True
+      | _, _ => False
+      end ->
+      inject_sync_event f (acquire l1 r1) (acquire l2 r2)
+  | inj_mklock : forall l1 l2, inject_address f l1 l2 ->
+      inject_sync_event f (mklock l1) (mklock l2)
+  | inj_freelock : forall l1 l2, inject_address f l1 l2 ->
+      inject_sync_event f (freelock l1) (freelock l2)
+  | inj_spawn : forall l1 l2 r1 r1' r2 r2', inject_address f l1 l2 ->
+      match r1, r2 with
+      | Some a1, Some a2 =>
+          inject_delta_content f a1 a2
+      | None, None => True
+      | _, _ => False
+      end ->
+      match r1', r2' with
+      | Some a1', Some a2' =>
+          inject_delta_content f a1' a2'
+      | None, None => True
+      | _, _ => False
+      end ->
+      inject_sync_event f (spawn l1 r1 r1') (spawn l2 r2 r2')
+  | inj_failacq : forall l1 l2, inject_address f l1 l2 ->
+      inject_sync_event f (failacq l1) (failacq l2).
+
+  Parameter inject_mem_event : meminj -> mem_event -> mem_event -> Prop.
+
+  Inductive inject_mevent (f : meminj) : machine_event -> machine_event -> Prop :=
+  | inj_internal : forall n me1 me2, inject_mem_event f me1 me2 ->
+      inject_mevent f (internal n me1) (internal n me2)
+  | inj_external : forall n se1 se2, inject_sync_event f se1 se2 ->
+      inject_mevent f (external n se1) (external n se2).
+
+  Record HybridMachine_simulation_properties
+         (index: Type)(match_state : index -> meminj -> SC -> mem -> TC -> mem -> Prop) :=
+    { core_ord : index -> index -> Prop
+      ; core_ord_wf : well_founded core_ord
+
+      ; initial_setup :
+          forall  s_mem s_mem' main main_args s_mach_state r1,
+            
+            machine_semantics.initial_machine SourceHybridMachine r1 s_mem s_mach_state s_mem' main main_args ->
+            exists j cd t_mach_state t_mem t_mem' r2,
+              machine_semantics.initial_machine TargetHybridMachine r2 t_mem t_mach_state t_mem' main main_args
+           /\ match_state cd j s_mach_state s_mem' t_mach_state t_mem'
+      ; thread_diagram :
+          forall sge tge U tr1 st1 m1 st1' m1',
+            thread_step SourceHybridMachine sge U st1 m1 st1' m1' ->
+            forall cd tr2 st2 mu m2,
+              match_state cd mu st1 m1 st2 m2 ->
+              Forall2 (inject_mevent mu) tr1 tr2 ->
+              exists st2', exists m2', exists cd', exists mu',
+                      match_state cd' mu' st1' m1' st2' m2'
+                      /\ Forall2 (inject_mevent mu') tr1 tr2
+                      /\ (thread_step_plus (TargetHybridMachine) tge U st2 m2 st2' m2'
+               \/ (thread_step_star (TargetHybridMachine) tge U st2 m2 st2' m2' /\ core_ord cd' cd))
+      ; machine_diagram :
+          forall sge tge U tr1 st1 m1 U' tr1' st1' m1',
+            machine_step SourceHybridMachine sge U tr1 st1 m1 U' tr1' st1' m1' ->
+            forall cd tr2 st2 mu m2,
+              match_state cd mu st1 m1 st2 m2 ->
+              Forall2 (inject_mevent mu) tr1 tr2 ->
+              exists tr2', exists st2', exists m2', exists cd', exists mu',
+                      match_state cd' mu' st1' m1' st2' m2'
+                      /\ Forall2 (inject_mevent mu') tr1' tr2'
+                      /\ machine_step (TargetHybridMachine) tge U tr2 st2 m2 U' tr2' st2' m2'
+      ; thread_halted :
+          forall cd mu U c1 m1 c2 m2 v1,
+            match_state cd mu c1 m1 c2 m2 ->
+            conc_halted SourceHybridMachine U c1 = Some v1 ->
+            exists v2,
+              conc_halted TargetHybridMachine U c2 = Some v2
+      ; thread_running:
+          forall cd mu c1 m1 c2 m2 ,
+            match_state cd mu c1 m1 c2 m2 ->
+            forall i, running_thread SourceHybridMachine c1 i <-> running_thread TargetHybridMachine c2 i
+    }.
+
+  Record HybridMachine_simulation:=
+    { index: Type
+      ; match_state : index -> meminj -> SC -> mem -> TC -> mem -> Prop
+      ; SIM:> @HybridMachine_simulation_properties index match_state}.
+
+End HybridSimulation. *)
+
+
+
+Require Import VST.concurrency.common.ClightMachine.
+(* VST.concurrency.common.ClightMachine:
+Require Import compcert.common.Memory.
+
+Require Import VST.veric.compcert_rmaps.
+Require Import VST.veric.juicy_mem.
+Require Import VST.veric.res_predicates.
+
+Require Import ProofIrrelevance.
+
+Require Import VST.concurrency.common.scheduler.
+
+Require Import VST.concurrency.common.HybridMachineSig.
+Require Import VST.concurrency.common.semantics.
+
+Require Import VST.concurrency.common.HybridMachine.
+Require Import VST.concurrency.common.lksize.
+Require Import VST.concurrency.common.permissions.
+
+Require Import VST.concurrency.common.dry_context.
+Require Import VST.concurrency.common.dry_machine_lemmas.
+Require Import VST.concurrency.common.erased_machine.
+
+Require Import VST.veric.Clight_new.
+Require Import VST.veric.Clightnew_coop.
+Require Import VST.sepcomp.event_semantics.
+
+Require Import VST.concurrency.common.ClightSemanticsForMachines.
+Require Import VST.concurrency.common.Clight_bounds.
+
+From mathcomp.ssreflect Require Import ssreflect ssrfun ssrbool ssrnat eqtype seq.
+Require Import Coq.ZArith.ZArith.
+Require Import PreOmega.
+Require Import VST.concurrency.common.ssromega. 
+Set Bullet Behavior "Strict Subproofs".
+
+Import threadPool.
+
+Module Clight_newMachine.
+
+  Import HybridMachineSig.
+
+  Module DMS.
+  Section DMS.
+
+  Context {ge : Clight.genv}.
+  Existing Instance OrdinalPool.OrdinalThreadPool.
+  Instance DSem : Semantics := Clight_newSem ge.
+
+  Definition ClightMachine :=(HybridCoarseMachine.HybridCoarseMachine
+                                 (machineSig := DryHybridMachine.DryHybridMachineSig)).
+  Definition ClightMachineSem := (MachineSemantics(HybridMachine := ClightMachine)).
+  Definition ClightConcurSem := (ConcurMachineSemantics(HybridMachine := ClightMachine)).   
+  End DMS.
+  End DMS.
+End Clight_newMachine.
+
+Module ClightMachine.
+
+  Import HybridMachineSig.
+
+  Module DMS.
+  Section DMS.
+
+  Context {ge : Clight.genv}.
+  Existing Instance OrdinalPool.OrdinalThreadPool.
+  Instance DSem : Semantics := ClightSem ge.
+
+  Definition ClightMachine :=(HybridCoarseMachine.HybridCoarseMachine
+                                 (machineSig := DryHybridMachine.DryHybridMachineSig)).
+  Definition ClightMachineSem := (MachineSemantics(HybridMachine := ClightMachine)).
+  Definition ClightConcurSem := (ConcurMachineSemantics(HybridMachine := ClightMachine)).   
+  End DMS.
+  End DMS.
+End ClightMachine.
+
+Module FiniteBranching.
+
+  End FiniteBranching. *)
+
+
+
+Require Import VST.concurrency.common.x86_context.
+(* VST.concurrency.common.x86_context:
+Require Import VST.concurrency.common.HybridMachine.
+Require Import VST.concurrency.common.erased_machine.
+Require Import VST.concurrency.common.HybridMachineSig.
+Require Import VST.concurrency.common.permissions.
+Require Import VST.concurrency.memory_lemmas.
+Require Import VST.concurrency.common.dry_machine_lemmas.
+Require Import VST.concurrency.common.dry_context.
+Require Import VST.concurrency.common.Asm_core.
+Require Import VST.concurrency.common.Asm_event.
+Require Import VST.concurrency.common.dry_context.
+Require Import compcert.common.Globalenvs.
+Require Import compcert.common.Memory.
+Require Import compcert.lib.Coqlib.
+Require Import VST.msl.Coqlib2.
+
+Set Bullet Behavior "None".
+Set Bullet Behavior "Strict Subproofs".
+
+Module X86Context.
+  Import AsmContext.
+  
+  Section X86Context.
+
+    Context {the_program: Asm.program}.
+
+    Definition the_ge := Globalenvs.Genv.globalenv the_program.
+    Context {Hsafe : safe_genv the_ge}.
+
+    Instance X86Sem: Semantics:=
+      { semG:= Asm.genv;
+         semC:= Asm.state;
+         semSem:= Asm_EvSem the_ge Hsafe;
+         the_ge := the_ge
+      }.
+
+  Import AsmContext.
+  Definition AsmHybridMachine    := @dryCoarseMach X86Sem.
+  Definition AsmConcurSem    := HybridMachineSig.HybridMachineSig.ConcurMachineSemantics
+                                  (HybridMachine:= AsmHybridMachine).
+
+  Import AsmContext.
+  Definition AsmFineHybridMachine    := @dryFineMach X86Sem.
+  Definition AsmFineConcurSem    := HybridMachineSig.HybridMachineSig.ConcurMachineSemantics
+                                  (HybridMachine:= AsmFineHybridMachine).
+
+  Definition Asm_initial_state := tpc_init(asmSem:=X86Sem).
+  Definition Asm_initial_state_fine := tpf_init(asmSem:=X86Sem).
+  Definition Asm_initial_state_bare := bare_init(asmSem:=X86Sem).
+  
+  End X86Context.
+End X86Context.
+
+Module X86SEMAxioms.
+
+  Import Asm Asm_core event_semantics semantics_lemmas
+           X86Context Memory.
+
+  Section X86Context.
+
+    Context {initU: seq.seq nat}
+            {the_program: Asm.program}.
+    Notation the_ge := (@the_ge the_program).
+    Context {Hsafe : safe_genv the_ge}.
+
+    Instance X86Sem: Semantics := @X86Sem the_program Hsafe.
+
+    Lemma corestep_det: corestep_fun semSem.
+      
+    Lemma mem_step_decay:
+      forall m m',
+        mem_step m m' ->
+        decay m m'.
+
+    Lemma exec_load_same_mem:
+      forall ch m a rs rd rs' m',
+        exec_load the_ge ch m a rs rd = Next rs' m' ->
+        m=m'.
+
+    Lemma exec_store_obeys_cur_write:
+      forall ch m a rs rs0 d rs' m',
+        exec_store the_ge ch m a rs rs0 d = Next rs' m' ->
+        forall b ofs,
+          Memory.Mem.valid_block m b ->
+          ~ Memory.Mem.perm m b ofs Memtype.Cur Memtype.Writable ->
+          ZMap.get ofs (PMap.get b (Memory.Mem.mem_contents m)) =
+          ZMap.get ofs (PMap.get b (Memory.Mem.mem_contents m')).
+    Proof.
+      intros.
+      unfold exec_store in H.
+      destruct (Memory.Mem.storev ch m (eval_addrmode the_ge a rs) (rs rs0)) eqn:?; inv H.
+      unfold Memory.Mem.storev in Heqo.
+      destruct (eval_addrmode the_ge a rs); inv Heqo.
+      symmetry;
+        eapply MemoryLemmas.store_contents_other; eauto.
+
+    Lemma mem_step_obeys_cur_write:
+      forall m b ofs m',
+        Memory.Mem.valid_block m b ->
+
+    Lemma corestep_unchanged_on:
+      forall c m
+        c' m' b (ofs : Z),
+        corestep semSem c m c' m' ->
+        Memory.Mem.valid_block m b ->
+
+    Lemma corestep_decay:
+      forall c c' m m',
+        corestep semSem c m c' m' -> decay m m'.
+
+    Lemma corestep_nextblock :
+      forall c m c' m',
+        corestep semSem c m c' m' ->
+        (Memory.Mem.nextblock m <= Memory.Mem.nextblock m')%positive.
+
+    Lemma at_external_halted_excl:
+      forall q m, semantics.at_external (@semSem X86Sem) q m = None \/ forall i, ~ halted semSem q i.
+
+    Lemma initial_core_det:
+      forall i m v args c c' m' m'',
+        initial_core semSem i m c m' v args ->
+        initial_core semSem i m c' m'' v args ->
+        c = c' /\ m' = m''.
+      
+    Lemma make_arg_unchanged_on:
+      forall rs m l arg rs' m'
+        (Hmake_args: make_arg rs m l arg = Some (rs', m')),
+        (forall b ofs, ~ Mem.perm m b ofs Cur Writable -> ZMap.get ofs (Mem.mem_contents m) !! b = ZMap.get ofs (Mem.mem_contents m') !! b) /\
+        (forall b ofs k, permission_at m b ofs k = permission_at m' b ofs k) /\
+        (forall b, Mem.valid_block m' b <-> Mem.valid_block m b).
+    Proof.
+      intros.
+      unfold make_arg in *.
+      destruct l.
+      inv Hmake_args.
+      repeat split; intros; auto.
+      destruct (Mem.storev (AST.chunk_of_type ty) m (Values.Val.offset_ptr (rs RSP) (Integers.Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * pos))) arg) eqn:Hstorev;
+        try discriminate.
+      inv Hmake_args.
+      eapply MemoryLemmas.mem_storev_store in Hstorev.
+      destruct Hstorev as [b' [ofs' [? Hstore]]].
+      split.
+      - intros.
+        symmetry.
+          eapply MemoryLemmas.store_contents_other;
+
+    Lemma make_arguments_unchanged_on:
+      forall rs m args ls rs' m'
+        (Hmake_args: make_arguments rs m ls args = Some (rs', m')),
+        (forall b ofs, ~ Mem.perm m b ofs Cur Writable -> ZMap.get ofs (Mem.mem_contents m) !! b = ZMap.get ofs (Mem.mem_contents m') !! b) /\
+
+    Lemma initial_core_unchanged_on :
+      forall (i : nat) (v : Values.val) (args : list Values.val) (c : semC) (m m' : mem) (b : Values.block) (ofs : Z),
+        initial_core semSem i m c m' v args ->
+        Mem.valid_block m b -> ~ Mem.perm m b ofs Cur Writable -> ZMap.get ofs (Mem.mem_contents m) !! b = ZMap.get ofs (Mem.mem_contents m') !! b /\
+                                                                forall k, permission_at m b ofs k = permission_at m' b ofs k.
+    Proof.
+      intros.
+      unfold initial_core in H. simpl in H.
+      destruct H.
+      inv H.
+      simpl.
+      eapply MemoryLemmas.mem_storev_store in H6.
+      destruct H6 as [? [? [? Hstore6]]].
+      eapply MemoryLemmas.mem_storev_store in H5.
+      destruct H5 as [? [? [? Hstore5]]].
+      assert ( ~ Mem.perm m1 b ofs Cur Writable).
+      { intros Hcontra.
+        eapply H1.
+        eapply Mem.perm_alloc_4; eauto.
+        apply Mem.fresh_block_alloc in H4.
+        intros ?; subst;
+          now auto.
+      }
+      assert ( ~ Mem.perm m2 b ofs Cur Writable).
+      { unfold Mem.perm in *.
+        erewrite Mem.store_access with (m2:= m2) (m1 := m1) by eauto.
+        assumption.
+      }
+      assert ( ~ Mem.perm m3 b ofs Cur Writable).
+      { unfold Mem.perm in *.
+        erewrite Mem.store_access with (m2:= m3) (m1 := m2) by eauto.
+        assumption.
+      } 
+      eapply make_arguments_unchanged_on in H7; eauto.
+      destruct H7 as [Hvaleq34 [Hpermeq34 _]].
+      specialize (Hvaleq34 b ofs ltac:(eauto)).
+      specialize (Hpermeq34 b ofs).
+      erewrite <- Hvaleq34.
+      erewrite MemoryLemmas.store_contents_other with (m' := m3); eauto. 
+      erewrite MemoryLemmas.store_contents_other with (m' := m2); eauto.
+      erewrite MemoryLemmas.val_at_alloc_1; eauto.
+      split; [reflexivity|].
+      intros k.
+      erewrite MemoryLemmas.permission_at_alloc_1 with (m' := m1) by eauto.
+
+    Corollary initial_core_unchanged_on' :
+      forall (i : nat) (v : Values.val) (args : list Values.val) (c : semC) (m m' : mem) (b : Values.block) (ofs : Z),
+    
+    Lemma initial_core_decay :
+      forall (i : nat) (v : Values.val) (args : list Values.val) (c : semC) (m m' : mem),
+        initial_core semSem i m c m' v args ->
+        strong_decay m m'.
+    Proof.
+      intros.
+      simpl in H.
+      destruct H as [Hinit ?].
+      subst.
+      inv Hinit.
+      simpl.
+      split.
+      - intros.
+        eapply make_arguments_unchanged_on in H3; eauto.
+        destruct H3 as [Hval3 [Hperm3 Hblock3]].
+        unfold permission_at in Hperm3.
+        eapply MemoryLemmas.mem_storev_store in H1.
+        destruct H1 as [? [? [? Hstore1]]].
+        eapply MemoryLemmas.mem_storev_store in H2.
+        destruct H2 as [? [? [? Hstore2]]].
+        assert (b0 = stk).
+          { eapply Hblock3 in H5.
+            eapply Mem.store_valid_block_2 in H5; eauto.
+            eapply Mem.store_valid_block_2 in H5; eauto.
+            eapply Mem.valid_block_alloc_inv in H0; eauto.
+            destruct H0; [assumption | exfalso; now auto].
+          }
+          subst.
+          destruct (Intv.In_dec ofs (0%Z,(3*size_chunk AST.Mptr))).
+        + left.
+          intros k.
+          erewrite <- Hperm3.
+          erewrite Mem.store_access with (m2 := m3) by eauto.
+          erewrite Mem.store_access with (m2 := m2) by eauto.
+          eapply MemoryLemmas.permission_at_alloc_2 in H0;
+            now eauto.
+        + right.
+          intros k.
+          erewrite <- Hperm3.
+          erewrite Mem.store_access with (m2 := m3) by eauto.
+          erewrite Mem.store_access with (m2 := m2) by eauto.
+          eapply MemoryLemmas.permission_at_alloc_3 in H0;
+            eauto.
+          eapply Intv.range_notin in n; eauto.
+          simpl.
+          unfold AST.Mptr. destruct Archi.ptr64; simpl; omega.
+      - intros Hvalid.
+        eapply make_arguments_unchanged_on in H3; eauto.
+        destruct H3 as [_ [Hperm3 Hblock3]].
+        unfold permission_at in Hperm3.
+        eapply MemoryLemmas.mem_storev_store in H1.
+        destruct H1 as [? [? [? Hstore1]]].
+        eapply MemoryLemmas.mem_storev_store in H2.
+        destruct H2 as [? [? [? Hstore2]]].
+        intros k.
+        erewrite <- Hperm3.
+        erewrite Mem.store_access with (m2 := m3) by eauto.
+        erewrite Mem.store_access with (m2 := m2) by eauto.
+        pose proof (MemoryLemmas.permission_at_alloc_1 _ _ _ _ _ _ ofs H0 Hvalid k) as Heq_perm.
+
+    Lemma initial_core_nextblock :
+      forall (i : nat) (v : Values.val) (args : list Values.val) (c : semC) (m m' : mem),
+
+    Instance X86Axioms : CoreLanguage.SemAxioms :=
+      { corestep_unchanged_on := corestep_unchanged_on;
+        corestep_decay := corestep_decay;
+        corestep_nextblock := corestep_nextblock;
+        at_external_halted_excl := at_external_halted_excl;
+        initial_core_unchanged_on := initial_core_unchanged_on';
+        initial_core_decay := initial_core_decay;
+        initial_core_nextblock := initial_core_nextblock
+      }.
+
+    Instance X86Det : CoreLanguage.SemDet :=
+      { corestep_det := corestep_det;
+        initial_core_det := initial_core_det
+      }.
+
+  End X86Context.
+End X86SEMAxioms. *)
+
+
+
+Section ConcurrentCopmpilerSpecification.
+
+  
+
+  Import ClightMachine.
+
+  Import DMS.  
+
+  
+
+  Import X86Context.
+
+
+
+  Context (Clight_g : Clight.genv).
+
+  Context (Asm_g : Clight.genv).
+
+  Context (Asm_program: Asm.program).
+
+  Context (Asm_genv_safe: Asm_core.safe_genv (@the_ge Asm_program)).
+
+
+
+  Variable opt_init_mem_source: option Memory.Mem.mem.
+
+  Variable opt_init_mem_target: option Memory.Mem.mem.
+
+  Definition ConcurrentCompilerCorrectness_specification: Type:=
+
+    HybridMachine_simulation (ClightConcurSem(ge:=Clight_g) opt_init_mem_source) (@AsmConcurSem Asm_program Asm_genv_safe opt_init_mem_target).
+
+
+
+End ConcurrentCopmpilerSpecification.
+

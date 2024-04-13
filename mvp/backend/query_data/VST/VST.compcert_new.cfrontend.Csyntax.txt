@@ -1,0 +1,236 @@
+
+
+Require Import Coqlib Maps Integers Floats Errors.
+
+Require Import AST Linking Values.
+
+Require Import Ctypes Cop.
+
+
+
+Inductive expr : Type :=
+
+  | Eval (v: val) (ty: type)                                  
+
+  | Evar (x: ident) (ty: type)                                
+
+  | Efield (l: expr) (f: ident) (ty: type)
+
+                               
+
+  | Evalof (l: expr) (ty: type)              
+
+  | Ederef (r: expr) (ty: type)        
+
+  | Eaddrof (l: expr) (ty: type)            
+
+  | Eunop (op: unary_operation) (r: expr) (ty: type)
+
+                                            
+
+  | Ebinop (op: binary_operation) (r1 r2: expr) (ty: type)
+
+                                           
+
+  | Ecast (r: expr) (ty: type)                        
+
+  | Eseqand (r1 r2: expr) (ty: type)       
+
+  | Eseqor (r1 r2: expr) (ty: type)        
+
+  | Econdition (r1 r2 r3: expr) (ty: type)  
+
+  | Esizeof (ty': type) (ty: type)                      
+
+  | Ealignof (ty': type) (ty: type)        
+
+  | Eassign (l: expr) (r: expr) (ty: type)          
+
+  | Eassignop (op: binary_operation) (l: expr) (r: expr) (tyres ty: type)
+
+                                  
+
+  | Epostincr (id: incr_or_decr) (l: expr) (ty: type)
+
+                         
+
+  | Ecomma (r1 r2: expr) (ty: type)       
+
+  | Ecall (r1: expr) (rargs: exprlist) (ty: type)
+
+                                             
+
+  | Ebuiltin (ef: external_function) (tyargs: typelist) (rargs: exprlist) (ty: type)
+
+                                                 
+
+  | Eloc (b: block) (ofs: ptrofs) (ty: type)
+
+                       
+
+  | Eparen (r: expr) (tycast: type) (ty: type)   
+
+
+
+with exprlist : Type :=
+
+  | Enil
+
+  | Econs (r1: expr) (rl: exprlist).
+
+
+
+Definition Eindex (r1 r2: expr) (ty: type) :=
+
+  Ederef (Ebinop Oadd r1 r2 (Tpointer ty noattr)) ty.
+
+
+
+Definition Epreincr (id: incr_or_decr) (l: expr) (ty: type) :=
+
+  Eassignop (match id with Incr => Oadd | Decr => Osub end)
+
+            l (Eval (Vint Int.one) type_int32s) (typeconv ty) ty.
+
+
+
+Definition typeof (a: expr) : type :=
+
+  match a with
+
+  | Eloc _ _ ty => ty
+
+  | Evar _ ty => ty
+
+  | Ederef _ ty => ty
+
+  | Efield _ _ ty => ty
+
+  | Eval _ ty => ty
+
+  | Evalof _ ty => ty
+
+  | Eaddrof _ ty => ty
+
+  | Eunop _ _ ty => ty
+
+  | Ebinop _ _ _ ty => ty
+
+  | Ecast _ ty => ty
+
+  | Econdition _ _ _ ty => ty
+
+  | Eseqand _ _ ty => ty
+
+  | Eseqor _ _ ty => ty
+
+  | Esizeof _ ty => ty
+
+  | Ealignof _ ty => ty
+
+  | Eassign _ _ ty => ty
+
+  | Eassignop _ _ _ _ ty => ty
+
+  | Epostincr _ _ ty => ty
+
+  | Ecomma _ _ ty => ty
+
+  | Ecall _ _ ty => ty
+
+  | Ebuiltin _ _ _ ty => ty
+
+  | Eparen _ _ ty => ty
+
+  end.
+
+
+
+Definition label := ident.
+
+
+
+Inductive statement : Type :=
+
+  | Sskip : statement                   
+
+  | Sdo : expr -> statement            
+
+  | Ssequence : statement -> statement -> statement  
+
+  | Sifthenelse : expr  -> statement -> statement -> statement 
+
+  | Swhile : expr -> statement -> statement   
+
+  | Sdowhile : expr -> statement -> statement 
+
+  | Sfor: statement -> expr -> statement -> statement -> statement 
+
+  | Sbreak : statement                      
+
+  | Scontinue : statement                   
+
+  | Sreturn : option expr -> statement     
+
+  | Sswitch : expr -> labeled_statements -> statement  
+
+  | Slabel : label -> statement -> statement
+
+  | Sgoto : label -> statement
+
+
+
+with labeled_statements : Type :=            
+
+  | LSnil: labeled_statements
+
+  | LScons: option Z -> statement -> labeled_statements -> labeled_statements.
+
+                      
+
+Record function : Type := mkfunction {
+
+  fn_return: type;
+
+  fn_callconv: calling_convention;
+
+  fn_params: list (ident * type);
+
+  fn_vars: list (ident * type);
+
+  fn_body: statement
+
+}.
+
+
+
+Definition var_names (vars: list(ident * type)) : list ident :=
+
+  List.map (@fst ident type) vars.
+
+
+
+Definition fundef := Ctypes.fundef function.
+
+
+
+Definition type_of_function (f: function) : type :=
+
+  Tfunction (type_of_params (fn_params f)) (fn_return f) (fn_callconv f).
+
+
+
+Definition type_of_fundef (f: fundef) : type :=
+
+  match f with
+
+  | Internal fd => type_of_function fd
+
+  | External id args res cc => Tfunction args res cc
+
+  end.
+
+
+
+Definition program := Ctypes.program function.
+

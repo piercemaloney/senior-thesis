@@ -1,0 +1,1589 @@
+Require Import aes.aesutils.
+
+Require Import aes.AES256.
+
+
+
+Require Import Coqlib.
+
+Require Import msl.Coqlib2.
+(* msl.Coqlib2:
+Require Import compcert.lib.Coqlib.
+Require Import VST.msl.base.
+Require Export VST.msl.Extensionality.
+
+Hint Extern 1 (@eq _ _ _) => exact (proof_irr _ _) : extensionality.
+
+Hint Extern 2 (eq _ _)  => apply exist_ext : extensionality.
+
+Hint Extern 2 (@eq _ (@existT _ _ _ _) (@existT _ _ _ _))  => apply existT_ext : extensionality.
+
+Tactic Notation "forget" constr(X) "as" ident(y) :=
+   set (y:=X) in *; clearbody y.
+
+Ltac proof_irr := match goal with H: ?A, H' : ?A |- _ => generalize (proof_irr H H'); intro; subst H' end.
+
+Ltac inversion2 H1 H2 :=
+ rewrite H1 in H2; symmetry in H2; inv H2.
+
+Ltac invT H :=
+match type of H  with
+  | existT _ ?a ?b = existT _ ?a ?c =>
+     generalize (inj_pair2 _ _ a b c H); clear H; intro H; invT H
+  | existT _ _ _ = existT _ _ _ =>
+       let HH := fresh in (injection H; intros _ HH; invT HH; invT H)
+  | _ => inv H
+ end.
+
+Ltac invSome :=
+ match goal with
+ | H: match ?A with Some _ =>  _ | None => None end = Some _ |- _ =>
+        let Hx := fresh in
+               (revert H; case_eq A; [intros ? H Hx | intros H Hx]; inv Hx)
+ | H: match ?A with Some _ => _  | None => False end |- _ =>
+             (revert H; case_eq A; [intros ? H ? | intros; contradiction])
+
+ | H: match ?A return _ with Some _ =>  _ | None => _ end eq_refl = Some _ |- _ =>
+ let Hx := fresh in
+           (revert H; generalize (eq_refl A); pattern A at 1 3; destruct A;
+            [ intros Hx H | intros ? H; discriminate H])
+ end.
+
+Ltac split3 := split; [|split].
+
+Lemma if_true: forall (A: Prop) (E: {A}+{~A}) (T: Type) (B C: T), A -> (if E then B else C) = B.
+
+Lemma if_false: forall (A: Prop) (E: {A}+{~A}) (T: Type) (B C: T), ~A -> (if E then B else C) = C.
+
+Ltac spec H :=
+  match type of H with ?a -> _ =>
+    let H1 := fresh in (assert (H1: a); [|generalize (H H1); clear H H1; intro H]) end.
+
+Lemma f_equal_Some: forall A (x y: A), x=y -> Some x = Some y.
+
+Lemma f_equal_prod: forall A B (x1 x2: A) (y1 y2: B), x1=x2 -> y1=y2 -> (x1,y1) = (x2,y2).
+
+Hint Resolve f_equal_Some f_equal_prod.
+
+Unset Implicit Arguments.
+
+Lemma list_norepet_append_inv:
+  forall (A : Set) (l1 l2 : list A),
+   list_norepet (l1 ++ l2) ->
+  list_norepet l1 /\ list_norepet l2 /\ list_disjoint l1 l2.
+
+Set Implicit Arguments.
+
+Ltac simple_if_tac := 
+  match goal with |- context [if ?A then _ else _] => 
+    lazymatch type of A with
+    | bool => destruct A 
+    | sumbool _ _ => fail "Use if_tac instead of simple_if_tac, since your expression "A" has type sumbool"
+    | ?t => fail "Use simple_if_tac only for bool; your expression"A" has type" t
+  end end.
+
+Tactic Notation "if_tac" := 
+  match goal with |- context [if ?a then _ else _] =>
+    lazymatch type of a with
+    | sumbool _ _ =>destruct a as [?H | ?H]
+    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
+    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
+   end end.
+
+Tactic Notation "if_tac" simple_intropattern(H)
+   := match goal with |- context [if ?a then _ else _] =>
+    lazymatch type of a with
+    | sumbool _ _ =>destruct a as H
+    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
+    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
+   end end.
+
+Tactic Notation "if_tac" "in" hyp(H0)
+ := match type of H0 with context [if ?a then _ else _] =>
+    lazymatch type of a with
+    | sumbool _ _ =>destruct a as [?H | ?H]
+    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
+    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
+   end end.
+
+Tactic Notation "if_tac" simple_intropattern(H) "in" hyp(H1)
+ := match type of H1 with context [if ?a then _ else _] => 
+    lazymatch type of a with
+    | sumbool _ _ =>destruct a as H
+    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
+    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
+   end end.
+
+Lemma predicate_max:
+  forall (F: nat -> Prop) (Fdec: forall n, {F n}+{~ F n}) n,
+  F 0%nat ->
+  ~ F n ->
+  exists i, F i /\ (i<n)%nat /\ ~ F (S i).
+
+Lemma sumbool_dec_iff: forall A B, {A} + {~A} -> (A <-> B) -> {B} + {~B}.
+
+Lemma sumbool_dec_and: forall A B, {A} + {~A} -> {B} + {~B} -> {A /\ B} + {~(A /\ B)}.
+
+Lemma sumbool_dec_or: forall A B, {A} + {~A} -> {B} + {~B} -> {A \/ B} + {~(A \/ B)}.
+
+Ltac super_pattern t x :=
+  let t0 := fresh "t" in
+  set (t0 := t);
+  pattern x in t0;
+  cbv beta in (type of t0);
+  subst t0.
+
+Ltac super_pattern_in_func t x :=
+  let t0 := fresh "t" in
+  let a := fresh "a" in
+  match type of t with
+  | ?type_of_t =>
+    evar (t0 : type_of_t)
+  end;
+  assert (t = t0) as _;
+  [
+    extensionality a;
+    cbv beta;
+    match goal with
+    | |- ?left = _ =>
+      super_pattern left x
+    end;
+    match goal with
+    | |- ?left _ = _ =>
+      super_pattern left a
+    end;
+    match goal with
+    | |- ?left _ _ = _ =>
+      instantiate (1 := fun a => left a x) in (Value of t0)
+    end;
+    reflexivity
+  |
+    change t with t0;
+    subst t0
+  ].
+
+Ltac build_func_abs_right :=
+match goal with
+| |- @eq ?typ_expr (_ ?arg) ?expr =>
+     match type of arg with
+     | ?typ_arg =>
+       super_pattern expr arg;
+       match goal with
+       | |- @eq typ_expr _ (?func arg) =>
+            exact (@eq_refl typ_expr
+                    ((ltac:(clear arg; intros arg;
+                            let res := eval cbv beta in (func arg) in
+                            exact res): (typ_arg -> typ_expr))
+                     arg)
+                  )
+
+       end
+     end
+end. *)
+
+Require Import floyd.coqlib3.
+(* floyd.coqlib3:
+Require Coq.funind.Recdef.
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Integers.
+Require Import Coq.Strings.String.
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Lists.List.
+Require Import Coq.Sorting.Permutation.
+Require Import VST.msl.Coqlib2.
+Require Import VST.veric.coqlib4.
+
+Lemma power_nat_one_divede_other: forall n m : nat,
+  (two_power_nat n | two_power_nat m) \/ (two_power_nat m | two_power_nat n).
+
+Lemma multiple_divide_mod: forall a b c, b > 0 -> ((a | b) \/ (b | a)) -> (a | (c * a mod b)).
+
+Lemma divide_align: forall x y: Z, x > 0 -> Z.divide x y -> align y x = y.
+
+Lemma arith_aux00: forall a b, b <= a -> 0%nat = nat_of_Z (a - b) -> a - b = 0.
+
+Lemma arith_aux01: forall a b n, S n = nat_of_Z (a - b) -> b < a.
+
+Lemma arith_aux02: forall n a b, S n = nat_of_Z (a - b) -> n = nat_of_Z (a - Z.succ b).
+
+Lemma arith_aux03: forall a b c,
+  0 <= b ->
+  0 <= a + b * c ->
+  0 <= a + b * Z.succ c.
+
+Lemma arith_aux04: forall a b c,
+  0 <= b <= c ->
+  (a | b) ->
+  (a | b mod c).
+
+Lemma arith_aux05: forall lo hi, 0 <= lo -> 0 <= hi ->
+  0 <= Z.max 0 (hi - lo) <= hi.
+
+Lemma arith_aux06: forall lo hi n, 0 <= lo <= n -> 0 <= hi <= n -> 0 <= lo + Z.max 0 (hi - lo) <= n.
+
+Ltac inv_int i :=
+  let ofs := fresh "ofs" in
+  let H := fresh "H" in
+  let H0 := fresh "H" in
+  let H1 := fresh "H" in
+ match type of i with
+ | int => 
+  pose proof Int.repr_unsigned i as H;
+  pose proof Int.unsigned_range i as H0;
+  remember (Int.unsigned i) as ofs eqn:H1;
+  rewrite <- H in *;
+  clear H H1; try clear i
+ | ptrofs => 
+  pose proof Ptrofs.repr_unsigned i as H;
+  pose proof Ptrofs.unsigned_range i as H0;
+  remember (Ptrofs.unsigned i) as ofs eqn:H1;
+  rewrite <- H in *;
+  clear H H1; try clear i
+end.
+
+Definition int_modm x := x mod Int.modulus.
+
+Lemma int_modm_mod_eq: forall x y, Int.eqmod Int.modulus x y -> x mod Int.modulus = int_modm y.
+
+Lemma int_modm_mod_elim: forall x y, Int.eqmod Int.modulus x y -> Int.eqmod Int.modulus (x mod Int.modulus) y.
+
+Definition int_reprm := Int.repr.
+
+Lemma int_modm_repr_eq: forall x y, Int.eqmod Int.modulus x y -> Int.repr x = int_reprm y.
+
+Ltac int_simpl_mod A H :=
+  let H0 := fresh "H" in
+  let H1 := fresh "H" in
+  match A with
+  | (?B + ?C)%Z =>
+    int_simpl_mod B H0; int_simpl_mod C H1;
+    pose proof Int.eqmod_add Int.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (?B - ?C)%Z =>
+    int_simpl_mod B H0; int_simpl_mod C H1;
+    pose proof Int.eqmod_sub Int.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (?B * ?C)%Z =>
+    int_simpl_mod B H0; int_simpl_mod C H1;
+    pose proof Int.eqmod_mult Int.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (- ?B)%Z =>
+    int_simpl_mod B H0;
+    pose proof Int.eqmod_neg Int.modulus _ _ H0 as H;
+    clear H0
+  | ?B mod Int.modulus =>
+    int_simpl_mod B H0;
+    pose proof int_modm_mod_elim B _ H0 as H;
+    clear H0
+  | int_modm ?B =>
+    int_simpl_mod B H0;
+    pose proof int_modm_mod_elim B _ H0 as H;
+    clear H0
+  | _ =>
+    pose proof Int.eqmod_refl Int.modulus A as H
+  end.
+
+Definition ptrofs_modm x := x mod Ptrofs.modulus.
+
+Lemma ptrofs_modm_mod_eq: forall x y, Ptrofs.eqmod Ptrofs.modulus x y -> x mod Ptrofs.modulus = ptrofs_modm y.
+
+Lemma ptrofs_modm_mod_elim: forall x y, Ptrofs.eqmod Ptrofs.modulus x y -> Ptrofs.eqmod Ptrofs.modulus (x mod Ptrofs.modulus) y.
+
+Definition ptrofs_reprm := Ptrofs.repr.
+
+Lemma ptrofs_modm_repr_eq: forall x y, Ptrofs.eqmod Ptrofs.modulus x y -> Ptrofs.repr x = ptrofs_reprm y.
+
+Ltac ptrofs_simpl_mod A H :=
+  let H0 := fresh "H" in
+  let H1 := fresh "H" in
+  match A with
+  | (?B + ?C)%Z =>
+    ptrofs_simpl_mod B H0; ptrofs_simpl_mod C H1;
+    pose proof Ptrofs.eqmod_add Ptrofs.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (?B - ?C)%Z =>
+    ptrofs_simpl_mod B H0; ptrofs_simpl_mod C H1;
+    pose proof Ptrofs.eqmod_sub Ptrofs.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (?B * ?C)%Z =>
+    ptrofs_simpl_mod B H0; ptrofs_simpl_mod C H1;
+    pose proof Ptrofs.eqmod_mult Ptrofs.modulus _ _ _ _ H0 H1 as H;
+    clear H1 H0
+  | (- ?B)%Z =>
+    ptrofs_simpl_mod B H0;
+    pose proof Ptrofs.eqmod_neg Ptrofs.modulus _ _ H0 as H;
+    clear H0
+  | ?B mod Ptrofs.modulus =>
+    ptrofs_simpl_mod B H0;
+    pose proof ptrofs_modm_mod_elim B _ H0 as H;
+    clear H0
+  | ptrofs_modm ?B =>
+    ptrofs_simpl_mod B H0;
+    pose proof ptrofs_modm_mod_elim B _ H0 as H;
+    clear H0
+  | _ =>
+    pose proof Ptrofs.eqmod_refl Ptrofs.modulus A as H
+  end.
+
+Ltac solve_mod_modulus :=
+  unfold Int.add; rewrite ?Int.unsigned_repr_eq;
+  unfold Ptrofs.add; rewrite ?Ptrofs.unsigned_repr_eq;
+  repeat
+  match goal with
+  | |- context [?A mod Int.modulus] =>
+         let H := fresh "H" in int_simpl_mod A H;
+         rewrite (int_modm_mod_eq A _ H);
+         clear H
+  | |- context [Int.repr ?A] =>
+         let H := fresh "H" in int_simpl_mod A H;
+         rewrite (int_modm_repr_eq A _ H);
+         clear H
+  | |- context [?A mod Ptrofs.modulus] =>
+         let H := fresh "H" in int_simpl_mod A H;
+         rewrite (int_modm_mod_eq A _ H);
+         clear H
+  | |- context [Int.repr ?A] =>
+         let H := fresh "H" in int_simpl_mod A H;
+         rewrite (int_modm_repr_eq A _ H);
+         clear H
+  | |- context [?A mod Ptrofs.modulus] =>
+         let H := fresh "H" in ptrofs_simpl_mod A H;
+         rewrite (ptrofs_modm_mod_eq A _ H);
+         clear H
+  | |- context [Ptrofs.repr ?A] =>
+         let H := fresh "H" in ptrofs_simpl_mod A H;
+         rewrite (ptrofs_modm_repr_eq A _ H);
+         clear H
+  | |- context [?A mod Ptrofs.modulus] =>
+         let H := fresh "H" in ptrofs_simpl_mod A H;
+         rewrite (ptrofs_modm_mod_eq A _ H);
+         clear H
+  | |- context [Ptrofs.repr ?A] =>
+         let H := fresh "H" in ptrofs_simpl_mod A H;
+         rewrite (ptrofs_modm_repr_eq A _ H);
+         clear H
+  end;
+  unfold int_modm, int_reprm, ptrofs_modm, ptrofs_reprm in *.  
+
+Lemma add_repr: forall i j, Int.add (Int.repr i) (Int.repr j) = Int.repr (i+j).
+
+Lemma mul_repr:
+ forall x y, Int.mul (Int.repr x) (Int.repr y) = Int.repr (x * y).
+
+Lemma sub_repr: forall i j,
+  Int.sub (Int.repr i) (Int.repr j) = Int.repr (i-j).
+
+Lemma ptrofs_add_repr: forall i j, Ptrofs.add (Ptrofs.repr i) (Ptrofs.repr j) = Ptrofs.repr (i+j).
+
+Lemma ptrofs_mul_repr:
+ forall x y, Ptrofs.mul (Ptrofs.repr x) (Ptrofs.repr y) = Ptrofs.repr (x * y).
+
+Lemma ptrofs_sub_repr: forall i j,
+  Ptrofs.sub (Ptrofs.repr i) (Ptrofs.repr j) = Ptrofs.repr (i-j).
+
+Lemma Zland_two_p:
+ forall i n, (0 <= n)%Z -> Z.land i (Z.ones n) = i mod (2 ^ n).
+
+Lemma and_repr
+     : forall i j : Z, Int.and (Int.repr i) (Int.repr j) = Int.repr (Z.land i j).
+
+Lemma or_repr
+     : forall i j : Z, Int.or (Int.repr i) (Int.repr j) = Int.repr (Z.lor i j).
+
+Lemma add64_repr: forall i j, Int64.add (Int64.repr i) (Int64.repr j) = Int64.repr (i+j).
+
+Lemma mul64_repr:
+ forall x y, Int64.mul (Int64.repr x) (Int64.repr y) = Int64.repr (x * y).
+
+Lemma sub64_repr: forall i j,
+  Int64.sub (Int64.repr i) (Int64.repr j) = Int64.repr (i-j).
+
+Lemma and64_repr
+     : forall i j : Z, Int64.and (Int64.repr i) (Int64.repr j) = Int64.repr (Z.land i j).
+
+Lemma or64_repr
+     : forall i j : Z, Int64.or (Int64.repr i) (Int64.repr j) = Int64.repr (Z.lor i j).
+
+Lemma neg_repr: forall i, Int.neg (Int.repr i) = Int.repr (-i).
+
+Lemma neg64_repr: forall i, Int64.neg (Int64.repr i) = Int64.repr (-i).
+
+Arguments Int.unsigned n : simpl never.
+Arguments Ptrofs.unsigned n : simpl never.
+Arguments Pos.to_nat !x / .
+
+Lemma align_0: forall z,
+    z > 0 -> align 0 z = 0.
+Hint Rewrite align_0 using omega : norm.
+
+Lemma align_1: forall n, align n 1 = n.
+Hint Rewrite align_1 using omega : norm.
+
+Lemma fold_right_andb: forall bl b, fold_right andb b bl = true -> forall b0, In b0 bl -> b0 = true.
+
+Lemma Z2Nat_inj_0: forall z, z >= 0 -> Z.to_nat z = 0%nat -> z = 0.
+
+Lemma Z2Nat_id': forall n, Z.of_nat (Z.to_nat n) = Z.max 0 n.
+
+Lemma nil_or_non_nil: forall {A} (a: list A), {a = nil} + {a <> nil}.
+
+Lemma Permutation_concat: forall {A} (P Q: list (list A)),
+  Permutation P Q ->
+  Permutation (concat P) (concat Q).
+
+Lemma proj_sumbool_is_false:
+  forall (P: Prop) (a: {P}+{~P}), ~P -> proj_sumbool a = false.
+Hint Rewrite proj_sumbool_is_true using (solve [auto 3]) : norm.
+Hint Rewrite proj_sumbool_is_false using (solve [auto 3]) : norm.
+
+Lemma ptrofs_to_int_repr: 
+ forall x, (Ptrofs.to_int (Ptrofs.repr x)) = Int.repr x. *)
+
+Require Import Integers.
+
+Require Import List. Import ListNotations.
+(* List:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+
+Local Open Scope nat_scope.
+
+Theorem qam_count_gen : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S)(n : nat),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= n + (count x)) ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q * n + (count s).
+
+Local Open Scope rat_scope.
+
+Theorem evalDist_bind_event_le : 
+  forall (A : Set)(c : Comp A)(f : A -> Comp bool)(evta : A -> bool) (k1 k2 : Rat),
+    Pr[a <-$ c; ret (evta a)] <= k1 ->
+    (forall a, In a (getSupport c) -> evta a = false -> Pr[f a] <= k2) ->
+    Pr[a <-$ c; f a] <= k1 + k2.
+
+Theorem oc_eventProb : 
+  forall (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (S : Set)(eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (count : S -> nat)(evt : S -> bool)(s : S)(k : nat -> Rat) i,
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (i + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= i + (count s))%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k (i * n + (count s))%nat).
+
+Theorem oc_eventProb_0_1 : 
+  forall (S : Set)(count : S -> nat)(evt : S -> bool)(k : nat -> Rat)
+         (A B C : Set)(c : OracleComp A B C) n,
+    queries_at_most c n ->
+    forall
+    (eqds : EqDec S)(o : S -> A -> Comp (B * S))
+    (s : S),
+      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
+      evt s = false ->
+      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (1 + (count s))%nat)) ->
+      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
+                        count s' <= 1 + (count s))%nat ->
+      count s = 0%nat ->
+      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k n).  
+
+Local Open Scope nat_scope.
+
+Theorem qam_count : 
+  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
+    queries_at_most c q ->
+    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S),
+      (forall a b x y,
+        In (a, b) (getSupport (o x y)) ->
+          count b <= 1 + (count x)) ->
+      count s = 0 ->
+      forall a b, 
+      In (a, b) (getSupport (c _ _ o s)) ->
+      count b <= q.
+
+Local Transparent evalDist.
+
+Section RndInList.
+  
+  Variable eta : nat.
+
+  Theorem RndInList_prob_h :
+    forall (ls : list (Bvector eta)),
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+
+  Theorem RndInList_prob :
+    forall (ls : list (Bvector eta))(q : nat),
+      length ls <= q ->
+      (Pr[r <-$ {0, 1}^eta;
+        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
+      ] <= q / 2 ^ eta)%rat.
+  
+End RndInList.
+
+Local Open Scope rat_scope.
+
+Theorem RndNat_eq_any : 
+  forall (eta : nat)(x : Bvector eta),
+    Pr  [a0 <-$ { 0 , 1 }^eta; ret (eqb x a0) ] == 1 / 2^eta.
+
+Require Import FCF.CompFold.
+Local Opaque evalDist.
+
+Section FixedInRndList.
+  
+  Variable A : Set.
+  Variable eta : nat.
+
+  Theorem FixedInRndList_prob :
+    forall (ls : list A)(x : Bvector eta),
+      (Pr[lsR <-$ compMap _ (fun _ => {0, 1}^eta) ls; ret (if (in_dec (EqDec_dec _) x lsR) then true else false)
+      ] <= (length ls) / 2 ^ eta)%rat.
+  
+End FixedInRndList.
+
+Section RndInAdaptive.
+
+  Variable A B C : Set.
+  
+  Local Open Scope rat_scope.
+
+  Theorem orb_prob : 
+    forall (A B : Set)(c : Comp A)(f : A -> Comp B) evt1 evt2 k1 k2,
+      Pr[x <-$ c; ret (evt1 x)] <= k1 ->
+      (forall a, In a (getSupport c) -> evt1 a = false -> Pr[y <-$ f a; ret (evt2 y)] <= k2) ->
+      Pr[x <-$ c; y <-$ f x; ret (evt1 x || evt2 y)] <= k1 + k2.
+
+  Theorem RndInAdaptive_prob : 
+    forall (c : OracleComp A B C)(q : nat),
+      queries_at_most c q ->
+      forall (S : Set)(evt : S -> bool)(eqd : EqDec S)(o : S -> A -> Comp (B * S))(k : Rat),
+        (forall a b, 
+          evt a = false ->
+          Pr[ d <-$ o a b; ret (evt (snd d))] <= k)->
+        (forall a b x y,
+          In (a, b) (getSupport (o x y)) -> evt x = true -> evt b = true) ->
+        forall (s : S),
+          evt s = false ->
+          Pr[ d <-$ c _ _ o s; ret (evt (snd d))] <= q / 1 * k.
+
+End RndInAdaptive. *)
+
+Require Import floyd.sublist.
+(* floyd.sublist:
+Require Import compcert.lib.Coqlib.
+Require Import VST.msl.Coqlib2.
+Require Import Coq.Lists.List.
+Import ListNotations.
+
+Class Inhabitant (A: Type) := default : A.
+
+Instance Inhabitant_Z : Inhabitant Z := 0.
+Instance Inhabitant_nat : Inhabitant nat := O.
+Instance Inhabitant_positive : Inhabitant positive := 1%positive.
+Instance Inhabitant_list {T: Type} : Inhabitant (list T) := @nil T.
+Instance Inhabitant_fun {T1 T2: Type} {H: Inhabitant T2} : Inhabitant (T1->T2) := fun _ => H.
+Instance Inhabitant_Prop : Inhabitant Prop := False.
+Instance Inhabitant_bool : Inhabitant bool := false.
+Instance Inhabitant_pair {T1 T2 : Type} {x1: Inhabitant T1} {x2: Inhabitant T2} : Inhabitant (T1*T2)%type := (x1,x2).
+
+Lemma Zlength_length:
+  forall A (al: list A) (n: Z),
+    0 <= n ->
+    (Zlength al = n <-> length al = Z.to_nat n).
+
+Lemma firstn_app1: forall {A} n (p l: list A),
+  (n <= Datatypes.length p)%nat ->
+
+Lemma firstn_app2: forall {A} (n: nat) (al bl: list A),
+ (n >= length al)%nat ->
+ firstn n (al++bl) = al ++ firstn (n - length al) bl.
+
+Lemma firstn_list_repeat {A} (v:A): forall i k, (i<=k)%nat ->
+      firstn i (list_repeat k v) = list_repeat i v.
+
+Lemma firstn_app:
+ forall {A} n m (al: list A), firstn n al ++ firstn m (skipn n al) =
+  firstn (n+m) al.
+
+Lemma nth_skipn:
+  forall {A} i n data (d:A),
+       nth i (skipn n data) d = nth (i+n) data d.
+
+Lemma skipn_skipn: forall {A} n m (xs: list A),
+  skipn n (skipn m xs) = skipn (m + n) xs.
+
+Lemma firstn_exact_length: forall {A} (xs: list A), firstn (length xs) xs = xs.
+
+Lemma skipn_exact_length: forall {A} (xs: list A), skipn (length xs) xs = nil.
+
+Lemma len_le_1_rev: forall {A} (contents: list A),
+  (length contents <= 1)%nat ->
+  contents = rev contents.
+
+Lemma firstn_firstn: forall {A} (contents: list A) n m,
+  (n <= m)%nat ->
+  firstn n (firstn m contents) = firstn n contents.
+
+Lemma firstn_1_skipn: forall {A} n (ct: list A) d,
+  (n < length ct)%nat ->
+  nth n ct d :: nil = firstn 1 (skipn n ct).
+
+Lemma skipn_length: forall {A} (contents: list A) n,
+  length (skipn n contents) = (length contents - n)%nat.
+
+Lemma nth_firstn: forall {A} (contents: list A) n m d,
+  (n < m)%nat ->
+  nth n (firstn m contents) d = nth n contents d.
+
+Lemma skipn_length_short:
+  forall {A} n (al: list A),
+    (length al <= n)%nat ->
+    (length (skipn n al) = 0)%nat.
+
+Lemma skipn_short:
+   forall {A} n (al: list A), (n >= length al)%nat -> skipn n al = nil.
+
+Lemma nth_map':
+  forall {A B} (f: A -> B) d d' i al,
+  (i < length al)%nat ->
+   nth i (map f al) d = f (nth i al d').
+
+Lemma skipn_nil: forall A n, skipn n (@nil A) = nil.
+
+Lemma skipn_drop:
+ forall A n m (al: list A), skipn n (skipn m al) = skipn (n+m) al.
+
+Lemma skipn_app1:
+ forall A n (al bl: list A),
+  (n <= length al)%nat ->
+  skipn n (al++bl) = skipn n al ++ bl.
+
+Lemma skipn_app2:
+ forall A n (al bl: list A),
+  (n >= length al)%nat ->
+  skipn n (al++bl) = skipn (n-length al) bl.
+
+Lemma list_repeat_app: forall A a b (x:A),
+  list_repeat a x ++ list_repeat b x = list_repeat (a+b) x.
+
+Lemma firstn_same:
+  forall A n (b: list A), (n >= length b)%nat -> firstn n b = b.
+
+Lemma nth_firstn_low:
+ forall A i n al (d: A),
+  (i < n <= length al)%nat -> nth i (firstn n al) d = nth i al d.
+
+Lemma nth_error_nth:
+  forall A (d: A) i al, (i < length al)%nat -> nth_error al i = Some (nth i al d).
+
+Lemma skipn_rev:
+  forall {A} n (vl: list A),
+   skipn n (rev vl) = rev (firstn (length vl - n) vl).
+
+Lemma Forall_list_repeat:
+  forall {A} (P: A -> Prop) (n: nat) (a: A),
+    P a -> Forall P (list_repeat n a).
+
+Lemma skipn_firstn: forall {A} n m (xs: list A),
+  skipn n (firstn m xs) = firstn (m-n) (skipn n xs).
+
+Lemma rev_skipn:
+ forall {A} n (vl: list A),
+  rev (skipn n vl) = firstn (length vl -n) (rev vl).
+
+Lemma firstn_skipn_rev:
+  forall {A} lo n (vl: list A),
+  (n+lo <= length vl)%nat ->
+  firstn n (skipn lo (rev vl)) =
+  rev (firstn n (skipn (length vl - (lo+n))%nat vl)).
+
+Lemma map_firstn:
+  forall A B (F: A -> B) n (al: list A),
+  map F (firstn n al) = firstn n (map F al).
+
+Lemma map_skipn:
+  forall A B (F: A -> B) n (al: list A),
+  map F (skipn n al) = skipn n (map F al).
+
+Lemma Zlength_app: forall T (al bl: list T),
+    Zlength (al++bl) = Zlength al + Zlength bl.
+
+Lemma Zlength_rev: forall T (vl: list T), Zlength (rev vl) = Zlength vl.
+
+Lemma Zlength_map: forall A B (f: A -> B) l, Zlength (map f l) = Zlength l.
+
+Lemma ZtoNat_Zlength:
+ forall {A} (l: list A), Z.to_nat (Zlength l) = length l.
+Hint Rewrite @ZtoNat_Zlength : norm.
+
+Lemma Zlength_nonneg:
+ forall {A} (l: list A), 0 <= Zlength l.
+
+Definition Zlength' := @Zlength.
+
+Ltac pose_Zlength_nonneg1 T A :=
+     lazymatch goal with
+      | H:  0 <= @Zlength T A |- _ => idtac
+      | H:  0 <= @Zlength T A /\ _ |- _ => idtac
+      | |- _ => pose proof (@Zlength_nonneg T A)
+     end;
+     
+     let x := fresh "x" in set (x:= @Zlength T A) in *;
+     let y := fresh "y" in set (y := @Zlength) in x;
+     fold @Zlength' in y; subst y; subst x.
+
+Ltac pose_Zlength_nonneg :=
+ repeat
+  match goal with
+  | |- context [@Zlength ?T ?A] => pose_Zlength_nonneg1 T A
+  | H: context [@Zlength ?T ?A] |- _ => pose_Zlength_nonneg1 T A
+ end;
+  unfold Zlength' in *.
+
+Ltac list_solve := autorewrite with sublist; pose_Zlength_nonneg; omega.
+
+Definition Znth {X}{d: Inhabitant X} n (xs: list X) :=
+  if (zlt n 0) then default else nth (Z.to_nat n) xs d.
+
+Lemma Znth_map:
+  forall {A:Type} {da: Inhabitant A}{B:Type}{db: Inhabitant B} i (f: A -> B) (al: list A),
+  0 <= i < Zlength al ->
+  Znth i (map f al)  = f (Znth i al).
+
+Hint Rewrite 
+   (@Znth_map Z _) (@Znth_map nat _) (@Znth_map positive _)
+    using (auto; rewrite ?Zlength_map in *; omega) : sublist.
+
+Lemma Znth_succ: forall {A}{a: Inhabitant A} i lo (v: list A), Z.succ lo <= i -> Znth (i - lo) v = Znth (i - (Z.succ lo)) (skipn 1 v).
+
+Lemma Znth_0_cons {A}{a: Inhabitant A} l (v:A): Znth 0 (v::l) = v.
+Hint Rewrite @Znth_0_cons : sublist.
+
+Lemma Znth_pos_cons {A}{a: Inhabitant A} i l (v:A): 0<i -> Znth i (v::l) = Znth (i-1) l.
+
+Lemma Znth_In : forall {A}{a: Inhabitant A} i l, 0 <= i < Zlength l -> In (Znth i l) l.
+
+Lemma split3_full_length_list: forall {A}{a: Inhabitant A} lo mid hi (ct: list A),
+  lo <= mid < hi ->
+  Zlength ct = hi - lo ->
+  ct = firstn (Z.to_nat (mid - lo)) ct ++
+
+Lemma Forall_Znth:
+ forall {A}{a: Inhabitant A} (F: A -> Prop) (al: list A) i,
+   0 <= i < Zlength al ->
+   Forall F al ->
+   F (Znth i al).
+
+Hint Rewrite @app_nil_l @app_nil_r : sublist.
+
+Lemma app_Znth1:
+  forall A (a: Inhabitant A) (l l': list A) (i:Z),
+  i < Zlength l -> Znth i (l++l') = Znth i l.
+
+Lemma app_Znth2:
+  forall A (a: Inhabitant A) (l l': list A) (i:Z),
+  i >= Zlength l -> Znth i (l++l') = Znth (i-Zlength l) l'.
+
+Lemma Znth_firstn:
+  forall {A}{a: Inhabitant A} (al: list A) (n m : Z),
+  n<m -> Znth n (firstn (Z.to_nat m) al) = Znth n al.
+
+Lemma Znth_skipn: forall {A}{a: Inhabitant A}  i n xs,
+  0 <= i ->
+  0 <= n ->
+  Znth i (skipn (nat_of_Z n) xs) = Znth (i+n) xs.
+
+Lemma Z2Nat_neg: forall i, i < 0 -> Z.to_nat i = 0%nat.
+
+Lemma Zlength_firstn:
+  forall {A} n (v: list A), Zlength (firstn (Z.to_nat n) v) = Z.min (Z.max 0 n) (Zlength v).
+
+Lemma Zlength_skipn:
+  forall {A} n (v: list A),
+  Zlength (skipn (Z.to_nat n) v) = Z.max 0 (Zlength v - (Z.max 0n)).
+
+Lemma Znth_cons:
+ forall {A}(a: Inhabitant A)  i (al: list A) bl,
+  0 <= i < Zlength al  ->
+  Znth i al :: bl = firstn (Z.to_nat 1) (skipn (Z.to_nat i) al) ++ bl.
+
+Lemma Zfirstn_app1:
+ forall A n (al bl: list A),
+  n <= Zlength al -> firstn (Z.to_nat n) (al++bl) = firstn (Z.to_nat n) al.
+
+Lemma Zfirstn_same:
+  forall A n (b: list A), n >= Zlength b -> firstn (Z.to_nat n) b = b.
+
+Lemma Zfirstn_app2: forall {A} n (al bl: list A),
+ n >= Zlength al ->
+ firstn (Z.to_nat n) (al++bl) = al ++ firstn (Z.to_nat (n - Zlength al)) bl.
+
+Lemma Zfirstn_firstn: forall {A} (contents: list A) n m,
+  n <= m ->
+  firstn (Z.to_nat n) (firstn (Z.to_nat m) contents) = firstn (Z.to_nat n) contents.
+Lemma Zskipn_app1:
+ forall A n (al bl: list A),
+  n <= Zlength al ->
+  skipn (Z.to_nat n) (al++bl) = skipn (Z.to_nat n) al ++ bl.
+
+Lemma Zskipn_app2:
+ forall A n (al bl: list A),
+  n >= Zlength al ->
+  skipn (Z.to_nat n) (al++bl) = skipn (Z.to_nat (n-Zlength al)) bl.
+
+Lemma Znth_rev:
+  forall {A}{d: Inhabitant A} i (al:list A),
+  0 <= i < Zlength al ->
+  Znth i (rev al) = Znth (Zlength al - i - 1) al.
+
+Lemma Zskipn_firstn: forall {A} n m (xs: list A),
+ 0 <= n ->
+ skipn (Z.to_nat n) (firstn (Z.to_nat m) xs) =
+
+Lemma Zskipn_skipn: forall {A} n m (xs: list A),
+  0 <= n -> 0 <= m ->
+  skipn (Z.to_nat n) (skipn (Z.to_nat m) xs) = skipn (Z.to_nat (m + n)) xs.
+
+Lemma Zfirstn_app:
+ forall {A} n m (al: list A),
+  0 <= n -> 0 <= m ->
+  firstn (Z.to_nat n) al ++ firstn (Z.to_nat m) (skipn (Z.to_nat n) al) =
+
+Lemma Zfirstn_exact_length:
+  forall {A} n (al: list A),
+  n = Zlength al ->
+  firstn (Z.to_nat n) al = al.
+
+Definition sublist {A} (lo hi: Z) (al: list A) : list A :=
+  firstn (Z.to_nat (hi-lo)) (skipn (Z.to_nat lo) al).
+
+Definition upd_Znth {A} (i: Z) (al: list A) (x: A): list A :=
+   sublist 0 i al ++ x :: sublist (i+1) (Zlength al) al.
+
+Lemma sublist_sublist {A} i j k m (l:list A): 0<=m -> 0<=k <=i -> i <= j-m ->
+  sublist k i (sublist m j l) = sublist (k+m) (i+m) l.
+
+Lemma sublist_rejoin:
+  forall {A} lo mid hi (al: list A),
+  0 <= lo <= mid ->
+  mid <= hi <= Zlength al ->
+  sublist lo mid al ++ sublist mid hi al = sublist lo hi al.
+
+Lemma sublist_map:
+  forall {A B} (F: A -> B) lo hi (al: list A),
+  sublist lo hi (map F al) = map F (sublist lo hi al).
+
+Lemma map_sublist:
+  forall {A B} (F: A -> B) lo hi (al: list A),
+  map F (sublist lo hi al) = sublist lo hi (map F al).
+
+Lemma sublist_len_1:
+  forall {A}{d: Inhabitant A} i (al: list A),
+  0 <= i < Zlength al ->
+  sublist i (i+1) al = Znth i al :: nil.
+
+Lemma Znth_cons_sublist:
+  forall {A}{d: Inhabitant A} i (al: list A) bl,
+  0 <= i < Zlength al ->
+  Znth i al :: bl = sublist i (i+1) al ++ bl.
+
+Lemma Zlength_sublist:
+  forall {A} lo hi (al: list A),
+ 0 <= lo <= hi -> hi <= Zlength al ->
+ Zlength (sublist lo hi al) = hi-lo.
+
+Lemma sublist_same_gen:
+forall {A} lo hi (al: list A),
+  lo = 0 -> hi >= Zlength al ->
+  sublist lo hi al = al.
+
+Lemma sublist_same:
+forall {A} lo hi (al: list A),
+  lo = 0 -> hi = Zlength al ->
+  sublist lo hi al = al.
+
+Lemma Znth_sublist:
+  forall {A}{d: Inhabitant A} lo i hi (al: list A),
+ 0 <= lo ->
+ 0 <= i < hi-lo ->
+ Znth i (sublist lo hi al) = Znth (i+lo) al.
+
+Lemma rev_sublist:
+  forall {A} lo hi (al: list A),
+  0 <= lo <= hi -> hi <= Zlength al ->
+  rev (sublist lo hi al) = sublist (Zlength al - hi) (Zlength al - lo) (rev al).
+
+Lemma sublist_nil:
+  forall {A} lo (al: list A),
+  sublist lo lo al = nil.
+
+Lemma sublist_nil_gen : forall {A} (l : list A) i j, j <= i -> sublist i j l = [].
+
+Lemma sublist_rev:
+  forall {A} lo hi (al: list A),
+  0 <= lo <= hi -> hi <= Zlength al ->
+  sublist lo hi (rev al) = rev (sublist (Zlength al - hi) (Zlength al - lo) al).
+
+Lemma sublist_app:
+  forall {A} lo hi (al bl: list A),
+  0 <= lo <= hi -> hi <= Zlength al + Zlength bl ->
+  sublist lo hi (al++bl) =
+  sublist (Z.min lo (Zlength al)) (Z.min hi (Zlength al)) al ++
+
+Lemma sublist_split:
+  forall {A} lo mid hi (al: list A),
+  0 <= lo <= mid ->
+  mid <= hi <= Zlength al ->
+  sublist lo hi al = sublist lo mid al ++ sublist mid hi al.
+
+Lemma sublist_last_1 : forall {A}{d: Inhabitant A} lo hi (al : list A), 0 <= lo <= hi -> hi + 1 <= Zlength al ->
+  sublist lo (hi + 1) al = sublist lo hi al ++ [Znth hi al].
+
+Lemma Zlen_le_1_rev:
+ forall {A} (al: list A),
+  Zlength al <= 1 -> rev al = al.
+
+Lemma skipn_0:
+  forall A (l: list A), skipn 0 l = l.
+
+Lemma sublist_1_cons {A} l (v:A) n: sublist 1 n (v::l) = sublist 0 (n-1) l.
+
+Lemma sublist_nil': forall (A : Type) (lo lo': Z) (al : list A), lo=lo' -> sublist lo lo' al = [].
+
+Lemma sublist_skip {A} (l:list A) i : 0<=i ->  sublist i (Zlength l) l = skipn (Z.to_nat i) l.
+
+Lemma sublist_firstn {A} (l:list A) i: sublist 0 i l = firstn (Z.to_nat i) l.
+
+Lemma sublist_app1:
+  forall (A : Type) (k i : Z) (al bl : list A),
+  0 <= k <= i -> i <= Zlength al -> sublist k i (al ++ bl) = sublist k i al.
+
+Lemma sublist0_app1 {A} i (al bl:list A): 0<= i <= Zlength al ->
+  sublist 0 i (al ++ bl) = sublist 0 i al.
+
+Lemma sublist_app2 {A} i j (al bl:list A): 0<=Zlength al <= i->
+  sublist i j (al ++ bl) = sublist (i-Zlength al) (j-Zlength al) bl.
+
+Lemma sublist_sublist0 {A} i j k (l:list A): 0<=k -> k<=i<=j ->
+  sublist k i (sublist 0 j l) = sublist k i l.
+
+Lemma sublist_sublist00 {A} i j (l:list A): 0<=i<=j ->
+  sublist 0 i (sublist 0 j l) = sublist 0 i l.
+
+Lemma skipn_list_repeat:
+   forall A k n (a: A),
+     (k <= n)%nat -> skipn k (list_repeat n a) = list_repeat (n-k) a.
+
+Lemma sublist_list_repeat {A} i j k (v:A) (I: 0<=i)
+          (IJK: i <= j <= k):
+      sublist i j (list_repeat (Z.to_nat k) v) = list_repeat (Z.to_nat (j-i)) v.
+
+Lemma Zlength_list_repeat:
+  forall {A} n (x: A),
+  0 <= n ->
+  Zlength (list_repeat (Z.to_nat n) x) = n.
+
+Lemma list_repeat_0:
+  forall {A} (x:A), list_repeat (Z.to_nat 0) x = nil.
+
+Lemma Znth_list_repeat_inrange:
+  forall {A}{d: Inhabitant A} i n (a: A),
+   (0 <= i < n)%Z ->
+   Znth i (list_repeat (Z.to_nat n) a) = a.
+
+Lemma firstn_nil {A} n: firstn n (nil:list A) = nil.
+
+Lemma firstn_In {A} (x:A): forall l n, In x (firstn n l) -> In x l.
+Lemma skipn_In {A} (x:A): forall l n, In x (skipn n l) -> In x l.
+
+Lemma sublist_In {A} lo hi data (x:A) (I:In x (sublist lo hi data)): In x data.
+
+Lemma Zlength_list_repeat' {A} n (v:A): Zlength (list_repeat n v) = Z.of_nat n.
+
+Lemma sublist0_app2 {A : Type} i (al bl : list A):
+  Zlength al <= i <= Zlength al + Zlength bl ->
+  sublist 0 i (al ++ bl) = al ++ sublist 0 (i - Zlength al) bl.
+
+Lemma sublist_rejoin':
+  forall {A} lo mid mid' hi (al: list A),
+  mid=mid' ->
+  0 <= lo <= mid ->
+  mid' <= hi <= Zlength al ->
+  sublist lo mid al ++ sublist mid' hi al = sublist lo hi al.
+
+Hint Rewrite @sublist_nil' using list_solve: sublist.
+Hint Rewrite @app_nil_l : sublist.
+Hint Rewrite @Zlength_rev : sublist.
+Hint Rewrite @sublist_rejoin' using list_solve : sublist.
+
+Lemma subsub1:
+ forall a b : Z, (a-(a-b)) = b.
+Hint Rewrite subsub1 : sublist.
+
+Lemma sublist_app':
+  forall {A} lo hi (al bl: list A),
+  0 <= lo <= Zlength al ->
+  0 <= hi-Zlength al <= Zlength bl ->
+  sublist lo hi (al++bl) =
+  sublist lo (Zlength al) al ++
+  sublist 0 (hi-Zlength al) bl.
+
+Lemma upd_Znth_Zlength {A} i (l:list A) v: 0<=i < Zlength l ->
+      Zlength (upd_Znth i l v) = Zlength l.
+
+Lemma upd_Znth_map {A B} (f:A -> B) i l v:
+      upd_Znth i (map f l) (f v) =
+      map f (upd_Znth i l v).
+
+Lemma upd_Znth_lookup K {A}{d: Inhabitant A}: forall l (L:Zlength l = K) i j (v:A) (I: 0<=i<K) (J: 0<=j<K),
+   (i=j /\ Znth i (upd_Znth j l v) = v) \/
+   (i<>j /\ Znth i (upd_Znth j l v) = Znth i l).
+
+Lemma upd_Znth_lookup' K {A}{d: Inhabitant A}: forall l (L:Zlength l = K) i (I: 0<=i<K) j (J: 0<=j<K) (v:A),
+    Znth i (upd_Znth j l v) = if zeq i j then v else Znth i l.
+
+Lemma upd_Znth_char {A} n l1 (v:A) l2 w: Zlength l1=n ->
+      upd_Znth n (l1 ++ v :: l2) w = l1 ++ w :: l2.
+
+Lemma upd_Znth_same {A}{d: Inhabitant A}: forall i l u, 0<= i< Zlength l -> Znth i (upd_Znth i l u) = u.
+
+Lemma upd_Znth_diff {A}{d: Inhabitant A}: forall i j l u, 0<= i< Zlength l -> 0<= j< Zlength l -> i<>j ->
+      Znth i (upd_Znth j l u) = Znth i l.
+
+Lemma upd_Znth_app1 {A} i l1 l2 (I: 0 <= i < Zlength l1) (v:A):
+      upd_Znth i (l1++l2) v = upd_Znth i l1 v ++ l2.
+
+Lemma upd_Znth_app2 {A} (l1 l2:list A) i v:
+  Zlength l1 <= i <= Zlength l1 + Zlength l2 ->
+  upd_Znth i (l1 ++ l2) v = l1 ++ upd_Znth (i-Zlength l1) l2 v.
+
+Lemma upd_Znth0 {A} (l:list A) v:
+upd_Znth 0 l v = v :: sublist 1 (Zlength l) l.
+
+Lemma sublist_upd_Znth_l: forall {A} (l: list A) i lo hi v,
+  0 <= lo <= hi ->
+  hi <= i < Zlength l ->
+  sublist lo hi (upd_Znth i l v) = sublist lo hi l.
+
+Lemma sublist_upd_Znth_r: forall {A} (l: list A) i lo hi v,
+  0 <= i < lo ->
+  lo <= hi <= Zlength l ->
+  sublist lo hi (upd_Znth i l v) = sublist lo hi l.
+
+Lemma sublist_upd_Znth_lr: forall {A} (l: list A) i lo hi v,
+  0 <= lo <= i->
+  i < hi <= Zlength l ->
+  sublist lo hi (upd_Znth i l v) = upd_Znth (i - lo) (sublist lo hi l) v.
+
+Hint Rewrite @Znth_list_repeat_inrange : sublist.
+Hint Rewrite @Zlength_cons @Zlength_nil: sublist.
+Hint Rewrite @list_repeat_0: sublist.
+Hint Rewrite <- @app_nil_end : sublist.
+Hint Rewrite @Zlength_app: sublist.
+Hint Rewrite @Zlength_map: sublist.
+Hint Rewrite @Zlength_list_repeat using list_solve: sublist.
+Hint Rewrite Z.sub_0_r Z.add_0_l Z.add_0_r : sublist.
+Hint Rewrite @Zlength_sublist using list_solve: sublist.
+Hint Rewrite Z.max_r Z.max_l using omega : sublist.
+Hint Rewrite Z.min_r Z.min_l using omega : sublist.
+Hint Rewrite Z.add_simpl_r Z.sub_add Z.sub_diag : sublist.
+Hint Rewrite @sublist_sublist using list_solve : sublist.
+Hint Rewrite @sublist_app1 using list_solve : sublist.
+Hint Rewrite @sublist_app2 using list_solve : sublist.
+Hint Rewrite @sublist_list_repeat  using list_solve : sublist.
+Hint Rewrite @sublist_same using list_solve : sublist.
+Hint Rewrite Z.add_simpl_l : sublist.
+Hint Rewrite Z.add_add_simpl_l_l Z.add_add_simpl_l_r
+     Z.add_add_simpl_r_l Z.add_add_simpl_r_r : sublist.
+Hint Rewrite Z.add_0_r : sublist.
+Hint Rewrite @app_Znth1 using list_solve : sublist.
+Hint Rewrite @app_Znth2 using list_solve : sublist.
+Hint Rewrite @Znth_sublist using list_solve : sublist.
+Hint Rewrite @upd_Znth_Zlength using list_solve : sublist.
+
+Hint Rewrite @sublist_nil : sublist.
+
+Lemma list_repeat_app':
+ forall {A: Type} a b (x:A), 
+    0 <= a -> 0 <= b ->
+    list_repeat (Z.to_nat a) x ++ list_repeat (Z.to_nat b) x = list_repeat (Z.to_nat (a+b)) x.
+
+Lemma Znth_overflow:
+  forall {A}{d: Inhabitant A} i (al: list A), i >= Zlength al -> Znth i al = d.
+
+Lemma Znth_underflow:
+  forall {A}{d: Inhabitant A} i (al: list A),  i < 0 -> Znth i al = d.
+
+Lemma Znth_outofbounds:
+  forall {A}{d: Inhabitant A} i (al: list A),  (i < 0 \/ i >= Zlength al) -> Znth i al = d.
+
+Lemma sublist_one:
+  forall {A}{d: Inhabitant A} lo hi (al: list A),
+    0 <= lo -> hi <= Zlength al ->
+    lo+1=hi -> sublist lo hi al = Znth lo al :: nil.
+
+Lemma Forall_app :
+forall {A} P (l1 l2 :list A),
+Forall P (l1 ++ l2) <->
+Forall P l1 /\ Forall P l2.
+
+Lemma Forall_firstn:
+  forall A (f: A -> Prop) n l, Forall f l -> Forall f (firstn n l).
+
+Lemma Forall_skipn:
+  forall A (f: A -> Prop) n l, Forall f l -> Forall f (skipn n l).
+
+Lemma Forall_map:
+  forall {A B} (f: B -> Prop) (g: A -> B) al,
+   Forall f (map g al) <-> Forall (Basics.compose f g) al.
+
+Lemma Forall_sublist:
+  forall {A} (f: A -> Prop) lo hi al,
+   Forall f al -> Forall f (sublist lo hi al).
+
+Hint Rewrite @upd_Znth_app1 using list_solve : sublist.
+Hint Rewrite @upd_Znth_app2 using list_solve : sublist.
+
+Lemma map_list_repeat: forall {A B} (f: A->B) n (x:A), map f (list_repeat n x) = list_repeat n (f x).
+Hint Rewrite @map_list_repeat : sublist.
+
+Lemma Zlength_sublist_correct: forall {A} (l: list A) (lo hi: Z),
+  0 <= lo <= hi ->
+  hi <= Zlength l ->
+  Zlength (sublist lo hi l) = hi - lo.
+
+Lemma Zlength_sublist_incorrect: forall {A} (l: list A) (lo hi: Z),
+  0 <= lo < hi ->
+  hi > Zlength l ->
+  Zlength (sublist lo hi l) < hi - lo.
+
+Lemma nth_Znth {A} {d: Inhabitant A}:
+forall n (xs:list A), 0 <= n < Zlength xs -> (nth (Z.to_nat n) xs d) = (Znth n xs). *)
+
+Require Import sha.SHA256.
+(* sha.SHA256:
+Require Recdef.
+Require Import VST.floyd.coqlib3.
+Require Import VST.floyd.sublist.
+Require Import compcert.lib.Integers.
+Require Import compcert.lib.Coqlib.
+Require Import Coq.Strings.String.
+Require Import Coq.Strings.Ascii.
+Require Import List.
+Require Import sha.general_lemmas.
+
+Definition LBLOCKz : Z := 16. 
+Definition WORD : Z := 4.  
+Definition CBLOCKz : Z := (LBLOCKz * WORD)%Z. 
+Definition hi_part (z: Z) := Int.repr (z / Int.modulus).
+Definition lo_part (z: Z) := Int.repr z.
+
+Fixpoint little_endian_integer (contents: list byte) : int :=
+ match contents with
+ | nil => Int.zero
+ | c::cr => Int.or (Int.shl (little_endian_integer cr) (Int.repr 8)) (Int.repr (Byte.unsigned c))
+ end.
+
+Definition big_endian_integer (contents: list byte) : int :=
+   little_endian_integer (rev contents).
+
+Import ListNotations.
+
+Fixpoint str_to_bytes (str : string) : list byte :=
+  match str with
+    |EmptyString => nil
+    |String c s => Byte.repr (Z.of_N (N_of_ascii c)) :: str_to_bytes s
+    end.
+
+Definition generate_and_pad msg :=
+  let n := Zlength msg in
+   bytelist_to_intlist (msg ++ [Byte.repr 128%Z]
+                ++ list_repeat (Z.to_nat (-(n + 9) mod 64)) Byte.zero)
+           ++ [Int.repr (n * 8 / Int.modulus); Int.repr (n * 8)].
+
+Definition K256 := map Int.repr
+  [1116352408 ; 1899447441; 3049323471; 3921009573;
+   961987163   ; 1508970993; 2453635748; 2870763221;
+   3624381080; 310598401  ; 607225278  ; 1426881987;
+   1925078388; 2162078206; 2614888103; 3248222580;
+   3835390401; 4022224774; 264347078  ; 604807628;
+   770255983  ; 1249150122; 1555081692; 1996064986;
+   2554220882; 2821834349; 2952996808; 3210313671;
+   3336571891; 3584528711; 113926993  ; 338241895;
+   666307205  ; 773529912  ; 1294757372; 1396182291;
+   1695183700; 1986661051; 2177026350; 2456956037;
+   2730485921; 2820302411; 3259730800; 3345764771;
+   3516065817; 3600352804; 4094571909; 275423344;
+   430227734  ; 506948616  ; 659060556  ; 883997877;
+   958139571  ; 1322822218; 1537002063; 1747873779;
+   1955562222; 2024104815; 2227730452; 2361852424;
+   2428436474; 2756734187; 3204031479; 3329325298].
+
+Definition Ch (x y z : int) : int :=
+  Int.xor (Int.and x y) (Int.and (Int.not x) z).
+
+Definition Maj (x y z : int) : int :=
+  Int.xor (Int.xor (Int.and x z) (Int.and y z) ) (Int.and x y).
+
+Definition Rotr b x := Int.ror x (Int.repr b).
+
+Definition Sigma_0 (x : int) : int :=
+          Int.xor (Int.xor (Rotr 2 x) (Rotr 13 x)) (Rotr 22 x).
+Definition Sigma_1 (x : int) : int :=
+          Int.xor (Int.xor (Rotr 6 x) (Rotr 11 x)) (Rotr 25 x).
+Definition sigma_0 (x : int) : int :=
+          Int.xor (Int.xor (Rotr 7 x) (Rotr 18 x)) (Shr 3 x).
+Definition sigma_1 (x : int) : int :=
+          Int.xor (Int.xor (Rotr 17 x) (Rotr 19 x)) (Shr 10 x).
+
+Definition registers := list int.
+
+Definition init_registers : registers :=
+  map Int.repr  [1779033703; 3144134277; 1013904242; 2773480762;
+                        1359893119; 2600822924; 528734635; 1541459225].
+
+Definition nthi (il: list int) (t: Z) := nth (Z.to_nat t) il Int.zero.
+
+Definition rnd_function (x : registers) (k : int) (w : int) : registers:=
+  match x with
+  |  [a; b; c; d; e; f; g; h] =>
+     let T1 := Int.add (Int.add (Int.add (Int.add h (Sigma_1 e)) (Ch e f g)) k) w in
+
+Definition hash_block (r: registers) (block: list int) : registers :=
+      map2 Int.add r (Round r (nthi block) 63).
+
+Definition SHA_256 (str : list byte) : list byte :=
+    intlist_to_bytelist (hash_blocks init_registers (generate_and_pad str)). *)
+
+Require Import sha.general_lemmas.
+(* sha.general_lemmas:
+Require Import compcert.lib.Coqlib.
+Require Import List. Import ListNotations.
+Require Import compcert.lib.Integers.
+Require Import VST.msl.Coqlib2.
+Require Import VST.floyd.coqlib3.
+Require Import VST.floyd.sublist.
+Require Import VST.floyd.functional_base.
+
+Local Open Scope nat.
+
+Fixpoint map2 {A B C: Type} (f: A -> B -> C) (al: list A) (bl: list B) : list C :=
+ match al, bl with
+  | a::al', b::bl' => f a b :: map2 f al' bl'
+  | _, _ => nil
+  end.
+
+Lemma length_map2:
+ forall A B C (f: A -> B -> C) al bl n,
+  length al = n -> length bl = n ->
+  length (map2 f al bl) = n.
+
+Lemma list_repeat_injective {A} (a a':A) n: (0<n)%nat ->
+      list_repeat n a = list_repeat n a' -> a=a'.
+
+Local Open Scope Z.
+
+Definition roundup (a b : Z) := (a + (b-1))/b*b.
+
+Lemma roundup_minus:
+   forall a b,  b > 0 -> roundup a b - a = (- a) mod b.
+
+Definition Shr b x := Int.shru x (Int.repr b).
+
+Lemma byte_testbit:
+  forall i j, j >= 8 -> Z.testbit (Byte.unsigned i) j = false.
+
+Fixpoint intlist_to_bytelist (l: list int) : list byte :=
+ match l with
+ | nil => nil
+ | i::r =>
+     Byte.repr (Int.unsigned (Shr 24 i)) ::
+     Byte.repr (Int.unsigned (Shr 16 i)) ::
+     Byte.repr (Int.unsigned (Shr 8 i)) ::
+     Byte.repr (Int.unsigned i) ::
+     intlist_to_bytelist r
+ end.
+
+Definition bytes_to_Int (a b c d : byte) : Int.int :=
+  Int.or (Int.or (Int.or 
+       (Int.shl (Int.repr (Byte.unsigned a)) (Int.repr 24))
+      (Int.shl (Int.repr (Byte.unsigned b)) (Int.repr 16)))
+       (Int.shl (Int.repr (Byte.unsigned c)) (Int.repr 8)))
+         (Int.repr (Byte.unsigned d)).
+
+Fixpoint bytelist_to_intlist (nl: list byte) : list int :=
+  match nl with
+  | h1::h2::h3::h4::t => bytes_to_Int h1 h2 h3 h4 :: bytelist_to_intlist t
+  | _ => nil
+  end.
+
+Hint Rewrite Int.bits_or using omega : testbit.
+Hint Rewrite Int.bits_shl using omega : testbit.
+Hint Rewrite Int.bits_and using omega : testbit.
+Hint Rewrite Int.bits_shru using omega : testbit.
+Hint Rewrite Int.unsigned_repr using omega : testbit.
+Hint Rewrite Int.testbit_repr using omega : testbit.
+Hint Rewrite if_false using omega : testbit.
+Hint Rewrite if_true using omega : testbit.
+Hint Rewrite Z.ones_spec_low using omega : testbit.
+Hint Rewrite Z.ones_spec_high using omega : testbit.
+Hint Rewrite orb_false_r orb_true_r andb_false_r andb_true_r : testbit.
+Hint Rewrite orb_false_l orb_true_l andb_false_l andb_true_l : testbit.
+Hint Rewrite Z.add_simpl_r : testbit.
+Hint Rewrite Int.unsigned_repr using rep_omega : testbit.
+Hint Rewrite Byte.testbit_repr using rep_omega : testbit.
+Hint Rewrite Byte.bits_above using rep_omega : testbit.
+
+Lemma Ztest_Inttest:
+ forall a, Z.testbit (Int.unsigned a) = Int.testbit a.
+Hint Rewrite Ztest_Inttest : testbit.
+
+Lemma Ztest_Bytetest:
+ forall a, Z.testbit (Byte.unsigned a) = Byte.testbit a.
+Hint Rewrite Ztest_Bytetest : testbit.
+
+Definition swap (i: int) : int :=
+ Int.or (Int.shl (Int.and i (Int.repr 255)) (Int.repr 24))
+   (Int.or (Int.shl (Int.and (Shr 8 i) (Int.repr 255)) (Int.repr 16))
+      (Int.or (Int.shl (Int.and (Shr 16 i) (Int.repr 255)) (Int.repr 8))
+         (Shr 24 i))).
+
+Lemma swap_swap: forall w, swap (swap w) = w.
+
+Lemma map_swap_involutive:
+ forall l, map swap (map swap l)  = l.
+
+Lemma length_intlist_to_bytelist:
+  forall l, length (intlist_to_bytelist l) = (4 * length l)%nat.
+
+Lemma intlist_to_bytelist_bytes_to_int_cons:
+  forall a b c d l,
+     intlist_to_bytelist (bytes_to_Int a b c d :: l) =
+     a::b::c::d:: intlist_to_bytelist l.
+
+Lemma intlist_to_bytelist_to_intlist:
+  forall il: list int,
+   bytelist_to_intlist (intlist_to_bytelist il) = il.
+
+Lemma intlist_to_bytelist_app:
+ forall al bl, intlist_to_bytelist (al++bl) = intlist_to_bytelist al ++ intlist_to_bytelist bl.
+Local Open Scope nat.
+
+Local Open Scope Z.
+
+Lemma int_unsigned_inj: forall a b, Int.unsigned a = Int.unsigned b -> a=b.
+
+Lemma intlist_to_bytelist_inj: forall al bl, intlist_to_bytelist al = intlist_to_bytelist bl -> al=bl.
+
+Lemma Zlength_intlist_to_bytelist_app:
+ forall al bl,  Zlength (intlist_to_bytelist (al++bl)) =
+    (Zlength (intlist_to_bytelist al) + Zlength (intlist_to_bytelist bl))%Z.
+
+Local Open Scope Z.
+
+Lemma divide_length_app:
+ forall {A} n (al bl: list A),
+      (n | Zlength al) ->
+      (n | Zlength bl) ->
+      (n | Zlength (al++bl)).
+
+Lemma nth_list_repeat: forall A i n (x :A),
+    nth i (list_repeat n x) x = x.
+
+Lemma map_list_repeat:
+  forall A B (f: A -> B) n x,
+     map f (list_repeat n x) = list_repeat n (f x). *)
+
+Require Import Sorting.Mergesort.
+
+
+
+Local Open Scope logic.
+
+
+
+Lemma ft0_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n sbox Int.zero in
+
+  nth n FT0 Int.zero = word_to_int (ff_mult b (Int.repr 2),  b, b, ff_mult b (Int.repr 3)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma ft1_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n sbox Int.zero in
+
+  nth n FT1 Int.zero = word_to_int (ff_mult b (Int.repr 3), ff_mult b (Int.repr 2), b, b).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma ft2_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n sbox Int.zero in
+
+  nth n FT2 Int.zero = word_to_int (b, ff_mult b (Int.repr 3), ff_mult b (Int.repr 2), b).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma ft3_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n sbox Int.zero in
+
+  nth n FT3 Int.zero = word_to_int (b, b, ff_mult b (Int.repr 3), ff_mult b (Int.repr 2)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma rt0_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n inv_sbox Int.zero in
+
+  
+
+  nth n RT0 Int.zero = word_to_int (ff_mult b (Int.repr 14), ff_mult b (Int.repr 9),
+
+                                    ff_mult b (Int.repr 13), ff_mult b (Int.repr 11)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma rt1_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n inv_sbox Int.zero in
+
+  
+
+  nth n RT1 Int.zero = word_to_int (ff_mult b (Int.repr 11), ff_mult b (Int.repr 14),
+
+                                    ff_mult b (Int.repr 9), ff_mult b (Int.repr 13)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma rt2_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n inv_sbox Int.zero in
+
+  
+
+  nth n RT2 Int.zero = word_to_int (ff_mult b (Int.repr 13), ff_mult b (Int.repr 11),
+
+                                    ff_mult b (Int.repr 14), ff_mult b (Int.repr 9)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+
+
+
+Lemma rt3_equiv : forall n : nat,
+
+  (n < 256)%nat ->
+
+  let b := nth n inv_sbox Int.zero in
+
+  
+
+  nth n RT3 Int.zero = word_to_int (ff_mult b (Int.repr 9), ff_mult b (Int.repr 13),
+
+                                    ff_mult b (Int.repr 11), ff_mult b (Int.repr 14)).
+
+Proof.
+
+  intros.
+
+  do 256 (destruct n as [ | n]; [reflexivity | ]).
+
+  omega.
+
+Qed.
+

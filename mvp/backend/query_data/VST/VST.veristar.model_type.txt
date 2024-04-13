@@ -1,0 +1,618 @@
+Load loadpath.
+
+Require Import VST.msl.base VST.msl.sepalg.
+(* VST.msl.base:
+Require Export VST.msl.Extensionality.
+Require Export Coq.Lists.List.
+Require Export Coq.Bool.Bool.
+Require Export Coq.Relations.Relations.
+Require Export Omega.
+
+Definition compose (A B C:Type) (g:B -> C) (f:A -> B) := fun x => g (f x).
+Arguments compose [A B C] _ _ _.
+Infix "oo" := compose (at level 54, right associativity).
+
+Lemma compose_assoc (A B C D:Type) (h:C->D) (g:B->C) (f:A->B) :
+  (h oo g) oo f = h oo g oo f.
+
+Lemma compose_rewr {A B C} (f : B -> C) (g : A -> B) x : f (g x) = (f oo g) x.
+
+Definition id (A:Type) := fun x:A => x.
+
+Lemma id_unit1 : forall A B (f:A->B), f oo id A = f.
+
+Lemma id_unit2 : forall A B (f:A->B), id B oo f = f.
+
+Record bijection (A B:Type) : Type := Bijection {
+  bij_f: A -> B;
+  bij_g: B -> A;
+  bij_fg: forall x, bij_f (bij_g x) = x;
+  bij_gf: forall x, bij_g (bij_f x) = x
+}.
+
+Lemma bij_f_inj {A} {B} (bij: bijection A B):
+     forall x y, bij_f _ _ bij x = bij_f _ _ bij y -> x=y.
+
+Lemma bij_g_inj {A} {B} (bij: bijection A B):
+     forall x y, bij_g _ _ bij x = bij_g _ _ bij y -> x=y.
+
+Lemma bij_fg_id: forall {A B} (f: bijection A B),
+  (bij_f _ _ f) oo (bij_g _ _ f) = id _.
+
+Lemma bij_gf_id: forall {A B} (f: bijection A B),
+  (bij_g _ _ f) oo (bij_f _ _ f) = id _.
+
+Definition bij_compose {A B C:Type} (g: bijection B C) (f: bijection A B):
+  bijection A C.
+
+Infix "ooo" := bij_compose (at level 54, right associativity).
+
+Definition bij_refl (A: Type): bijection A A.
+
+Definition bij_sym {A B} (f: bijection A B): bijection B A.
+
+Definition func_bij {A1 A2 B1 B2} (f: bijection A1 A2) (g: bijection B1 B2):
+  bijection (A1 -> B1) (A2 -> B2).
+
+Definition unit_unit1 (A: Type): bijection A (A * unit).
+
+Definition unit_unit2 (A: Type): bijection A (unit * A).
+
+Definition prod_bij_comm (A B: Type): bijection (A * B) (B * A).
+
+Tactic Notation "inv" hyp(H) := inversion H; clear H; subst.
+
+Ltac detach H :=
+  match goal with [ H : (?X -> ?Y) |- _ ] =>
+    cut Y; [ clear H; intro H | apply H; clear H ]
+  end.
+
+Ltac spec H :=
+  match type of H with ?a -> _ =>
+    let H1 := fresh in (assert (H1: a); [|generalize (H H1); clear H H1; intro H]) end.
+
+Tactic Notation "disc" := (try discriminate).
+
+Tactic Notation "contr" := (try contradiction).
+
+Tactic Notation "congr" := (try congruence).
+
+Tactic Notation  "icase" constr(v) := (destruct v; disc; contr; auto).
+
+Tactic Notation "omegac" := (elimtype False; omega).
+
+Tactic Notation "copy" hyp(H) := (generalize H; intro). *)
+(* VST.msl.sepalg:
+Require Import VST.msl.Extensionality.
+
+Set Implicit Arguments.
+
+Class Join (t: Type) : Type := join: t -> t -> t -> Prop.
+
+Class Perm_alg (t: Type) {J: Join t} : Type :=
+  mkPerm   {
+   join_eq: forall {x y z z'}, join x y z -> join x y z' -> z = z';
+   join_assoc: forall {a b c d e}, join a b d -> join d c e ->
+                    {f : t & join b c f /\ join a f e};
+   join_comm: forall {a b c}, join a b c -> join b a c;
+   join_positivity: forall {a a' b b'}, join a a' b -> join b b' a -> a=b
+}.
+Arguments Perm_alg _ [J].
+
+Definition unit_for {t}{J: Join t} (e a: t) := join e a a.
+Definition identity {t} {J: Join t} (e: t) := forall a b, join e a b -> a=b.
+
+Hint Extern 2 (@join _ _ _ _ _) =>
+   (eapply join_comm; trivial;
+     try eassumption;
+          match goal with H: @join _ _ _ _ _ |- _ => apply H end).
+ 
+Hint Unfold unit_for.
+
+Lemma join_assoc_uniq:
+  forall {t} {J: Join t} (PA1 PA2: @Perm_alg t J),
+      forall a b c d e H H',
+         (projT1 (@join_assoc _ _ PA1  a b c d e H H'))
+        = (projT1 (@join_assoc _ _ PA2  a b c d e H H')).
+
+  Class Sep_alg A {J: Join A} : Type :=
+    mkSep {
+      core: A -> A;
+      core_unit: forall t, unit_for (core t) t;
+      join_core: forall {a b c}, join a b c -> core a = core c
+    }.
+Arguments Sep_alg _ [J].
+
+Lemma core_duplicable {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, join (core a) (core a) (core a).
+
+Lemma core_self_join {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, a = core a -> join a a a.
+
+Lemma core_idem {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, core (core a) = core a.
+
+Lemma core_hom {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall {a b c}, join a b c -> join (core a) (core b) (core c).
+
+Lemma split_core' {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b (core c) -> a = core a.
+
+Lemma split_core{A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b (core c) -> unit_for a a.
+
+Lemma core_uniq {t} {J: Join t}{PA: Perm_alg t}:
+   forall (SA1: @Sep_alg _ J)
+          (SA2: @Sep_alg _ J),
+     forall x, @core _ _ SA1 x = @core _ _ SA2 x.
+
+Lemma join_core2 {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a b c, join a b c -> core a = core b.
+
+Class Disj_alg  (t: Type) {J: Join t} :=
+   join_self: forall {a b}, join a a b -> identity a.
+Arguments Disj_alg _ [J].
+
+Lemma join_self' {A}{J: Join A}{DA: Disj_alg A} :
+  forall {a b}, join a a b -> a = b.
+
+Lemma   unit_identity {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+        forall {e} b, unit_for e b -> identity e.
+
+Lemma core_identity  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a, identity (core a).
+
+Lemma join_ex_identity  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+     forall a, {e : A & prod (identity e) (unit_for e a) }.
+
+Lemma identity_core  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a, identity a -> a = core a.
+
+Class Sing_alg A {J: Join A}{SA: Sep_alg A} :=
+    mkSing {
+      the_unit: A;
+      the_unit_core: forall a, core a = the_unit
+    }.
+Arguments Sing_alg _ [J] [SA].
+Arguments mkSing [A] [J] [SA] _ _.
+
+  Class Pos_alg  {A} {J: Join A} :=
+    no_units: forall e a, ~unit_for e a.
+Arguments Pos_alg _ [J].
+
+Class Cross_alg (t: Type)  `{J: Join t} :=
+   cross_split :
+      forall a b c d z : t,
+       join a b z ->
+       join c d z ->
+    { x:(t*t*t*t) &  match x with (ac,ad,bc,bd) =>
+         join ac ad a /\ join bc bd b /\ join ac bc c /\ join ad bd d
+       end
+    }.
+Arguments Cross_alg _ [J].
+
+Class Trip_alg {A} {J: Join A} :=
+  triple_join_exists:
+  forall (a b c ab bc ac : A), join a b ab -> join b c bc -> join a c ac ->
+       {abc | join ab c abc}.
+Arguments Trip_alg _ [J].
+
+Lemma  join_ex_units{A}{J: Join A}{SA: Sep_alg A}:
+    forall a, {e : A & unit_for e a }.
+
+Lemma same_identity {A}{J: Join A}{PA: Perm_alg A}:
+  forall e e' a, identity e -> unit_for e a -> identity e' -> unit_for e' a -> e = e'.
+
+Lemma same_unit {A}{J: Join A}{PA: Perm_alg A}{SA:Sep_alg A}{CA: Disj_alg A}:
+       forall {e1 e2 a}, unit_for e1 a -> unit_for e2 a -> e1 = e2.
+
+  Definition joins {A} {J: Join A} (a b : A) : Prop :=
+    exists c, join a b c.
+
+  Definition overlap {A}{J: Join A} (a b: A) := ~(joins a b).
+
+  Lemma join_joins {A} {J: Join A}: forall {a b c},
+    join a b c -> joins a b.
+
+  Lemma join_joins' {A} {J: Join A} {PA: Perm_alg A}: forall {a b c},
+    join a b c -> joins b a.
+
+  Lemma joins_sym {A}  {J: Join A} {PA: Perm_alg A}: forall a b,
+    joins a b <-> joins b a.
+
+  Lemma joins_sym': forall {A} `{Perm_alg A} {phi1 phi2}, joins phi1 phi2 -> joins phi2 phi1.
+
+  Definition join_sub {A} `{Join A} (a c : A) : Prop :=
+    exists b, join a b c.
+
+  Lemma join_join_sub {A} `{Perm_alg A}: forall {a b c},
+    join a b c ->
+    join_sub a c.
+
+  Lemma join_join_sub' {A} `{Perm_alg A}: forall {a b c},
+    join a b c ->
+    join_sub b c.
+
+  Lemma join_sub_refl {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a,
+    join_sub a a.
+
+  Hint Resolve @join_sub_refl.
+
+  Lemma join_sub_trans {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a b c,
+    join_sub a b ->
+    join_sub b c ->
+    join_sub a c.
+
+  Lemma join_sub_unit_for {A} {J: Join A}{PA: Perm_alg A}:
+    forall e a b, unit_for e a -> join_sub a b -> unit_for e b.
+
+Lemma join_sub_same_identity {A} {J: Join A}{PA: Perm_alg A}:
+   forall e e' a c,  identity e -> unit_for e a -> identity e' -> unit_for e' c ->
+                  join_sub a c -> e = e'.
+
+  Lemma join_sub_joins {A} `{HA: Perm_alg A}: forall {a b},
+    join_sub a b -> joins a b -> joins a a.
+    Lemma join_sub_joins_trans {A} `{HA: Perm_alg A}: forall {a b c},
+    join_sub a c -> joins c b -> joins a b.
+
+  Lemma join_sub_joins'  {A} `{HA: Perm_alg A}:
+    forall {a a' b b' : A},
+      join_sub a a' -> join_sub b b' -> joins a' b' -> joins a b.
+
+  Definition sub_silhouette {A} `{Perm_alg A} (a b: A) : Prop :=
+    forall c, joins c b -> joins c a.
+
+  Definition same_silhouette {A} `{Perm_alg A} (a b: A) : Prop :=
+    forall c, joins c a <-> joins c b.
+
+  Lemma sub_silhouette_refl {A} `{Perm_alg A}: forall a, sub_silhouette a a.
+
+  Lemma sub_silhouette_trans {A} `{Perm_alg A}: forall a b c,
+    sub_silhouette a b -> sub_silhouette b c -> sub_silhouette a c.
+
+  Lemma same_silhouette_refl {A} `{Perm_alg A}: forall a, same_silhouette a a.
+
+  Lemma same_silhouette_sym {A} `{Perm_alg A}: forall a b,
+    same_silhouette a b -> same_silhouette b a.
+
+  Lemma same_silhouette_trans {A} `{Perm_alg A}: forall a b c,
+    same_silhouette a b -> same_silhouette b c -> same_silhouette a c.
+
+  Lemma same_silhouette_sub1{A} `{Perm_alg A}: forall a b,
+    same_silhouette a b -> sub_silhouette a b.
+
+  Lemma same_silhouette_sub2 {A} `{Perm_alg A}: forall a b,
+     same_silhouette a b -> sub_silhouette b a.
+
+  Lemma sub_same_silhouette {A} `{Perm_alg A}:
+    forall a b, sub_silhouette a b -> sub_silhouette b a -> same_silhouette a b.
+
+  Lemma same_silhouette_join {A} `{HA: Perm_alg A}:
+    forall phi phi' phiy phiz phiz',
+      same_silhouette phi phi' ->
+      join phi phiy phiz ->
+      join phi' phiy phiz' ->
+      same_silhouette phiz phiz'.
+
+Hint Resolve @join_joins @join_joins' @join_join_sub @join_join_sub'.
+
+  Definition nonidentity {A} `{Perm_alg A} (a: A) := ~(identity a).
+
+  Lemma join_sub_units_eq {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+   forall {a b} ea eb,
+    join_sub a b ->
+    unit_for ea a ->
+    unit_for eb b ->
+    ea = eb.
+
+  Lemma unit_core{A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+      forall {a}, unit_for a a -> a = (core a).
+
+  Lemma unit_self_unit {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+   forall a ea,   unit_for ea a ->  unit_for ea ea.
+
+  Lemma joins_units_eq {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+   forall {a b} ea eb,
+    joins a b ->
+    unit_for ea a ->
+    unit_for eb b ->
+    ea  = eb.
+
+  Lemma join_ex_identities {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a,
+    {e : A & identity e /\ joins e a}.
+
+  Lemma identity_unit {A} `{HA: Perm_alg A}: forall e a,
+    identity e ->
+    joins e a ->
+    unit_for e a.
+
+  Lemma identity_unit' {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+    forall a,  identity a -> unit_for a a.
+
+  Lemma identity_unit_equiv {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+    forall a,  identity a <-> unit_for a a.
+
+  Lemma identities_unique {A} `{HA: Perm_alg A} :
+   forall e1 e2,  identity e1 ->  identity e2 ->  joins e1 e2 ->  e1 = e2.
+
+Lemma split_identity{A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b c -> identity c -> identity a.
+
+  Lemma join_nonidentity {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a b c,
+    nonidentity a -> join a b c -> nonidentity c.
+
+  Lemma join_sub_antisym {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall x y,
+    join_sub x y ->
+    join_sub y x ->
+    x = y.
+
+  Lemma join_sub_joins_identity {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{DS: Disj_alg A}: forall a b,
+    join_sub a b -> joins a b -> identity a.
+
+  Lemma join_overlap {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{DS: Disj_alg A}: forall a b,
+    join_sub a b -> nonidentity a -> overlap a b.
+
+Definition full {A} {JA: Join A}(sigma : A) : Prop :=
+   forall sigma', joins sigma sigma' -> identity sigma'.
+
+Definition maximal {A} {JA: Join A} (sigma : A) : Prop :=
+  forall sigma', join_sub sigma sigma' -> sigma = sigma'.
+
+Lemma full_maximal {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+       forall a, full a <-> maximal a.
+
+  Definition comparable {A} `{Sep_alg A}  (a b:A)
+    := core a = core b.
+
+  Lemma comparable_refl {A} `{Sep_alg A} : forall a, comparable a a.
+
+  Lemma comparable_sym {A} `{Sep_alg A}: forall a b, comparable a b -> comparable b a.
+
+  Lemma comparable_trans {A} `{Sep_alg A}: forall a b c, comparable a b -> comparable b c -> comparable a c.
+
+  Lemma comparable_common_unit {A} `{Sep_alg A}: forall a b,
+    comparable a b ->
+    exists e, join e a a /\ join e b b.
+
+  Lemma common_unit_comparable {A} `{Sep_alg A} : forall a b,
+    (exists e, join e a a /\ join e b b) ->
+    comparable a b.
+
+Lemma join_comparable  {A} `{Sep_alg A}:
+  forall phi1 phi2 phi3, join phi1 phi2 phi3 -> comparable phi1 phi3.
+
+Lemma join_comparable2  {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall phi1 phi2 phi3, join phi1 phi2 phi3 -> comparable phi1 phi2.
+
+Lemma join_sub_comparable  {A} `{Sep_alg A} : forall a c,
+  join_sub a c -> comparable a c.
+
+Lemma joins_comparable  {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A} : forall a c,
+  joins a c -> comparable a c.
+
+Lemma join_unit1 {A} `{Perm_alg A}:
+  forall x y z, unit_for x z -> y = z -> join x y z.
+
+Lemma join_unit2 {A} `{Perm_alg A}:
+  forall x y z, unit_for y z -> x = z -> join x y z.
+
+Lemma join_unit1_e {A} `{Perm_alg A}:
+  forall x y z, identity x -> join x y z -> y = z.
+
+Lemma join_unit2_e {A} `{Perm_alg A}:
+  forall x y z, identity y -> join x y z -> x = z.
+
+Lemma PermAlg_ext:
+  forall (T: Type) (J: @Join T) (sa1 sa2: @Perm_alg T J), sa1=sa2.
+
+Lemma Sep_alg_ext {T} {J} {PA: @Perm_alg _ J}:
+   forall (sa1 sa2: @Sep_alg T J), sa1=sa2.
+
+Definition nonunit {A} `{Join A}  (a: A) := forall x, ~ unit_for a x.
+
+Lemma nonidentity_nonunit {A} {JA: Join A} {PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+  forall {a}, nonidentity a -> nonunit a.
+
+Lemma nonunit_nonidentity {A}{JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall x, nonunit x -> ~identity x.
+
+Class Canc_alg (t: Type) {J: Join t} :=
+    join_canc: forall {a1 a2 b c}, join a1 b c -> join a2 b c -> a1 = a2.
+Arguments Canc_alg _ [J]. *)
+
+Require Import veristar.variables.
+(* veristar.variables:
+Add LoadPath "..".
+Require Import ZArith List Orders POrderedType.
+Require Import veristar.tactics.
+
+Module Ident : UsualOrderedType.
+  Parameter t: Type.
+  Definition eq := @Logic.eq t.
+  Definition eq_equiv := @eq_equivalence t.
+  Parameter lt : t -> t -> Prop.
+  Parameter lt_strorder : StrictOrder lt.
+  Parameter lt_compat : Proper (eq==>eq==>iff) lt.
+  Parameter compare : forall x y : t, comparison.
+  Axiom compare_spec: forall s s' : t, CompSpec eq lt s s' (compare s s').
+  Parameter eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
+End Ident.
+
+Parameter minid : Ident.t.
+Parameter id2pos: Ident.t -> positive.
+Parameter pos2id: positive -> Ident.t.
+Axiom pos2id_inj: forall x y, pos2id x = pos2id y -> x = y.
+Axiom minid_eq: id2pos minid = 1%positive.
+Axiom Ilt_morphism: forall x y, Ident.lt x y -> Plt (id2pos x) (id2pos y).
+Parameter another_id: Ident.t -> Ident.t.
+
+Parameter Z2id: Z -> Ident.t.
+Parameter add_id: Ident.t -> Ident.t -> Ident.t.
+Parameter mult_id: Ident.t -> Ident.t -> Ident.t.
+
+Lemma minid_min x : Ident.lt x minid -> False.
+
+Ltac id_compare x y :=
+  destruct (CompSpec2Type (Ident.compare_spec x y)).
+
+Ltac id_comp x y H1 H2 H3 :=
+  destruct (CompSpec2Type (Ident.compare_spec x y)) as [H1|H2|H3].
+
+Lemma id2pos_inj x y : id2pos x = id2pos y -> x=y.
+
+Lemma Ilt_irrefl : forall {x}, ~ Ident.lt x x.
+
+Lemma Ilt_trans : forall {x y z}, Ident.lt x y -> Ident.lt y z -> Ident.lt x z.
+
+Definition Ile x y := Ident.lt x y \/ Ident.eq x y.
+
+Lemma Ile_refl x : Ile x x.
+
+Hint Resolve Ile_refl.
+
+Lemma Ilt_Zpos i j :
+  Ident.lt i j <-> Z.lt (Zpos (id2pos i)) ((Zpos (id2pos j))).
+
+Lemma nat_of_P_id2pos_le x y :
+  Ile x y -> nat_of_P (id2pos x) <= nat_of_P (id2pos y). *)
+
+
+
+Module Type VERISTAR_LOGIC.
+
+
+
+Parameters loc val : Type.
+
+Declare Instance Join_val: Join val.
+
+Declare Instance Perm_val: Perm_alg val.
+
+Declare Instance Sep_val: Sep_alg val.
+
+Declare Instance Canc_val: Canc_alg val.
+
+Parameter val2loc : val -> option loc.
+
+Parameter nil_val : val.
+
+Axiom nil_not_loc : val2loc nil_val = None.
+
+
+
+Parameter empty_val : val.
+
+Axiom emp_empty_val : forall v, identity v <-> v = empty_val.
+
+Definition full (v : val) := forall v2, joins v v2 -> identity v2.
+
+Axiom val2loc_full : forall v l, val2loc v = Some l -> full v.
+
+Axiom nil_full : full nil_val.
+
+Axiom empty_not_full : ~full empty_val.
+
+Axiom val2loc_inj : forall v1 v2 l,
+
+  val2loc v1 = Some l ->  val2loc v2 = Some l -> v1=v2.
+
+Axiom loc_eq_dec : forall l1 l2 : loc, Decidable.decidable (l1=l2).
+
+Axiom nil_dec : forall v, Decidable.decidable (v=nil_val).
+
+
+
+Definition var : Type := Ident.t.
+
+Parameter env : Type.
+
+Parameter env_get : env -> var -> val.
+
+Parameter env_set : var -> val -> env -> env.
+
+Axiom gss_env : forall (x : var) (v : val) (s : env),
+
+  v<>empty_val -> env_get (env_set x v s) x = v.
+
+Axiom gso_env : forall (x y : var) (v : val) (s : env),
+
+  x<>y -> env_get (env_set x v s) y = env_get s y.
+
+
+
+Axiom env_reset : forall s x, env_set x (env_get s x) s = s.
+
+Axiom env_reset2 : forall s x z, env_set x (env_get s x) (env_set x z s) = s.
+
+
+
+Parameter heap : Type.
+
+Declare Instance Join_heap: Join heap.
+
+Declare Instance Perm_heap: Perm_alg heap.
+
+Declare Instance Sep_heap: Sep_alg heap.
+
+Declare Instance Canc_heap: Canc_alg heap.
+
+Parameter rawnext: forall (x: loc) (y : val) (s : heap), Prop.
+
+Parameter emp_at : forall (l: loc) (h: heap), Prop.
+
+Axiom heap_gempty : forall h l, identity h -> emp_at l h.
+
+Definition nil_or_loc (v: val) := v=nil_val \/ exists l, val2loc v = Some l.
+
+Axiom mk_heap_rawnext : forall h x0 x y, val2loc (x0) = Some x ->
+
+  nil_or_loc y -> exists h', rawnext x y h' /\ comparable h h'.
+
+Axiom rawnext_out : forall {x x0 x' y h},
+
+  rawnext x y h -> val2loc x0 = Some x' -> x'<>x -> emp_at x' h.
+
+
+
+Definition rawnext' x y h := exists h0, join_sub h0 h /\ rawnext x y h0.
+
+
+
+Axiom rawnext_at1 : forall {x y h1 h2 h},
+
+  rawnext' x y h1 -> join h1 h2 h -> emp_at x h2 /\ rawnext' x y h.
+
+
+
+Axiom rawnext_at2 : forall {x y h1 h2 h},
+
+  join h1 h2 h -> rawnext' x y h -> emp_at x h2 -> rawnext' x y h1.
+
+
+
+Axiom  rawnext_not_emp : forall {x y h}, rawnext' x y h -> ~emp_at x h.
+
+
+
+Axiom emp_at_join: forall {h1 h2 h},
+
+  join h1 h2 h -> forall l, (emp_at l h1 /\ emp_at l h2) <-> emp_at l h.
+
+
+
+Axiom rawnext_unique : forall x z z' s s' t t' r,
+
+  rawnext x z s -> rawnext x z' s' -> join s t r -> join s' t' r ->
+
+  z' = z /\ s'=s.
+
+
+
+Axiom vars_defined_locs : forall z (e : env),
+
+  exists v, env_get e z = v /\ nil_or_loc v.
+
+
+
+End VERISTAR_LOGIC.
+

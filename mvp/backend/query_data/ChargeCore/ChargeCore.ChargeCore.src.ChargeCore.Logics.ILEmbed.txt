@@ -1,0 +1,956 @@
+Require Import ChargeCore.Logics.ILogic.
+(* ChargeCore.Logics.ILogic:
+Require Import Setoid Morphisms RelationClasses Program.Basics Omega.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Set Maximal Implicit Insertion.
+
+Global Instance ge_Pre: PreOrder ge.
+
+Class ILogicOps (A : Type) : Type := {
+  lentails: A -> A -> Prop;
+  ltrue: A;
+  lfalse: A;
+  limpl: A -> A -> A;
+  land: A -> A -> A;
+  lor: A -> A -> A;
+  lforall: forall {T : Type}, (T -> A) -> A;
+  lexists: forall {T : Type}, (T -> A) -> A
+}.
+
+Infix "|--"  := lentails (at level 80, no associativity).
+Infix "//\\"   := land (at level 75, right associativity).
+Infix "\\//"   := lor (at level 76, right associativity).
+Infix "-->>"   := limpl (at level 77, right associativity).
+Notation "'Forall' x : T , p" :=
+  (lforall (fun x : T => p)) (at level 78, x ident, right associativity).
+Notation "'Forall' x , p" :=
+  (lforall (fun x => p)) (at level 78, x ident, right associativity, only parsing).
+Notation "'Exists' x : T , p" :=
+  (lexists (fun x : T => p)) (at level 78, x ident, right associativity).
+Notation "'Exists' x , p" :=
+  (lexists (fun x => p)) (at level 78, x ident, right associativity, only parsing).
+
+Section ILogicEquiv.
+  Context {A : Type} `{IL: ILogicOps A}.
+
+  Definition lequiv P Q := P |-- Q /\ Q |-- P.
+End ILogicEquiv.
+
+Infix "-|-"  := lequiv (at level 85, no associativity).
+
+Class ILogic {A : Type} {ILOps: ILogicOps A} : Type := {
+  lentailsPre:> PreOrder lentails;
+  ltrueR: forall (C : A), C |-- ltrue;
+  lfalseL: forall (C : A), lfalse |-- C;
+  lforallL: forall (T : Type) x (P: T -> A) C, P x |-- C -> lforall P |-- C;
+  lforallR: forall (T : Type) (P: T -> A) C, (forall x, C |-- P x) -> C |-- lforall P;
+  lexistsL: forall (T : Type) (P: T -> A) C, (forall x, P x |-- C) -> lexists P |-- C;
+  lexistsR: forall (T : Type) (x : T) (P: T -> A) C, C |-- P x -> C |-- lexists P;
+  landL1: forall (P Q C : A), P |-- C  ->  P //\\ Q |-- C;
+  landL2: forall (P Q C : A), Q |-- C  ->  P //\\ Q |-- C;
+  lorR1:  forall (P Q C : A), C |-- P  ->  C |-- P \\// Q;
+  lorR2:  forall (P Q C : A), C |-- Q  ->  C |-- P \\// Q;
+  landR:  forall (P Q C : A), C |-- P  ->  C |-- Q  ->  C |-- P //\\ Q;
+  lorL:   forall (P Q C : A), P |-- C  ->  Q |-- C  ->  P \\// Q |-- C;
+  landAdj: forall (P Q C : A), C |-- (P -->> Q) -> C //\\ P |-- Q;
+  limplAdj: forall (P Q C : A), C //\\ P |-- Q -> C |-- (P -->> Q)
+}.
+
+Arguments ILogic _ {ILOps}.
+Arguments lforallL {A ILOps ILogic} [T] x P C _.
+Arguments lexistsR {A ILOps ILogic} [T] x P C _.
+
+Notation "|--  P" := (ltrue |-- P) (at level 85, no associativity).
+Hint Extern 0 (?x |-- ?x) => reflexivity.
+Hint Extern 0 (_ |-- ltrue) => apply ltrueR.
+Hint Extern 0 (lfalse |-- _) => apply lfalseL.
+Hint Extern 0 (?P |-- ?Q) => (is_evar P; reflexivity) || (is_evar Q; reflexivity).
+
+Section ILogicEquiv2.
+  Context {A : Type} `{IL: ILogic A}.
+
+  Global Instance lequivEquivalence : Equivalence lequiv.
+
+End ILogicEquiv2.
+
+Section ILogicEquivOps.
+  Context {A : Type} `{IL: ILogic A}.
+
+  Lemma land_is_forall P Q :
+    P //\\ Q -|- Forall b : bool, if b then P else Q.
+
+  Lemma lor_is_exists P Q:
+    P \\// Q -|- Exists b : bool, if b then P else Q.
+
+  Lemma ltrue_is_forall:
+    ltrue -|- Forall x: Empty_set, Empty_set_rect _ x.
+
+  Lemma lfalse_is_exists:
+    lfalse -|- Exists x: Empty_set, Empty_set_rect _ x.
+
+End ILogicEquivOps.
+
+Section ILogicMorphisms.
+  Context {A T : Type} `{IL: ILogic A}.
+
+  Global Instance lequiv_lentails : subrelation lequiv lentails.
+  Global Instance lequiv_flip_lentails: subrelation lequiv (flip lentails).
+
+  Global Instance lforall_lentails_m:
+    Proper (pointwise_relation T lentails ++> lentails) lforall.
+
+  Global Instance lforall_lequiv_m:
+    Proper (pointwise_relation T lequiv ++> lequiv) lforall.
+
+  Global Instance lexists_lentails_m:
+    Proper (pointwise_relation T lentails ++> lentails) lexists.
+
+  Global Instance lexists_lequiv_m:
+    Proper (pointwise_relation T lequiv ++> lequiv) lexists.
+
+  Global Instance : Proper (lequiv ==> lequiv ==> iff) lequiv.
+
+  Global Instance lequiv_lentails_m : Proper (lequiv ==> lequiv ==> iff) lentails.
+
+  Global Instance lentails_lentails_m: Proper (lentails --> lentails ++> impl) lentails.
+
+  Global Instance land_lentails_m:
+    Proper (lentails ++> lentails ++> lentails) land.
+
+  Global Instance land_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) land.
+
+  Global Instance lor_lentails_m:
+    Proper (lentails ++> lentails ++> lentails) lor.
+
+  Global Instance lor_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) lor.
+
+  Global Instance limpl_lentails_m:
+    Proper (lentails --> lentails ++> lentails) limpl.
+
+  Global Instance limpl_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) limpl.
+
+End ILogicMorphisms.
+
+Hint Extern 0 (?x -|- ?x) => reflexivity.
+Hint Extern 0 (?P -|- ?Q) => (is_evar P; reflexivity) || (is_evar Q; reflexivity).
+
+Lemma lforwardL {A} `{IL: ILogic A} {Q R}:
+    Q |-- R -> forall P G,
+    P |-- Q ->
+    (P |-- R -> G) ->
+    G.
+
+Tactic Notation "lforwardL" hyp(H) :=
+  eapply (lforwardL H); clear H; [|intros H].
+
+Section ILogicFacts.
+  Context {A T : Type} `{IL: ILogic A}.
+
+  Ltac landR :=
+    repeat match goal with
+    | |- _ |-- _ //\\ _ => apply landR
+    end.
+
+  Ltac landL :=
+    repeat match goal with
+    | |- ?L1 //\\ ?L2 |-- ?R =>
+        match L1 with
+        | context [R] => apply landL1
+        | _ =>
+          match L2 with
+          | context [R] => apply landL2
+          end
+        end
+    end.
+    
+  Lemma lentails_refl P : P |-- P.
+
+  Lemma landC P Q: P //\\ Q -|- Q //\\ P.
+
+  Lemma landA P Q R: (P //\\ Q) //\\ R -|- P //\\ (Q //\\ R).
+
+  Lemma lorC P Q : P \\// Q -|- Q \\// P.
+
+  Lemma lorA P Q R : (P \\// Q) \\// R -|- P \\// (Q \\// R).
+
+  Lemma limplValid P Q:
+    |-- P -->> Q <->
+    P |-- Q.
+
+  Lemma limplL P Q CL CR (HP: CL |-- P) (HR: Q //\\ CL |-- CR) :
+    (P -->> Q) //\\ CL |-- CR.
+
+  Lemma limplAdj2 P Q R : P -->> Q -->> R -|- P //\\ Q -->> R.
+
+  Lemma landexistsDL1 (f : T -> A) (P : A) :
+    lexists f //\\ P |-- Exists a, (f a //\\ P).
+
+  Lemma landexistsDL2 (f : T -> A) (P : A) :
+    P //\\ lexists f |-- Exists a, (P //\\ f a).
+  
+  Lemma landexistsDR1 (f : T -> A) (P : A) :
+     Exists a, (f a //\\ P) |-- lexists f //\\ P.
+
+  Lemma landexistsDR2 (f : T -> A) (P : A) :
+     Exists a, (P //\\ f a) |-- P //\\ lexists f.
+  
+  Lemma landexistsD1 (f : T -> A) (P : A) :
+    (Exists a, f a) //\\ P -|- Exists a, (f a //\\ P).
+
+  Lemma lorexistsDL (f : T -> A) (P : A) {H : Inhabited T} :
+    (Exists a, f a) \\// P |-- Exists a, (f a \\// P).
+
+  Lemma lorexistsDR (f : T -> A) (P : A) :
+     Exists a, (f a \\// P) |-- (Exists a, f a) \\// P.
+
+  Lemma lorexistsD (f : T -> A) (P : A) {H : Inhabited T} :
+    (Exists a, f a) \\// P -|- Exists a, (f a \\// P).
+
+  Lemma landforallDL (f : T -> A) (P : A) :
+    (Forall a, f a) //\\ P |-- Forall a, (f a //\\ P).
+
+  Lemma landforallDR {H: Inhabited T} (f : T -> A) (P : A) :
+    Forall a, (f a //\\ P) |-- (Forall a, f a) //\\ P.
+
+  Lemma landforallD (f : T -> A) (P : A) {H : Inhabited T} :
+    (Forall a, f a) //\\ P -|- Forall a, (f a //\\ P).
+
+  Lemma lorforallDL (f : T -> A) (P : A) :
+    (Forall a, f a) \\// P |-- Forall a, (f a \\// P).
+
+  Lemma limplTrue P : ltrue -->> P -|- P.
+
+  Lemma limplexistsE (P : T -> A) (Q : A) :
+    (Exists x, P x) -->> Q -|- Forall x, (P x -->> Q).
+
+  Lemma limplforallER (P : T -> A) (Q : A) :
+    Exists x, (P x -->> Q) |-- (Forall x, P x) -->> Q.
+
+  Lemma lforallR2 (P : A) (Q : T -> A) (H : P |-- lforall Q) :
+  	forall x, P |-- Q x.
+
+  Lemma lexistsL2 (P : T -> A) (Q : A) (H : lexists P |-- Q) :
+  	forall x, P x |-- Q.
+
+  Lemma landtrueL : forall a, ltrue //\\ a -|- a.
+
+  Lemma landtrueR : forall a, a //\\ ltrue -|- a.
+
+  Lemma curry : forall a b c, (a //\\ b) -->> c -|- a -->> (b -->> c).
+
+End ILogicFacts.
+
+Global Instance ILogicOps_Prop : ILogicOps Prop := {|
+  lentails P Q := (P : Prop) -> Q;
+  ltrue        := True;
+  lfalse       := False;
+  limpl    P Q := P -> Q;
+  land     P Q := P /\ Q;
+  lor      P Q := P \/ Q;
+  lforall  T F := forall x:T, F x;
+  lexists  T F := exists x:T, F x
+ |}.
+
+Global Instance ILogic_Prop : ILogic Prop. *)
+
+Require Import Setoid Morphisms RelationClasses Program.Basics Omega.
+
+
+
+Set Implicit Arguments.
+
+Unset Strict Implicit.
+
+Set Maximal Implicit Insertion.
+
+
+
+Section ILogicEmbed.
+
+  Context {A} `{ILOpsA: ILogicOps A}.
+
+  Context {B} `{ILOpsB: ILogicOps B}.
+
+
+
+  Class EmbedOp : Type := { embed : A -> B }.
+
+
+
+  Class Embed {EmbOp: EmbedOp} : Type := {
+
+     embed_sound p q : p |-- q -> embed p |-- embed q;
+
+
+
+     embedlforall T f : Forall x : T, embed (f x) -|- embed (Forall x : T, f x);
+
+     embedlexists T f : Exists x : T, embed (f x) -|- embed (Exists x : T, f x);
+
+     embedImpl a b : (embed a) -->> (embed b) -|- embed (a -->> b)
+
+  }.
+
+End ILogicEmbed.
+
+
+
+Arguments EmbedOp _ _ : clear implicits.
+
+Arguments Embed _ {ILOpsA} _ {ILOpsB EmbOp} : rename.
+
+
+
+Section ILogicEmbedOps.
+
+  Context {A B} `{HAB: Embed A B} {ILA: ILogic A} {ILB: ILogic B}.
+
+
+
+  Definition lembedand (a : A) (b : B) := (embed a) //\\ b.
+
+  Definition lembedimpl (a : A) (b : B) := (embed a) -->> b.
+
+
+
+End ILogicEmbedOps.
+
+
+
+Section ILEmbedId.
+
+
+
+  Context {A : Type} `{ILA : ILogic A}.
+
+
+
+  Instance EmbedOpId : EmbedOp A A := { embed := id }.
+
+  Global Instance EmbedId : Embed A A.
+
+  Proof.
+
+    split; firstorder.
+
+  Qed.
+
+
+
+End ILEmbedId.
+
+
+
+Section ILogicEmbedCompose.
+
+  Context {A B} `{HAB: Embed A B} {ILA: ILogic A} {ILB: ILogic B}.
+
+  Context {C} {HC: ILogicOps C} {HE: EmbedOp B C} {HBC : Embed B C} {ILC: ILogic C}.
+
+
+
+  Instance embedOpCompose : EmbedOp A C := { embed := fun x => embed (embed x) }.
+
+
+
+  Program Instance embedCompose : Embed A C.
+
+  Next Obligation.
+
+  	do 2 apply embed_sound; assumption.
+
+  Qed.
+
+  Next Obligation.
+
+  	split;
+
+  	rewrite embedlforall; apply embed_sound; rewrite embedlforall; reflexivity.
+
+  Qed.
+
+  Next Obligation.
+
+  	split;
+
+  	rewrite embedlexists; apply embed_sound; rewrite embedlexists; reflexivity.
+
+  Qed.
+
+  Next Obligation.
+
+  	split;
+
+  	rewrite embedImpl; apply embed_sound; rewrite embedImpl; reflexivity.
+
+  Qed.
+
+
+
+End ILogicEmbedCompose.
+
+
+
+Infix "/\\" := lembedand (at level 75, right associativity).
+
+Infix "->>" := lembedimpl (at level 77, right associativity).
+
+
+
+Section ILogicEmbedFacts.
+
+  Context {A B} `{HAB: Embed A B} {ILA: ILogic A} {ILB: ILogic B}.
+
+
+
+  Global Instance embed_lentails_m :
+
+    Proper (lentails ==> lentails) embed.
+
+  Proof.
+
+    intros a b Hab; apply embed_sound; assumption.
+
+  Qed.
+
+
+
+  Global Instance embed_lequiv_m :
+
+    Proper (lequiv ==> lequiv) embed.
+
+  Proof.
+
+    intros a b Hab; split; destruct Hab; apply embed_sound; assumption.
+
+  Qed.
+
+
+
+  Global Instance lembedimpl_lentails_m:
+
+    Proper (lentails --> lentails ++> lentails) lembedimpl.
+
+  Proof.
+
+    intros P P' HP Q Q' HQ; red in HP.
+
+    unfold lembedimpl. rewrite <- HP, HQ; reflexivity.
+
+  Qed.
+
+
+
+  Global Instance lembedimpl_lequiv_m:
+
+    Proper (lequiv ==> lequiv ==> lequiv) lembedimpl.
+
+  Proof.
+
+    intros P P' HP Q Q' HQ.
+
+    split; apply lembedimpl_lentails_m; (apply HP || apply HQ).
+
+  Qed.
+
+
+
+  Global Instance lembedand_lentails_m:
+
+    Proper (lentails ==> lentails ==> lentails) lembedand.
+
+  Proof.
+
+    intros P P' HP Q Q' HQ.
+
+    unfold lembedand. rewrite HP, HQ. reflexivity.
+
+  Qed.
+
+
+
+  Global Instance lembedand_lequiv_m:
+
+    Proper (lequiv ==> lequiv ==> lequiv) lembedand.
+
+  Proof.
+
+    intros P P' HP Q Q' HQ.
+
+    split; apply lembedand_lentails_m; (apply HP || apply HQ).
+
+  Qed.
+
+
+
+  Lemma embedland a b : embed a //\\ embed b -|- embed (a //\\ b).
+
+  Proof.
+
+    do 2 rewrite land_is_forall; rewrite <- embedlforall; split;
+
+    apply lforallR; intro x; apply lforallL with x;
+
+    destruct x; reflexivity.
+
+  Qed.
+
+
+
+  Lemma embedlor a b : embed a \\// embed b -|- embed (a \\// b).
+
+  Proof.
+
+    do 2 rewrite lor_is_exists; erewrite <- embedlexists; split;
+
+    apply lexistsL; intro x; apply lexistsR with x;
+
+    destruct x; reflexivity.
+
+  Qed.
+
+
+
+  Lemma embedlfalse : embed lfalse -|- lfalse.
+
+  Proof.
+
+    rewrite lfalse_is_exists; erewrite <- embedlexists; split;
+
+    [apply lexistsL; intro x; destruct x | apply lfalseL].
+
+  Qed.
+
+
+
+  Lemma embedltrue : embed ltrue -|- ltrue.
+
+  Proof.
+
+    rewrite ltrue_is_forall; rewrite <- embedlforall; split;
+
+    [apply ltrueR | apply lforallR; intro x; destruct x].
+
+  Qed.
+
+
+
+  Lemma embedlandC (P R : B) (Q : A) : P //\\ Q /\\ R -|- Q /\\ P //\\ R.
+
+  Proof.
+
+  	unfold lembedand; rewrite <- landA, (landC P), landA; reflexivity.
+
+  Qed.
+
+
+
+  Lemma embedlimplC (P R : B) (Q : A) : P -->> Q ->> R -|- Q ->> P -->> R.
+
+  Proof.
+
+    unfold lembedimpl. do 2 rewrite limplAdj2.
+
+    rewrite landC. reflexivity.
+
+  Qed.
+
+
+
+  Lemma limpllandC (P Q R : B) : P //\\ (Q -->> R) |-- Q -->> P //\\ R.
+
+  Proof.
+
+  	apply limplAdj; rewrite landA; apply landR.
+
+  	+ apply landL1. reflexivity.
+
+  	+ apply landL2. apply limplL; [reflexivity | apply landL1; reflexivity].
+
+  Qed.
+
+
+
+  Lemma embed_existsL (P : A) : Exists x : |-- P, ltrue |-- embed P.
+
+  Proof.
+
+  	apply lexistsL; intro H.
+
+  	rewrite <- H. rewrite embedltrue. apply ltrueR.
+
+  Qed.
+
+
+
+End ILogicEmbedFacts.
+
+
+
+Section EmbedProp.
+
+  Context {A : Type} `{HIL: ILogic A} {HPropOp: EmbedOp Prop A} {HProp: Embed Prop A}.
+
+
+
+  Lemma embedPropExists (p : Prop) : embed p |-- Exists x : p, ltrue.
+
+  Proof.
+
+    assert (p |-- Exists x : p, (|-- ltrue)). {
+
+      intros Hp. exists Hp. apply ltrueR.
+
+    } etransitivity.
+
+    rewrite H. reflexivity.
+
+    rewrite <- embedlexists. apply lexistsL. intros Hp.
+
+    apply lexistsR with Hp. apply ltrueR.
+
+  Qed.
+
+
+
+  Lemma embedPropExistsL (p : Prop) (P : A) : Exists x : p, P |-- embed p.
+
+  Proof.
+
+    assert (Exists x : p, ltrue |-- p). {
+
+      intros HP. destruct HP as [HP _]. apply HP.
+
+    }
+
+    etransitivity; [|rewrite <- H]; [reflexivity|].
+
+    rewrite <- embedlexists. apply lexistsL; intro Hp.
+
+    apply lexistsR with Hp. rewrite embedltrue. apply ltrueR.
+
+  Qed.
+
+
+
+  Lemma embedPropExists' (p : Prop) : Exists x : p, ltrue -|- embed p.
+
+  Proof.
+
+  	split; [apply embedPropExistsL | apply embedPropExists].
+
+  Qed.
+
+
+
+  Lemma embedPropL (p : Prop) C (H: p -> |-- C) :
+
+    embed p |-- C.
+
+  Proof.
+
+  	rewrite embedPropExists.
+
+  	apply lexistsL; intro Hp.
+
+  	apply H; apply Hp.
+
+  Qed.
+
+
+
+  Lemma embedPropR (p : Prop) (P : A) (H : p) : P |-- embed p.
+
+  Proof.
+
+    assert (ltrue |-- p) by (intros _; assumption).
+
+    rewrite <- H0, embedltrue; apply ltrueR.
+
+  Qed.
+
+
+
+  Lemma lpropandL (p: Prop) Q C (H: p -> Q |-- C) :
+
+    p /\\ Q |-- C.
+
+  Proof.
+
+    unfold lembedand.
+
+    apply landAdj.
+
+    apply embedPropL.
+
+    intros Hp.
+
+    apply limplAdj.
+
+    apply landL2.
+
+    apply H. assumption.
+
+  Qed.
+
+
+
+  Lemma lpropandR C (p: Prop) Q (Hp: p) (HQ: C |-- Q) :
+
+    C |-- p /\\ Q.
+
+  Proof.
+
+    unfold lembedand.
+
+    apply landR; [|assumption].
+
+    rewrite <- embedPropR. apply ltrueR. assumption.
+
+  Qed.
+
+
+
+  Lemma lpropimplL (p: Prop) (Q C: A) (Hp: p) (HQ: Q |-- C) :
+
+    p ->> Q |-- C.
+
+  Proof.
+
+    unfold lembedimpl.
+
+    rewrite <- embedPropR, limplTrue; assumption.
+
+  Qed.
+
+
+
+  Lemma lpropimplR C (p: Prop) Q (H: p -> C |-- Q) :
+
+    C |-- p ->> Q.
+
+  Proof.
+
+    unfold lembedimpl.
+
+    apply limplAdj. rewrite landC. apply lpropandL. assumption.
+
+  Qed.
+
+
+
+  Lemma lpropandTrue P : True /\\ P -|- P.
+
+  Proof.
+
+    split.
+
+    + apply lpropandL; intros _; reflexivity.
+
+    + apply landR.
+
+      * replace True with (@ltrue Prop _) by reflexivity.
+
+        rewrite embedltrue. apply ltrueR.
+
+      * reflexivity.
+
+  Qed.
+
+
+
+  Lemma lpropandFalse P : False /\\ P -|- lfalse.
+
+  Proof.
+
+    split.
+
+    + apply lpropandL; intros H; destruct H.
+
+    + apply lfalseL.
+
+  Qed.
+
+
+
+End EmbedProp.
+
+
+
+Section EmbedProp'.
+
+  Context {A : Type} `{HILA: ILogic A} {HPropOpA: EmbedOp Prop A} {HPropA: Embed Prop A}.
+
+  Context {B : Type} `{HILB: ILogic B} {HPropOpB: EmbedOp Prop B} {HPropB: Embed Prop B}.
+
+  Context {HEmbOp : EmbedOp B A} {Hemb: Embed B A}.
+
+
+
+  Lemma lpropandAL (p : B) (q : A) (P : Prop) : P /\\ p /\\ q |-- (P /\\ p) /\\ q.
+
+  Proof.
+
+    apply lpropandL; intros HP; apply landR.
+
+    + apply landL1; apply embed_sound; apply landR.
+
+      * apply embedPropR. assumption.
+
+      * reflexivity.
+
+    + apply landL2; reflexivity.
+
+  Qed.
+
+
+
+  Lemma lpropandAC (p : B) (q : A) (P : Prop) : p /\\ P /\\ q -|- P /\\ p /\\ q.
+
+  Proof.
+
+  	unfold lembedand. do 2 rewrite <- landA; rewrite (landC (embed p)); reflexivity.
+
+  Qed.
+
+
+
+  Lemma lpropandAR (p : B) (q : A) (P : Prop) : (P /\\ p) /\\ q |-- P /\\ p /\\ q.
+
+  Proof.
+
+  	apply landR.
+
+  	+ apply landL1.
+
+  	  unfold lembedand; rewrite <- embedland; apply landL1.
+
+  	  rewrite embedPropExists, <- embedlexists.
+
+  	  apply lexistsL; intro Hp.
+
+  	  apply embedPropR; apply Hp.
+
+  	+ unfold lembedand; rewrite <- embedland; apply landR.
+
+  	  * apply landL1; apply landL2. reflexivity.
+
+  	  * apply landL2; reflexivity.
+
+ Qed.
+
+
+
+ Lemma lpropimplAL (p : B) (q : A) (P : Prop) : (P ->> p) /\\ q |-- P ->> (p /\\ q).
+
+ Proof.
+
+    unfold lembedimpl, lembedand. apply limplAdj. rewrite landA.
+
+    rewrite <- embedImpl. apply limplL. apply landL2.
+
+    rewrite embedPropExists. apply lexistsL; intro Hp.
+
+    rewrite <- (embedPropR ltrue); [apply embedltrue | apply Hp].
+
+    apply landR; [apply landL1|apply landL2; apply landL1]; reflexivity.
+
+ Qed.
+
+
+
+ Lemma lpropimplAR (p : B) (q : A) (P : Prop) : p /\\ (P ->> q) |-- P ->> (p /\\ q).
+
+ Proof.
+
+    unfold lembedimpl, lembedand. rewrite landC. apply limplAdj. rewrite landA.
+
+    apply limplL. apply landL2; reflexivity.
+
+    apply landR; [apply landL2; apply landL1|apply landL1]; reflexivity.
+
+ Qed.
+
+
+
+  Lemma embedPropR2 (p : Prop) (P : A) (H : p) : P |-- embed (embed p).
+
+  Proof.
+
+    assert (ltrue |-- p) by (intros _; assumption).
+
+    rewrite <- H0. do 2 rewrite embedltrue. apply ltrueR.
+
+  Qed.
+
+
+
+  Lemma embedPropL2 (p : Prop) (C : A) (H: p -> |-- C) :
+
+    embed (embed p) |-- C.
+
+  Proof.
+
+  	rewrite embedPropExists, <- embedlexists.
+
+  	apply lexistsL; intro Hp. rewrite embedltrue.
+
+  	apply H; apply Hp.
+
+  Qed.
+
+
+
+End EmbedProp'.
+
+
+
+Section EmbedPropProp.
+
+
+
+Instance EmbedOpPropProp : EmbedOp Prop Prop := { embed := fun P => P }.
+
+Instance EmbedPropProp : Embed Prop Prop.
+
+Proof.
+
+  split; firstorder.
+
+Qed.
+
+
+
+End EmbedPropProp.
+
+
+
+Section EmbedPropInj.
+
+  Context {A : Type} `{ILA : ILogic A}.
+
+  Context {EmbOp1 : EmbedOp Prop A} {Emb1 : Embed Prop A}.
+
+  Context {EmbOp2 : EmbedOp Prop A} {Emb2 : Embed Prop A}.
+
+
+
+  Lemma emb_prop_eq (P : Prop) : @embed _ _ EmbOp1 P -|- @embed _ _ EmbOp2 P.
+
+  Proof.
+
+    split; rewrite embedPropExists; apply lexistsL; intro Hp;
+
+      (rewrite <- (embedPropR ltrue); [apply ltrueR | apply Hp]).
+
+  Qed.
+
+
+
+End EmbedPropInj.
+

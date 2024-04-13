@@ -1,0 +1,1409 @@
+Require Import List Omega Numbers.BinNums.
+
+Import List.ListNotations.
+
+
+
+Require Import Cecoa.Interface.
+(* Cecoa.Interface:
+Require Import List.
+Require Cecoa.Syntax Cecoa.Program Cecoa.CBV_cache Cecoa.Ordering Cecoa.QI Cecoa.Final Cecoa.Evaluates.
+
+Module Type SYNTAX.
+  Parameters variable function constructor : Type.
+
+  Parameter function_default : function.
+  Parameter constructor_default : constructor.
+
+  Parameter variable_eq_dec : forall (x1 x2 : variable), {x1=x2}+{x1<>x2}.
+  Parameter function_eq_dec : forall (x1 x2 : function), {x1=x2}+{x1<>x2}.
+  Parameter constructor_eq_dec : forall (x1 x2 : constructor), {x1=x2}+{x1<>x2}.
+End SYNTAX.
+
+Module MkSyn (S: SYNTAX).
+  Definition value := Syntax.value S.constructor.
+  Definition term := Syntax.term S.variable S.function S.constructor.
+  Definition pattern := Syntax.pattern S.variable S.constructor.
+  Definition rule := Syntax.rule S.variable S.function S.constructor.
+
+  Definition var : S.variable -> term := @Syntax.var _ _ _.
+  Definition capply : S.constructor -> list term -> term := @Syntax.capply _ _ _.
+  Definition fapply : S.function -> list term -> term := @Syntax.fapply _ _ _.
+
+  Definition c_capply : S.constructor -> list value -> value := @Syntax.c_capply _.
+
+  Definition value_default : value := c_capply S.constructor_default nil.
+  Definition rule_default : rule :=
+    Syntax.rule_intro S.function_default nil (capply S.constructor_default nil).
+
+  Definition term_from_value : value -> term :=
+    @Syntax.term_from_value S.variable S.function S.constructor.
+  Definition term_from_pattern : pattern -> term :=
+    @Syntax.term_from_pattern S.variable S.function S.constructor.
+
+  Definition cbv : Type := CBV_cache.cbv S.variable S.function S.constructor.
+  Definition cache : Type := list (term * value).
+  Definition cbv_constr : list cbv -> cache -> term -> cache -> value -> cbv :=
+    @CBV_cache.cbv_constr S.variable S.function S.constructor.
+  Definition cbv_split : list cbv -> cbv -> cache -> term -> cache -> value -> cbv :=
+    @CBV_cache.cbv_split S.variable S.function S.constructor.
+  Definition cbv_update : nat -> (S.variable -> value) -> cbv -> cache -> term -> cache -> value -> cbv :=
+    @CBV_cache.cbv_update S.variable S.function S.constructor.
+  Definition cbv_read : cache -> term -> value -> cbv :=
+    @CBV_cache.cbv_read S.variable S.function S.constructor.
+
+  Definition cbv_size : cbv -> nat := @CBV_cache.size S.variable S.function S.constructor.
+
+  Definition proj_left : cbv -> term :=
+    @CBV_cache.proj_left S.variable S.function S.constructor.
+  Definition proj_right : cbv -> value :=
+    @CBV_cache.proj_right S.variable S.function S.constructor.
+
+  Module Type PROGRAM.
+    Parameter prog : list rule.
+  End PROGRAM.
+
+  Module MkProg (P: PROGRAM).
+    Definition ranklist := Program.ranklist S.variable S.function S.constructor S.function_eq_dec P.prog.
+    Definition max_rank : nat := Program.max_rank S.variable S.function S.constructor S.function_eq_dec P.prog.
+    Ltac autorank := TopologicalSort.autorank.
+
+    Definition max_arity : nat := Program.max_arity_prog S.variable S.function S.constructor P.prog.
+    Definition wf_prog : Prop := Program.wf_prog S.variable S.function S.constructor P.prog.
+
+    Definition cbv_wf : cbv -> Prop :=
+      CBV_cache.wf
+        S.variable_eq_dec S.function_eq_dec S.constructor_eq_dec
+        rule_default P.prog max_arity.
+
+    Definition PPO_prog (rank: S.function -> nat) : Prop := Ordering.PPO_prog P.prog rank.
+    Ltac ppo := Ordering.ppo S.variable_eq_dec S.function_eq_dec S.constructor_eq_dec.
+
+    Module QI.
+      Definition constructor_non_zero := @QI.constructor_non_zero S.constructor.
+      Definition mcs_is_max_constructor_size := @QI.mcs_is_max_constructor_size S.constructor.
+      Definition additive := @QI.additive S.constructor.
+      Definition subterm := @QI.subterm S.function.
+      Definition monotonicity_qic := @QI.monotonicity_qic S.constructor.
+      Definition monotonicity_qif := @QI.monotonicity_qif S.function.
+      Definition cache_bounded :=
+        @QI.cache_bounded S.variable S.function S.constructor.
+      Definition compatible_QI :=
+        @QI.compatible_QI S.variable S.function S.constructor P.prog.
+      Definition term_assignment :=
+        @QI.term_assignment S.variable S.function S.constructor.
+      Definition valid_QI :=
+        @QI.valid_QI S.variable S.function S.constructor P.prog.
+      Definition global_bound :=
+        Final.global_bound S.variable S.function S.constructor P.prog max_arity max_rank.
+      Definition P_criterion wf_prog rank :=
+        Final.P_criterion S.variable S.function S.constructor P.prog max_arity rule_default wf_prog
+                          S.variable_eq_dec S.function_eq_dec S.constructor_eq_dec rank max_rank.
+    End QI.
+
+    Module Evaluator.
+      Definition first_rule := Evaluates.first_rule S.variable_eq_dec S.function_eq_dec S.constructor_eq_dec value_default P.prog.
+      Definition evaluates := Evaluates.evaluates S.variable_eq_dec S.function_eq_dec S.constructor_eq_dec value_default P.prog.
+      Ltac reduce := Evaluates.reduce.
+      Ltac auto_for_auto lemma :=
+        let t' := type of lemma in
+        let t := eval unfold evaluates in t' in
+            exact t.
+      Hint Unfold evaluates : eval.
+    End Evaluator.
+  End MkProg.
+
+  Module ProgramNotations.
+    Fixpoint patternify (t: term) : pattern :=
+      match t with
+      | Syntax.var v         => Syntax.p_var v
+      | Syntax.capply cst ys => Syntax.p_capply cst (map patternify ys)
+      | _                    => Syntax.p_capply S.constructor_default nil
+      end.
+
+    Definition rulify (t e: term) : rule :=
+      match t with
+        | Syntax.fapply f ys => Syntax.rule_intro f (map patternify ys) e
+        | _                  => Syntax.rule_intro S.function_default nil (Syntax.capply S.constructor_default nil)
+      end.
+
+    Notation " f '(:' ':)' " := (Syntax.fapply f (@nil term)) (at level 65).
+    Notation " f '(:' x ':)' " := (Syntax.fapply f (@cons term x nil)) (at level 65).
+    Notation " f '(:' x ',' .. ',' z ':)' " := (Syntax.fapply f (@cons term x .. (@cons term z nil) .. )) (at level 65).
+    Notation "fl '-->' e" := (rulify fl e) (at level 70).
+
+    Definition var_coercion_gen : S.variable -> term := @Syntax.var _ _ _.
+  End ProgramNotations.
+End MkSyn. *)
+
+Require Import Cecoa.Lib.
+(* Cecoa.Lib:
+Require Import Bool Arith Max Omega Psatz List NPeano Permutation.
+Import List.ListNotations.
+
+Require Import Unicode.Utf8_core.
+Require Import Unicode.Utf8.
+Notation "x ≤ y ≤ z" := (x ≤ y ∧ y ≤ z) (at level 70, y at next level).
+Notation "x < y ≤ z" := (x < y ∧ y ≤ z) (at level 70, y at next level).
+Notation "x ≤ y < z" := (x ≤ y ∧ y < z) (at level 70, y at next level).
+
+Infix "∈" := In (at level 70).
+
+Infix "=?" := beq_nat (at level 70, no associativity).
+
+Obligation Tactic := idtac.
+
+Scheme Equality for prod.
+Scheme Equality for list.
+
+Set Implicit Arguments.
+
+Section Trivial.
+Lemma S_is_suc n: S n = n+1.
+Lemma or_idem: ∀ A, A ↔ A ∨ A.
+Lemma and_idem: ∀ A, A ↔ A ∧ A.
+Lemma and_left: ∀ A B, A ∧ B → A.
+Lemma or_false_idem: ∀ A, A ↔ A ∨ False.
+
+Definition fmono (f: nat → nat):= ∀ x y, x ≤ y → f x ≤ f y.
+
+Lemma forall_and {A:Type} (P Q:A→Prop):
+  (∀ x, P x ∧ Q x) ↔ ((∀ x, P x) ∧ (∀ x, Q x)).
+Lemma forall_impl_and {A:Type} (R:A→Prop) (P Q:A→Prop):
+  (∀ x, R x → P x ∧ Q x) ↔
+  ((∀ x, R x → P x) ∧ (∀ x, R x → Q x)).
+Lemma forall_impl2_and {A B:Type} (P Q R : A → B → Prop):
+  (∀ x y, R x y → P x y ∧ Q x y) ↔ 
+  ((∀ x y, R x y → P x y) ∧ (∀ x y, R x y → Q x y)).
+
+Lemma eqb_subst_neq x y:
+  x ≠ y → (x =? y) = false.
+Lemma neq_lt_gt_iff (m n:nat):
+  m ≠ n ↔ (m < n ∨ n < m).
+
+Lemma length_nil : forall A (l : list A),
+  length l = 0 -> l = nil.
+End Trivial.
+
+Lemma prod_beq_eq A B
+  (A_beq : A -> A -> bool) (B_beq : B -> B -> bool)
+  (A_beq_eq : forall a1 a2, A_beq a1 a2 = true <-> a1 = a2) (B_beq_eq : forall b1 b2, B_beq b1 b2 = true <-> b1 = b2)
+  p1 p2 : prod_beq _ _ A_beq B_beq p1 p2 = true <-> p1 = p2.
+
+Lemma list_beq_eq A
+  (A_beq : A -> A -> bool) l1 l2 (A_beq_eq : forall a1 a2, In a1 l1 -> In a2 l2 -> (A_beq a1 a2 = true <-> a1 = a2)) :
+  list_beq _ A_beq l1 l2 = true <-> l1 = l2.
+
+Lemma list_beq_refl (A : Type) (A_beq : A -> A -> bool) l :
+  (forall a1 a2 : A, In a1 l -> In a2 l -> (A_beq a1 a2 = true <-> a1 = a2)) ->
+  list_beq _ A_beq l l = true.
+
+Lemma eq_None_neq_Some (A : Type) (x : option A) :
+  x = None <-> forall v, x <> Some v.
+
+Lemma neq_None_eq_Some :
+  forall (A: Type) (x: option A), x <> None <-> (exists a, x = Some a).
+
+Lemma app_insert_r (A : Type) (l1 l1' l l2 l2' : list A):
+  l1 ++ l2 = l1' ++ l2' -> length l2 = length l2' -> l1 ++ l ++ l2 = l1' ++ l ++ l2'.
+
+Section assoc.
+
+Fixpoint assoc {A B : Type}(eq : A -> A -> bool)(x : A)(l : list (A * B)) : option B :=
+  match l with
+  | nil => None
+  | (x', y) :: l' => if eq x x' then Some y else assoc eq x l'
+  end.
+
+Definition assoc_default {A B : Type}
+  (eqA : A -> A -> bool) (d : B) (l : list (A * B)) (x : A) : B :=
+  match assoc eqA x l with
+  | None => d
+  | Some b => b
+  end.
+
+Lemma assoc_in {A B:Type} beq k (l: list (A * B)) {v}:
+  (∀ a b:A, beq a b = true ↔ a=b) →
+  assoc beq k l = Some v → (k,v) ∈ l.
+
+Lemma assoc_None_not_in {A B:Type} beq k (l:list (A*B)):
+  (∀ a b : A, beq a b = true ↔ a = b) →
+  assoc beq k l = None ↔ ¬ k ∈ map fst l.
+
+Lemma in_assoc_neq_None (A B: Type) (beq: A -> A -> bool) (k: A) (l: list (A * B)):
+  (forall a b:A, a = b -> beq a b = true) ->
+  In k (map (@fst _ _) l) ->
+  assoc beq k l <> None.
+
+Lemma assoc_in_Some {A B:Type} (beq:A→A→bool) (k:A) (l: list (A*B)):
+  (∀ a b, beq a b = true ↔ a=b) →
+  k ∈ map fst l ↔ ∃ v, v ∈ map snd l ∧ assoc beq k l = Some v.
+
+Lemma assoc_in_Some_simple {A B:Type} beq k (l: list (A*B)):
+  (∀ a b:A, beq a b = true ↔ a = b) →
+  k ∈ map fst l ↔ (∃ v, assoc beq k l = Some v).
+
+Lemma assoc_app_eq_None (A B:Type) (eq: A -> A -> bool) (x: A) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) = None <-> (assoc eq x l1 = None /\ assoc eq x l2 = None).
+
+Lemma assoc_app_neq_None (A B:Type) (eq: A -> A -> bool) (x: A) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) <> None <-> (assoc eq x l1 <> None \/ assoc eq x l2 <> None).
+
+Lemma assoc_app_eq_Some (A B:Type) (eq: A -> A -> bool) (x: A) (v : B) (l1 l2: list (A * B)) :
+  assoc eq x (l1 ++ l2) = Some v <->
+  (assoc eq x l1 = Some v \/ (assoc eq x l1 = None /\ assoc eq x l2 = Some v)).
+
+Lemma assoc_app_in {K V:Type} beq k (l1 l2: list (K*V)):
+  (∀ a b : K, beq a b = true ↔ a = b) →
+  k ∈ map fst l1 → assoc beq k (l1++l2) = assoc beq k l1.
+
+Lemma assoc_app_out {K V:Type} beq k (l1 l2: list (K*V)):
+  (∀ a b : K, beq a b = true ↔ a = b) →
+  ¬ k ∈ map fst l1 → assoc beq k (l1++l2) = assoc beq k l2.
+
+Lemma assoc_in_concat {K V:Type} beq (k:K) ll (v:V):
+  assoc beq k (concat ll) = Some v →
+  ∃ l : list (K * V), l ∈ ll ∧ assoc beq k l = Some v.
+
+End assoc.
+
+Lemma map_in_ext :
+  forall (A B : Type) (f g : A -> B) (l : list A),
+  (forall a : A, In a l -> f a = g a) -> map f l = map g l.
+
+Lemma incl_cons_cons A: forall (a:A) (l1 l2: list A), incl l1 l2 -> incl (a::l1) (a::l2).
+
+Lemma map_incl A B (f : A -> B) l1 l2 : incl l1 l2 -> incl (map f l1) (map f l2).
+
+Lemma map_flat_map (A B C : Type) (f : A -> list B) (g : B -> C) (l : list A) :
+map g (flat_map f l) = flat_map (fun a => map g (f a)) l.
+
+Lemma incl_filter (A : Type) (f : A -> bool) l:
+  incl (filter f l) l.
+
+Lemma filter_ext_In {A : Type} f g (l : list A): (forall a , In a l -> f a = g a)-> filter f l = filter g l.
+
+Lemma filter_app A (f : A -> bool) l1 l2 : filter f (l1 ++ l2) = filter f l1 ++ filter f l2.
+
+Lemma filter_flat_map A B f (g : A -> list B) l : filter f (flat_map g l) = flat_map (fun x => filter f (g x)) l.
+
+Lemma flat_map_in_ext  A B (f g : A -> list B) l : 
+  (forall a : A, In a l -> f a = g a) -> flat_map f l = flat_map g l.
+
+Lemma NoDup_filter A f (l : list A) : NoDup l -> NoDup (filter f l).
+
+Lemma map_cons (A B : Type)(f : A -> B) a l : map f (a :: l) = f a :: map f l.
+
+Lemma length_remove A eq_A_dec (a: A) l :
+  length (remove eq_A_dec a l) <= length l.
+
+Lemma length_cons_remove A eq_A_dec (a: A) l :
+  In a l -> length (a :: remove eq_A_dec a l) <= length l.
+
+Lemma neq_in_in_remove A eq_A_dec (a a': A) l:
+  a' <> a -> In a l -> In a (remove eq_A_dec a' l).
+
+Lemma incl_remove_app A l l1 l2 (x : A) : ~ In x l -> incl l (l1 ++ x :: l2) -> incl l (l1 ++ l2).
+
+Lemma flat_map_nil (A B: Type) (f: A -> list B) (xs: list A):
+  (forall x, In x xs -> f x = []) ->
+  flat_map f xs = [].
+
+Lemma flat_map_comp (A B C : Type) (f : A -> B) (g : B -> list C) (h : A -> list C) (l : list A) :
+  (forall x, In x l -> h x = g (f x)) -> flat_map h l = flat_map g (map f l).
+
+Lemma flat_map_app (A B : Type) (f : A -> list B) l1 l2 :
+  flat_map f (l1 ++ l2) = flat_map f l1 ++ flat_map f l2.
+
+Lemma comp_flat_map (A B C : Type) (f : A -> list B) (g : B -> list C) h l :
+  (forall a, In a l -> h a = flat_map g (f a)) -> flat_map h l = flat_map g (flat_map f l).
+
+Fixpoint andl (l : list Prop) : Prop :=
+  match l with
+  | nil => True
+  | P :: l' => P /\ andl l'
+  end.
+
+Lemma andl_cons: forall a l, andl (a::l) <-> a /\ (andl l).
+
+Lemma andl_in : forall l P, andl l -> In P l -> P.
+
+Lemma andl_in_map (A:Type): forall l (a:A) P, andl (map P l) -> In a l -> P a.
+
+Lemma andl_map (A : Type) (f g : A -> Prop) l :
+  andl (map f l) -> (forall a, In a l -> f a -> g a) -> andl (map g l).
+
+Lemma andl_app l1 l2 : andl (l1 ++ l2) <-> andl l1 /\ andl l2.
+
+Fixpoint orl (l : list Prop) : Prop :=
+  match l with
+  | nil => False
+  | P :: l' => P \/ orl l'
+  end.
+
+Lemma andl_concat l:
+  andl (concat l) <-> forall l', In l' l -> andl l'.
+
+Lemma orl_map (A : Type) (P : A -> Prop) l : orl (map P l) <-> exists x, In x l /\ P x.
+
+Section Maxl.
+Fixpoint maxl (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => max n (maxl l')
+  end.
+
+Lemma maxl_is_max :
+  forall l n, In n l -> n <= maxl l.
+
+Lemma all_max_le l y :
+  (forall x, In x l -> x <= y) -> maxl l <= y.
+
+Lemma maxl_app : forall (l1 l2 : list nat), maxl (l1 ++ l2) = max (maxl l1) (maxl l2).
+
+Lemma in_maxl (l : list nat) : l<>nil -> In (maxl l) l.
+
+Lemma all_maxl P xs: xs <> [] -> (forall x, In x xs -> P x) -> P (maxl xs).
+
+Lemma maxl_le_maxl A f g (l : list A) :
+(forall x, In x l -> f x <= g x) -> maxl (map f l) <= maxl (map g l).
+
+Lemma maxl_map_const {A:Type} l (f: A → nat) n:
+  (∀ x, x ∈ l → (f x) = n) →
+  l ≠ [] → maxl (map f l) = n.
+
+Lemma maxl_map_0 A l (f : A -> nat) : 
+  (forall x, In x l -> (f x) = 0) ->
+  maxl (map f l) = 0.
+
+Lemma maxl_map_plus_le A f g (l : list A) :
+  maxl (map (fun x => f x + g x) l) <= maxl (map f l) + maxl (map g l).
+
+Lemma maxl_concat: forall l,
+  maxl (concat l) = maxl (map maxl l).
+
+Lemma maxl_map_lt_iff (A:Type): forall (l:list A) f n,
+  0<n -> maxl (map f l) < n <-> (forall m, In m l -> (f m) < n).
+
+Lemma maxl_map_le_iff (A:Type): forall (l:list A) f n,
+  maxl (map f l) <= n <-> (forall m, In m l -> (f m) <= n).
+
+Lemma maxl_map_is_max_map (A:Type): forall (l:list A) f a,
+  In a l -> (f a) <= maxl (map f l).
+
+Lemma maxl_eq_maxl {A:Type} f g (l:list A):
+  (∀ x : A, x ∈ l → f x = g x) →
+  maxl (map f l) = maxl (map g l).
+End Maxl.
+
+Lemma in_concat_iff (A:Type) x (l:list (list A)):
+  x ∈ concat l <-> exists l', l' ∈ l /\ x ∈ l'.
+
+Lemma incl_le_maxl :
+  forall (l1 l2 : list nat), incl l1 l2 -> maxl l1 <= maxl l2.
+
+Lemma maxl_cons : forall n l, maxl (n::l) = max n (maxl l).
+
+Lemma forall2_le_maxl :
+  forall (l1 l2 : list nat), Forall2 le l1 l2 -> maxl l1 <= maxl l2.
+
+Lemma incl_flat_map (A B : Type) (f g : A -> list B) l :
+  (forall a, In a l -> incl (f a) (g a)) ->
+  incl (flat_map f l) (flat_map g l).
+
+Section suml.
+
+Fixpoint suml (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => n + suml l'
+  end.
+
+Lemma suml_cons n l : suml (n :: l) = n + suml l.
+
+Lemma suml_map_const A n (l : list A) : suml (map (fun _ => n) l) = n * length l.
+
+Lemma mult_suml_r m l : m * suml l = suml (map (fun n => m * n) l).
+
+Lemma suml_app l1 l2 : suml (l1 ++ l2) = suml l1 + suml l2.
+
+Lemma suml_flat_map (A : Type)(f : A -> list nat)(l :list A) :
+  suml (flat_map f l) = suml (map suml (map f l)).
+
+Lemma suml_flat_map_map (A B : Type) (f : A -> list B) (g : B -> nat) l :
+  suml (flat_map (fun x => map g (f x)) l) = suml (map (fun x => suml (map g (f x))) l).
+
+Lemma suml_map_plus (A : Type)(f g : A -> nat)(l : list A) : suml (map (fun x => f x + g x) l) = suml (map f l) + suml (map g l).
+
+Lemma suml_map_le :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x <= g x) -> suml (map f l) <= suml (map g l).
+
+Lemma suml_map_eq :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x = g x) -> suml (map f l) = suml (map g l).
+
+Lemma suml_map_le_plus_length :
+  forall (A : Type)(f g : A -> nat)(l : list A),
+  (forall x, In x l -> f x <= g x + 1) -> suml (map f l) <= suml (map g l) + length l.
+
+Lemma suml_le_len_times_bound l b :
+  (forall x, In x l -> x <= b) -> suml l <= length l * b.
+
+Lemma in_le_suml :
+  forall (n : nat)(l : list nat),
+  In n l -> n <= suml l.
+
+Lemma maxl_le_suml l: maxl l <= suml l.
+
+Lemma forall2_le_suml :
+  forall (l1 l2 : list nat), Forall2 le l1 l2 -> suml l1 <= suml l2.
+
+Lemma maxl_le_suml_map (A B : Type) (f : A -> list B) (g : B -> nat) (h : A -> nat) (l : list A) :
+  (forall a, In a l -> maxl (map g (f a)) <= h a) ->
+  maxl (map g (flat_map f l)) <= suml (map h l).
+
+Lemma suml_map_mult_le_suml_mult_maxl (A : Type) f g (l : list A) :
+  suml (map (fun x => f x * g x) l) <= suml (map f l) * maxl (map g l).
+
+Lemma suml_map_mult_le_suml_mult_suml (A : Type) f g (l : list A) :
+  suml (map (fun x => f x * g x) l) <= suml (map f l) * suml (map g l).
+
+Lemma length_flat_map (A B : Type) ( f : A -> list B) (l : list A) :
+  length (flat_map f l) = suml (map (@length _) (map f l)).
+
+Lemma seq_Succ n m : seq n (S m) = seq n m ++ [m + n].
+
+Lemma Permutation_filter {A : Type} f (l : list A) : Permutation l (filter f l ++ filter (fun x => negb (f x)) l).
+
+Lemma filter_compose {A : Type} f g (l : list A) : 
+  (forall x, In x l -> ( f x = true -> g x = true)) ->
+  filter f (filter g l) = filter f l.
+
+Lemma in_seq : forall len start n : nat,
+       In n (seq start len) <-> start <= n < start + len.
+
+Lemma Permutation_partition_list_nat b n l :
+ (forall x, In x l -> b <= x < b + n) ->
+ Permutation l (flat_map (fun n => filter (beq_nat n) l) (seq b n)).
+
+Lemma length_suml_filter b n l:
+ (forall x, In x l -> b <= x < b + n) ->
+ suml (map (fun r => length(filter (beq_nat r) l )) (seq b n)) = length l.
+
+End suml.
+
+Section prodl.
+
+Fixpoint prodl (l : list nat) : nat :=
+  match l with
+  | nil => 1
+  | n :: l' => n * prodl l'
+  end.
+
+Lemma prodl_bound (l : list nat) (b : nat) : 
+  (forall x, In x l -> x <= b) -> prodl l <= Nat.pow b  (length l).
+
+End prodl.
+
+Definition clos_refl {A : Type} (R : A -> A -> Prop) (x y : A) : Prop :=
+  R x y \/ x = y.
+
+Lemma clos_refl_trans (A: Type) (R: A -> A -> Prop) t1 t2 t3:
+    (R t1 t2 -> R t2 t3 -> R t1 t3) ->
+    clos_refl R t1 t2 -> clos_refl R t2 t3 -> clos_refl R t1 t3.
+
+Lemma Forall2_eq_clos_refl (A:Type) (R: A -> A -> Prop) (l1 :list A) :
+  Forall2 (clos_refl R) l1 l1.
+
+Lemma Forall_In_l (A : Type) (P : A -> Prop) x xs:
+  Forall P xs -> In x xs -> P x.
+
+Lemma Forall2_In_l (A B : Type) (R : A -> B -> Prop) x xs ys :
+  Forall2 R xs ys -> In x xs -> exists y, In y ys /\ R x y.
+
+Lemma Forall2_In_r (A B : Type) (R : A -> B -> Prop) y xs ys :
+  Forall2 R xs ys -> In y ys -> exists x, In x xs /\ R x y.
+
+Lemma Forall2_conj (A B : Type) (R1 R2 : A -> B -> Prop) xs ys :
+  Forall2 R1 xs ys -> Forall2 R2 xs ys -> Forall2 (fun x y => R1 x y /\ R2 x y) xs ys.
+
+Lemma Forall2_trans (A: Type) (R: A -> A -> Prop) xs ys zs :
+    (forall x y z, In x xs -> In y ys -> In z zs -> R x y -> R y z -> R x z) ->
+    Forall2 R xs ys -> Forall2 R ys zs -> Forall2 R xs zs.
+
+Lemma Forall2_length A B (R : A -> B -> Prop) xs ys :
+  Forall2 R xs ys -> length xs = length ys.
+
+Lemma Forall2_map (A:Type) (B:Type): forall l f g (R:B->B->Prop),
+  (forall (x:A), In x l -> R (f x) (g x)) -> Forall2 R (map f l) (map g l).
+
+Lemma Forall2_flat_map (A B C D: Type) (R: C -> D -> Prop) (f: A -> list C) (g: B -> list D) (xs: list A) (ys: list B) :
+  Forall2 (fun x y => Forall2 R (f x) (g y)) xs ys ->
+  Forall2 R (flat_map f xs) (flat_map g ys).
+
+Lemma Forall2_forall A (d: A) (R: A -> A -> Prop) (xs ys: list A) :
+  Forall2 R xs ys ->
+  forall i, i < length xs -> R (nth i xs d) (nth i ys d).
+
+Inductive Exists2 {A B} (R: A -> B -> Prop) : list A -> list B -> Prop :=
+ | Exists2_cons_hd : forall x xs y ys, R x y -> Exists2 R (x::xs) (y::ys)
+ | Exists2_cons_tl : forall x xs y ys, Exists2 R xs ys -> Exists2 R (x::xs) (y::ys).
+Hint Constructors Exists2.
+
+Lemma Exists2_exists A (d: A) (R: A -> A -> Prop) (xs ys: list A) :
+  Exists2 R xs ys ->
+  exists i, i < length xs /\ R (nth i xs d) (nth i ys d).
+
+Lemma app_eq_compat_l {A: Type} (xs ys zs: list A) : ys = zs -> xs ++ ys = xs ++ zs.
+
+Lemma In_prefix_suffix (A : Type) (a : A) l :
+  In a l -> exists l1 l2, l = l1 ++ a :: l2.
+
+Lemma forall_exists_list (A B : Type) (P : A -> Prop) (Q : A -> B -> Prop) (l : list A) :
+  (forall a, In a l -> P a -> exists b, Q a b) ->
+  (Forall P l -> exists l', Forall2 Q l l').
+
+Lemma forall_andl (A: Type) (P: A -> Prop) (l: list A):
+  Forall P l <-> andl (map P l).
+
+Fixpoint revflatten {A: Type} (xss: list (list A)) : list A :=
+  match xss with
+  | []       => []
+  | xs::xss' => revflatten xss' ++ xs
+  end.
+
+Lemma Permutation_flat_map_ext A B  : forall l (f g : A -> list B),
+  (forall x, In x l -> Permutation (f x) (g x)) -> Permutation (flat_map f l) (flat_map g l).
+
+Lemma Permutation_revflatten A B (f : A -> list B) l : Permutation(revflatten (map f l)) (flat_map f l).
+
+Lemma In_seq n start len : In n (seq start len) <-> start <= n < start+len.
+
+Lemma seq_S start len : seq start (S len) = seq start len ++ [start + len].
+
+Lemma plus_eq_compat_l x y1 y2 : y1 = y2 -> x + y1 = x + y2.
+
+Lemma plus_eq_compat_r x1 x2 y : x1 = x2 -> x1 + y = x2 + y.
+
+Section count_occ.
+
+Lemma count_occ_remove_O A eq_dec (a: A) l :
+  count_occ eq_dec (remove eq_dec a l) a = 0.
+
+Lemma count_occ_remove_neq A eq_dec (a a': A) l :
+  a<>a' -> count_occ eq_dec (remove eq_dec a' l) a = count_occ eq_dec l a.
+
+Lemma suml_map_count_occ_remove A eq_dec (a: A) l1 l2 :
+  ~In a l2 ->
+  suml (map (count_occ eq_dec (remove eq_dec a l1)) l2) =
+  suml (map (count_occ eq_dec l1) l2).
+
+Lemma length_remove_count_occ A eq_dec (a: A) l:
+  length l = length (remove eq_dec a l) + count_occ eq_dec l a.
+
+Lemma in_remove_neq A eq_dec (a a': A) l :
+  In a' (remove eq_dec a l) -> In a' l.
+
+Lemma length_count_occ a b l :
+  (forall n, In n l -> a <= n < a + b) ->
+  length l = suml (map (count_occ eq_nat_dec l) (seq a b)).
+
+Lemma count_occ_cons A eq_dec (a a': A) l :
+  count_occ eq_dec (a::l) a' =
+  if eq_dec a a' then S (count_occ eq_dec l a') else count_occ eq_dec l a'.
+
+Lemma count_occ_app A eq_dec (a :A) l l' :
+  count_occ eq_dec (l ++ l') a = count_occ eq_dec l a + count_occ eq_dec l' a.
+
+Lemma count_occ_flat_map A B eq_B_dec (f: A -> list B) b l :
+  count_occ eq_B_dec (flat_map f l) b =
+  suml (map (fun a => count_occ eq_B_dec (f a) b) l).
+
+End count_occ.
+
+Lemma tl_incl (A:Type): forall (a:A) l l', incl (a::l') l -> incl l' l.
+
+Section NoDup.
+
+Lemma NoDup_app (A: Type) (l1 l2: list A):
+  (forall x, In x l1 -> ~ In x l2) ->
+  NoDup l1 ->
+  NoDup l2 ->
+  NoDup (l1 ++ l2).
+
+Lemma NoDup_split (A: Type) (l1 l2: list A):
+  NoDup (l1 ++ l2) ->
+  NoDup l1.
+
+Lemma NoDup_split_right : forall (A : Type) (l1 l2 : list A), NoDup (l1 ++ l2) -> NoDup l2.
+
+Theorem NoDup_cons_iff {A:Type} (a: A) (l: list A):
+  NoDup (a::l) <-> ~ In a l /\ NoDup l.
+
+Lemma NoDup_app_in_l A l l' :
+  NoDup (l ++ l') -> forall x : A, (In x l) -> ~ (In x l').
+
+Lemma NoDup_Permutation_NoDup A l l' : @NoDup A l -> Permutation.Permutation l l' -> NoDup l'.
+
+Lemma NoDup_incl_le_length (A: Type)
+  (l1 l2: list A):
+  NoDup l1 -> incl l1 l2 -> length l1 <= length l2.
+
+Lemma NoDup_flat_map A B (f : A -> list B) l :
+  (forall x, In x l -> NoDup (f x)) ->
+  NoDup l ->
+  (forall x y, In x l -> In y l -> x <> y -> (forall z, In z (f x) <-> ~ In z (f y))) ->
+  NoDup (flat_map f l).
+
+End NoDup.
+
+Definition uniquify A (d : forall a b : A, { a = b} + { a <> b}) (l:list A) : list A :=
+list_rect (fun _ : list A => list A) []
+  (fun (a : A) (_ l' : list A) => let s := in_dec d a l' in if s then l' else a :: l') l.
+
+Section pow.
+
+Lemma lt_0_pow x n : 0 < x ->  0 < Nat.pow x n.
+
+Lemma pow_le_compat x y n:
+  x <= y -> Nat.pow x n <= Nat.pow y n.
+
+End pow.
+
+Lemma length_filter (A B : Type) (c : B -> bool) (f : A -> B) (xs : list A) :
+  length (filter (fun x => c (f x)) xs) =
+  length (filter c (map f xs)).
+
+Section Sublist.
+
+Inductive sublist (A : Type) : (list A) -> (list A) -> Prop :=
+| sublist_refl : forall l, sublist l l
+| sublist_skip : forall l1 h t, sublist l1 t -> sublist l1 (h :: t)
+| sublist_cons : forall h t1 t2, sublist t1 t2 -> sublist (h :: t1) (h :: t2).
+
+Hint Constructors sublist.
+
+Lemma sublist_nil A (l : list A) : sublist [] l.
+
+Lemma sublist_incl A (l1 l2 : list A) : sublist l1 l2 -> incl l1 l2.
+
+Lemma sublist_app_skip A (l1 l2 l3 : list A) : sublist l1 l3 -> sublist l1 (l2 ++ l3).
+
+Lemma sublist_app_left A (l1 l2 l3 : list A) : sublist l1 l3 -> sublist (l2 ++ l1) (l2 ++ l3).
+
+Lemma sublist_app_compat A (l1 l2 l3 l4 : list A) :
+  sublist l1 l3 -> 
+  sublist l2 l4 ->
+  sublist (l1 ++ l2) (l3 ++ l4).
+
+Lemma sublist_flatmap_in_ext A B (f : A -> list B) g l: 
+  (forall x : A , In x l -> sublist (f x) (g x)) ->
+  sublist (flat_map f l) (flat_map g l).
+
+Lemma NoDup_sublist A (l1 l2 : list A) : sublist l1 l2 -> NoDup l2 -> NoDup l1.
+
+End Sublist.
+
+Section Compat.
+
+Lemma NoDup_map_inv A B (f:A->B) l : NoDup (map f l) -> NoDup l.
+
+End Compat.
+
+Lemma In_In_list_decompose {A} (x y : A) l : In x l -> In y l ->
+  x = y \/
+  exists l1 l2 l3, (l = l1 ++ x :: l2 ++ y :: l3) \/ (l = l1 ++ y :: l2 ++ x :: l3).
+
+Section Lexicographic_Product.
+
+Variables A B : Type.
+
+Variable ltA : A -> A -> Prop.
+
+Variable ltB : B -> B -> Prop.
+
+Hypothesis wf_ltA : well_founded ltA.
+
+Hypothesis wf_ltB : well_founded ltB.
+
+Inductive lexprod : A*B -> A*B -> Prop :=
+| lex_l : forall a a' b b', ltA a a' -> lexprod (a, b) (a', b')
+| lex_r : forall a    b b', ltB b b' -> lexprod (a, b) (a,  b').
+
+Lemma acc_lex a b : Acc ltA a -> Acc ltB b -> Acc lexprod (a, b).
+
+Lemma lexprod_trans :
+  (forall a1 a2 a3, ltA a1 a2 -> ltA a2 a3 -> ltA a1 a3) ->
+  (forall b1 b2 b3, ltB b1 b2 -> ltB b2 b3 -> ltB b1 b3) ->
+  forall x1 x2 x3, lexprod x1 x2 -> lexprod x2 x3 -> lexprod x1 x3.
+
+Lemma wf_lexprod : well_founded lexprod.
+
+Definition lex_prod_dec: 
+  (forall a1 a2 : A, {a1 = a2} + {a1 <> a2}) ->
+  (forall a1 a2, {ltA a1 a2} + {~ltA a1 a2}) ->
+  (forall b1 b2, {ltB b1 b2} + {~ltB b1 b2}) ->
+  (forall x y, {lexprod x y} + {~ lexprod x y}).
+
+End Lexicographic_Product.
+
+Section Last.
+
+Lemma non_empty_last (A:Type) d d' (l:list A):
+  l <> [] -> (last l d) = (last l d').
+
+Lemma cons_cons_last (A:Type) (a b:A) l x:
+  last (a::b::l) x = last (b::l) x.
+
+Lemma cons_last (A:Type) (a:A) l x:
+  last (a::l) x = last l a.
+
+Lemma last_in (A:Type) (l:list A) x:
+  (last l x = x) \/ (In (last l x) l).
+
+End Last.
+
+Lemma beq_eq_dec {A : Type} {beq : A -> A -> bool} (Hbeq : forall x y, beq x y = true <-> x = y) : forall (x y : A), {x = y} + {~ x = y}.
+
+Section Firstn_skipn.
+Lemma firstn_map {A B : Type} (f : A -> B) l n : 
+  firstn n (map f l) = map f (firstn n l).
+
+Lemma skipn_map {A B : Type} (f : A -> B) l n : 
+  skipn n (map f l) = map f (skipn n l).
+
+Lemma skipn_app_length {A : Type} (l1 l2 : list A) : skipn (length l1) (l1 ++ l2) = l2.
+
+Lemma firstn_app_length {A : Type} (l1 l2 : list A) : firstn (length l1) (l1 ++ l2) = l1.
+
+Lemma skipn_nil : forall {A} n (x : list A),
+  length x <= n -> skipn n x = nil.
+
+Lemma firstn_seq n start len :
+  firstn n (seq start len) = seq start (min n len).
+
+Lemma skipn_seq n start len :
+  skipn n (seq start len) = seq (start+n) (len-n).
+
+Lemma skipn_firstn {A:Type} n (l:list A):
+  skipn n (firstn n l) = [].
+
+Lemma skipn_incl {A:Type} (l:list A) n:
+  incl (skipn n l) l.
+
+Lemma skipn_app2 {A : Type} (l l' : list A) n:
+  length l = n → skipn n (l ++ l') = l'.
+
+Lemma firstn_app {A} (l l' : list A) : 
+  firstn (length l) (l ++ l') = l.
+
+Lemma firstn_app2 : forall (A : Type) (l l' : list A) n, 
+ length l = n -> firstn n (l ++ l') = l .
+End Firstn_skipn.
+
+Section Ints.
+Definition ints (n m:nat):list nat := seq n (m-n). 
+Lemma ints_bounded : ∀ (x n m:nat),
+  n ≤ m → x ∈ (ints n m) → n ≤ x < m.
+
+Lemma ints_bounds : ∀ (x n m:nat),
+  n ≤ x < m → x ∈ (ints n m).
+
+Lemma ints_bounds_iff: ∀ x n m,
+  n ≤ m → (n ≤ x < m ↔ x ∈ (ints n m)).
+
+Lemma ints_length : ∀ n m,
+  n ≤ m → length (ints n m) = m-n.
+End Ints.
+
+Section Forall.
+Lemma Forall_cons_iff {A:Type} (x:A) (xs:list A) (P:A→Prop):
+  Forall P (x::xs) ↔ P x ∧ Forall P xs.
+Lemma Forall_map_iff {A B:Type} (f: A → B) l (P: B → Prop):
+  (∀ x, x ∈ l → P (f x)) ↔ Forall P (map f l).
+Lemma Forall_app_iff {A:Type} (P:A→Prop) l1 l2:
+  Forall P (l1++l2) ↔ Forall P l1 ∧ Forall P l2.
+
+Lemma Forall_unary {A:Type} (P:A→Prop) a:
+  Forall P [a] ↔ P a.
+
+Lemma Forall_flat_map {A B:Type} (P:B → Prop) (f:A → list B) l:
+  Forall P (flat_map f l) ↔ Forall (λ x, Forall P (f x)) l.
+End Forall.
+
+Section Concat.
+Lemma concat_unary_is_map {A B:Type}: ∀ l (f:A→B),
+  concat (map (λ x, [f x]) l) = map f l.
+Lemma in_concat_const_is_in {A B:Type} (a:A) lfix l:
+  a ∈ concat (map (λ _ : B, lfix) l) ↔ l ≠ [] ∧ a ∈ lfix.
+End Concat.
+
+Section Incl.
+Lemma incl_nil {A:Type} (l:list A): incl [] l.
+
+Lemma incl_map_flat_map {A B:Type} (xs:list A) (f:A → B) g:
+  (∀ x : A, x ∈ xs → f x ∈ g x) →
+  incl (map f xs) (flat_map g xs).
+
+Lemma incl_flat_map_incl {A B C:Type} (xs:list A) (r:A→list B) (rh:B→list C) lh:
+  (∀ x : A, x ∈ xs → incl (flat_map rh (r x)) (lh x)) →
+  incl (flat_map rh (concat (map r xs))) (flat_map lh xs).
+End Incl.
+
+Section Append.
+Lemma app_length_eq {A:Type}:
+  ∀ (l1 l2 l1' l2': list A),
+  length l1 = length l1' → (l1++l2) = (l1'++l2') →
+  l1 = l1' ∧ l2 = l2'.
+End Append.
+
+Section Forall2.
+Lemma Forall2_le_refl l: Forall2 le l l.
+
+Lemma Forall2_app_inv {A B:Type} (P:A→B→Prop) la1 la2 lb1 lb2:
+  length la1 = length lb1 → Forall2 P (la1++la2) (lb1++lb2) →
+  Forall2 P la1 lb1 ∧ Forall2 P la2 lb2.
+
+Lemma Forall2_firstn {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb → Forall2 P (firstn n la) (firstn n lb).
+
+Lemma Forall2_skipn {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb → Forall2 P (skipn n la) (skipn n lb).
+
+Lemma Forall2_firstn_skipn_iff {A B:Type} (P:A→B→Prop) la lb n:
+  Forall2 P la lb ↔ Forall2 P (firstn n la) (firstn n lb) ∧ Forall2 P (skipn n la) (skipn n lb).
+
+Lemma Forall2_tail {A B:Type} (P:A→B→Prop) la lb:
+  Forall2 P la lb → Forall2 P (tl la) (tl lb).
+End Forall2. *)
+
+
+
+Inductive variable := x | y.
+
+Inductive function := succ | addf | addt | mult | main | errF.
+
+Inductive constructor := zero | suc0 | suc1 | errC. 
+
+
+
+Scheme Equality for variable.
+
+Scheme Equality for function.
+
+Scheme Equality for constructor.
+
+
+
+Module BASyntax <: Interface.SYNTAX.
+
+  Definition variable := variable.
+
+  Definition function := function.
+
+  Definition constructor := constructor.
+
+
+
+  Definition function_default := errF.
+
+  Definition constructor_default := errC.
+
+
+
+  Definition variable_eq_dec := variable_eq_dec.
+
+  Definition function_eq_dec := function_eq_dec.
+
+  Definition constructor_eq_dec := constructor_eq_dec.
+
+End BASyntax.
+
+
+
+Module Import Syn := Interface.MkSyn(BASyntax).
+
+Import Syn.ProgramNotations.
+
+
+
+Definition var_coercion : variable -> term := var_coercion_gen.
+
+Coercion var_coercion : variable >-> term.
+
+
+
+Notation " 'Z' " := (capply zero []).
+
+Notation "x '!0'" := (capply suc0 (@cons term x nil)) (at level 60).
+
+Notation "x '!1'" := (capply suc1 (@cons term x nil)) (at level 60).
+
+
+
+Definition ba_prog : list rule := [
+
+  
+
+  succ (: Z :)   --> Z!1;  
+
+  succ (: x!0 :) --> x!1;    
+
+  succ (: x!1 :) --> (succ (: x :))!0; 
+
+  
+
+  addf (: Z, y :)     --> y; 
+
+  addf (: x, Z :)     --> x; 
+
+  addf (: x!0, y!0 :) --> (addf (: x, y :))!0; 
+
+  addf (: x!0, y!1 :) --> (addf (: x, y :))!1; 
+
+  addf (: x!1, y!0 :) --> (addf (: x, y :))!1; 
+
+  addf (: x!1, y!1 :) --> (addt (: x, y :))!0; 
+
+  
+
+  addt (: Z, y :)     --> succ (: y :); 
+
+  addt (: x, Z :)     --> succ (: x :); 
+
+  addt (: x!0, y!0 :) --> (addf (: x, y :))!1; 
+
+  addt (: x!0, y!1 :) --> (addt (: x, y :))!0; 
+
+  addt (: x!1, y!0 :) --> (addt (: x, y :))!0; 
+
+  addt (: x!1, y!1 :) --> (addt (: x, y :))!1; 
+
+  
+
+  mult (: Z, y :)   --> Z;
+
+  mult (: x!0, y :) --> (mult (: x, y :))!0;
+
+  mult (: x!1, y :) --> addf (: y, (mult (: x, y :))!0 :) ;
+
+  
+
+  main (: x :) --> addf (: addf (: mult (: x, mult (: x, x :) :), 
+
+                                   mult (: Z!1!0!1, x :) :), 
+
+                                   Z!1 :)                    
+
+].
+
+
+
+Module BAProg <: Syn.PROGRAM.
+
+  Definition prog := ba_prog.
+
+End BAProg.
+
+
+
+Module Import Prog := Syn.MkProg (BAProg).
+
+Import Prog.QI Prog.Evaluator.
+
+Definition rank : function -> nat := ltac:(autorank function_beq ranklist).
+
+
+
+Proposition BinaryOp_is_wf: wf_prog.
+
+Proof. cbv; repeat split; tauto. Qed.
+
+
+
+Proposition BinaryOp_is_ppo : PPO_prog rank.
+
+Proof.
+
+  cbv.
+
+  intros r H.
+
+  decompose sum H; subst; ppo.
+
+Qed.
+
+
+
+Definition cs (c : constructor) := 1. 
+
+
+
+Lemma qic_nonzero : constructor_non_zero cs.
+
+Proof. cbv; auto. Qed.
+
+
+
+Definition mcs := 1.
+
+Lemma qic_bounded : mcs_is_max_constructor_size mcs cs.
+
+Proof. cbv; auto. Qed.
+
+
+
+Definition qic (c : constructor) args := suml args + cs c.
+
+
+
+Lemma qic_additivity : additive qic cs.
+
+Proof. cbv; auto. Qed.
+
+
+
+Definition qif (f : function) args := match f with
+
+  | main => Nat.max (Nat.max (5*(suml args)) (8+(suml args)) + 1) 2 + 1 
+
+            
+
+  | mult => suml args + (hd 0 args)  
+
+            
+
+  | addf => maxl args + 1
+
+  | addt => maxl args + 1
+
+  | succ => suml args + 1
+
+  | errF => suml args
+
+  end.
+
+
+
+Lemma qif_subterm : subterm qif.
+
+Proof.
+
+intros f l x Hin.
+
+destruct f;unfold qif.
+
+- apply le_trans with (m := suml l).
+
+  + apply in_le_suml;trivial.
+
+  + omega.
+
+- apply le_trans with (m := maxl l).
+
+  + apply maxl_is_max;trivial.
+
+  + omega.
+
+- apply le_trans with (m := maxl l).
+
+  + apply maxl_is_max;trivial.
+
+  + omega.
+
+- apply le_trans with (m := suml l).
+
+  + apply in_le_suml;trivial.
+
+  + omega.
+
+- apply le_trans with (m := max (max (5 * suml l) (8 + suml l) + 1) 2).
+
+  apply le_trans with (m := max (5 * suml l) (8 + suml l) + 1).
+
+  apply le_trans with (m := max (5 * suml l) (8 + suml l)).
+
+  apply le_trans with (m := 8 + suml l).
+
+  apply le_trans with (m := suml l).
+
+  + apply in_le_suml;trivial.
+
+  + omega.
+
+  + apply Nat.le_max_r.
+
+  + omega.
+
+  + apply Nat.le_max_l.
+
+  + omega.
+
+- apply in_le_suml; trivial.
+
+Qed.
+
+
+
+Ltac qif_monotonic_tac :=
+
+  repeat (apply forall2_le_suml || apply forall2_le_maxl ||
+
+          apply Plus.plus_le_compat_r || apply Plus.plus_le_compat_l || apply Plus.plus_le_compat ||
+
+          apply Nat.max_le_compat_r || apply Nat.max_le_compat_l || apply Nat.max_le_compat ||
+
+          apply Mult.mult_le_compat_l || apply Mult.mult_le_compat_r
+
+         ); trivial.
+
+
+
+Lemma qif_monotonic : monotonicity_qif qif.
+
+Proof.
+
+  intros f xs ys Hfor.
+
+  destruct f; unfold qif; qif_monotonic_tac.
+
+  destruct Hfor; unfold hd; trivial.
+
+Qed.
+
+
+
+Lemma qi_is_compatible : compatible_QI qic qif.
+
+Proof.
+
+  intros f lp t s; cbn.
+
+  intros H; repeat destruct H as [ H | H ]; try tauto;
+
+  injection H; clear H; intros; subst; cbn; try (unfold qic, cs; omega);
+
+  fold term_assignment; fold term_from_value;
+
+  set (QIx := term_assignment qic qif (term_from_value (s x)));
+
+  set (QIy := term_assignment qic qif (term_from_value (s y)));
+
+  unfold cs;
+
+  repeat rewrite Nat.add_0_r; repeat rewrite Nat.max_0_r; repeat rewrite Nat.add_max_distr_r;
+
+  try trivial.
+
+  - destruct QIy; omega.
+
+  - rewrite Nat.add_1_r; apply le_S, Nat.le_max_l.
+
+  - destruct QIy; omega.
+
+  - repeat rewrite Nat.add_1_r.
+
+    apply le_n_S, Nat.le_max_l.
+
+  - rewrite Nat.max_r; omega.
+
+  - repeat rewrite Nat.add_1_r; apply le_n_S.
+
+    apply Nat.max_le_compat_r, le_n_S, Nat.max_le_compat; omega.
+
+Qed.
+
+
+
+Proposition qi_is_valid : valid_QI mcs qic qif cs.
+
+Proof.
+
+repeat split.
+
+apply qic_bounded.
+
+apply qic_nonzero.
+
+apply qif_subterm.
+
+apply qif_monotonic.
+
+apply qi_is_compatible.
+
+Qed.
+
+
+
+Theorem polytime: forall i s p c f lv d v,
+
+  let t := fapply f lv in
+
+  let pi := cbv_update i s p c t d v in
+
+  cbv_wf pi -> cache_bounded qic qif c ->
+
+  cbv_size pi <= global_bound mcs qif f lv c.
+
+Proof.
+
+intros.
+
+apply P_criterion with (rank:=rank) (cs:=cs) (qic:=qic); auto.
+
+- split; [ apply BinaryOp_is_wf | trivial ].
+
+- cbv; omega.
+
+- intros f0; destruct f0; cbv; omega.
+
+- apply BinaryOp_is_ppo.
+
+- apply qi_is_valid.
+
+Qed.
+
+
+
+Fixpoint quote_positive (p: positive) : value :=
+
+  match p with
+
+    | xI p' => c_capply suc1 [quote_positive p']
+
+    | xO p' => c_capply suc0 [quote_positive p']
+
+    | xH    => c_capply suc1 [c_capply zero []]
+
+  end.
+
+
+
+Definition quote_value (n: N) : value :=
+
+  match n with
+
+    | N0     => c_capply zero []
+
+    | Npos p => quote_positive p
+
+  end.
+
+
+
+Lemma quote_positive_value p : quote_positive p = quote_value (Npos p).
+
+Proof. trivial. Qed.
+
+
+
+Definition value_default := quote_value (0%N).
+
+
+
+Notation evaluates := (Evaluates.evaluates variable_eq_dec function_eq_dec constructor_eq_dec value_default ba_prog).
+
+
+
+Lemma succ_correct : forall n, evaluates (fapply succ [term_from_value (quote_value n)]) (quote_value (N.succ n)).
+
+Proof.
+
+intro n.
+
+destruct n as [ | n]; simpl.
+
+- reduce.
+
+- induction n as [ p | p | ]; simpl; repeat reduce.
+
+Qed.
+
+
+
+Hint Resolve succ_correct : eval.
+
+
+
+Lemma add_correct m n:
+
+  evaluates (fapply addf [term_from_value (quote_value m); term_from_value (quote_value n)]) (quote_value (m + n)) /\
+
+  evaluates (fapply addt [term_from_value (quote_value m); term_from_value (quote_value n)]) (quote_value (N.succ( m + n))).
+
+Proof.
+
+destruct m as [ | p].
+
+simpl; split; reduce; apply succ_correct.
+
+revert n; induction p; intro n; split.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+  + destruct (IHp (N.div2 (Npos p'))).
+
+    destruct p' as [p' | p' |]; reduce.
+
+    auto with eval.
+
+    now rewrite Pos.add_carry_spec.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+     do 2 rewrite quote_positive_value.
+
+    apply succ_correct.
+
+  + destruct (IHp (N.div2 (Npos p'))).
+
+    destruct p' as [p' | p' |]; reduce.
+
+    now rewrite Pos.add_carry_spec.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+  + destruct (IHp (N.div2 (Npos p'))).
+
+    destruct p' as [p' | p' |]; reduce.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+  + destruct (IHp (N.div2 (Npos p'))).
+
+    destruct p' as [p' | p' |]; reduce.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+  + destruct p' as [p' | p' |]; repeat reduce.
+
+    do 2 rewrite quote_positive_value.
+
+    apply succ_correct.
+
+- destruct n as [ | p'].
+
+  + repeat reduce.
+
+  + destruct p' as [p' | p' |]; repeat reduce;
+
+    do 2 rewrite quote_positive_value;
+
+    apply succ_correct.
+
+Qed.
+
+
+
+Hint Resolve add_correct : eval.

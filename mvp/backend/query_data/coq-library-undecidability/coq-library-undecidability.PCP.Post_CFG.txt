@@ -1,0 +1,1213 @@
+Require Import PCP.Definitions Shared.Prelim.
+(* PCP.Definitions:
+Require Export Problems.PCP Shared.Prelim Problems.Reduction.
+
+Lemma list_prefix_inv X (a : X) x u y v :
+  ~ a el x -> ~ a el u -> x ++ a :: y = u ++ a :: v -> x = u /\ y = v.
+
+Lemma split_inv X (u z x y : list X) (s : X) :
+  u ++ z = x ++ s :: y -> ~ s el u -> exists x' : list X, x = u ++ x'.
+
+Lemma in_split X (a : X) (x : list X) :
+  a el x -> exists y z, x = y ++ [a] ++ z.
+
+Definition symbol := nat.
+Definition string := (string nat).
+Definition card : Type := (card nat).
+Definition stack := stack nat.
+Notation "x / y" := (x,y).
+
+Implicit Types a b : symbol.
+Implicit Types x y z : string.
+Implicit Types d e : card.
+Implicit Types A R P : stack.
+
+Coercion sing (n : nat) := [n].
+
+Lemma tau1_app A B : tau1 (A ++ B) = tau1 A ++ tau1 B.
+
+Lemma tau2_app A B : tau2 (A ++ B) = tau2 A ++ tau2 B.
+
+Definition cards x := map (fun a => [a] / [a]) x.
+
+Lemma tau1_cards x : tau1 (cards x) = x.
+
+Lemma tau2_cards x : tau2 (cards x) = x.
+
+Hint Rewrite tau1_app tau2_app tau1_cards tau2_cards : list.
+
+Inductive rew (R : SRS) : string -> string -> Prop :=
+  rewB x y u v : u / v el R -> rew R (x ++ u ++ y) (x ++ v ++ y).
+Inductive rewt (R : SRS) : string -> string -> Prop :=
+  rewR z : rewt R z z
+| rewS x y z :  rew R x y -> rewt R y z -> rewt R x z.
+
+Lemma rewt_induct :
+  forall (R : SRS) z (P : string -> Prop),
+    (P z) ->
+    (forall x y : string, rew R x y -> rewt R y z -> P y -> P x) -> forall s, rewt R s z -> P s.
+
+Lemma rewt_app_L R x x' y : rewt R x x' -> rewt R (y ++ x) (y ++ x').
+
+Lemma rewt_subset R P x y :
+  rewt R x y -> R <<= P -> rewt P x y.
+
+Lemma rewt_left R x y z :
+  rewt R x y -> rew R y z -> rewt R x z.
+
+Fixpoint sigma (a : symbol) A :=
+  match A with
+    nil => [a]
+  | x/y :: A => x ++ (sigma a A) ++ y
+  end.
+
+Fixpoint sym (R : SRS) :=
+  match R with
+    [] => []
+  | x / y :: R => x ++ y ++ sym R
+  end.
+
+Lemma sym_app P R :
+  sym (P ++ R) = sym P ++ sym R.
+
+Lemma sym_map X (f : X -> card) l Sigma :
+  (forall x : X, x el l -> sym [f x] <<= Sigma) -> sym (map f l) <<= Sigma.
+
+Lemma sym_word_l R u v  :
+  u / v el R -> u <<= sym R.
+
+Lemma sym_word_R R u v  :
+  u / v el R -> v <<= sym R.
+
+Hint Resolve sym_word_l sym_word_R.
+
+Lemma sym_mono A P :
+  A <<= P -> sym A <<= sym P.
+
+Lemma tau1_sym A : tau1 A <<= sym A.
+
+Lemma tau2_sym A : tau2 A <<= sym A.
+
+Lemma rewt_sym R x y Sigma:
+  sym R <<= Sigma -> x <<= Sigma -> rewt R x y -> y <<= Sigma.
+
+Fixpoint fresh (l : list nat) :=
+  match l with
+  | [] => 0
+  | x :: l => S x + fresh l
+  end.
+
+Lemma fresh_spec' l a : a el l -> a < fresh l.
+
+Lemma fresh_spec (a : symbol) (l : string) : a el l -> fresh l <> a.
+
+Definition SRH '(R, x, a) := exists y, rewt R x y /\ a el y.
+Definition SR '(R, x, y) := rewt R x y.
+
+Definition MPCP '((x,y), P) := exists A : SRS, A <<= x/y :: P /\ x ++ tau1 A = y ++ tau2 A.
+Definition CFP '(R, a) := exists A : SRS, A <<= R /\ A <> [] /\ sigma a A = rev (sigma a A).
+Definition CFI '(R1, R2, a) := exists A1 A2, A1 <<= R1 /\ A2 <<= R2 /\ A1 <> [] /\ A2 <> [] /\ sigma a A1 = sigma a A2. *)
+(* Shared.Prelim:
+Require Export Bool Omega List Setoid Morphisms.
+
+Global Set Implicit Arguments. 
+Global Unset Strict Implicit.
+Global Unset Printing Records.
+Global Unset Printing Implicit Defensive.
+Global Set Regular Subst Tactic.
+
+Hint Extern 4 => exact _.
+
+Export ListNotations.
+Notation "x 'el' A" := (In x A) (at level 70).
+Notation "A <<= B" := (incl A B) (at level 70).
+Notation "| A |" := (length A) (at level 65).
+
+Hint Extern 4 => 
+match goal with
+|[ H: ?x el nil |- _ ] => destruct H
+end.
+
+Lemma incl_nil X (A : list X) :
+  nil <<= A.
+
+Hint Rewrite <- app_assoc : list.
+Hint Rewrite rev_app_distr map_app prod_length : list.
+Hint Resolve in_eq in_nil in_cons in_or_app.
+Hint Resolve incl_refl incl_tl incl_cons incl_appl incl_appr incl_app incl_nil.
+
+Ltac inv H := inversion H; subst; try clear H.
+
+Tactic Notation "destruct" "_":=
+  match goal with
+  | [ |- context[match ?X with _ => _ end] ] => destruct X
+  | [ H : context[match ?X with _ => _ end] |- _ ] => destruct X 
+  end.
+
+Hint Extern 4 => 
+match goal with
+|[ H: False |- _ ] => destruct H
+|[ H: true=false |- _ ] => discriminate H
+|[ H: false=true |- _ ] => discriminate H
+end.
+
+Lemma size_induction X (f : X -> nat) (p : X -> Type) :
+  (forall x, (forall y, f y < f x -> p y) -> p x) -> 
+  forall x, p x.
+
+Definition Injective {A B} (f : A->B) :=
+ forall x y, f x = f y -> x = y.
+
+Lemma size_induction_dep L (X : L -> Type) (f : forall l, X l -> nat) (p : forall l, X l -> Type) :
+  (forall l x, (forall l' y, f l' y < f l x -> p l' y) -> p l x) -> 
+  forall l x, p l x.
+
+Section fix_X.
+  Variable X:Type.
+  Implicit Types (A B: list X) (a b c: X). 
+
+  Lemma last_app_eq A B a b :
+    A++[a] = B++[b] -> A = B /\ a = b.
+  
+  Lemma rev_eq A B:
+    List.rev A = List.rev B <-> A = B.
+
+  Lemma rev_nil A:
+    rev A = [] -> A = [].
+
+  Lemma map_inj (Y:Type) A B (f: X -> Y) :
+    Injective f -> map f A = map f B <-> A = B.
+End fix_X.
+
+Lemma app_incl_l X (A B C : list X) :
+  A ++ B <<= C -> A <<= C.
+
+Lemma app_incl_R X (A B C : list X) :
+  A ++ B <<= C -> B <<= C.
+
+Lemma cons_incl X (a : X) (A B : list X) : a :: A <<= B -> A <<= B.
+
+Lemma incl_sing X (a : X) A : a el A -> [a] <<= A.
+
+Hint Resolve app_incl_l app_incl_R cons_incl incl_sing.
+
+Hint Extern 4 (_ el map _ _) => eapply in_map_iff.
+Hint Extern 4 (_ el filter _ _) => eapply filter_In.
+
+Fixpoint count (l : list nat) (n : nat)  :=
+  match l with
+  | [] => 0
+  | m :: l => if Nat.eqb n m then S (count l n) else count l n
+  end.
+
+Lemma countSplit (A B: list nat) (x: nat)  : count A x + count B x = count (A ++ B) x. 
+
+Lemma notInZero (x: nat) A :
+  not (x el A) <-> count A x = 0.
+
+Section Positions.
+  Variables (X: Type) (d: forall x y : X, {x = y} + {x <> y}).
+  Implicit Types (x y: X) (A B : list X).
+
+  Fixpoint pos x A : option nat :=
+    match A with
+    | nil => None
+    | y :: A' => if d x y then Some 0
+                else match pos x A' with
+                     | Some n => Some (S n)
+                     | None => None
+                     end
+    end.
+
+  Lemma el_pos x A :
+    x el A -> { n | pos x A = Some n }.
+
+  Notation nthe n A := (nth_error A n).
+  
+  Lemma nthe_length A n :
+    length A > n -> { x | nthe n A = Some x }.
+  
+ Lemma pos_nthe x A n :
+    pos x A = Some n -> nthe n A = Some x.
+  
+  Lemma nthe_app_l x n A B :
+    nthe n A = Some x -> nthe n (A ++ B) = Some x.
+
+End Positions.
+
+Notation nthe n A := (nth_error A n).
+
+Lemma pos_nth X d (x : X) l n def : pos d x l = Some n -> nth n l def = x.
+
+Lemma pos_length X d (x : X) l n : pos d x l = Some n -> n < | l |.
+
+Fixpoint omap X Y (f : X -> option Y) l :=
+  match l with
+  | nil => nil
+  | x :: l => match f x with Some y => y :: omap f l | None => omap f l end
+  end.
+
+Lemma in_omap_iff X Y (f : X -> option Y) l y : y el omap f l <-> exists x, x el l /\ f x = Some y.
+
+Section neList.
+
+  Variable X : Type.
+  Variable P : list X -> Prop.
+
+  Hypothesis B : (forall x : X, P [x]).
+  Hypothesis S : (forall x A, P A -> P (x :: A)).
+  
+  Lemma list_ind_ne A : A <> [] -> P A.
+
+End neList.
+
+Coercion bool2Prop (b : bool) := if b then True else False.
+
+Lemma bool_Prop_true b :
+  b = true -> b.
+
+Lemma bool_Prop_false b :
+  b = false -> ~ b.
+
+Hint Resolve bool_Prop_true bool_Prop_false.
+
+Hint Extern 4 => 
+match goal with
+|[ H: False |- _ ] => destruct H
+|[ H: ~ bool2Prop true |- _ ] => destruct H
+|[ H: bool2Prop false |- _ ] => destruct H
+|[ H: true=false |- _ ] => discriminate H
+|[ H: false=true |- _ ] => discriminate H
+|[ H: ?b=false, H': bool2Prop(?b) |- _ ] => rewrite H in H'; destruct H'
+
+end.
+
+Definition dec (X: Prop) : Type := {X} + {~ X}.
+
+Coercion dec2bool P (d: dec P) := if d then true else false.
+
+Existing Class dec.
+
+Definition Dec (X: Prop) (d: dec X) : dec X := d.
+Arguments Dec X {d}.
+
+Ltac dec := repeat match goal with
+                  | [ |- context [ Dec ?x ] ] => let E := fresh "E" in destruct (Dec x) as [E | ]; [ try (rewrite E in *; clear E)| ]
+                  | [H : context [ Dec ?x ]  |- _ ] => let E := fresh "E" in destruct (Dec x) as [E | ];
+                                                                      [ try (rewrite E in *; clear E)| ]
+                  end; cbn [dec2bool].
+
+Lemma Dec_reflect (X: Prop) (d: dec X) :
+  Dec X <-> X.
+
+Notation Decb X := (dec2bool (Dec X)).
+
+Lemma Dec_reflect_eq (X Y: Prop) (d: dec X) (e: dec Y) :
+ Decb X = Decb Y <->  (X <-> Y).
+
+Lemma Dec_auto (X: Prop) (d: dec X) :
+  X -> Dec X.
+
+Lemma Dec_auto_not (X: Prop) (d: dec X) :
+  ~ X -> ~ Dec X.
+
+Hint Resolve Dec_auto Dec_auto_not.
+Hint Extern 4 =>  
+match goal with
+  | [  |- dec ((fun _ => _) _) ] => cbn
+end : typeclass_instances.
+
+Tactic Notation "decide" constr(p) := 
+  destruct (Dec p).
+Tactic Notation "decide" constr(p) "as" simple_intropattern(i) := 
+  destruct (Dec p) as i.
+Tactic Notation "decide" "_" :=
+  destruct (Dec _).
+Tactic Notation "have" constr(E) := let X := fresh "E" in decide E as [X|X]; subst; try congruence; try omega; clear X.
+
+Lemma Dec_true P {H : dec P} : dec2bool (Dec P) = true -> P.
+
+Lemma Dec_false P {H : dec P} : dec2bool (Dec P) = false -> ~P.
+
+Hint Extern 4 =>
+match goal with
+  [ H : dec2bool (Dec ?P) = true  |- _ ] => apply Dec_true in  H
+| [ H : dec2bool (Dec ?P) = false |- _ ] => apply Dec_false in H
+end.
+
+Lemma dec_DN X : 
+  dec X -> ~~ X -> X.
+
+Lemma dec_DM_and X Y :  
+  dec X -> dec Y -> ~ (X /\ Y) -> ~ X \/ ~ Y.
+
+Lemma dec_DM_impl X Y :  
+  dec X -> dec Y -> ~ (X -> Y) -> X /\ ~ Y.
+
+Fact dec_transfer P Q :
+  P <-> Q -> dec P -> dec Q.
+
+Export ListNotations.
+Notation "x 'el' A" := (In x A) (at level 70).
+Notation "A <<= B" := (incl A B) (at level 70).
+Notation "| A |" := (length A) (at level 65).
+Definition equi X (A B : list X) : Prop := incl A B /\ incl B A.
+Notation "A === B" := (equi A B) (at level 70).
+Hint Unfold equi.
+
+Hint Extern 4 => 
+match goal with
+|[ H: ?x el nil |- _ ] => destruct H
+end.
+
+Hint Rewrite <- app_assoc : list.
+Hint Rewrite rev_app_distr map_app prod_length : list.
+
+Lemma list_cycle  (X : Type) (A : list X) x :
+  x::A <> A.
+
+Lemma cfind X A (p: X -> Prop) (p_dec: forall x, dec (p x)) :
+  {x | x el A /\ p x} + {forall x, x el A -> ~ p x}.
+
+Lemma list_exists_DM X A  (p : X -> Prop) : 
+  (forall x, dec (p x)) ->
+  ~ (forall x, x el A -> ~ p x) -> exists x, x el A /\ p x.
+
+Lemma list_exists_not_incl (X: eqType) (A B : list X) :
+  ~ A <<= B -> exists x, x el A /\ ~ x el B.
+
+Lemma list_cc X (p : X -> Prop) A : 
+  (forall x, dec (p x)) -> 
+  (exists x, x el A /\ p x) -> {x | x el A /\ p x}.
+
+Hint Resolve in_eq in_nil in_cons in_or_app.
+
+Section Membership.
+  Variable X : Type.
+  Implicit Types (x y: X) (A B: list X).
+
+  Lemma in_sing x y :
+    x el [y] -> x = y.
+
+  Lemma in_cons_neq x y A :
+    x el y::A -> x <> y -> x el A.
+
+  Lemma not_in_cons x y A :
+    ~ x el y :: A -> x <> y /\ ~ x el A.
+
+  Definition disjoint A B :=
+    ~ exists x, x el A /\ x el B.
+
+  Lemma disjoint_forall A B :
+    disjoint A B <-> forall x, x el A -> ~ x el B.
+
+  Lemma disjoint_symm A B :
+    disjoint A B -> disjoint B A.
+
+  Lemma disjoint_incl A B B' :
+    B' <<= B -> disjoint A B -> disjoint A B'.
+
+  Lemma disjoint_nil B :
+    disjoint nil B.
+
+  Lemma disjoint_nil' A :
+    disjoint A nil.
+  
+  Lemma disjoint_cons x A B :
+    disjoint (x::A) B <-> ~ x el B /\ disjoint A B.
+
+  Lemma disjoint_app A B C :
+    disjoint (A ++ B) C <-> disjoint A C /\ disjoint B C.
+
+End Membership.
+
+Hint Resolve disjoint_nil disjoint_nil'.
+
+Hint Resolve incl_refl incl_tl incl_cons incl_appl incl_appr incl_app.
+
+Hint Resolve incl_nil.
+
+Lemma incl_map X Y A B (f : X -> Y) :
+  A <<= B -> map f A <<= map f B.
+
+Section Inclusion.
+  Variable X : Type.
+  Implicit Types A B : list X.
+
+  Lemma incl_nil_eq A :
+    A <<= nil -> A=nil.
+
+  Lemma incl_shift x A B :
+    A <<= B -> x::A <<= x::B.
+
+  Lemma incl_lcons x A B :
+    x::A <<= B <-> x el B /\ A <<= B.
+
+  Lemma incl_rcons x A B :
+    A <<= x::B -> ~ x el A -> A <<= B.
+
+  Lemma incl_lrcons x A B :
+    x::A <<= x::B -> ~ x el A -> A <<= B.
+
+  Lemma incl_app_left A B C :
+    A ++ B <<= C -> A <<= C /\ B <<= C.
+
+End Inclusion.
+
+Definition inclp (X : Type) (A : list X) (p : X -> Prop) : Prop :=
+  forall x, x el A -> p x.
+
+Section Equi.
+  Variable X : Type.
+  Implicit Types A B : list X.
+
+  Lemma equi_push x A :
+    x el A -> A === x::A.
+
+  Lemma equi_dup x A :
+    x::A === x::x::A.
+
+  Lemma equi_swap x y A:
+    x::y::A === y::x::A.
+
+  Lemma equi_shift x A B :
+    x::A++B === A++x::B.
+
+  Lemma equi_rotate x A :
+    x::A === A++[x]. 
+  
+End Equi.
+
+Lemma in_concat_iff A l (a:A) : a el concat l <-> exists l', a el l' /\ l' el l.
+
+Section Filter.
+  Variable X : Type.
+  Implicit Types (x y: X) (A B C: list X) (p q: X -> bool).
+  
+  Lemma in_filter_iff x p A :
+    x el filter p A <-> x el A /\ p x.
+
+  Lemma filter_incl p A :
+    filter p A <<= A.  
+
+  Lemma filter_mono p A B :
+    A <<= B -> filter p A <<= filter p B.
+
+  Lemma filter_id p A :
+    (forall x, x el A -> p x) -> filter p A = A.
+
+  Lemma filter_app p A B :
+    filter p (A ++ B) = filter p A ++ filter p B.
+
+  Lemma filter_fst p x A :
+    p x -> filter p (x::A) = x::filter p A.
+
+  Lemma filter_fst' p x A :
+    ~ p x -> filter p (x::A) = filter p A.
+
+  Lemma filter_pq_mono p q A :
+    (forall x, x el A -> p x -> q x) -> filter p A <<= filter q A.
+
+  Lemma filter_pq_eq p q A :
+    (forall x, x el A -> p x = q x) -> filter p A = filter q A.
+
+  Lemma filter_and p q A :
+    filter p (filter q A) = filter (fun x => p x && q x) A.
+
+  Lemma filter_comm p q A :
+    filter p (filter q A) = filter q (filter p A).
+  
+End Filter.
+
+Section Removal.
+  Variable X : eqType.
+  Implicit Types (x y: X) (A B: list X).
+
+  Definition rem A x : list X :=
+    filter (fun z => Dec (z <> x)) A.
+
+  Lemma in_rem_iff x A y :
+    x el rem A y <-> x el A /\ x <> y.
+
+  Lemma rem_not_in x y A :
+    x = y \/ ~ x el A -> ~ x el rem A y.
+
+  Lemma rem_incl A x :
+    rem A x <<= A.
+
+  Lemma rem_mono A B x :
+    A <<= B -> rem A x <<= rem B x.
+
+  Lemma rem_cons A B x :
+    A <<= B -> rem (x::A) x <<= B.
+
+  Lemma rem_cons' A B x y :
+    x el B -> rem A y <<= B -> rem (x::A) y <<= B.
+
+  Lemma rem_in x y A :
+    x el rem A y -> x el A.
+
+  Lemma rem_neq x y A :
+    x <> y -> x el A -> x el rem A y.
+
+  Lemma rem_app x A B :
+    x el A -> B <<= A ++ rem B x.
+
+  Lemma rem_app' x A B C :
+    rem A x <<= C -> rem B x <<= C -> rem (A ++ B) x <<= C.
+
+  Lemma rem_equi x A :
+    x::A === x::rem A x.
+
+  Lemma rem_comm A x y :
+    rem (rem A x) y = rem (rem A y) x.
+
+  Lemma rem_fst x A :
+    rem (x::A) x = rem A x.
+
+  Lemma rem_fst' x y A :
+    x <> y -> rem (x::A) y = x::rem A y.
+
+  Lemma rem_id x A :
+    ~ x el A -> rem A x = A.
+
+  Lemma rem_reorder x A :
+    x el A -> A === x :: rem A x.
+
+  Lemma rem_inclr A B x :
+    A <<= B -> ~ x el A -> A <<= rem B x.
+
+End Removal.
+
+Hint Resolve rem_not_in rem_incl rem_mono rem_cons rem_cons' rem_app rem_app' rem_in rem_neq rem_inclr.
+
+Notation "( A × B × .. × C )" := (list_prod .. (list_prod A B) .. C) (at level 0, left associativity).
+
+Notation "[ s | p ∈ A ',' P ]" :=
+  (map (fun p => s) (filter (fun p => Dec P) A)) (p pattern).
+Notation "[ s | p ∈ A ]" :=
+  (map (fun p => s) A) (p pattern).
+
+Ltac in_app n :=
+  (match goal with
+  | [ |- _ el _ ++ _ ] => 
+    match n with
+    | 0 => idtac
+    | 1 => eapply in_app_iff; left
+    | S ?n => eapply in_app_iff; right; in_app n
+    end
+  | [ |- _ el _ :: _ ] => match n with 0 => idtac | 1 => left | S ?n => right; in_app n end
+  end) || (repeat (try right; eapply in_app_iff; right)).
+
+Lemma to_dec (P : Prop) `{dec P} : P <-> Dec P.
+
+Ltac in_collect a :=
+  eapply in_map_iff; exists a; split; [ eauto | match goal with [ |- _ el filter _ _ ] =>  eapply in_filter_iff; split; [ try (rewrite !in_prod_iff; repeat split) | rewrite <- to_dec; repeat split; eauto ] | _ => try (rewrite !in_prod_iff; repeat split) end ].
+Ltac inv_collect :=
+  repeat
+    (match goal with
+    | [ H : ?x el concat _ |- _ ] => eapply in_concat_iff in H as (? & ? & ?)
+    | [ H : ?x el map _ _ |- _ ] => let x := fresh "x" in eapply in_map_iff in H as (x & ? & ?)
+    | [ x : ?A * ?B |- _ ] => destruct x; subst
+    | [ H : ?x el filter _ _ |- _ ] => let H' := fresh "H" in eapply in_filter_iff in H as (? & H' % to_dec)
+    | [ H : ?x el list_prod _ _ |- _ ] => eapply in_prod_iff in H
+    | [ H : _ el _ ++ _ |- _ ] => try eapply in_app_iff in H as []
+    | [H : _ el _ :: _ |- _ ] => destruct H
+     end; intuition; subst). *)
+
+
+
+Hint Rewrite concat_app map_app map_map : list.
+
+Hint Rewrite <- map_rev  : list.
+
+
+
+Lemma nil_app_nil X (A : list X) :
+
+  A = [] ++ A ++ [].
+
+Proof.
+
+  now autorewrite with list.
+
+Qed.
+
+
+
+Definition gamma (A : SRS) := map (fun '(x,y) => (x, rev y)) A.
+
+
+
+Lemma sigma_eq  s A :
+
+  sigma s A = tau1 A ++ [s] ++ rev (tau2 (gamma A)).
+
+Proof.
+
+  induction A  as [ | [u v] ].
+
+  - reflexivity.
+
+  - cbn. rewrite IHA. now simpl_list. 
+
+Qed.
+
+
+
+Lemma tau2_gamma s A :
+
+  s el rev (tau2 (gamma A)) <-> s el tau2 A.
+
+Proof.
+
+  induction A as [ | [u v] ]; cbn.
+
+  - reflexivity.
+
+  - simpl_list. rewrite !in_app_iff, IHA. firstorder.
+
+Qed.
+
+
+
+Lemma sigma_inv A s1 s x y :
+
+  sigma s1 A = x ++ [s] ++ y -> ~ s el x -> ~ s el y -> ~ s el sym A ->
+
+  s1 = s.
+
+Proof.
+
+  rewrite sigma_eq. intros.
+
+  cbn in H. assert (s el  tau1 A ++ s1 :: rev (tau2 (gamma A))) by (rewrite H; eauto).
+
+  eapply in_app_iff in H3 as [ | [ | ? % tau2_gamma]]; try firstorder using tau1_sym, tau2_sym.
+
+Qed.
+
+
+
+Lemma sigma_snoc A x y u v s s' :
+
+  sigma s A = x ++ [s] ++ y -> ~ s el x -> ~ s el y ->
+
+  sigma s' (A ++ [u/v]) = x ++ u ++ s' ++ v ++ y.
+
+Proof.
+
+  rewrite !sigma_eq. unfold gamma. cbn. simpl_list. cbn. simpl_list. cbn.
+
+  intros. eapply list_prefix_inv in H as [-> <-]; eauto.
+
+  eapply notInZero.
+
+  eapply (f_equal (fun a => count a s)) in H. rewrite <- !countSplit in H. cbn in H.
+
+  rewrite !Nat.eqb_refl in H. eapply notInZero in H0. eapply notInZero in H1.
+
+  rewrite H0, H1 in *. omega.
+
+Qed.
+
+
+
+Section CFGs.
+
+
+
+  Notation sig := nat.
+
+  Definition rule : Type := sig * list sig.
+
+  Definition cfg : Type := sig * list rule.
+
+
+
+  Definition rules (G : cfg) := snd G.
+
+  Definition startsym (G : cfg) := fst G.
+
+
+
+  Inductive rew_cfg : cfg -> list sig -> list sig -> Prop:=
+
+  |rewR R x a y v : (a,v) el rules R -> rew_cfg R (x++[a]++y) (x++v++y).
+
+  Hint Constructors rew_cfg.
+
+
+
+  Lemma rewrite_sing R a x :
+
+    (a, x) el rules R -> rew_cfg R [a] x.
+
+  Proof.
+
+    intros. rewrite nil_app_nil, (nil_app_nil [a]). now econstructor.
+
+  Qed.
+
+  
+
+  Inductive rewt (S: cfg) (x: list sig) : list sig -> Prop :=
+
+  |rewtRefl : rewt S x x
+
+  |rewtRule y z : rewt S x y -> rew_cfg S y z -> rewt S x z.
+
+  Hint Constructors rewt.
+
+
+
+  Global Instance rewtTrans R :
+
+    PreOrder (rewt R).
+
+  Proof.
+
+    split.
+
+    - hnf. econstructor.
+
+    - induction 2; eauto.
+
+  Qed.
+
+
+
+  Global Instance rewrite_proper R :
+
+    Proper (rewt R ==> rewt R ==> rewt R) (@app sig).
+
+  Proof.
+
+    intros x1 y1 H1 x2 y2 H2.
+
+    induction H1.
+
+    - induction H2.
+
+      + reflexivity.
+
+      + rewrite IHrewt. inv H. eapply rewtRule.
+
+        replace (x1 ++ x ++ [a] ++ y0) with ( (x1 ++ x) ++ [a] ++ y0) by now autorewrite with list.
+
+        eauto. replace (x1 ++ x ++ v ++ y0) with ( (x1 ++ x) ++ v ++ y0) by now autorewrite with list. eauto.
+
+    - rewrite IHrewt. inv H. autorewrite with list. eauto.
+
+  Qed.
+
+
+
+  Global Instance subrel R :
+
+    subrelation (rew_cfg R) (rewt R).
+
+  Proof.
+
+    intros x y H. econstructor. reflexivity. eassumption.
+
+  Qed.
+
+    
+
+  Definition terminal G x := ~ exists y, rew_cfg G x y.
+
+
+
+  Lemma terminal_iff G x :
+
+    terminal G x <-> forall s y, s el x -> ~ (s, y) el rules G.
+
+  Proof.
+
+    split.
+
+    - intros H s y A B. apply H. destruct (@in_split _ _ _ A) as (l1 & l2 & ->).
+
+      exists (l1 ++ y ++ l2). change (s :: l2) with ([s] ++ l2). now econstructor.
+
+    - intros H1 [y H2]. inv H2. eapply (H1 _ v); eauto.
+
+  Qed.
+
+
+
+  Definition L (G : cfg) x := rewt G [startsym G] x /\ terminal G x.
+
+
+
+  Definition sym_G (G : cfg) :=
+
+    startsym G :: flat_map (fun '(a, x) => a :: x) (rules G).
+
+  
+
+  Lemma sym_G_rewt x G y :
+
+    x <<= sym_G G -> rewt G x y -> y <<= sym_G G.
+
+  Proof.
+
+    intros. induction H0.
+
+    - eauto.
+
+    - destruct H1. destruct R. cbn in *.
+
+      eapply incl_app; eauto.  eapply incl_app; eauto.
+
+      unfold sym_G. intros ? ?.
+
+      right. eapply in_flat_map.  exists (a / v). eauto.
+
+  Qed.
+
+  
+
+End CFGs.
+
+
+
+Definition CFP' (G : cfg) := exists x, L G x /\ x = List.rev x.
+
+
+
+Definition CFI' '(G1, G2) :=
+
+  exists x, L G1 x /\ L G2 x.
+
+
+
+Section Post_CFG.
+
+
+
+  Variable R : SRS.
+
+  Variable a : symbol.
+
+
+
+  Definition Sigma := sym R ++ [a].
+
+  Definition S : symbol := fresh Sigma.
+
+
+
+  Definition G := (S, (S,[S]) :: map (fun '(u / v) => (S, u ++ [S] ++ v)) R ++ map (fun '(u / v) => (S, u ++ [a] ++ v)) R).
+
+
+
+  Lemma terminal_iff_G y :
+
+    terminal G y <-> ~ S el y.
+
+  Proof.
+
+    unfold terminal.
+
+    enough ((exists y0, rew_cfg G y y0) <-> S el y). firstorder. split.
+
+    - intros [y0 ?]. inv H. cbn in H0.
+
+      destruct H0 as [ | [ [[] []] % in_map_iff | [[] []] % in_map_iff ] % in_app_iff]; inv H; eauto.
+
+    - intros (u' & v' & ?) % List.in_split.
+
+      subst. exists (u' ++ [S] ++ v'). econstructor. cbn. eauto.
+
+  Qed.
+
+
+
+  Lemma rewt_count x :
+
+    rewt G [S] x -> count x S <= 1.
+
+  Proof.
+
+    induction 1.
+
+    - cbn. now rewrite Nat.eqb_refl.
+
+    - inv H0. destruct H1 as [ | [ [[] []] % in_map_iff | [[] []] % in_map_iff ] % in_app_iff]; inv H0.
+
+      + eauto.
+
+      + unfold Sigma. simpl_list. rewrite <- !countSplit in *. cbn in *.
+
+        rewrite Nat.eqb_refl in *.
+
+        enough (count l S = 0) as ->. enough (count l0 S = 0) as ->. omega.
+
+        * eapply notInZero. intros D.
+
+          edestruct (fresh_spec) with (l := Sigma); try reflexivity.
+
+          eapply sym_word_R in H1. unfold Sigma. eauto. 
+
+        * eapply notInZero. intros D.
+
+          edestruct (fresh_spec) with (l := Sigma); try reflexivity.
+
+          eapply sym_word_l in H1. unfold Sigma. eauto. 
+
+      + unfold Sigma. simpl_list. rewrite <- !countSplit in *. cbn in *.
+
+        rewrite Nat.eqb_refl in *.
+
+        assert (S =? a = false) as ->. eapply Nat.eqb_neq. intros D.
+
+        edestruct fresh_spec with (l := Sigma); try reflexivity.
+
+        unfold S in *. rewrite D. unfold Sigma; eauto.
+
+        enough (count l S = 0) as ->. enough (count l0 S = 0) as ->. omega.
+
+        * eapply notInZero. intros D.
+
+          edestruct (fresh_spec) with (l := Sigma); try reflexivity.
+
+          eapply sym_word_R in H1. unfold Sigma. eauto. 
+
+        * eapply notInZero. intros D.
+
+          edestruct (fresh_spec) with (l := Sigma); try reflexivity.
+
+          eapply sym_word_l in H1. unfold Sigma. eauto. 
+
+  Qed.
+
+  
+
+  Lemma Post_CFG_1' A :
+
+    A <<= R -> A = [] \/ rewt G [S] (sigma a A).
+
+  Proof.
+
+    induction A.
+
+    - cbn. eauto.
+
+    - intros.  assert (A <<= R) by eauto. eapply IHA in H0.
+
+      destruct a0 as [u v]. destruct H0.
+
+      + subst. right. erewrite rewrite_sing with (x := u ++ [a] ++ v). reflexivity.
+
+        right. eapply in_app_iff. right. eapply in_map_iff. exists (u,v); eauto.
+
+      + right. erewrite rewrite_sing with (x := u ++ [S] ++ v). 
+
+        now rewrite H0. right. eapply in_app_iff. left. eapply in_map_iff. exists (u,v); eauto.
+
+  Qed.
+
+
+
+  Lemma Post_CFG_2 x :
+
+    rewt G [S] x ->
+
+    exists A m, A <<= R /\ sigma m A = x /\ (m = S \/ m = a /\ A <> []).
+
+  Proof.
+
+    intros. induction H.
+
+    - cbn.  exists [], S. eauto.
+
+    - inv H0. destruct H1 as [ | [(? & ? & ?) % in_map_iff | (? & ? & ?) % in_map_iff] % in_app_iff]; inv H0.
+
+      + eassumption.
+
+      + destruct x0 as [u' v']. inv H3.
+
+        destruct IHrewt as (A & m & HA & IHA & Hm).
+
+        exists (A ++ [u'/v']), S. repeat split.
+
+        * eauto.
+
+        * simpl_list. cbn.
+
+          enough (~ S el x). enough (~ S el y0).
+
+          eapply sigma_snoc with (s := S); eauto.
+
+          -- assert (IH2 := IHA).
+
+          eapply sigma_inv in IHA; eauto. subst. eauto.
+
+          intros D. 
+
+          edestruct fresh_spec with (l := sym R ++ [a]); try reflexivity.
+
+          eapply in_app_iff. left. eapply sym_mono. eauto. eauto.
+
+          -- eapply rewt_count in H. rewrite <- !countSplit in H. cbn in H.
+
+             rewrite Nat.eqb_refl in H. eapply notInZero. omega.
+
+          -- eapply rewt_count in H. rewrite <- !countSplit in H. cbn in H.
+
+             rewrite Nat.eqb_refl in H. eapply notInZero. omega.
+
+        * eauto.
+
+      + destruct x0 as [u' v']. inv H3.
+
+        destruct IHrewt as (A & m & HA & IHA & Hm).
+
+        exists (A ++ [u'/v']), a. repeat split.
+
+        * eauto.
+
+        * simpl_list. cbn.
+
+          enough (~ S el x). enough (~ S el y0).
+
+          eapply sigma_snoc with (s := S); eauto.
+
+          -- assert (IH2 := IHA).
+
+          eapply sigma_inv in IHA; eauto. subst. eauto.
+
+          intros D. 
+
+          edestruct fresh_spec with (l := sym R ++ [a]); try reflexivity.
+
+          eapply in_app_iff. left. eapply sym_mono. eauto. eauto.
+
+          -- eapply rewt_count in H. rewrite <- !countSplit in H. cbn in H.
+
+             rewrite Nat.eqb_refl in H. eapply notInZero. omega.
+
+          -- eapply rewt_count in H. rewrite <- !countSplit in H. cbn in H.
+
+             rewrite Nat.eqb_refl in H. eapply notInZero. omega.
+
+        * destruct A; firstorder.
+
+  Qed.
+
+
+
+  Lemma reduction_full x :
+
+    (exists A, A <<= R /\ A <> [] /\ sigma a A = x) <->  L G x.
+
+  Proof.
+
+    split.
+
+    - intros (A & ? & ? & ?). subst. destruct Post_CFG_1' with (A := A); intuition.
+
+      split.
+
+      + eassumption.
+
+      + eapply terminal_iff_G. rewrite sigma_eq. intros E.
+
+        edestruct fresh_spec with (l := sym R ++ [a]); try reflexivity.        
+
+        eapply in_app_iff in E as [ | [ | ? % tau2_gamma ] % in_app_iff].
+
+        * eapply in_app_iff. left. eapply sym_mono; eauto. now eapply tau1_sym.
+
+        * eapply in_app_iff. right. eauto.
+
+        * eapply in_app_iff. left. eapply sym_mono; eauto. now eapply tau2_sym.
+
+    - intros [(A & m & HA & HE & Hm) % Post_CFG_2 ?].
+
+      subst. destruct Hm as [-> | [-> ?]].
+
+      + eapply terminal_iff_G in H.  exfalso. rewrite sigma_eq in H.
+
+        eapply H. eauto.        
+
+      + exists A. eauto.
+
+  Qed.
+
+  
+
+End Post_CFG.
+
+
+
+Definition Post_G '(R, a, x) := exists A, A <<= R /\ A <> [] /\ sigma a A = x.
+
+Definition CFG '(G, x) := L G x.
+
+
+
+Lemma reduce_grammars :
+
+  Post_G ⪯ CFG.
+
+Proof.
+
+  exists (fun '(R, a, x) => (G R a, x)). intros ((? & ?) & ?). cbn. eapply reduction_full.
+
+Qed.
+
+
+
+Lemma reduce_CFP :
+
+  CFP ⪯ CFP'.
+
+Proof.
+
+  exists (fun '(R, a) => (G R a)). intros [R a].
+
+  intuition; cbn in *.
+
+  - destruct H as (A & HR & HA & H).
+
+    exists (sigma a A). split. eapply reduction_full; eauto.
+
+    eauto.
+
+  - destruct H as (x & Hx & H).
+
+    eapply reduction_full in Hx as (A & HR & HA & H1).
+
+    exists A. subst; eauto.
+
+Qed.
+
+
+
+Lemma reduce_CFI :
+
+  CFI ⪯ CFI'.
+
+Proof.
+
+  exists (fun '(R1, R2, a) => (G R1 a, G R2 a)). intros [[R1 R2] a].
+
+  intuition; cbn in *.
+
+  - destruct H as (A1 & A2 & HR1 & HR2 & HA1 & HA2 & H).
+
+    exists (sigma a A1). split; eapply reduction_full; eauto.
+
+  - destruct H as (x & HR1 & HR2).
+
+    eapply reduction_full in HR1 as (A1 & HR1 & HA1 & H1).
+
+    eapply reduction_full in HR2 as (A2 & HR2 & HA2 & H2).
+
+    exists A1, A2. subst; eauto.
+
+Qed.
+

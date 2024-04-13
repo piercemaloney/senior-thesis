@@ -1,0 +1,1688 @@
+Require Import Arith.
+
+Require Import fol.
+(* fol:
+Require Import Coq.Lists.List.
+Require Import Ensembles.
+Require Import Peano_dec.
+Require Import Eqdep_dec.
+Require Import Arith.
+Require Import Compare_dec.
+Require Import Max.
+Require Import misc.
+
+Unset Standard Proposition Elimination Names.
+
+Record Language : Type := language
+  {Relations : Set; Functions : Set; arity : Relations + Functions -> nat}.
+
+Section First_Order_Logic.
+
+Variable L : Language.
+
+Inductive Term : Set :=
+  | var : nat -> Term
+  | apply : forall f : Functions L, Terms (arity L (inr _ f)) -> Term
+with Terms : nat -> Set :=
+  | Tnil : Terms 0
+  | Tcons : forall n : nat, Term -> Terms n -> Terms (S n).
+ 
+Scheme Term_Terms_ind := Induction for Term Sort Prop
+  with Terms_Term_ind := Induction for Terms Sort Prop.
+
+Scheme Term_Terms_rec := Minimality for Term Sort Set
+  with Terms_Term_rec := Minimality for Terms Sort Set.
+
+Scheme Term_Terms_rec_full := Induction for Term
+  Sort Set
+  with Terms_Term_rec_full := Induction for Terms Sort Set.
+
+Inductive Formula : Set :=
+  | equal : Term -> Term -> Formula
+  | atomic : forall r : Relations L, Terms (arity L (inl _ r)) -> Formula
+  | impH : Formula -> Formula -> Formula
+  | notH : Formula -> Formula
+  | forallH : nat -> Formula -> Formula.
+
+Definition Formulas := list Formula.
+
+Definition System := Ensemble Formula.
+Definition mem := Ensembles.In.
+
+Section Fol_Full.
+
+Definition orH (A B : Formula) := impH (notH A) B.
+
+Definition andH (A B : Formula) := notH (orH (notH A) (notH B)).
+
+Definition iffH (A B : Formula) := andH (impH A B) (impH B A).
+
+Definition existH (x : nat) (A : Formula) := notH (forallH x (notH A)).
+
+End Fol_Full.
+
+Section Fol_Plus.
+
+Definition ifThenElseH (A B C : Formula) := andH (impH A B) (impH (notH A) C).
+
+End Fol_Plus.
+
+Section Formula_Decideability.
+
+Definition language_decideable :=
+  ((forall x y : Functions L, {x = y} + {x <> y}) *
+   (forall x y : Relations L, {x = y} + {x <> y}))%type.
+
+Hypothesis language_dec : language_decideable.
+
+Let nilTermsHelp : forall n : nat, n = 0 -> Terms n.
+
+Lemma nilTerms : forall x : Terms 0, Tnil = x.
+
+Let consTermsHelp : forall n : nat, Terms n -> Set.
+
+Lemma consTerms :
+ forall (n : nat) (x : Terms (S n)),
+ {t : Term * Terms n | Tcons n (fst t) (snd t) = x}.
+
+Lemma term_dec : forall x y : Term, {x = y} + {x <> y}.
+
+Lemma terms_dec : forall (n : nat) (x y : Terms n), {x = y} + {x <> y}.
+
+Lemma formula_dec : forall x y : Formula, {x = y} + {x <> y}.
+
+End Formula_Decideability.
+
+Section Formula_Depth_Induction.
+
+Fixpoint depth (A : Formula) : nat :=
+  match A with
+  | equal _ _ => 0
+  | atomic _ _ => 0
+  | impH A B => S (max (depth A) (depth B))
+  | notH A => S (depth A)
+  | forallH _ A => S (depth A)
+  end.
+
+Definition lt_depth (A B : Formula) : Prop := depth A < depth B.
+
+Lemma depthImp1 : forall A B : Formula, lt_depth A (impH A B).
+
+Lemma depthImp2 : forall A B : Formula, lt_depth B (impH A B).
+
+Lemma depthNot : forall A : Formula, lt_depth A (notH A).
+
+Lemma depthForall : forall (A : Formula) (v : nat), lt_depth A (forallH v A).
+
+Lemma eqDepth :
+ forall A B C : Formula, depth B = depth A -> lt_depth B C -> lt_depth A C.
+
+Definition Formula_depth_rec_rec :
+  forall P : Formula -> Set,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall (n : nat) (b : Formula), depth b <= n -> P b.
+
+Definition Formula_depth_rec (P : Formula -> Set)
+  (rec : forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a)
+  (a : Formula) : P a :=
+  Formula_depth_rec_rec P rec (depth a) a (le_n (depth a)).
+
+Lemma Formula_depth_rec_indep :
+ forall (Q P : Formula -> Set)
+   (rec : forall a : Formula,
+          (forall b : Formula, lt_depth b a -> Q b -> P b) -> Q a -> P a),
+ (forall (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+  (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+  forall q : Q a, rec a z1 q = rec a z2 q) ->
+ forall (a : Formula) (q : Q a),
+ Formula_depth_rec (fun x : Formula => Q x -> P x) rec a q =
+ rec a
+   (fun (b : Formula) _ =>
+    Formula_depth_rec (fun x : Formula => Q x -> P x) rec b) q.
+
+Definition Formula_depth_rec2rec (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) :
+  (forall b : Formula, lt_depth b a -> P b) -> P a :=
+  match a return ((forall b : Formula, lt_depth b a -> P b) -> P a) with
+  | equal t s => fun _ => f1 t s
+  | atomic r t => fun _ => f2 r t
+  | impH f g =>
+      fun hyp => f3 f (hyp f (depthImp1 f g)) g (hyp g (depthImp2 f g))
+  | notH f => fun hyp => f4 f (hyp f (depthNot f))
+  | forallH n f => fun hyp => f5 n f hyp
+  end.
+
+Definition Formula_depth_rec2 (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) : P a :=
+  Formula_depth_rec P (Formula_depth_rec2rec P f1 f2 f3 f4 f5) a.
+
+Remark Formula_depth_rec2rec_nice :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula)
+   (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+ (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+ forall q : Q a,
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z1 q =
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z2 q.
+
+Lemma Formula_depth_rec2_imp :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a b : Formula) (q : Q (impH a b)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 
+   (impH a b) q =
+ f3 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) b
+   (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b) q.
+
+Lemma Formula_depth_rec2_not :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula) (q : Q (notH a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 (notH a) q =
+ f4 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) q.
+
+Lemma Formula_depth_rec2_forall :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (v : nat) (a : Formula) (q : Q (forallH v a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5
+   (forallH v a) q =
+ f5 v a
+   (fun (b : Formula) _ (q : Q b) =>
+    Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b q) q.
+
+Definition Formula_depth_ind :
+  forall P : Formula -> Prop,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall a : Formula, P a.
+
+Lemma Formula_depth_ind2 :
+ forall P : Formula -> Prop,
+ (forall t t0 : Term, P (equal t t0)) ->
+ (forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+  P (atomic r t)) ->
+ (forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0)) ->
+ (forall f : Formula, P f -> P (notH f)) ->
+ (forall (v : nat) (a : Formula),
+  (forall b : Formula, lt_depth b (forallH v a) -> P b) -> P (forallH v a)) ->
+ forall f4 : Formula, P f4.
+
+End Formula_Depth_Induction.
+
+End First_Order_Logic. *)
+
+Require Import folProof.
+(* folProof:
+Require Import Ensembles.
+Require Import Coq.Lists.List.
+Require Import Arith.
+
+Require Export fol.
+Require Import folProp.
+
+Section ProofH.
+
+Variable L : Language.
+
+Let Formula := Formula L.
+Let Formulas := Formulas L.
+Let System := System L.
+Let Term := Term L.
+Let Terms := Terms L.
+Let var := var L.
+Let apply := apply L.
+Let equal := equal L.
+Let atomic := atomic L.
+Let impH := impH L.
+Let notH := notH L.
+Let iffH := iffH L.
+Let forallH := forallH L.
+
+Definition nVars (n : nat) : Terms n * Terms n.
+
+Definition AxmEq4 (R : Relations L) : Formula.
+
+Definition AxmEq5 (f : Functions L) : Formula.
+
+Inductive Prf : Formulas -> Formula -> Set :=
+  | AXM : forall A : Formula, Prf (A :: nil) A
+  | MP :
+      forall (Axm1 Axm2 : Formulas) (A B : Formula),
+      Prf Axm1 (impH A B) -> Prf Axm2 A -> Prf (Axm1 ++ Axm2) B
+  | GEN :
+      forall (Axm : Formulas) (A : Formula) (v : nat),
+      ~ In v (freeVarListFormula L Axm) -> Prf Axm A -> Prf Axm (forallH v A)
+  | IMP1 : forall A B : Formula, Prf nil (impH A (impH B A))
+  | IMP2 :
+      forall A B C : Formula,
+      Prf nil (impH (impH A (impH B C)) (impH (impH A B) (impH A C)))
+  | CP :
+      forall A B : Formula,
+      Prf nil (impH (impH (notH A) (notH B)) (impH B A))
+  | FA1 :
+      forall (A : Formula) (v : nat) (t : Term),
+      Prf nil (impH (forallH v A) (substituteFormula L A v t))
+  | FA2 :
+      forall (A : Formula) (v : nat),
+      ~ In v (freeVarFormula L A) -> Prf nil (impH A (forallH v A))
+  | FA3 :
+      forall (A B : Formula) (v : nat),
+      Prf nil
+        (impH (forallH v (impH A B)) (impH (forallH v A) (forallH v B)))
+  | EQ1 : Prf nil (equal (var 0) (var 0))
+  | EQ2 : Prf nil (impH (equal (var 0) (var 1)) (equal (var 1) (var 0)))
+  | EQ3 :
+      Prf nil
+        (impH (equal (var 0) (var 1))
+           (impH (equal (var 1) (var 2)) (equal (var 0) (var 2))))
+  | EQ4 : forall R : Relations L, Prf nil (AxmEq4 R)
+  | EQ5 : forall f : Functions L, Prf nil (AxmEq5 f).
+
+Definition SysPrf (T : System) (f : Formula) :=
+  exists Axm : Formulas,
+    (exists prf : Prf Axm f,
+       (forall g : Formula, In g Axm -> mem _ T g)).
+
+Definition Inconsistent (T : System) := forall f : Formula, SysPrf T f.
+
+Definition Consistent (T : System) := exists f : Formula, ~ SysPrf T f.
+
+End ProofH. *)
+
+Require Import cPair.
+(* cPair:
+Require Import Arith.
+Require Import Coq.Lists.List.
+Require Import extEqualNat.
+Require Import primRec.
+Require Vector.
+Require Import Div2.
+
+Definition sumToN (n : nat) :=
+  nat_rec (fun _ => nat) 0 (fun x y : nat => S x + y) n.
+
+Lemma sumToN1 : forall n : nat, n <= sumToN n.
+
+Lemma sumToN2 : forall b a : nat, a <= b -> sumToN a <= sumToN b.
+
+Lemma sumToNIsPR : isPR 1 sumToN.
+
+Definition cPair (a b : nat) := a + sumToN (a + b).
+
+Lemma cPairIsPR : isPR 2 cPair.
+
+Section CPair_Injectivity.
+
+Remark cPairInjHelp :
+ forall a b c d : nat, cPair a b = cPair c d -> a + b = c + d.
+
+Lemma cPairInj1 : forall a b c d : nat, cPair a b = cPair c d -> a = c.
+
+Lemma cPairInj2 : forall a b c d : nat, cPair a b = cPair c d -> b = d.
+
+End CPair_Injectivity.
+
+Section CPair_projections.
+
+Let searchXY (a : nat) :=
+  boundedSearch (fun a y : nat => ltBool a (sumToN (S y))) a.
+
+Definition cPairPi1 (a : nat) := a - sumToN (searchXY a).
+Definition cPairPi2 (a : nat) := searchXY a - cPairPi1 a.
+
+Lemma cPairProjectionsHelp :
+ forall a b : nat, b < sumToN (S a) -> sumToN a <= b -> searchXY b = a.
+
+Lemma cPairProjections : forall a : nat, cPair (cPairPi1 a) (cPairPi2 a) = a.
+
+Remark searchXYIsPR : isPR 1 searchXY.
+
+Lemma cPairPi1IsPR : isPR 1 cPairPi1.
+
+Lemma cPairPi2IsPR : isPR 1 cPairPi2.
+
+Lemma cPairProjections1 : forall a b : nat, cPairPi1 (cPair a b) = a.
+
+Lemma cPairProjections2 : forall a b : nat, cPairPi2 (cPair a b) = b.
+
+End CPair_projections.
+
+Section CPair_Order.
+
+Lemma cPairLe1 : forall a b : nat, a <= cPair a b.
+
+Lemma cPairLe1A : forall a : nat, cPairPi1 a <= a.
+
+Lemma cPairLe2 : forall a b : nat, b <= cPair a b.
+
+Lemma cPairLe2A : forall a : nat, cPairPi2 a <= a.
+
+Lemma cPairLe3 :
+ forall a b c d : nat, a <= b -> c <= d -> cPair a c <= cPair b d.
+
+Lemma cPairLt1 : forall a b : nat, a < cPair a (S b).
+
+Lemma cPairLt2 : forall a b : nat, b < cPair (S a) b.
+
+End CPair_Order.
+
+Section code_nat_list.
+
+Fixpoint codeList (l : list nat) : nat :=
+  match l with
+  | nil => 0
+  | n :: l' => S (cPair n (codeList l'))
+  end.
+
+Lemma codeListInj : forall l m : list nat, codeList l = codeList m -> l = m.
+
+Definition codeNth (n m : nat) : nat.
+
+Let drop (n : nat) : forall (l : list nat), list nat.
+
+Lemma codeNthCorrect :
+ forall (n : nat) (l : list nat), codeNth n (codeList l) = nth n l 0.
+
+Lemma codeNthIsPR : isPR 2 codeNth.
+
+End code_nat_list.
+
+Section Strong_Recursion.
+
+Definition evalStrongRecHelp (n : nat) (f : naryFunc (S (S n))) :
+  naryFunc (S n) :=
+  evalPrimRecFunc n (evalComposeFunc n 0 (Vector.nil _) (codeList nil))
+    (evalComposeFunc (S (S n)) 2
+       (Vector.cons _ f _
+          (Vector.cons _ (evalProjFunc (S (S n)) n (lt_S _ _ (lt_n_Sn _))) _
+             (Vector.nil _))) (fun a b : nat => S (cPair a b))).
+
+Definition evalStrongRec (n : nat) (f : naryFunc (S (S n))) :
+  naryFunc (S n) :=
+  evalComposeFunc (S n) 1
+    (Vector.cons _ (fun z : nat => evalStrongRecHelp n f (S z)) _ (Vector.nil _))
+    (fun z : nat => cPairPi1 (pred z)).
+
+Lemma evalStrongRecIsPR :
+ forall (n : nat) (f : naryFunc (S (S n))),
+ isPR _ f -> isPR _ (evalStrongRec n f).
+
+Lemma computeEvalStrongRecHelp :
+ forall (n : nat) (f : naryFunc (S (S n))) (c : nat),
+ evalStrongRecHelp n f (S c) =
+ compose2 n (evalStrongRecHelp n f c)
+   (fun a0 : nat =>
+    evalComposeFunc n 2
+      (Vector.cons (naryFunc n) (f c a0) 1
+
+Let listValues (f : naryFunc 2) (n : nat) : list nat.
+
+Lemma evalStrongRecHelp1 :
+ forall (f : naryFunc 2) (n m : nat),
+ m < n -> codeNth (n - S m) (evalStrongRecHelp _ f n) = evalStrongRec _ f m.
+
+Lemma evalStrongRecHelpParam :
+ forall (a n c : nat) (f : naryFunc (S (S (S a)))),
+ extEqual a (evalStrongRecHelp (S a) f n c)
+   (evalStrongRecHelp a (fun x y : nat => f x y c) n).
+
+Lemma evalStrongRecHelp2 :
+ forall (a : nat) (f : naryFunc (S (S a))) (n m : nat),
+ m < n ->
+ extEqual _
+   (evalComposeFunc _ 1 (Vector.cons _ (evalStrongRecHelp _ f n) 0 (Vector.nil _))
+
+Lemma callIsPR :
+ forall g : nat -> nat,
+ isPR 1 g -> isPR 2 (fun a recs : nat => codeNth (a - S (g a)) recs).
+
+End Strong_Recursion.
+
+Lemma div2IsPR : isPR 1 div2. *)
+
+
+
+Section Code_Term_Formula_Proof.
+
+
+
+Variable L : Language.
+
+Variable codeF : Functions L -> nat.
+
+Variable codeR : Relations L -> nat.
+
+Hypothesis codeFInj : forall f g : Functions L, codeF f = codeF g -> f = g.
+
+Hypothesis codeRInj : forall R S : Relations L, codeR R = codeR S -> R = S.
+
+
+
+Let Formula := Formula L.
+
+Let Formulas := Formulas L.
+
+Let System := System L.
+
+Let Term := Term L.
+
+Let Terms := Terms L.
+
+Let var := var L.
+
+Let apply := apply L.
+
+Let equal := equal L.
+
+Let atomic := atomic L.
+
+Let impH := impH L.
+
+Let notH := notH L.
+
+Let forallH := forallH L.
+
+Let orH := orH L.
+
+Let andH := andH L.
+
+Let existH := existH L.
+
+Let iffH := iffH L.
+
+Let ifThenElseH := ifThenElseH L.
+
+Let Prf := Prf L.
+
+Let SysPrf := SysPrf L.
+
+
+
+Fixpoint codeTerm (t : Term) : nat :=
+
+  match t with
+
+  | fol.var n => cPair 0 n
+
+  | fol.apply f ts => cPair (S (codeF f)) (codeTerms _ ts)
+
+  end
+
+ 
+
+ with codeTerms (n : nat) (ts : Terms n) {struct ts} : nat :=
+
+  match ts with
+
+  | Tnil => 0
+
+  | Tcons n t ss => S (cPair (codeTerm t) (codeTerms n ss))
+
+  end.
+
+
+
+Lemma codeTermInj : forall t s : Term, codeTerm t = codeTerm s -> t = s.
+
+Proof.
+
+intro.
+
+elim t using
+
+ Term_Terms_ind
+
+  with
+
+    (P0 := fun (n : nat) (ts : fol.Terms L n) =>
+
+           forall ss : Terms n, codeTerms n ts = codeTerms n ss -> ts = ss).
+
+intros.
+
+destruct s.
+
+simpl in H.
+
+replace n with n0.
+
+auto.
+
+eapply cPairInj2.
+
+symmetry  in |- *.
+
+apply H.
+
+simpl in H.
+
+assert (0 = S (codeF f)).
+
+eapply cPairInj1.
+
+apply H.
+
+discriminate H0.
+
+intros.
+
+destruct s.
+
+simpl in H0.
+
+assert (S (codeF f) = 0).
+
+eapply cPairInj1.
+
+apply H0.
+
+discriminate H1.
+
+simpl in H0.
+
+assert (f = f0).
+
+apply codeFInj.
+
+apply eq_add_S.
+
+eapply cPairInj1.
+
+apply H0.
+
+cut
+
+ (cPair (S (codeF f)) (codeTerms (arity L (inr (Relations L) f)) t0) =
+
+  cPair (S (codeF f0)) (codeTerms (arity L (inr (Relations L) f0)) t1)).
+
+generalize t1.
+
+rewrite <- H1.
+
+clear H1 H0 t1.
+
+intros.
+
+rewrite (H t1).
+
+reflexivity.
+
+eapply cPairInj2.
+
+apply H0.
+
+apply H0.
+
+intros.
+
+rewrite <- nilTerms.
+
+reflexivity.
+
+intros.
+
+induction (consTerms L n ss).
+
+induction x as (a, b).
+
+simpl in p.
+
+rewrite <- p.
+
+rewrite <- p in H1.
+
+simpl in H1.
+
+rewrite (H a).
+
+rewrite (H0 b).
+
+reflexivity.
+
+eapply cPairInj2.
+
+apply eq_add_S.
+
+apply H1.
+
+eapply cPairInj1.
+
+apply eq_add_S.
+
+apply H1.
+
+Qed.
+
+
+
+Lemma codeTermsInj :
+
+ forall (n : nat) (ts ss : Terms n),
+
+ codeTerms n ts = codeTerms n ss -> ts = ss.
+
+Proof.
+
+intros n ts.
+
+induction ts as [| n t ts Hrects].
+
+intros.
+
+rewrite <- (nilTerms L ss).
+
+reflexivity.
+
+intros.
+
+induction (consTerms L n ss).
+
+induction x as (a, b).
+
+simpl in p.
+
+rewrite <- p.
+
+rewrite <- p in H.
+
+simpl in H.
+
+rewrite (Hrects b).
+
+rewrite (codeTermInj t a).
+
+reflexivity.
+
+eapply cPairInj1.
+
+apply eq_add_S.
+
+apply H.
+
+eapply cPairInj2.
+
+apply eq_add_S.
+
+apply H.
+
+Qed.
+
+
+
+Fixpoint codeFormula (f : Formula) : nat :=
+
+  match f with
+
+  | fol.equal t1 t2 => cPair 0 (cPair (codeTerm t1) (codeTerm t2))
+
+  | fol.impH f1 f2 => cPair 1 (cPair (codeFormula f1) (codeFormula f2))
+
+  | fol.notH f1 => cPair 2 (codeFormula f1)
+
+  | fol.forallH n f1 => cPair 3 (cPair n (codeFormula f1))
+
+  | fol.atomic R ts => cPair (4+(codeR R)) (codeTerms _ ts)
+
+  end.
+
+
+
+Lemma codeFormulaInj :
+
+ forall f g : Formula, codeFormula f = codeFormula g -> f = g.
+
+Proof.
+
+intro.
+
+induction f as [t t0| r t| f1 Hrecf1 f0 Hrecf0| f Hrecf| n f Hrecf]; intros;
+
+ [ destruct g as [t1 t2| r t1| f f0| f| n f]
+
+ | destruct g as [t0 t1| r0 t0| f f0| f| n f]
+
+ | destruct g as [t t0| r t| f f2| f| n f]
+
+ | destruct g as [t t0| r t| f0 f1| f0| n f0]
+
+ | destruct g as [t t0| r t| f0 f1| f0| n0 f0] ];
+
+ (simpl in H;
+
+   try
+
+    match goal with
+
+    | h:(cPair ?X1 ?X2 = cPair ?X3 ?X4) |- _ =>
+
+        elimtype False; cut (X1 = X3);
+
+         [ discriminate | eapply cPairInj1; apply h ]
+
+    end).
+
+rewrite (codeTermInj t t1).
+
+rewrite (codeTermInj t0 t2).
+
+reflexivity.
+
+eapply cPairInj2.
+
+eapply cPairInj2.
+
+apply H.
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply H.
+
+assert (r = r0).
+
+apply codeRInj.
+
+do 4 apply eq_add_S.
+
+eapply cPairInj1.
+
+apply H.
+
+cut
+
+ (cPair (S (S (S (S (codeR r)))))
+
+    (codeTerms (arity L (inl (Functions L) r)) t) =
+
+  cPair (S (S (S (S (codeR r0)))))
+
+    (codeTerms (arity L (inl (Functions L) r0)) t0)).
+
+generalize t0.
+
+rewrite <- H0.
+
+clear H0 H t0.
+
+intros.
+
+rewrite (codeTermsInj _ t t0).
+
+reflexivity.
+
+eapply cPairInj2.
+
+apply H.
+
+apply H.
+
+rewrite (Hrecf1 f).
+
+rewrite (Hrecf0 f2).
+
+reflexivity.
+
+eapply cPairInj2.
+
+eapply cPairInj2.
+
+apply H.
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply H.
+
+rewrite (Hrecf f0).
+
+reflexivity.
+
+eapply cPairInj2.
+
+apply H.
+
+rewrite (Hrecf f0).
+
+replace n0 with n.
+
+reflexivity.
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply H.
+
+eapply cPairInj2.
+
+eapply cPairInj2.
+
+apply H.
+
+Qed.
+
+
+
+Fixpoint codePrf (Z : Formulas) (f : Formula) (prf : Prf Z f) {struct prf} :
+
+ nat :=
+
+  match prf with
+
+  | AXM A => cPair 0 (codeFormula A)
+
+  | MP Axm1 Axm2 A B rec1 rec2 =>
+
+      cPair 1
+
+        (cPair
+
+           (cPair (cPair 1 (cPair (codeFormula A) (codeFormula B)))
+
+              (codePrf _ _ rec1)) (cPair (codeFormula A) (codePrf _ _ rec2)))
+
+  | GEN Axm A v _ rec =>
+
+      cPair 2 (cPair v (cPair (codeFormula A) (codePrf _ _ rec)))
+
+  | IMP1 A B => cPair 3 (cPair (codeFormula A) (codeFormula B))
+
+  | IMP2 A B C =>
+
+      cPair 4 (cPair (codeFormula A) (cPair (codeFormula B) (codeFormula C)))
+
+  | CP A B => cPair 5 (cPair (codeFormula A) (codeFormula B))
+
+  | FA1 A v t => cPair 6 (cPair (codeFormula A) (cPair v (codeTerm t)))
+
+  | FA2 A v _ => cPair 7 (cPair (codeFormula A) v)
+
+  | FA3 A B v => cPair 8 (cPair (codeFormula A) (cPair (codeFormula B) v))
+
+  | EQ1 => cPair 9 0
+
+  | EQ2 => cPair 10 0
+
+  | EQ3 => cPair 11 0
+
+  | EQ4 r => cPair 12 (codeR r)
+
+  | EQ5 f => cPair 13 (codeF f)
+
+  end.
+
+
+
+Lemma codePrfInjAxm :
+
+ forall (a b : Formula) (A B : Formulas) (p : Prf A a) (q : Prf B b),
+
+ codePrf A a p = codePrf B b q -> A = B.
+
+Proof.
+
+intros a b A B p.
+
+generalize B b.
+
+clear B b.
+
+induction p
+
+ as
+
+  [A|
+
+   Axm1 Axm2 A B p1 Hrecp1 p0 Hrecp0|
+
+   Axm A v n p Hrecp|
+
+   A B|
+
+   A B C|
+
+   A B|
+
+   A v t|
+
+   A v n|
+
+   A B v|
+
+   |
+
+   |
+
+   |
+
+   R|
+
+   f]; intros;
+
+ [ destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B p p0|
+
+      Axm A0 v n p|
+
+      A0 B|
+
+      A0 B C|
+
+      A0 B|
+
+      A0 v t|
+
+      A0 v n|
+
+      A0 B v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm0 Axm3 A0 B0 p p2|
+
+      Axm A0 v n p|
+
+      A0 B0|
+
+      A0 B0 C|
+
+      A0 B0|
+
+      A0 v t|
+
+      A0 v n|
+
+      A0 B0 v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B p0 p1|
+
+      Axm0 A0 v0 n0 p0|
+
+      A0 B|
+
+      A0 B C|
+
+      A0 B|
+
+      A0 v0 t|
+
+      A0 v0 n0|
+
+      A0 B v0|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B0 p p0|
+
+      Axm A0 v n p|
+
+      A0 B0|
+
+      A0 B0 C|
+
+      A0 B0|
+
+      A0 v t|
+
+      A0 v n|
+
+      A0 B0 v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B0 p p0|
+
+      Axm A0 v n p|
+
+      A0 B0|
+
+      A0 B0 C0|
+
+      A0 B0|
+
+      A0 v t|
+
+      A0 v n|
+
+      A0 B0 v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B0 p p0|
+
+      Axm A0 v n p|
+
+      A0 B0|
+
+      A0 B0 C|
+
+      A0 B0|
+
+      A0 v t|
+
+      A0 v n|
+
+      A0 B0 v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B p p0|
+
+      Axm A0 v0 n p|
+
+      A0 B|
+
+      A0 B C|
+
+      A0 B|
+
+      A0 v0 t0|
+
+      A0 v0 n|
+
+      A0 B v0|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B p p0|
+
+      Axm A0 v0 n0 p|
+
+      A0 B|
+
+      A0 B C|
+
+      A0 B|
+
+      A0 v0 t|
+
+      A0 v0 n0|
+
+      A0 B v0|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A0|
+
+      Axm1 Axm2 A0 B0 p p0|
+
+      Axm A0 v0 n p|
+
+      A0 B0|
+
+      A0 B0 C|
+
+      A0 B0|
+
+      A0 v0 t|
+
+      A0 v0 n|
+
+      A0 B0 v0|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A|
+
+      Axm1 Axm2 A B p p0|
+
+      Axm A v n p|
+
+      A B|
+
+      A B C|
+
+      A B|
+
+      A v t|
+
+      A v n|
+
+      A B v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A|
+
+      Axm1 Axm2 A B p p0|
+
+      Axm A v n p|
+
+      A B|
+
+      A B C|
+
+      A B|
+
+      A v t|
+
+      A v n|
+
+      A B v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A|
+
+      Axm1 Axm2 A B p p0|
+
+      Axm A v n p|
+
+      A B|
+
+      A B C|
+
+      A B|
+
+      A v t|
+
+      A v n|
+
+      A B v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A|
+
+      Axm1 Axm2 A B p p0|
+
+      Axm A v n p|
+
+      A B|
+
+      A B C|
+
+      A B|
+
+      A v t|
+
+      A v n|
+
+      A B v|
+
+      |
+
+      |
+
+      |
+
+      R0|
+
+      f]
+
+ | destruct q
+
+    as
+
+     [A|
+
+      Axm1 Axm2 A B p p0|
+
+      Axm A v n p|
+
+      A B|
+
+      A B C|
+
+      A B|
+
+      A v t|
+
+      A v n|
+
+      A B v|
+
+      |
+
+      |
+
+      |
+
+      R|
+
+      f0] ];
+
+ (simpl in H;
+
+   try
+
+    match goal with
+
+    | h:(cPair ?X1 ?X2 = cPair ?X3 ?X4) |- _ =>
+
+        elimtype False; cut (X1 = X3);
+
+         [ discriminate | eapply cPairInj1; apply h ]
+
+    end); try reflexivity.
+
+replace A0 with A.
+
+reflexivity.
+
+apply codeFormulaInj.
+
+eapply cPairInj2.
+
+apply H.
+
+replace Axm0 with Axm1.
+
+replace Axm3 with Axm2.
+
+reflexivity.
+
+eapply Hrecp0 with A0 p2.
+
+do 3 eapply cPairInj2.
+
+apply H.
+
+eapply Hrecp1 with (fol.impH L A0 B0) p.
+
+eapply cPairInj2.
+
+eapply cPairInj1.
+
+eapply cPairInj2.
+
+apply H.
+
+eapply Hrecp with A0 p0.
+
+do 3 eapply cPairInj2.
+
+apply H.
+
+Qed.
+
+
+
+Definition codeImp (a b : nat) := cPair 1 (cPair a b).
+
+
+
+Lemma codeImpCorrect :
+
+ forall a b : Formula,
+
+ codeImp (codeFormula a) (codeFormula b) = codeFormula (impH a b).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+Definition codeNot (a : nat) := cPair 2 a.
+
+
+
+Lemma codeNotCorrect :
+
+ forall a : Formula, codeNot (codeFormula a) = codeFormula (notH a).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+Definition codeForall (n a : nat) := cPair 3 (cPair n a).
+
+
+
+Lemma codeForallCorrect :
+
+ forall (n : nat) (a : Formula),
+
+ codeForall n (codeFormula a) = codeFormula (forallH n a).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+Definition codeOr (a b : nat) := codeImp (codeNot a) b.
+
+
+
+Lemma codeOrCorrect :
+
+ forall a b : Formula,
+
+ codeOr (codeFormula a) (codeFormula b) = codeFormula (orH a b).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+Definition codeAnd (a b : nat) := codeNot (codeOr (codeNot a) (codeNot b)).
+
+
+
+Lemma codeAndCorrect :
+
+ forall a b : Formula,
+
+ codeAnd (codeFormula a) (codeFormula b) = codeFormula (andH a b).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+Definition codeIff (a b : nat) := codeAnd (codeImp a b) (codeImp b a).
+
+
+
+Lemma codeIffCorrect :
+
+ forall a b : Formula,
+
+ codeIff (codeFormula a) (codeFormula b) = codeFormula (iffH a b).
+
+Proof.
+
+auto.
+
+Qed.
+
+
+
+End Code_Term_Formula_Proof.
+

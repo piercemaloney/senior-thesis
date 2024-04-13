@@ -1,0 +1,1784 @@
+
+
+Set Implicit Arguments.
+
+
+
+Require Import util.
+(* util:
+Set Implicit Arguments.
+Global Set Asymmetric Patterns.
+
+Require Import Relations.
+Require Export Basics.
+Require Import Setoid.
+
+Arguments eq {A}.
+Arguments fst {A B}.
+
+Hint Unfold compose.
+
+Definition proj1_conj (A B: Prop) (c: A /\ B): A :=
+  match c with conj x _ => x end.
+
+Definition proj2_conj (A B: Prop) (c: A /\ B): B :=
+  match c with conj _ x => x end.
+
+Lemma eq_trans (X: Set) (a b c: X): a = b -> b = c -> a = c.
+
+Definition cmp_cmp (x y: comparison): { x = y } + { x <> y } :=
+  
+  match x, y return { x = y } + { x <> y } with
+  | Lt, Lt | Gt, Gt | Eq, Eq => left _ (refl_equal _)
+  | a, b => right _ (
+      match a, b
+      return match a, b with Lt, Lt | Gt, Gt | Eq, Eq => True | _, _ => ~(a = b) end with
+      | Lt, Lt | Gt, Gt | Eq, Eq => I
+      | Lt, _ => fun q => match q in _ = Lt with refl_equal => I end
+      | Gt, _ => fun q => match q in _ = Gt with refl_equal => I end
+      | Eq, _ => fun q => match q in _ = Eq with refl_equal => I end
+      end
+    )
+  end. 
+
+Fixpoint nat_cmp (x y: nat) {struct x}: comparison :=
+  match x, y with
+  | 0, 0 => Eq
+  | 0, S _ => Lt
+  | S _, 0 => Gt
+  | S x', S y' => nat_cmp x' y'
+  end.
+
+Ltac cset e := let v := fresh in set (v := e); clearbody v.
+Ltac cset' e := let v := fresh in set (v := e) in *; clearbody v.
+
+Ltac extro x := generalize x; clear x.
+
+Definition unsum_bool (A B: Prop) (sb: sumbool A B): bool := if sb then true else false.
+
+Definition decision (P: Prop): Set := { P } + { ~ P }.
+Definition predDecider (T: Set) (P: T -> Prop): Type := forall t, decision (P t).
+
+Lemma negb_inv (b b': bool): negb b = negb b' -> b = b'.
+
+Lemma negb_negb (b: bool): negb (negb b) = b.
+
+Definition id {X} (x: X): X := x.
+
+Definition ext_eq {A B: Type} (f g: A -> B): Prop := forall x, f x = g x.
+
+Lemma ext_eq_trans: forall A B, transitive _ (@ext_eq A B).
+
+Lemma ext_eq_refl: forall A B, reflexive _ (@ext_eq A B).
+
+Lemma ext_eq_sym: forall A B, symmetric _ (@ext_eq A B).
+
+Add Parametric Relation X Y: (X -> Y) (@ext_eq X Y)
+  reflexivity proved by (@ext_eq_refl X Y)
+  symmetry proved by (@ext_eq_sym X Y)
+  transitivity proved by (@ext_eq_trans X Y)
+    as ext_eq_rel.
+
+Lemma ext_eq_rw (A B: Type) (f g: A -> B): ext_eq f g -> forall x, f x = g x.
+
+Notation " g ∘ f " := (compose g f) (at level 40, left associativity).
+
+Lemma comp_apply (A B C: Set) (f: B -> C) (g: A -> B) (x: A): (f ∘ g) x = f (g x).
+
+Lemma comp_ass (A B C D: Set) (f: A -> B) (g: B -> C) (h: C -> D): h ∘ (g ∘ f) = (h ∘ g) ∘ f.
+
+Definition compose_lunit A B (f: A -> B): ext_eq (@id B ∘ f) f.
+
+Definition compose_runit A B (f: A -> B): ext_eq (f ∘ @id A) f.
+
+Definition map_snd (A B: Set) (f: A -> B) (C: Set) (p: C * A): C * B := (fst p, f (snd p)).
+
+Lemma fst_map_snd (A B: Set) (f: A -> B) (C: Set) (p: C * A): fst (map_snd f p) = fst p.
+
+Definition on {A B: Type} {C: B -> B -> Type} (g: A -> B) (f: forall b b', C b b') (x y: A): C (g x) (g y) := f (g x) (g y).
+
+Definition unsumbool {A B}: { A } + { B } -> bool := fun x => if x then true else false.
+
+Definition dep_flip {A B: Type} {C: A -> B -> Type} (f: forall a b, C a b) (b: B) (a: A): C a b := f a b.
+
+Definition uncurry A B C (f: A -> B -> C) (ab: A * B): C := f (fst ab) (snd ab).
+
+Section well_founded_pairs.
+
+  Variables (A B: Type)
+    (Ra: relation A) (Rb: relation B).
+
+  Inductive pair_rel: relation (A * B) :=
+    | pair_rel_l a a' b: Ra a a' -> pair_rel (a, b) (a', b)
+    | pair_rel_r a b b': Rb b b' -> pair_rel (a, b) (a, b').
+
+  Fixpoint acc_pairs a (Aa: Acc Ra a) {struct Aa}: forall b (Ab: Acc Rb b), Acc pair_rel (a, b) :=
+    fix G b (Ab: Acc Rb b) {struct Ab}: Acc pair_rel _ := @Acc_intro _ pair_rel _
+      match Aa, Ab with
+      | Acc_intro x, Acc_intro y =>  fun z (za: pair_rel z (a, b)) =>
+          match za in pair_rel z ab return
+            (forall (p: A) (q: Ra p (fst ab)), Acc pair_rel (p, (snd ab))) -> (forall p, Rb p (snd ab) -> Acc pair_rel (fst ab, p)) -> Acc pair_rel z with
+          | pair_rel_l v w c d => fun fr gr => fr _ d
+          | pair_rel_r v w c d => fun fr gr => gr _ d
+          end
+          (fun (p: A) (q: Ra p (fst (a, b))) => @acc_pairs p (x p q) b Ab : Acc pair_rel (p, b))
+          (fun (p: B) (q: Rb p (snd (a, b))) => @G p (y p q): Acc pair_rel (a, p))
+      end.
+
+   Lemma well_founded_pairs (Wa: well_founded Ra) (Wb: well_founded Rb): well_founded pair_rel.
+
+End well_founded_pairs. *)
+
+Require Import Le.
+
+Require Import arith_lems.
+(* arith_lems:
+Set Implicit Arguments.
+Unset Standard Proposition Elimination Names.
+
+Require Import util.
+Require Import Le.
+Require Import Lt.
+Require Import Rbase.
+Require Import Plus.
+Require Import Mult.
+Require Import Arith.
+Require Import Omega.
+Require Import Div2.
+Require Import Recdef.
+Require Import Rbase.
+Require Import Morphisms.
+
+Definition ltb (x y: nat): bool := negb (leb y x).
+Definition geb (x y: nat): bool := leb y x.
+
+Ltac subst_tac x y z := 
+  match z with
+  | x => y
+  | ?l + ?r =>
+      let l' := subst_tac x y l in
+      let r' := subst_tac x y r in
+        constr: (l' + r')
+  | ?l * ?r =>
+      let l' := subst_tac x y l in
+      let r' := subst_tac x y r in
+        constr: (l' * r')
+  | _ => z
+  end.
+
+Ltac deep_le_trans h :=
+  match type of h with
+  | ?n <= ?u =>
+    match goal with
+    | |- ?l <= _ =>
+      let q := subst_tac n u l
+      in apply le_trans with q
+    end
+  end.
+
+Instance Transitive_le: Transitive le := le_trans.
+
+Lemma minus_plus_same (y x: nat): x <= x - y + y.
+
+Lemma ltb_complete m n: ltb m n = true -> m < n.
+
+Lemma ltb_complete_conv m n: ltb m n = false -> n <= m.
+
+Lemma lt_0_mult x y: 0 < x -> 0 < y -> 0 < x * y.
+
+Lemma mult_ne_0 a b: (a <> 0 -> b <> 0 -> mult a b <> 0)%nat.
+
+Lemma weak_lt_S_n n m: S n < m -> n < m.
+
+Lemma le_exists_plus (x y: nat) (p: x <= y): exists d, y = x + d.
+
+Lemma lt_exists_plus (x y: nat) (p: x < y): exists d, y = S (x + d).
+
+Lemma n_lt_n_plus_Sm n m: n < n + S m.
+
+Lemma ne_le_impl_lt x y: x <> y -> x <= y -> x < y.
+
+Hint Rewrite plus_0_r : arith_norm.
+Hint Rewrite mult_plus_distr_r mult_plus_distr_l plus_assoc : arith_norm.
+
+Lemma beq_nat_false x y: x <> y -> beq_nat x y = false.
+
+Lemma minus_lt_compat_l x y z: (y <= x -> z < y -> x - y < x - z)%nat.
+
+Lemma minus_eq_inv_r d x y: (x <= d -> y <= d -> (d - x = d - y) -> x = y)%nat.
+
+Lemma le_ne_lt x y: x <= y -> x <> y -> x < y.
+
+Lemma ne_nlt_lt x y: x <> y -> ~ x < y -> y < x.
+
+Lemma lt_not_eq x y: (x < y -> x <> y)%nat.
+
+Lemma lt_not_eq_sym x y: (y < x -> x <> y)%nat.
+
+Hint Resolve lt_not_eq.
+Hint Resolve lt_not_eq_sym.
+
+Definition sqrd n := n * n.
+
+Lemma sqrd_S n: sqrd (S n) = sqrd n + n + n + 1.
+
+Lemma sqrd_plus x y: sqrd x + sqrd y <= sqrd (x + y).
+
+Lemma sqrd_le x y: x <= y -> sqrd x <= sqrd y.
+
+Hint Resolve sqrd_plus sqrd_le.
+
+Lemma div2_preserves_le x y: x <= y -> div2 x <= div2 y.
+
+Lemma Sdiv2_eq_div2SS x: S (div2 x) = div2 (S (S x)).
+
+Lemma div2S_le_Sdiv2 x: div2 (S x) <= S (div2 x).
+
+Lemma div2_x_plus_Sx b: div2 (b + S b) = b.
+
+Lemma div2_x_plus_2y a b: div2 (a + 2 * b) = div2 a + b.
+
+Lemma div2_sqrdSn n: div2 (sqrd n) + n <= div2 (sqrd (S n)).
+
+Lemma le_div2 n: div2 n <= n.
+
+Lemma div2_lt_inv0 x y: div2 x < div2 y -> x < y.
+
+Lemma div2_lt_inv x y: div2 x < div2 y -> x <= y.
+
+Lemma div2_le_div2_inv x y: div2 x <= div2 y -> x <= S y.
+
+Lemma div2_cancel n: div2 (2 * n) = n.
+
+Lemma div2_le_inv x n: div2 x <= n -> x <= S (2 * n).
+
+Fixpoint pow (b e: nat) {struct e}: nat :=
+  match e with
+  | 0 => 1
+  | S e' => b * pow b e'
+  end.
+
+Lemma pow_S x y: pow x (S y) = x * pow x y.
+
+Lemma pow_min x: x <> 0%nat -> forall y, 0 < pow x y.
+
+Lemma ceil_log2_S_def n: ceil_log2_S n =
+  match n with
+  | 0 => 0
+  | S _ => S (ceil_log2_S (div2 n))
+  end.
+
+Definition log2ceil (n: nat): nat :=
+  match n with
+  | 0 => 0
+  | S n' => ceil_log2_S n'
+  end.
+
+Lemma pow2_ceil_log2: forall n, S n <= pow 2 (ceil_log2_S n).
+
+Lemma ceil_log2_Sn_le_n: forall n, ceil_log2_S n <= n.
+
+Lemma log2ceil_lt: forall n, 0 < n -> log2ceil n < n.
+
+Lemma log2ceil_le: forall n, log2ceil n <= n.
+
+Lemma log2ceil_S_preserves_le x y: x <= y -> ceil_log2_S x <= ceil_log2_S y.
+
+Lemma log2ceil_preserves_le x y: x <= y -> log2ceil x <= log2ceil y.
+
+Lemma INR_S_ne_0 n: INR (S n) <> 0%R.
+
+Hint Resolve INR_S_ne_0.
+
+Lemma O_le_inv_INR_S n: (0 <= / INR (S n))%R.
+
+Hint Resolve O_le_inv_INR_S.
+
+Lemma INR_0_inv n: INR n = 0%R -> n = 0.
+
+Lemma O_lt_INR_S n: (0 < INR (S n))%R.
+
+Hint Resolve O_lt_INR_S.
+
+Require Import Fourier.
+
+Ltac deep_Rle_trans h :=
+  match type of h with
+  | ?n <= ?u =>
+    match goal with
+    | |- (?l <= _)%R =>
+      let q := subst_tac n u l
+      in apply Rle_trans with q
+    | _ => assert (False)
+    end
+  end.
+
+Lemma Rmult_eq_compat_r (r r1 r2: R): (r1 = r2 -> r1 * r = r2 * r)%R.
+
+Lemma Rle_eq_trans x y z: (x <= y -> y = z -> x <= z)%R.
+
+Lemma Req_ne_dec (x y: R): { x = y } + { x <> y }.
+
+Lemma Rmult_0_inv (a b: R): (a * b)%R = 0%R -> (a = 0%R \/ b = 0%R).
+
+Lemma Req_le_trans x y z: x = y -> y <= z -> x <= z.
+
+Lemma Rle_plus_trans_l r a b c: a <= r -> r + b <= c -> a + b <= c.
+
+Lemma Rne_nlt_lt x y: x <> y -> ~ x < y -> y < x.
+
+Lemma Rdiv_le_1 a b: 0 < a -> a <= b -> 1 <= b / a.
+
+Lemma Rdiv_lt_1 n m: 0 <= n -> n < m -> n / m < 1.
+
+Lemma zero_le_2_div_Sn n: 0 <= (2 * / INR (S n))%R.
+
+Hint Resolve zero_le_2_div_Sn.
+
+Definition bigO (f g: nat -> R): Prop := exists c, exists n, forall x, (n <= x)%nat -> f x <= c * g x.
+
+Definition measured_bigO (X: Set) (m: X -> nat) (f: X -> R) (g: nat -> R): Prop
+  := exists c, exists n, forall x, (n <= m x)%nat -> f x <= c * g (m x).
+
+Notation "'over' m , f =O( g )" := (measured_bigO m f g). *)
+
+Require Import Plus.
+
+Require Import Minus.
+
+Require Import Lt.
+
+Require Import Arith.
+
+Require Import Recdef.
+
+Require Import Bool_nat.
+
+Require Import List.
+
+Require Import list_utils.
+(* list_utils:
+Set Implicit Arguments.
+Unset Standard Proposition Elimination Names.
+
+Require Export List.
+
+Require Import
+  Program Omega Factorial
+  Bool util Morphisms Relations RelationClasses Permutation.
+
+Hint Resolve
+  in_map Permutation_refl.
+
+Hint Constructors NoDup.
+
+Hint Constructors
+  NoDup Permutation.
+
+Arguments length {A}.
+Arguments Permutation {A}.
+Arguments map {A B}.
+Arguments tail {A}.
+
+Section count.
+
+  Context {X: Type} (p: X -> bool).
+
+  Fixpoint count (l: list X): nat :=
+    match l with
+    | nil => 0
+    | h :: t => if p h then S (count t) else count t
+    end.
+
+  Lemma count_app l l': count (l ++ l') = count l + count l'.
+
+  Lemma count_0 l: (forall x, In x l -> p x = false) -> count l = 0.
+
+  Lemma count_le l: count l <= length l.
+
+  Lemma count_filter_le (f: X -> bool) x: count (filter f x) <= count x.
+
+  Hint Resolve count_le.
+
+  Lemma count_lt v l: In v l -> p v = false -> count l < length l.
+
+End count.
+
+Hint Resolve @count_le.
+
+Lemma NoDup_map_inv' A B (f: A -> B) (l: list A): NoDup (map f l) -> NoDup l.
+
+Lemma length_filter X (p: X -> bool) (l: list X): length (filter p l) = count p l.
+
+Lemma length_filter_le T (p: T -> bool) (l: list T): length (filter p l) <= length l.
+
+Lemma filter_all X (p: X -> bool) (l: list X):
+  (forall x, In x l -> p x = true) -> filter p l = l.
+
+Lemma In_filter T (p: T -> bool) (t: T): p t = true -> forall l, In t l -> In t (filter p l).
+
+Lemma incl_filter X (p: X -> bool) (l: list X): incl (filter p l) l.
+
+Lemma incl_trans A (x y: list A): incl x y -> forall z, incl y z -> incl x z.
+
+Hint Resolve incl_filter.
+
+Lemma filter_preserves_incl X (p: X -> bool) (a b: list X): incl a b -> incl (filter p a) (filter p b).
+
+Hint Resolve filter_preserves_incl.
+
+Lemma In_inv_perm X (x: X) (l: list X):
+  In x l -> exists l', Permutation (x :: l') l.
+
+Lemma In_map_inv T U (f: T -> U) (l: list T) (y: U): In y (map f l) -> exists x, f x = y /\ In x l.
+
+Hint Resolve incl_tran.
+
+Lemma Permutation_incl X (a b: list X): Permutation a b -> incl a b.
+
+Lemma pointwise_eq_refl A B (x: A -> B): pointwise_relation A eq x x.
+
+Lemma complementary_filter_perm A (p: A -> bool) (l: list A):
+  Permutation l (filter p l ++ filter (negb ∘ p) l).
+
+Lemma filter_none X (p: X -> bool) (l: list X): (forall x, In x l -> p x = false) <-> filter p l = nil.
+
+Lemma incl_map X Y (f: X -> Y) (a b: list X): incl a b -> incl (map f a) (map f b).
+
+Lemma incl_in T (a b: list T): incl a b -> forall x, In x a -> In x b.
+
+Lemma incl_In X (x: X) (l: list X): In x l -> forall l', incl l l' -> In x l'.
+
+Lemma NoDup_filter T (p: T -> bool) (l: list T):
+  NoDup l -> NoDup (filter p l).
+
+Lemma length_excl_counts X (p: X -> bool) (l: list X):
+  length l = count p l + count (negb ∘ p) l.
+
+Lemma count_filtered X (p q: X -> bool):
+  (forall x, q x = true -> p x = false) ->
+  forall l, count p (filter q l) = 0.
+
+Lemma app_nil_r T (l: list T): l ++ nil = l.
+
+Hint Resolve Permutation_map.
+
+Lemma map_cons T U (f: T -> U) (h: T) (l: list T): map f (h :: l) = f h :: map f l.
+
+Definition concat {T}: list (list T) -> list T := fold_right (@app _) nil.
+
+Lemma concat_app T (x y: list (list T)): concat (x ++ y) = concat x ++ concat y.
+
+Lemma In_concat X (l: list (list X)) (s: list X) (x: X): In x s -> In s l -> In x (concat l).
+
+Lemma In_concat_inv X (x: X) (l: list (list X)):
+  In x (concat l) -> exists s, In x s /\ In s l.
+
+Definition eq_count X (d: forall (x y: X), { x = y } + { x <> y }) (x: X): list X -> nat :=
+ count (fun y => unsum_bool (d x y)).
+
+Lemma eq_count_0 X (d: forall (x y: X), { x = y } + { x <> y }) (x: X) l:
+  ~ In x l -> eq_count d x l = 0%nat.
+
+Lemma eq_count_NoDup X (d: forall (x y: X), { x = y } + { x <> y }) (x: X) l:
+  NoDup l -> eq_count d x l <= 1.
+
+Lemma NoDup_incl_Permutation A (a b: list A):
+  length a = length b -> NoDup a -> incl a b -> Permutation a b.
+
+Lemma NoDup_map' A B (f: A -> B) (l: list A):
+  (forall x y: A, In x l -> In y l -> x <> y -> f x <> f y) ->
+  NoDup l -> NoDup (map f l).
+
+Lemma NoDup_map A B (f: A -> B) l:
+  (forall x y, In x l -> In y l -> f x = f y -> x = y) -> NoDup l -> NoDup (map f l).
+
+Inductive InP (X: Type) (P: X -> Prop): list X -> Prop :=
+  | InP_head x t: P x -> InP P (x :: t)
+  | InP_tail x t: InP P t -> InP P (x :: t).
+
+Inductive NoDupL (A: Type): list (list A) -> Prop :=
+  | NoDupL_nil: NoDupL nil
+  | NoDupL_cons (l: list A) (ll: list (list A)): NoDup l ->
+      (forall x, In x l -> ~ InP (In x) ll) -> NoDupL ll -> NoDupL (l :: ll).
+
+Hint Constructors NoDupL.
+
+Lemma InP_In (X: Type) (l: list X) (ll: list (list X)): In l ll -> forall x, In x l -> InP (In x) ll.
+
+Lemma InP_In_inv X (x: X) (ll: list (list X)):
+  InP (In x) ll -> exists l, In x l /\ In l ll.
+
+Arguments InP_In_inv [X x ll].
+
+Lemma NoDup_concat A (l: list (list A)): NoDupL l -> NoDup (concat l).
+
+Lemma In_filter_inv A (f: A -> bool) (x: A) (l: list A): In x (filter f l) -> In x l /\ f x = true.
+
+Section Partitioning.
+
+  Variable T: Set.
+
+  Definition Partitioning: Set := comparison -> list T.
+
+  Lemma partition_oblig c l h
+    (H: {p: Partitioning | Permutation (p Eq ++ p Lt ++ p Gt) l}):
+    Permutation
+      ((if cmp_cmp c Eq then h :: proj1_sig H Eq else proj1_sig H Eq) ++
+      (if cmp_cmp c Lt then h :: proj1_sig H Lt else proj1_sig H Lt) ++
+      (if cmp_cmp c Gt then h :: proj1_sig H Gt else proj1_sig H Gt))
+      (h :: l).
+
+  Definition addToPartitioning (c: comparison) (l: list T) (h: T) (H: {p: Partitioning | Permutation (p Eq ++ p Lt ++ p Gt) l}): {p: Partitioning | Permutation (p Eq ++ p Lt ++ p Gt) (h :: l)} :=
+    exist (fun p => Permutation (p Eq ++ p Lt ++ p Gt) (h :: l))
+      (fun c' => if cmp_cmp c c' then h :: proj1_sig H c' else proj1_sig H c')
+      (partition_oblig c h H).
+
+  Definition emp: {p: Partitioning | Permutation (p Eq ++ p Lt ++ p Gt) nil} :=
+    exist (fun p => Permutation (p Eq ++ p Lt ++ p Gt) nil) (fun _ => nil) (perm_nil T).
+
+End Partitioning.
+
+Fixpoint repeat T (n: nat) (x: T): list T :=
+  match n with
+  | 0 => nil
+  | S n' => x :: repeat n' x
+  end.
+
+Lemma map_concat T U (l: list (list T)) (f: T -> U): map f (concat l) = concat (map (map f) l).
+
+Lemma length_0_nil A (l: list A): length l = 0%nat <-> l = nil.
+
+Lemma length_ne_0_ne_nil A (l: list A): length l <> 0%nat -> l <> nil.
+
+Lemma elemsR_le_S a b: elemsR le a b -> elemsR le (map S a) (map S b).
+
+Lemma elemsR_map A (R: relation A) f l:
+  (forall x, In x l -> R (f x) x) -> elemsR R (map f l) l.
+
+Lemma elemsR_map_map (X Y: Type) (f g: Y -> X) (l: list Y) (R: relation X): (forall x, In x l -> R (f x) (g x)) -> elemsR R (map f l) (map g l).
+
+Lemma elemsR_impl A (R R' : relation A): (forall x y: A, R x y -> R' x y) -> forall l l', elemsR R l l' -> elemsR R' l l'.
+
+Section Permuted.
+
+  Context {A: Type} (R: relation A).
+
+  Inductive Permuted: relation (list A) :=
+    | permuted_nil : Permuted nil nil
+    | permuted_skip : forall (x x': A), R x x' -> forall (l l' : list A), Permuted l l' -> Permuted (x :: l) (x' :: l')
+    | permuted_swap : forall (x y: A) (l: list A), Permuted (y :: x :: l) (x :: y :: l)
+    | permuted_trans : forall l l' l'' : list A, Permuted l l' -> Permuted l' l'' -> Permuted l l''.
+
+  Hint Constructors Permuted.
+
+  Context {Rrefl: Reflexive R}.
+
+  Lemma permuted_refl l: Permuted l l.
+
+  Hint Immediate permuted_refl.
+
+  Lemma elemsR_permuted l l': elemsR R l l' -> Permuted l l'.
+
+  Lemma alt_permuted_swap (x x' y y': A): R x x' -> R y y' ->
+    forall (l l': list A), elemsR R l l' -> Permuted (y :: x :: l) (x' :: y' :: l').
+
+End Permuted.
+
+Hint Constructors Permuted.
+
+Lemma map_map_comp A B C (f: A -> B) (g: B -> C) (l: list A):
+  map g (map f l) = map (g ∘ f) l.
+
+Lemma concat_map_singleton A (l: list A): concat (map (fun x => x :: nil) l) = l.
+
+Lemma Permuted_sub A (R: relation A) x y: Permuted R x y -> forall (R': relation A), (forall x y, R x y -> R' x y) -> Permuted R' x y.
+
+Lemma Permuted_map A B (R: relation B) (f: A -> B): Proper (Permuted (on f R) ==> Permuted R) (map f).
+
+Definition add := fold_right plus (0%nat).
+
+Lemma add_same c l: (forall x, In x l -> x = c) -> add l = length l * c.
+
+Lemma length_concat T (l: list (list T)):
+  length (concat l) = add (map (@length _) l).
+
+Lemma concat_map_nil T U (l: list T): concat (map (fun _ => nil) l) = @nil U.
+
+Definition product A B (aa: list A) (bb: list B): list (A * B) :=
+  concat (map (fun a => map (pair a) bb) aa).
+
+Lemma concat_map_singleton_f T A (f: A -> T) l: concat (map (fun x : A => (f x)::nil) l) = map f l.
+
+Lemma map_concat_map T U V (g: T -> list U) (f: U -> V) l:
+  map f (concat (map g l)) = concat (map (map f ∘ g) l).
+
+Lemma concat_concat T (x: list (list (list T))):
+  concat (concat x) = concat (map concat x).
+
+Section two_lists_rect.
+
+  Variables (T: Type) (P: list T -> list T -> Type)
+    (Pnil_l: forall x, P nil x) (Pnil_r: forall x, P x nil)
+    (Pcons: forall x x' y y', P x' (y :: y') -> P (x :: x') y' -> P (x :: x') (y :: y')).
+
+  Let R: relation (list T * list T) := pair_rel (ltof (list T) (@length _)) (ltof (list T) (@length _)).
+
+  Let wf_R: well_founded R.
+
+  Lemma two_lists_rect_pre (p: list T * list T): P (fst p) (snd p).
+
+  Definition two_lists_rect x y: P x y := two_lists_rect_pre (x, y).
+
+Instance map_Permutation_mor T U (f: T -> U): Proper (Permutation ==> Permutation) (map f) :=
+  Permutation_map f.
+
+Lemma concatMap_concatMap' T U V (g: T -> list U) (f: U -> list V) l:
+  concat (map f (concat (map g l))) = concat (map (concat ∘ map f ∘ g) l).
+
+Lemma Permutation_concatMap T U (f g: T -> list U) l:
+  (forall x, In x l -> Permutation (f x) (g x)) ->
+  Permutation (concat (map f l)) (concat (map g l)).
+
+Hint Resolve Permutation_concat.
+
+Lemma Permutation_concat_map_app T A (f g: A -> list T) l:
+  Permutation (concat (map (fun x => f x ++ g x) l)) (concat (map f l ++ map g l)).
+
+Lemma concat_product T U V (f: U -> T -> list V) l l':
+  Permutation
+    (concat (map (fun x => concat (map (fun y => f y x) l')) l))
+    (concat (map (fun x => concat (map (f x) l)) l')).
+
+Section splits_and_perms.
+
+  Context {T: Type}.
+
+  Fixpoint splits (l: list T): list (T * list T) :=
+    match l with
+    | nil => nil
+    | h :: t => (h, t) :: map (fun xy => (fst xy, h :: snd xy)) (splits t)
+    end.
+
+  Lemma length_splits l: length (splits l) = length l.
+
+  Lemma splits_are_perms l p: In p (splits l) -> Permutation (fst p :: snd p) l.
+
+  Lemma length_in_splits l p: In p (splits l) -> S (length (snd p)) = length l.
+
+  Fixpoint insert_everywhere (x: T) (l: list T): list (list T) :=
+    match l with
+    | nil => (x :: nil) :: nil
+    | h :: t => (x :: h :: t) :: map (cons h) (insert_everywhere x t)
+    end.
+
+  Lemma insert_everywhere_are_perms x l:
+    forall y, In y (insert_everywhere x l) -> Permutation y (x :: l).
+
+  Lemma length_insert_everywhere x l:
+    length (insert_everywhere x l) = S (length l).
+
+  Definition perms: list T -> list (list T)
+    := fold_right (fun h => concat ∘ map (insert_everywhere h)) (nil :: nil).
+
+  Lemma perms_are_perms l a: In a (perms l) -> Permutation a l.
+
+  Lemma length_perms l: length (perms l) = fact (length l).
+
+  Definition alt_perms l: list (list T) :=
+    match l with
+    | nil => nil :: nil
+    | _ => concat (map (fun p => (map (cons (fst p)) (perms (snd p)))) (splits l))
+    end.
+
+  Lemma splits_permuted (l l': list T): Permutation l l' ->
+    Permuted (fun x y => fst x = fst y /\ Permutation (snd x) (snd y)) (splits l) (splits l').
+
+  Inductive merges_spec: list T -> list T -> list (list T) -> Prop :=
+    | merges_left_nil x: merges_spec nil x (x :: nil)
+    | merges_right_nil x: merges_spec x nil (x :: nil)
+    | merges_cons x y h t r r':
+      merges_spec y (h :: t) r ->
+      merges_spec (x :: y) t r' ->
+      merges_spec (x :: y) (h :: t) (map (cons x) r ++ map (cons h) r').
+
+  Hint Constructors merges_spec.
+
+  Lemma merges_uniq a b r:
+    merges_spec a b r ->
+    forall r', merges_spec a b r' -> r = r'.
+
+  Lemma length_merges (F: nat -> nat -> nat) a b r:
+    (forall n, F 0 n = 1) ->
+    (forall n, F n 0 = 1) ->
+    (forall n n', F n (S n') + F (S n) n' = F (S n) (S n')) ->
+    merges_spec a b r -> length r = F (length a) (length b).
+
+  Definition me (ab: list T * list T): nat := length (fst ab) + length (snd ab).
+
+  Program Fixpoint merges_ex (ab: list T * list T) {measure (me ab)}: sig (merges_spec (fst ab) (snd ab)) :=
+    match ab with
+    | (nil, x) => x :: nil
+    | (x, nil) => x :: nil
+    | (x :: y, h :: t) => map (cons x) (merges_ex (y, h :: t)) ++ map (cons h) (merges_ex (x :: y, t))
+    end.
+
+  Definition merges (a b: list T): list (list T) := proj1_sig (merges_ex (a, b)).
+
+  Lemma merges_real_eq a b: merges a b =
+    match a, b with
+    | nil, x => x :: nil
+    | x, nil => x :: nil
+    | x :: y, h :: t => map (cons x) (merges y (h :: t)) ++ map (cons h) (merges (x :: y) t)
+    end.
+
+  Lemma merges_nil_r a: merges a [] = [a].
+
+  Hint Resolve Permutation_concat.
+
+  Lemma product_app: forall T (a b c: list T), product (a ++ b) c = product a c ++ product b c.
+
+  Lemma product_concat: forall T (a: list (list T)) (b: list T), product (concat a) b = concat (map (flip (@product _ _) b) a).
+
+  Lemma concatMap_insert_everywhere_comm x y l: Permutation
+    (concat (map (insert_everywhere x) (insert_everywhere y l)))
+    (concat (map (insert_everywhere y) (insert_everywhere x l))).
+
+  Lemma merges_insert_everywhere a l: insert_everywhere a l = merges (a :: nil) l.
+
+  Lemma merges_insert_everywhere' a l: Permutation (insert_everywhere a l) (merges l (a :: nil)).
+
+  Lemma insert_everywhere_merges_commute a x y: Permutation
+    (concat (map (insert_everywhere a) (merges y x)))
+    (concat (map (merges y) (insert_everywhere a x))).
+
+  Lemma merges_sym x y: Permutation (merges x y) (merges y x).
+
+  Hint Immediate merges_sym.
+
+  Lemma perms_app (a b: list T): Permutation (perms (a ++ b)) (concat (map (uncurry merges) (product (perms a) (perms b)))).
+
+  Lemma filter_merges p (x y: list T):
+     (forall z, In z x -> p z = true) ->
+     (forall z, In z y -> p z = false) ->
+     forall r, In r (map (filter p) (merges x y)) -> r = x.
+
+  Lemma merges_ne_nil x y: merges x y <> nil.
+
+End splits_and_perms.
+
+Existing Instance Permutation_perms.
+
+Lemma map_repeat A B (f: A -> B) c (l: list A):
+  (forall x, In x l -> f x = c) -> map f l = repeat (length l) c.
+
+Lemma repeat_plus T (c: T) n m: repeat (n + m) c = repeat n c ++ repeat m c.
+
+Lemma concat_repeat T n m (c: T): concat (repeat n (repeat m c)) = repeat (n * m) c.
+
+Lemma filter_perms T p (l: list T):
+  Permutation
+    (map (filter p) (perms l))
+    (concat (map (repeat (fact (length (filter (negb ∘ p) l)) * length (merges (filter p l) (filter (negb ∘ p) l)))) (perms (filter p l)))).
+
+Instance Permutation_length_morphism T: Proper (Permutation ==> eq) (@length T) :=
+  @Permutation_length T.
+
+Lemma repeat_map_comm A B (f: A -> B) n: ext_eq (map f ∘ repeat n) (repeat n ∘ f).
+
+Lemma length_repeat T (c: T) n: length (repeat n c) = n.
+
+Lemma concat_nil X (l: list (list X)): (forall x, In x l -> x = nil) -> concat l = nil.
+
+Lemma empty_nil X (x: list X): length x = 0%nat -> x = nil.
+
+Lemma Permuted_Permutation_map T U (R: relation T) (f: T -> U):
+  (forall x y, R x y -> f x = f y) -> forall a b,
+  Permuted R a b ->
+  Permutation (map f a) (map f b).
+
+Lemma elemsR_length A (R: A -> A -> Prop) a b (H: elemsR R a b):
+  length a = length b.
+
+Lemma elemsRimpl A B (R: A -> B -> Prop) (l: list A): (forall x, In x l -> sig (R x)) -> sig (elemsR R l).
+
+Lemma elemsRuniq A B (R: A -> B -> Prop) (l: list A):
+  (forall x, In x l -> forall y, R x y -> forall y', R x y' -> y = y') -> forall r, elemsR R l r -> forall r', elemsR R l r' -> r = r'.
+
+Definition triple0 A B C (t: A * B * C): A := fst (fst t).
+Definition triple1 A B C (t: A * B * C): B := snd (fst t).
+Definition triple2 A B C (t: A * B * C): C := snd t.
+
+Fixpoint rsplits T (l: list T): list (list T * T * list T) :=
+  match l with
+  | nil => nil
+  | h :: t => (nil, h, t) :: map (fun p => (h :: triple0 p, triple1 p, triple2 p)) (rsplits t)
+  end.
+
+Lemma splits_rsplits (T: Set) (l: list T): splits l = map (fun p => (triple1 p, triple0 p ++ triple2 p)) (rsplits l).
+
+Lemma insert_everywhere_rsplits (T: Set) (x: T) (l: list T):
+  insert_everywhere x l =
+   map (fun x0 => triple0 x0 ++ x :: triple1 x0 :: triple2 x0) (rsplits l) ++ [l ++ [x]].
+
+Lemma elemsR_map':
+  forall (A B: Type) (Ra: relation A) (Rb: relation B) (f : A -> B)
+    (fR: forall x y, Ra x y -> Rb (f x) (f y)) (l l': list A),
+      elemsR Ra l l' -> elemsR Rb (map f l) (map f l').
+
+Lemma concatMap_insert_everywhere T (x: T) (l: list (list T)):
+  Permutation
+    (concat (map (insert_everywhere x) l))
+    (map (cons x) l ++ concat (map (tail ∘ insert_everywhere x) l)).
+
+Lemma map_length_filter_permuted_splits T (l l': list T): Permutation l l' ->
+  forall p,
+  Permutation
+    (map (fun x => length (filter (p (fst x)) (snd x))) (splits l))
+    (map (fun x => length (filter (p (fst x)) (snd x))) (splits l')).
+
+Lemma perms_alt_perms T (l: list T): Permutation (perms l) (alt_perms l).
+
+Lemma map_single A B (f: A -> B) x: map f [x] = [f x]. *)
+
+Require Import Omega.
+
+Require Import Arith.
+
+Require Import Bool.
+
+Require Import EqNat.
+
+Require Import nat_seqs.
+(* nat_seqs:
+Set Implicit Arguments.
+Unset Automatic Introduction.
+
+Require Import List.
+Require Import Lt.
+Require Import Le.
+Require Import util.
+Require Import list_utils.
+Require Import Omega.
+Require Import arith_lems.
+
+Fixpoint nats (b: nat) (w: nat) {struct w}: list nat :=
+  match w with
+  | 0 => nil
+  | S w' => b :: nats (S b) w'
+  end.
+
+Lemma nats_length (w b: nat): length (nats b w) = w.
+
+Lemma In_nats (w x b: nat): b <= x -> x < b + w -> In x (nats b w).
+
+Lemma In_nats_inv (w x b: nat): In x (nats b w) -> b <= x < b + w.
+
+Lemma NoDup_nats (w b: nat): NoDup (nats b w).
+
+Lemma nats_plus y x z: nats x (y + z) = nats x y ++ nats (y + x) z.
+
+Lemma nats_Sw b w: nats b (S w) = b :: nats (S b) w.
+
+Lemma nats_split (w b i: nat): i <= w -> nats b w = nats b i ++ nats (b + i) (w - i).
+
+Lemma nats_Sw' w b: nats b (S w) = nats b w ++ (w + b :: nil).
+
+Lemma split_pow2_range n:
+  nats 1 (pow 2 n) = 1 :: concat (map (fun x => nats (pow 2 x + 1) (pow 2 x)) (nats 0 n)).
+
+Lemma nats_Sb w b: nats (S b) w = map S (nats b w).
+
+Require Import Relations.
+Require vec.
+
+Lemma filtered_sort (T: Set) (R: relation T) (P: preorder T R) (p: T -> T -> bool) (pc: forall x y, p y x = true -> ~ R y x) (l: list T): vec.sorted R l -> *)
+
+Require Import sort_order.
+(* sort_order:
+Set Implicit Arguments.
+
+Require Import util.
+Require Import Le.
+Require Import Plus.
+Require Import Minus.
+Require Import Lt.
+Require Import Arith.
+Require Import Recdef.
+Require Import Bool_nat.
+Require Import List.
+Require Import list_utils.
+Require Import Omega.
+Require Import Arith.
+Require Import Bool.
+Require Import EqNat.
+Require Import Relations.
+
+Section contents.
+
+Record E: Type :=
+  { Ec:> Set
+  ; Ecmp: Ec -> Ec -> comparison
+  ; Ecmp_sym: forall x y, Ecmp x y = CompOpp (Ecmp y x)
+  ; Ecmp_trans: forall x y z c, Ecmp x y = c -> Ecmp y z = c -> Ecmp x z = c
+  ; Ecmp_eq_trans_l: forall x y z c, Ecmp x y = Eq -> Ecmp y z = c -> Ecmp x z = c
+  }.
+
+Context {e: E}.
+
+Lemma Ecmp_apply_sym x y c: Ecmp e x y = CompOpp c -> Ecmp e y x = c.
+
+Lemma Ecmp_eq_trans_r x y z c: Ecmp e x y = c -> Ecmp e y z = Eq -> Ecmp e x z = c.
+
+Section shorthands.
+
+  Variables (x y: e).
+
+  Definition Elt: Prop := Ecmp _ x y = Lt.
+  Definition Egt: Prop := Ecmp _ x y = Gt.
+  Definition Ele: Prop := Ecmp _ x y <> Gt.
+  Definition Ege: Prop := Ecmp _ x y <> Lt.
+
+  Definition Eltb: bool := match Ecmp _ x y with Lt => true | _ => false end.
+  Definition Egtb: bool := match Ecmp _ x y with Gt => true | _ => false end.
+  Definition Eleb: bool := match Ecmp _ x y with Gt => false | _ => true end.
+  Definition Egeb: bool := match Ecmp _ x y with Lt => false | _ => true end.
+
+  Lemma Eltb_true: Elt <-> Eltb = true.
+
+  Lemma Egtb_true: Egt <-> Egtb = true.
+
+  Lemma Eleb_true: Ele <-> Eleb = true.
+
+  Lemma Egeb_true: Ege <-> Egeb = true.
+
+End shorthands.
+
+Lemma Elt_irrefl x: ~ Elt x x.
+
+Lemma Ele_dec x y: decision (Ele x y).
+
+Lemma Ecmp_refl x: Ecmp e x x = Eq.
+
+Lemma Ele_le_dec x y: { Ele x y } + { Ele y x }.
+
+Lemma Ecmp_inv_sym x y c: Ecmp e x y <> CompOpp c -> Ecmp e y x <> c.
+
+Lemma Ele_Ege x y: Ele x y -> Ege y x.
+
+Lemma Ege_Ele x y: Ege x y -> Ele y x.
+
+Lemma Ecmp_le_lt_trans: forall x y z, Ele x y -> Ecmp e y z = Lt -> Ecmp e x z = Lt.
+
+Lemma Ecmp_lt_le_trans: forall x y z, Ecmp e x y = Lt -> Ele y z -> Ecmp e x z = Lt.
+
+Lemma Ecmp_ge_gt_trans: forall x y z, Ege x y -> Ecmp e y z = Gt -> Ecmp e x z = Gt.
+
+Lemma EO: preorder _ Ele.
+
+Lemma Ege_preorder: preorder _ Ege.
+
+Hint Immediate Ege_preorder EO.
+
+Lemma preorder_impl X (P Q: relation X): (forall x y, P x y <-> Q x y) -> preorder _ P -> preorder _ Q.
+
+Lemma Eleb_preorder: preorder _ (fun x y => Eleb x y = true).
+
+Lemma Egeb_preorder: preorder _ (fun x y => Egeb x y = true).
+
+Lemma Ele_nlt x y: Ele x y -> ~ Elt y x.
+
+Lemma Enle_le x y: ~ Ele x y -> Ele y x.
+
+End contents. *)
+
+Require Vector.
+
+Require Import Relations.
+
+Require Import nat_below.
+(* nat_below:
+Global Set Automatic Coercions Import.
+Set Implicit Arguments.
+
+Require Import Arith.
+Require Compare_dec.
+Require EqNat.
+Require Import Omega.
+
+Fixpoint cond_eq (T: nat -> Set) n m {struct n}: forall c, T (c + n) -> T (c + m) -> Prop :=
+  match n, m return forall c, T (c + n) -> T (c + m) -> Prop with
+  | 0, 0 => fun c x y => x = y
+  | S n', S m' => fun c x y => cond_eq T n' m' (S c)
+      (eq_rec_r T x (plus_n_Sm c n'))
+      (eq_rec_r T y (plus_n_Sm c m'))
+  | _, _ => fun _ _ _ => True
+  end.
+
+Lemma cond_eq_eq (T: nat -> Set) n c (x y: T (c + n)): cond_eq T n n c x y = (x = y).
+
+Lemma cond_eq_neq (T: nat -> Set) n m c (x: T (c + n)) (y: T (c + m)): n <> m -> cond_eq T n m c x y = True.
+
+Inductive natBelow: nat -> Set := mkNatBelow (v p: nat): natBelow (S (v + p)).
+
+Definition nb_val {n: nat} (nb: natBelow n): nat := match nb with mkNatBelow m _ => m end.
+
+Coercion nb_val: natBelow >-> nat.
+
+Lemma natBelow_unique n (x y: natBelow n): nb_val x = nb_val y -> x = y.
+
+Lemma natBelow_uneq n (x y: natBelow n): nb_val x <> nb_val y -> x <> y.
+
+Lemma natBelow_eq_dec n (x y: natBelow n): { x = y } + { x <> y }.
+
+Definition nb0 n: natBelow (S n) := mkNatBelow 0 n.
+
+Definition Snb n (nb: natBelow n): natBelow (S n) :=
+  match nb in (natBelow n0) return (natBelow (S n0)) with
+  | mkNatBelow v p => mkNatBelow (S v) p
+  end. *)
+
+Require vec.
+
+Require Import Compare_dec.
+
+
+
+Section contents.
+
+
+
+  Variables (T: E) (ol: list T).
+
+
+
+  Definition Index := natBelow (length ol).
+
+
+
+  Definition subscript: Index -> T := vec.nth (vec.insertion_sort (@Ele T) (@Ele_le_dec T) ol).
+
+
+
+  Definition UE: E :=
+
+    Build_E (fun x y: Index => Ecmp T (subscript x) (subscript y))
+
+      (fun x y => Ecmp_sym T (subscript x) (subscript y))
+
+      (fun x y z => Ecmp_trans T (subscript x) (subscript y) (subscript z))
+
+      (fun x y z => Ecmp_eq_trans_l T (subscript x) (subscript y) (subscript z)).
+
+
+
+  Definition IndexIn (i: nat) (l: list Index): Prop := In i (map nb_val l).
+
+
+
+  Definition IndexSeq (b: nat) (l: list Index): Prop :=
+
+    forall i, b <= i -> i < b + length l -> IndexIn i l.
+
+
+
+  Definition IndexSeq_above (b: nat) (l: list Index): Prop := IndexSeq (b - length l) l.
+
+
+
+  Lemma IndicesCorrect e e': Ecmp UE e e' = Lt -> e < e'.
+
+  Proof.
+
+    unfold UE. simpl.
+
+    unfold subscript.
+
+    intros.
+
+    apply (vec.sorted_lt_values_lt_indices (@EO T) (vec.insertion_sort_sorts (@Ele T) (@Ele_le_dec T) ol)).
+
+    unfold vec.Xlt.
+
+    unfold Ele in *.
+
+    rewrite H.
+
+    rewrite Ecmp_sym.
+
+    rewrite H.
+
+    simpl.
+
+    firstorder; try intro; discriminate.
+
+  Qed.
+
+
+
+  Lemma IndicesCorrect_inv (x y: Index): x < y -> @Ele UE x y.
+
+  Proof with try assumption.
+
+    repeat intro.
+
+    apply lt_asym with (nb_val x) (nb_val y)...
+
+    apply IndicesCorrect.
+
+    apply Ecmp_apply_sym...
+
+  Qed.
+
+
+
+  Lemma IndexSeq_nil b: IndexSeq b nil.
+
+  Proof. do 3 intro. elimtype False. apply (lt_irrefl i). simpl in H0. omega. Qed.
+
+
+
+  Hint Resolve IndexSeq_nil.
+
+
+
+  Lemma IndexSeq_perm: forall (b: nat) (l: list Index), IndexSeq b l -> forall l', Permutation.Permutation l' l -> IndexSeq b l'.
+
+  Proof with auto.
+
+    unfold IndexSeq.
+
+    intros.
+
+    rewrite (Permutation.Permutation_length H0) in H2.
+
+    unfold IndexIn.
+
+    apply incl_In with (map (nb_val (n:=length ol)) l)...
+
+      apply H...
+
+    apply Permutation_incl.
+
+    apply Permutation.Permutation_sym...
+
+  Qed.
+
+
+
+  Definition IndexSeq_uncons l b:
+
+    IndexSeq b l -> l <> nil -> exists l', exists p: Index, nb_val p = b /\ Permutation.Permutation (p :: l') l.
+
+  Proof with auto.
+
+    destruct l; intros.
+
+      intros.
+
+      elimtype False...
+
+    assert (b < b + length (i :: l)).
+
+      simpl. omega.
+
+    specialize (H b (le_refl _) H1).
+
+    unfold IndexIn in H.
+
+    destruct (In_map_inv H). clear H.
+
+    destruct H2.
+
+    subst b.
+
+    destruct (In_inv_perm _ _ H2).
+
+    eauto.
+
+  Qed.
+
+
+
+  Lemma IndexSeq_cons_inv (b: Index) (l: list Index): IndexSeq b (b :: l) -> IndexSeq (S b) l.
+
+  Proof with auto.
+
+    do 4 intro.
+
+    assert (b <= i) by omega.
+
+    assert (i < b + S (length l)). omega.
+
+    cset (H i H2 H3).
+
+    unfold IndexIn in *.
+
+    destruct (In_map_inv H4). clear H4.
+
+    destruct H5.
+
+    subst i.
+
+    apply in_map.
+
+    inversion_clear H5...
+
+    subst.
+
+    elimtype False.
+
+    apply (le_Sn_n x)...
+
+  Qed.
+
+
+
+  Lemma vec_IndexSeq_nats_perm b n (v: Vector.t Index n): IndexSeq b v ->
+
+    vec.Permutation (vec.map nb_val v) (vec.nb_nats b n).
+
+  Proof with auto.
+
+    unfold vec.nb_nats.
+
+    intros.
+
+    apply vec.perm_sym.
+
+    apply vec.NoDup_incl_Permutation.
+
+      rewrite <- vec.List_map.
+
+      apply NoDup_map.
+
+        intros.
+
+        apply natBelow_unique...
+
+      apply vec.NoDup_nats.
+
+    do 2 intro.
+
+    rewrite <- vec.List_map in H0.
+
+    destruct (In_map_inv H0). clear H0.
+
+    destruct H1. subst.
+
+    destruct (vec.In_nats_inv _ _ _ H1). clear H1.
+
+    rewrite <- vec.List_map.
+
+    apply H...
+
+    rewrite vec.length.
+
+    omega.
+
+  Qed.
+
+
+
+  Lemma nats_Permutation_IndexSeq' b n (l: Vector.t Index n):
+
+    vec.Permutation (vec.map nb_val l) (vec.nb_nats b n) -> IndexSeq b l.
+
+  Proof with auto.
+
+    intros.
+
+    unfold IndexSeq.
+
+    intros.
+
+    unfold IndexIn.
+
+    apply Permutation.Permutation_in with (vec.to_list (vec.nb_nats b n)).
+
+      apply Permutation.Permutation_sym.
+
+      cset (vec.List_Permutation H).
+
+      rewrite <- vec.List_map in H2...
+
+    rewrite vec.length in H1.
+
+    apply vec.In_nb_nats'...
+
+  Qed.
+
+
+
+  Definition IndexSeq_NoDup b l: IndexSeq b l -> NoDup l.
+
+  Proof with auto.
+
+    rewrite <- (vec.list_round_trip l).
+
+    cset (vec.from_list l).
+
+    intro.
+
+    apply (NoDup_map_inv' (@nb_val (length ol))).
+
+    rewrite vec.List_map.
+
+    assert (Permutation.Permutation (vec.map nb_val H) (vec.to_list (vec.nb_nats b (length l)))).
+
+      apply vec.List_Permutation, vec_IndexSeq_nats_perm...
+
+    rewrite H1.
+
+    unfold vec.nb_nats.
+
+    rewrite <- vec.List_map.
+
+    apply NoDup_map.
+
+      intros.
+
+      apply natBelow_unique...
+
+    apply vec.NoDup_nats.
+
+  Qed.
+
+
+
+  Lemma IndexSeq_inv l: forall b, IndexSeq b l -> forall t, In t l -> b <= t < b + length l.
+
+  Proof with auto with arith.
+
+    rewrite <- (vec.list_round_trip l).
+
+    cset (vec.from_list l).
+
+    intros.
+
+    assert (In (nb_val t) (map nb_val (vec.to_list H))).
+
+      apply in_map...
+
+    rewrite vec.List_map in H2.
+
+    assert (In (nb_val t) (vec.nb_nats b (length l))).
+
+      apply Permutation.Permutation_in with (vec.to_list (vec.map (nb_val (n:=length ol)) H))...
+
+      apply vec.List_Permutation.
+
+      apply (vec_IndexSeq_nats_perm H H0).
+
+    rewrite vec.length.
+
+    rewrite plus_comm.
+
+    apply (vec.In_nb_nats_inv _ _ _ H3).
+
+  Qed.
+
+
+
+  Hint Resolve in_map.
+
+
+
+  Lemma IndexSeq_base_lowest_value' (b: Index) l: IndexSeq b l -> forall e, In e l -> @Ele UE b e.
+
+  Proof with auto.
+
+    unfold UE. unfold Ele. simpl.
+
+    intros.
+
+    intro.
+
+    apply lt_irrefl with b.
+
+    apply le_lt_trans with e.
+
+      destruct (IndexSeq_inv H e H0)...
+
+    rewrite Ecmp_sym in H1.
+
+    case_eq (Ecmp T (subscript e) (subscript b)); intro; rewrite H2 in H1.
+
+        discriminate.
+
+      apply (IndicesCorrect e b H2).
+
+    discriminate.
+
+  Qed.
+
+
+
+  Lemma IndexSeq_cons (b: Index) l: IndexSeq (S b) l -> IndexSeq b (b :: l).
+
+  Proof with auto.
+
+    intros.
+
+    do 3 intro.
+
+    destruct (le_lt_or_eq b i H0).
+
+      intros.
+
+      unfold IndexSeq in H.
+
+      right.
+
+      apply H...
+
+      simpl in H1.
+
+      omega.
+
+    subst.
+
+    left...
+
+  Qed.
+
+
+
+  Lemma indices: exists tl, ol = map subscript tl /\ IndexSeq 0 tl.
+
+  Proof with auto.
+
+    intros.
+
+    destruct (vec.Permutation_mapping (vec.perm_sym (vec.insertion_sort_permutes (@Ele T) (@Ele_le_dec T) ol))).
+
+    destruct H.
+
+    exists (vec.to_list x).
+
+    split.
+
+      rewrite vec.List_map...
+
+      apply vec.eq_list.
+
+      symmetry...
+
+    unfold IndexSeq.
+
+    intros.
+
+    unfold IndexIn.
+
+    rewrite vec.length in H2.
+
+    simpl in H2.
+
+    destruct (lt_exists_plus H2). clear H2.
+
+    clear H0.
+
+    revert H.
+
+    revert x.
+
+    rewrite H3. clear H3. intros.
+
+    cut (In (mkNatBelow i x0) (vec.to_list x))...
+
+    intros.
+
+    apply (in_map nb_val _ _ H0).
+
+  Qed.
+
+
+
+  Lemma IndexSeq_filterLt e n : forall b l, length l = n ->
+
+    IndexSeq b l -> IndexSeq b (filter (fun f => unsum_bool (cmp_cmp (Ecmp UE f e) Lt)) l).
+
+  Proof with auto with arith.
+
+    unfold UE.
+
+    simpl.
+
+    induction n.
+
+      intros.
+
+      destruct l.
+
+        simpl.
+
+        apply IndexSeq_nil.
+
+      discriminate.
+
+    intros.
+
+    assert (l <> nil). intro. subst. discriminate.
+
+    destruct (IndexSeq_uncons H0 H1).
+
+    destruct H2.
+
+    destruct H2.
+
+    subst b.
+
+    replace n with (length x) in *.
+
+      Focus 2.
+
+      cset (Permutation.Permutation_length H3).
+
+      simpl in H2.
+
+      unfold Index in H, H2.
+
+      rewrite H in H2.
+
+      inversion H2...
+
+    apply IndexSeq_perm with (filter (fun f => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Lt)) (x0 :: x))...
+
+      Focus 2.
+
+      apply filter_perm.
+
+      repeat intro...
+
+      apply Permutation.Permutation_sym...
+
+    assert (In x0 (x0 :: x)).
+
+      left...
+
+    cset (IndexSeq_base_lowest_value' _ (IndexSeq_perm H0 H3) ).
+
+    simpl.
+
+    case_eq (Ecmp T (subscript x0) (subscript e)); intro.
+
+        rewrite (proj1_conj (filter_none (fun f: Index => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Lt)) x))...
+
+        intros.
+
+        case_eq (Ecmp T (subscript x1) (subscript e))...
+
+        intros.
+
+        elimtype False.
+
+        unfold UE, Ele in H4. simpl in H4.
+
+        apply H4 with x1.
+
+          right...
+
+        apply Ecmp_apply_sym.
+
+        simpl.
+
+        apply Ecmp_eq_trans_r with (subscript e)...
+
+        apply Ecmp_apply_sym...
+
+      simpl.
+
+      apply IndexSeq_cons...
+
+      apply IHn...
+
+      apply (IndexSeq_cons_inv (IndexSeq_perm H0 H3)).
+
+    rewrite (proj1_conj (filter_none (fun f: Index => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Lt)) x))...
+
+    intros.
+
+    case_eq (Ecmp T (subscript x1) (subscript e))...
+
+    intros.
+
+    elimtype False.
+
+    apply H4 with x1.
+
+      right...
+
+    apply Ecmp_apply_sym.
+
+    simpl.
+
+    apply Ecmp_trans with (subscript e)...
+
+    apply Ecmp_apply_sym...
+
+  Qed.
+
+
+
+  Lemma IndexSeq_filterGt e l: forall b, IndexSeq b l ->
+
+    IndexSeq_above (b + length l) (filter (fun f => unsum_bool (cmp_cmp (Ecmp UE f e) Gt)) l).
+
+  Proof with auto.
+
+    set (length l).
+
+    assert (n = length l)...
+
+    clearbody n.
+
+    revert H. revert l.
+
+    induction n.
+
+      intros.
+
+      destruct l.
+
+        simpl.
+
+        unfold IndexSeq_above.
+
+        apply IndexSeq_nil.
+
+      discriminate.
+
+    intros.
+
+    assert (l <> nil). intro. subst l. discriminate.
+
+    destruct (IndexSeq_uncons H0 H1).
+
+    destruct H2.
+
+    destruct H2.
+
+    subst b.
+
+    cut (IndexSeq_above (x0 + S n) (filter (fun f: Index => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Gt)) (x0 :: x))).
+
+      unfold IndexSeq_above.
+
+      intro.
+
+      rewrite length_filter in *.
+
+      rewrite <- (count_perm_simple _ H3).
+
+      apply IndexSeq_perm with (filter (fun f: Index => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Gt)) (x0 :: x))...
+
+      apply filter_perm.
+
+        repeat intro...
+
+      apply Permutation.Permutation_sym...
+
+    simpl filter.
+
+    replace n with (length x) in *.
+
+      Focus 2.
+
+      cset (Permutation.Permutation_length H3).
+
+      simpl in H2.
+
+      rewrite <- H in H2.
+
+      inversion H2...
+
+    assert (IndexSeq_above (x0 + S (length x)) (filter (fun f: Index => unsum_bool (cmp_cmp (Ecmp T (subscript f) (subscript e)) Gt)) x)).
+
+      rewrite <- plus_Snm_nSm.
+
+      apply IHn...
+
+      apply IndexSeq_cons_inv.
+
+      apply IndexSeq_perm with l...
+
+    case_eq (Ecmp T (subscript x0) (subscript e)); intro...
+
+    simpl.
+
+    unfold IndexSeq_above.
+
+    assert (IndexSeq (S x0) x).
+
+      apply IndexSeq_cons_inv.
+
+      apply IndexSeq_perm with l...
+
+    rewrite filter_all.
+
+      simpl @length.
+
+      rewrite plus_comm.
+
+      rewrite minus_plus.
+
+      apply IndexSeq_perm with l...
+
+    intros.
+
+    replace (Ecmp T (subscript x1) (subscript e)) with Gt...
+
+    rewrite Ecmp_sym.
+
+    replace (Ecmp T (subscript e) (subscript x1)) with Lt...
+
+    assert (In x1 l).
+
+      cut (In x1 (x0 :: x)).
+
+        intro.
+
+        apply (Permutation.Permutation_in _ H3 H7).
+
+      right...
+
+    cset (IndexSeq_base_lowest_value' x0 H0 x1 H7).
+
+    unfold Ele, UE in H8. simpl in H8.
+
+    fold (@Ele T (subscript x0) (subscript x1)) in H8.
+
+    symmetry.
+
+    apply Ecmp_lt_le_trans with (subscript x0)...
+
+    rewrite Ecmp_sym.
+
+    rewrite H4...
+
+  Qed.
+
+
+
+  Lemma InvIndexSeq_filterGt' e l b:
+
+    IndexSeq b (e :: l) -> IndexSeq_above (b + S (length l)) (filter (fun f => unsum_bool (cmp_cmp (Ecmp UE f e) Gt)) l).
+
+  Proof with auto.
+
+    intros.
+
+    cset (IndexSeq_filterGt e H).
+
+    simpl filter in H0.
+
+    rewrite Ecmp_refl in H0.
+
+    simpl in H0...
+
+  Qed.
+
+
+
+End contents.
+

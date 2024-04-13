@@ -1,0 +1,548 @@
+
+
+Require Import VST.veric.base.
+(* VST.veric.base:
+Require Export Coq.Arith.EqNat.
+Require Export Coq.Relations.Relations.
+
+Require Export compcert.lib.Axioms.
+Require Export compcert.lib.Coqlib.
+Require Export compcert.lib.Integers.
+Require Export compcert.lib.Floats.
+Require Export compcert.lib.Maps.
+Require Export compcert.common.AST.
+Require Export compcert.common.Values.
+Require Export compcert.common.Memdata.
+Require Export compcert.common.Memtype.
+Require Export compcert.common.Memory.
+Require Export compcert.common.Globalenvs.
+
+Require Export VST.msl.Coqlib2. 
+Require Export VST.veric.coqlib4.
+
+Fixpoint id_in_list (id: ident) (ids: list ident) : bool :=
+ match ids with i::ids' => orb (Pos.eqb id i) (id_in_list id ids') | _ => false end.
+
+Fixpoint compute_list_norepet (ids: list ident) : bool :=
+ match ids with
+ | id :: ids' => if id_in_list id ids' then false else compute_list_norepet ids'
+ | nil => true
+ end.
+
+Lemma id_in_list_true: forall i ids, id_in_list i ids = true -> In i ids.
+
+Lemma id_in_list_false: forall i ids, id_in_list i ids = false -> ~In i ids.
+
+Lemma compute_list_norepet_e: forall ids,
+     compute_list_norepet ids = true -> list_norepet ids.
+
+Lemma list_norepet_rev:
+  forall A (l: list A), list_norepet (rev l) = list_norepet l.
+
+Lemma block_eq_dec: forall b1 b2: block, {b1 = b2} + {b1 <> b2}.
+
+Lemma rev_if_be_singleton:
+  forall x, rev_if_be (x::nil) = (x::nil).
+
+Lemma rev_if_be_1: forall i, rev_if_be (i::nil) = (i::nil).
+
+Lemma decode_byte_val:
+  forall m, decode_val Mint8unsigned (Byte m :: nil) =
+              Vint (Int.zero_ext 8 (Int.repr (Byte.unsigned m))).
+
+Lemma Vint_inj: forall x y, Vint x = Vint y -> x=y.
+
+Definition nullval : val := 
+  if Archi.ptr64 then Vlong Int64.zero else Vint Int.zero.
+
+Definition val_to_bool (v: val) : option bool :=
+  match v with
+    | Vint n => Some (negb (Int.eq n Int.zero))
+    | Vptr _ _ => Some true
+    | _ => None
+  end.
+
+Definition bool_of_valf (v: val): option bool :=
+match v with
+  | Vint i => Some (negb (Int.eq i Int.zero))
+  | Vlong i => Some (negb (Int64.eq i Int64.zero))
+  | Vfloat _ => None
+  | Vsingle _ => None
+  | Vptr _ _ => Some true
+  | Vundef => None
+end. *)
+
+Require Import VST.veric.val_lemmas.
+(* VST.veric.val_lemmas:
+Require Import Coq.Arith.EqNat.
+Require Import Coq.Relations.Relations.
+
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Integers.
+Require Import compcert.lib.Floats.
+Require Import compcert.common.Values.
+
+Require Import VST.msl.Coqlib2.
+Set Implicit Arguments.
+
+Set Implicit Arguments.
+Definition is_true (b: bool) :=
+  match b with true => True | false => False end.
+
+Definition force_val (v: option val) : val :=
+ match v with Some v' => v' | None => Vundef end.
+
+Definition force_val1 (f: val -> option val) (v: val) := force_val (f v).
+Definition force_val2 (f: val -> val -> option val) (v1 v2: val) := force_val (f v1 v2).
+
+Arguments force_val1 f v /.
+Arguments force_val2 f v1 v2 /.
+
+Definition force_int (v: val) :=
+ match v with
+ | Vint i => i | _ => Int.zero
+ end.
+Arguments force_int !v / .
+
+Definition force_signed_int v := Int.signed (force_int v).
+Arguments force_signed_int !v / .
+
+Lemma force_Vint:  forall i, force_int (Vint i) = i.
+Hint Rewrite force_Vint : norm.
+
+Definition force_ptr (v: val) : val :=
+              match v with Vptr l ofs => v | _ => Vundef  end.
+
+Definition always {A B: Type} (b: B) (a: A) := b.
+
+Definition offset_val (ofs: Z) (v: val) : val :=
+  match v with
+  | Vptr b z => Vptr b (Ptrofs.add z (Ptrofs.repr ofs))
+  | _ => Vundef
+ end.
+
+Definition range_s32 (i: Z) : bool := 
+   andb (Z.leb Int.min_signed i) (Z.leb i Int.max_signed).
+
+Definition range_s64 (i: Z) : bool := 
+   andb (Z.leb Int64.min_signed i) (Z.leb i Int64.max_signed).
+
+Definition is_long (v: val) :=
+ match v with Vlong i => True | _ => False end.
+Definition is_float (v: val) :=
+ match v with Vfloat i => True | _ => False end.
+Definition is_single (v: val) :=
+ match v with Vsingle i => True | _ => False end.
+
+Definition is_pointer_or_null (v: val) :=
+ match v with
+ | Vint i => if Archi.ptr64 then False else  i = Int.zero
+ | Vlong i => if Archi.ptr64 then i=Int64.zero else False
+ | Vptr _ _ => True
+ | _ => False
+ end.
+
+Definition is_pointer_or_integer (v: val) :=
+ match v with
+ | Vint i => if Archi.ptr64 then False else True
+ | Vlong i => if Archi.ptr64 then True else False
+ | Vptr _ _ => True
+ | _ => False
+ end.
+
+Definition isptr v :=
+   match v with | Vptr _ _ => True | _ => False end.
+
+Lemma int_eq_e: forall i j, Int.eq i j = true -> i=j.
+
+Lemma two_p_neg:
+ forall n, n<0 -> two_p n = 0.
+
+Unset Implicit Arguments.
+
+Lemma testbit_signed_neg:
+ forall i j n,
+   - two_p n <= Int.signed i < 0 ->
+
+Lemma sign_ext_inrange:
+  forall n i, - two_p (n-1) <= Int.signed i <= two_p (n-1) - 1 ->
+
+Lemma zero_ext_inrange:
+  forall n i, Int.unsigned i <= two_p n - 1 -> *)
+
+Require Import VST.veric.Memory.
+(* VST.veric.Memory:
+Require Import Coq.Arith.EqNat.
+Require Import Coq.Relations.Relations.
+
+Require Import compcert.lib.Axioms.
+Require Import compcert.lib.Coqlib.
+Require Import compcert.lib.Integers.
+Require Import compcert.lib.Floats.
+Require Import compcert.lib.Maps.
+Require Import compcert.common.AST.
+Require Import compcert.common.Values.
+Require Import compcert.common.Memdata.
+Require Import compcert.common.Memtype.
+Require Import compcert.common.Memory.
+Require Export VST.sepcomp.Address.
+
+Lemma range_dec: forall a b c: Z, {a <= b < c}+{~(a <= b < c)}.
+
+Definition access_at (m: mem) (loc: address) (k: perm_kind): option permission :=
+   PMap.get (fst loc) (Mem.mem_access m) (snd loc) k.
+
+Lemma perm_access: forall m b ofs k p,
+    Mem.perm m b ofs k p <-> (Mem.perm_order'' (access_at m (b,ofs) k) (Some p)).
+
+Lemma access_perm: forall m b ofs k p,
+  access_at m (b, ofs) k = Some p ->
+  Mem.perm m b ofs k p.
+
+Lemma access_cur_max: forall m a,
+           Mem.perm_order'' (access_at m a Max)  (access_at m a Cur).
+
+Lemma invalid_noaccess: forall m b ofs k,
+     ~Mem.valid_block m b -> access_at m (b, ofs) k = None.
+
+Lemma access_empty: forall a k, access_at Mem.empty a k = None.
+
+Transparent Mem.alloc.
+
+Theorem alloc_access_other:
+  forall m1 lo hi m2 b, Mem.alloc m1 lo hi = (m2, b) ->
+
+Theorem alloc_access_same:
+  forall m1 lo hi m2 b, Mem.alloc m1 lo hi = (m2, b) ->
+
+Opaque Mem.alloc.
+Transparent Mem.free.
+
+Lemma access_free:
+  forall m1 b lo hi,
+  (forall ofs, lo <= ofs < hi -> access_at m1 (b,ofs) Cur = Some Freeable) ->
+  { m2: mem | Mem.free m1 b lo hi = Some m2 }.
+
+Lemma free_access:
+  forall m1 b lo hi m2, Mem.free m1 b lo hi = Some m2 ->
+
+Lemma free_access_other:
+  forall m1 bf lo hi m2, Mem.free m1 bf lo hi = Some m2 ->
+
+Opaque Mem.free.
+
+Lemma access_drop_1:
+  forall m b lo hi p m', Mem.drop_perm m b lo hi p = Some m' ->
+
+Lemma access_drop_2:
+  forall m b lo hi p,
+  (forall ofs, lo <= ofs < hi -> access_at m (b,ofs) Cur = Some Freeable) ->
+  { m' | Mem.drop_perm m b lo hi p = Some m' }.
+
+Lemma access_drop_3:
+  forall m b lo hi p m', Mem.drop_perm m b lo hi p = Some m' ->
+
+Lemma storebytes_access:
+ forall m1 b ofs bytes m2 (STORE: Mem.storebytes m1 b ofs bytes = Some m2),
+
+Lemma store_access:
+ forall chunk m1 b ofs v m2 (STORE: Mem.store chunk m1 b ofs v = Some m2),
+
+Lemma perm_order'_dec_fiddle:
+  forall y x, y = Some x ->
+     proj_sumbool (Mem.perm_order'_dec y Nonempty) = true.
+
+Lemma access_at_valid_pointer:
+  forall m b ofs p, access_at m (b,ofs) Cur = Some p ->
+   Mem.valid_pointer m b ofs = true. *)
+
+
+
+Lemma range_overlap_spec: forall l1 n1 l2 n2,
+
+  n1 > 0 ->
+
+  n2 > 0 ->
+
+  (range_overlap l1 n1 l2 n2 <-> adr_range l1 n1 l2 \/ adr_range l2 n2 l1).
+
+Proof.
+
+  intros.
+
+  unfold range_overlap, adr_range.
+
+  destruct l1, l2.
+
+  split; intros.
+
+  + destruct H1 as [[? ?] [[? ?] [? ?]]].
+
+    subst.
+
+    destruct (zle z z0); [left | right].
+
+    - split; auto.
+
+      omega.
+
+    - split; auto.
+
+      omega.
+
+  + destruct H1 as [[? ?] | [? ?]].
+
+    - exists (b0, z0). repeat split; auto; omega.
+
+    - exists (b, z). repeat split; auto; omega.
+
+Qed.
+
+
+
+Lemma range_overlap_comm: forall l1 n1 l2 n2, range_overlap l1 n1 l2 n2 -> range_overlap l2 n2 l1 n1.
+
+Proof.
+
+  unfold range_overlap.
+
+  intros.
+
+  destruct H as [l ?].
+
+  exists l.
+
+  tauto.
+
+Qed.
+
+
+
+Lemma range_overlap_non_zero: forall l1 n1 l2 n2, range_overlap l1 n1 l2 n2 -> n1 > 0 /\ n2 > 0.
+
+Proof.
+
+  unfold range_overlap.
+
+  intros.
+
+  destruct H as [l [? ?]].
+
+  apply adr_range_non_zero in H.
+
+  apply adr_range_non_zero in H0.
+
+  auto.
+
+Qed.
+
+
+
+Definition pointer_range_overlap p n p' n' :=
+
+  exists l l', val2adr p l /\ val2adr p' l' /\ range_overlap l n l' n'.
+
+
+
+Lemma pointer_range_overlap_dec: forall p1 n1 p2 n2, {pointer_range_overlap p1 n1 p2 n2} + {~ pointer_range_overlap p1 n1 p2 n2}.
+
+Proof.
+
+  unfold pointer_range_overlap.
+
+  intros.
+
+  destruct p1;
+
+  try solve
+
+   [right;
+
+    intros [[? ?] [[? ?] [HH [_ _]]]];
+
+    inversion HH].
+
+  destruct p2;
+
+  try solve
+
+   [right;
+
+    intros [[? ?] [[? ?] [_ [HH _]]]];
+
+    inversion HH].
+
+  destruct (zlt 0 n1); [| right; intros [[? ?] [[? ?] [_ [_ HH]]]]; apply range_overlap_non_zero in HH; omega].
+
+  destruct (zlt 0 n2); [| right; intros [[? ?] [[? ?] [_ [_ HH]]]]; apply range_overlap_non_zero in HH; omega].
+
+  destruct (eq_block b b0).
+
+  
+
+  + subst b0.
+
+    unfold val2adr.
+
+    forget (Ptrofs.unsigned i) as i1;
+
+    forget (Ptrofs.unsigned i0) as i2;
+
+    clear i i0.
+
+    destruct (range_dec i1 i2 (i1 + n1)); [| destruct (range_dec i2 i1 (i2 + n2))].
+
+    - left.
+
+      exists (b, i1), (b, i2); repeat split; auto.
+
+      apply range_overlap_spec; try omega.
+
+      left; simpl; auto.
+
+    - left.
+
+      exists (b, i1), (b, i2); repeat split; auto.
+
+      apply range_overlap_spec; try omega.
+
+      right; simpl; auto.
+
+    - right.
+
+      intros [[? ?] [[? ?] [? [? HH]]]].
+
+      inversion H; inversion H0; subst.
+
+      apply range_overlap_spec in HH; [| omega | omega].
+
+      simpl in HH; omega.
+
+  + right.
+
+    intros [[? ?] [[? ?] [? [? HH]]]].
+
+    simpl in H, H0.
+
+    inversion H; inversion H0; subst.
+
+    apply range_overlap_spec in HH; [| omega | omega].
+
+    simpl in HH.
+
+    pose proof @eq_sym _ b0 b.
+
+    tauto.
+
+Qed.
+
+
+
+Lemma pointer_range_overlap_refl: forall p n1 n2,
+
+  isptr p ->
+
+  n1 > 0 ->
+
+  n2 > 0 ->
+
+  pointer_range_overlap p n1 p n2.
+
+Proof.
+
+  intros.
+
+  destruct p; try inversion H.
+
+  exists (b, Ptrofs.unsigned i), (b, Ptrofs.unsigned i).
+
+  repeat split; auto.
+
+  apply range_overlap_spec; auto.
+
+  left.
+
+  simpl.
+
+  split; auto; omega.
+
+Qed.
+
+
+
+Lemma pointer_range_overlap_comm: forall p1 n1 p2 n2,
+
+  pointer_range_overlap p1 n1 p2 n2 <->
+
+  pointer_range_overlap p2 n2 p1 n1.
+
+Proof.
+
+  cut (forall p1 n1 p2 n2,
+
+         pointer_range_overlap p1 n1 p2 n2 ->
+
+         pointer_range_overlap p2 n2 p1 n1). {
+
+    intros.
+
+    pose proof H p1 n1 p2 n2.
+
+    pose proof H p2 n2 p1 n1.
+
+    tauto.
+
+  }
+
+  unfold pointer_range_overlap.
+
+  intros.
+
+  destruct H as [l [l' [? [? ?]]]].
+
+  exists l', l.
+
+  repeat split; auto.
+
+  apply range_overlap_comm.
+
+  auto.
+
+Qed.
+
+
+
+Lemma pointer_range_overlap_non_zero: forall p1 n1 p2 n2,
+
+  pointer_range_overlap p1 n1 p2 n2 -> n1 > 0 /\ n2 > 0.
+
+Proof.
+
+  intros.
+
+  destruct H as [? [? [? [? ?]]]].
+
+  eapply range_overlap_non_zero; eauto.
+
+Qed.
+
+
+
+Lemma pointer_range_overlap_isptr: forall p1 n1 p2 n2,
+
+  pointer_range_overlap p1 n1 p2 n2 -> isptr p1 /\ isptr p2.
+
+Proof.
+
+  intros.
+
+  destruct H as [? [? [? [? ?]]]].
+
+  destruct p1, p2; try solve [inversion H | inversion H0].
+
+  simpl; auto.
+
+Qed.
+
+
+

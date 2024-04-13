@@ -1,0 +1,6371 @@
+Require Import VST.veric.compcert_rmaps.
+(* VST.veric.compcert_rmaps:
+Require Export VST.msl.msl_standard.
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes.
+Require Import VST.veric.shares.
+Require Import VST.veric.rmaps.
+Require Import VST.veric.rmaps_lemmas.
+Require Export VST.veric.Memory. 
+
+Instance EqDec_type: EqDec type := type_eq.
+
+Definition funsig := (list (ident*type) * type)%type. 
+
+Inductive kind : Type := VAL : memval -> kind
+                                   | LK : forall n i : Z, kind
+                                   | FUN: funsig -> calling_convention -> kind.
+
+Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
+Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
+
+Lemma isVAL_i: forall v, isVAL (VAL v).
+Hint Resolve isVAL_i.
+
+Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
+
+Module CompCert_AV <: ADR_VAL.
+
+Definition address := address.
+Definition some_address : address := (xH,0).
+Definition kind := kind.
+
+End CompCert_AV.
+
+Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
+
+Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
+
+Module R := Rmaps (CompCert_AV).
+Module RML := Rmaps_Lemmas(R).
+
+Export RML.
+Export R.
+
+Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
+Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
+
+Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
+  mk_rshare (rshare_sh p) H = p.
+
+Definition fixup_splitting
+  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
+  fun l => 
+    match z l with
+    | Some (sh, k) =>
+       match dec_readable (a l) with
+       | left p => Some (readable_part p,  k)
+       | right _ => None
+       end
+    | None => None
+    end.
+
+Definition share_of (x: option (rshare * kind)) : Share.t :=
+  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
+
+Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
+
+Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
+
+Lemma join_sub_same_k:
+ forall {a a' : rshare} {k k': AV.kind},
+
+Lemma pure_readable_glb_Rsh:
+ forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
+
+Lemma join_glb_Rsh:  
+  forall a b c : Share.t,
+
+Lemma pure_readable_share_glb:
+  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
+
+Lemma glb_Rsh_bot_unreadable:
+  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
+
+Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
+
+Lemma join_share_of: forall a b c,
+     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
+
+Lemma pure_readable_share_i:
+  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
+
+Obligation Tactic := Tactics.program_simpl.
+
+Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
+
+Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
+
+Program Definition writable (l: address): pred rmap :=
+ fun phi =>
+  match phi @ l with
+    | YES sh _ k lp => writable0_share sh /\ isVAL k
+    | _ => False
+  end.
+
+Program Definition readable (loc: address) : pred rmap :=
+   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
+
+Lemma readable_join:
+  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
+            readable loc phi1 -> readable loc phi3.
+
+Lemma readable_writable_join:
+forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
+
+Lemma writable0_join_sub:
+  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
+
+Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
+            writable loc phi1 -> writable loc phi2.
+
+Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
+
+Lemma writable_e: forall loc m, 
+   writable loc m -> 
+   exists sh, exists rsh, exists v, exists p, 
+     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
+Arguments writable_e [loc] [m] _.
+
+Lemma readable_e: forall loc m, 
+   readable loc m -> 
+  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
+Arguments readable_e [loc] [m] _.
+
+Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
+
+Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
+
+Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
+
+Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
+
+Lemma bytes_writable_dec:
+   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
+
+Lemma bytes_readable_dec:
+   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
+
+Lemma bytes_writable_readable:
+  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
+
+Hint Resolve bytes_writable_readable : mem.
+
+Lemma rmap_age_i:
+ forall w w' : rmap,
+    level w = S (level w') ->
+   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
+    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
+    age w w'. *)
+
+Require Export VST.msl.ghost.
+
+Require Import VST.msl.sepalg.
+(* VST.msl.sepalg:
+Require Import VST.msl.Extensionality.
+
+Set Implicit Arguments.
+
+Class Join (t: Type) : Type := join: t -> t -> t -> Prop.
+
+Class Perm_alg (t: Type) {J: Join t} : Type :=
+  mkPerm   {
+   join_eq: forall {x y z z'}, join x y z -> join x y z' -> z = z';
+   join_assoc: forall {a b c d e}, join a b d -> join d c e ->
+                    {f : t & join b c f /\ join a f e};
+   join_comm: forall {a b c}, join a b c -> join b a c;
+   join_positivity: forall {a a' b b'}, join a a' b -> join b b' a -> a=b
+}.
+Arguments Perm_alg _ [J].
+
+Definition unit_for {t}{J: Join t} (e a: t) := join e a a.
+Definition identity {t} {J: Join t} (e: t) := forall a b, join e a b -> a=b.
+
+Hint Extern 2 (@join _ _ _ _ _) =>
+   (eapply join_comm; trivial;
+     try eassumption;
+          match goal with H: @join _ _ _ _ _ |- _ => apply H end).
+ 
+Hint Unfold unit_for.
+
+Lemma join_assoc_uniq:
+  forall {t} {J: Join t} (PA1 PA2: @Perm_alg t J),
+      forall a b c d e H H',
+         (projT1 (@join_assoc _ _ PA1  a b c d e H H'))
+        = (projT1 (@join_assoc _ _ PA2  a b c d e H H')).
+
+  Class Sep_alg A {J: Join A} : Type :=
+    mkSep {
+      core: A -> A;
+      core_unit: forall t, unit_for (core t) t;
+      join_core: forall {a b c}, join a b c -> core a = core c
+    }.
+Arguments Sep_alg _ [J].
+
+Lemma core_duplicable {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, join (core a) (core a) (core a).
+
+Lemma core_self_join {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, a = core a -> join a a a.
+
+Lemma core_idem {A}{J: Join A}{SA: Sep_alg A}:
+  forall a, core (core a) = core a.
+
+Lemma core_hom {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall {a b c}, join a b c -> join (core a) (core b) (core c).
+
+Lemma split_core' {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b (core c) -> a = core a.
+
+Lemma split_core{A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b (core c) -> unit_for a a.
+
+Lemma core_uniq {t} {J: Join t}{PA: Perm_alg t}:
+   forall (SA1: @Sep_alg _ J)
+          (SA2: @Sep_alg _ J),
+     forall x, @core _ _ SA1 x = @core _ _ SA2 x.
+
+Lemma join_core2 {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a b c, join a b c -> core a = core b.
+
+Class Disj_alg  (t: Type) {J: Join t} :=
+   join_self: forall {a b}, join a a b -> identity a.
+Arguments Disj_alg _ [J].
+
+Lemma join_self' {A}{J: Join A}{DA: Disj_alg A} :
+  forall {a b}, join a a b -> a = b.
+
+Lemma   unit_identity {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+        forall {e} b, unit_for e b -> identity e.
+
+Lemma core_identity  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a, identity (core a).
+
+Lemma join_ex_identity  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+     forall a, {e : A & prod (identity e) (unit_for e a) }.
+
+Lemma identity_core  {A}{J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall a, identity a -> a = core a.
+
+Class Sing_alg A {J: Join A}{SA: Sep_alg A} :=
+    mkSing {
+      the_unit: A;
+      the_unit_core: forall a, core a = the_unit
+    }.
+Arguments Sing_alg _ [J] [SA].
+Arguments mkSing [A] [J] [SA] _ _.
+
+  Class Pos_alg  {A} {J: Join A} :=
+    no_units: forall e a, ~unit_for e a.
+Arguments Pos_alg _ [J].
+
+Class Cross_alg (t: Type)  `{J: Join t} :=
+   cross_split :
+      forall a b c d z : t,
+       join a b z ->
+       join c d z ->
+    { x:(t*t*t*t) &  match x with (ac,ad,bc,bd) =>
+         join ac ad a /\ join bc bd b /\ join ac bc c /\ join ad bd d
+       end
+    }.
+Arguments Cross_alg _ [J].
+
+Class Trip_alg {A} {J: Join A} :=
+  triple_join_exists:
+  forall (a b c ab bc ac : A), join a b ab -> join b c bc -> join a c ac ->
+       {abc | join ab c abc}.
+Arguments Trip_alg _ [J].
+
+Lemma  join_ex_units{A}{J: Join A}{SA: Sep_alg A}:
+    forall a, {e : A & unit_for e a }.
+
+Lemma same_identity {A}{J: Join A}{PA: Perm_alg A}:
+  forall e e' a, identity e -> unit_for e a -> identity e' -> unit_for e' a -> e = e'.
+
+Lemma same_unit {A}{J: Join A}{PA: Perm_alg A}{SA:Sep_alg A}{CA: Disj_alg A}:
+       forall {e1 e2 a}, unit_for e1 a -> unit_for e2 a -> e1 = e2.
+
+  Definition joins {A} {J: Join A} (a b : A) : Prop :=
+    exists c, join a b c.
+
+  Definition overlap {A}{J: Join A} (a b: A) := ~(joins a b).
+
+  Lemma join_joins {A} {J: Join A}: forall {a b c},
+    join a b c -> joins a b.
+
+  Lemma join_joins' {A} {J: Join A} {PA: Perm_alg A}: forall {a b c},
+    join a b c -> joins b a.
+
+  Lemma joins_sym {A}  {J: Join A} {PA: Perm_alg A}: forall a b,
+    joins a b <-> joins b a.
+
+  Lemma joins_sym': forall {A} `{Perm_alg A} {phi1 phi2}, joins phi1 phi2 -> joins phi2 phi1.
+
+  Definition join_sub {A} `{Join A} (a c : A) : Prop :=
+    exists b, join a b c.
+
+  Lemma join_join_sub {A} `{Perm_alg A}: forall {a b c},
+    join a b c ->
+    join_sub a c.
+
+  Lemma join_join_sub' {A} `{Perm_alg A}: forall {a b c},
+    join a b c ->
+    join_sub b c.
+
+  Lemma join_sub_refl {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a,
+    join_sub a a.
+
+  Hint Resolve @join_sub_refl.
+
+  Lemma join_sub_trans {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a b c,
+    join_sub a b ->
+    join_sub b c ->
+    join_sub a c.
+
+  Lemma join_sub_unit_for {A} {J: Join A}{PA: Perm_alg A}:
+    forall e a b, unit_for e a -> join_sub a b -> unit_for e b.
+
+Lemma join_sub_same_identity {A} {J: Join A}{PA: Perm_alg A}:
+   forall e e' a c,  identity e -> unit_for e a -> identity e' -> unit_for e' c ->
+                  join_sub a c -> e = e'.
+
+  Lemma join_sub_joins {A} `{HA: Perm_alg A}: forall {a b},
+    join_sub a b -> joins a b -> joins a a.
+    Lemma join_sub_joins_trans {A} `{HA: Perm_alg A}: forall {a b c},
+    join_sub a c -> joins c b -> joins a b.
+
+  Lemma join_sub_joins'  {A} `{HA: Perm_alg A}:
+    forall {a a' b b' : A},
+      join_sub a a' -> join_sub b b' -> joins a' b' -> joins a b.
+
+  Definition sub_silhouette {A} `{Perm_alg A} (a b: A) : Prop :=
+    forall c, joins c b -> joins c a.
+
+  Definition same_silhouette {A} `{Perm_alg A} (a b: A) : Prop :=
+    forall c, joins c a <-> joins c b.
+
+  Lemma sub_silhouette_refl {A} `{Perm_alg A}: forall a, sub_silhouette a a.
+
+  Lemma sub_silhouette_trans {A} `{Perm_alg A}: forall a b c,
+    sub_silhouette a b -> sub_silhouette b c -> sub_silhouette a c.
+
+  Lemma same_silhouette_refl {A} `{Perm_alg A}: forall a, same_silhouette a a.
+
+  Lemma same_silhouette_sym {A} `{Perm_alg A}: forall a b,
+    same_silhouette a b -> same_silhouette b a.
+
+  Lemma same_silhouette_trans {A} `{Perm_alg A}: forall a b c,
+    same_silhouette a b -> same_silhouette b c -> same_silhouette a c.
+
+  Lemma same_silhouette_sub1{A} `{Perm_alg A}: forall a b,
+    same_silhouette a b -> sub_silhouette a b.
+
+  Lemma same_silhouette_sub2 {A} `{Perm_alg A}: forall a b,
+     same_silhouette a b -> sub_silhouette b a.
+
+  Lemma sub_same_silhouette {A} `{Perm_alg A}:
+    forall a b, sub_silhouette a b -> sub_silhouette b a -> same_silhouette a b.
+
+  Lemma same_silhouette_join {A} `{HA: Perm_alg A}:
+    forall phi phi' phiy phiz phiz',
+      same_silhouette phi phi' ->
+      join phi phiy phiz ->
+      join phi' phiy phiz' ->
+      same_silhouette phiz phiz'.
+
+Hint Resolve @join_joins @join_joins' @join_join_sub @join_join_sub'.
+
+  Definition nonidentity {A} `{Perm_alg A} (a: A) := ~(identity a).
+
+  Lemma join_sub_units_eq {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+   forall {a b} ea eb,
+    join_sub a b ->
+    unit_for ea a ->
+    unit_for eb b ->
+    ea = eb.
+
+  Lemma unit_core{A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+      forall {a}, unit_for a a -> a = (core a).
+
+  Lemma unit_self_unit {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+   forall a ea,   unit_for ea a ->  unit_for ea ea.
+
+  Lemma joins_units_eq {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+   forall {a b} ea eb,
+    joins a b ->
+    unit_for ea a ->
+    unit_for eb b ->
+    ea  = eb.
+
+  Lemma join_ex_identities {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a,
+    {e : A & identity e /\ joins e a}.
+
+  Lemma identity_unit {A} `{HA: Perm_alg A}: forall e a,
+    identity e ->
+    joins e a ->
+    unit_for e a.
+
+  Lemma identity_unit' {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+    forall a,  identity a -> unit_for a a.
+
+  Lemma identity_unit_equiv {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+    forall a,  identity a <-> unit_for a a.
+
+  Lemma identities_unique {A} `{HA: Perm_alg A} :
+   forall e1 e2,  identity e1 ->  identity e2 ->  joins e1 e2 ->  e1 = e2.
+
+Lemma split_identity{A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+ forall a b c, join a b c -> identity c -> identity a.
+
+  Lemma join_nonidentity {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall a b c,
+    nonidentity a -> join a b c -> nonidentity c.
+
+  Lemma join_sub_antisym {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}: forall x y,
+    join_sub x y ->
+    join_sub y x ->
+    x = y.
+
+  Lemma join_sub_joins_identity {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{DS: Disj_alg A}: forall a b,
+    join_sub a b -> joins a b -> identity a.
+
+  Lemma join_overlap {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{DS: Disj_alg A}: forall a b,
+    join_sub a b -> nonidentity a -> overlap a b.
+
+Definition full {A} {JA: Join A}(sigma : A) : Prop :=
+   forall sigma', joins sigma sigma' -> identity sigma'.
+
+Definition maximal {A} {JA: Join A} (sigma : A) : Prop :=
+  forall sigma', join_sub sigma sigma' -> sigma = sigma'.
+
+Lemma full_maximal {A} {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} :
+       forall a, full a <-> maximal a.
+
+  Definition comparable {A} `{Sep_alg A}  (a b:A)
+    := core a = core b.
+
+  Lemma comparable_refl {A} `{Sep_alg A} : forall a, comparable a a.
+
+  Lemma comparable_sym {A} `{Sep_alg A}: forall a b, comparable a b -> comparable b a.
+
+  Lemma comparable_trans {A} `{Sep_alg A}: forall a b c, comparable a b -> comparable b c -> comparable a c.
+
+  Lemma comparable_common_unit {A} `{Sep_alg A}: forall a b,
+    comparable a b ->
+    exists e, join e a a /\ join e b b.
+
+  Lemma common_unit_comparable {A} `{Sep_alg A} : forall a b,
+    (exists e, join e a a /\ join e b b) ->
+    comparable a b.
+
+Lemma join_comparable  {A} `{Sep_alg A}:
+  forall phi1 phi2 phi3, join phi1 phi2 phi3 -> comparable phi1 phi3.
+
+Lemma join_comparable2  {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall phi1 phi2 phi3, join phi1 phi2 phi3 -> comparable phi1 phi2.
+
+Lemma join_sub_comparable  {A} `{Sep_alg A} : forall a c,
+  join_sub a c -> comparable a c.
+
+Lemma joins_comparable  {A} {J: Join A}{PA: Perm_alg A}{SA: Sep_alg A} : forall a c,
+  joins a c -> comparable a c.
+
+Lemma join_unit1 {A} `{Perm_alg A}:
+  forall x y z, unit_for x z -> y = z -> join x y z.
+
+Lemma join_unit2 {A} `{Perm_alg A}:
+  forall x y z, unit_for y z -> x = z -> join x y z.
+
+Lemma join_unit1_e {A} `{Perm_alg A}:
+  forall x y z, identity x -> join x y z -> y = z.
+
+Lemma join_unit2_e {A} `{Perm_alg A}:
+  forall x y z, identity y -> join x y z -> x = z.
+
+Lemma PermAlg_ext:
+  forall (T: Type) (J: @Join T) (sa1 sa2: @Perm_alg T J), sa1=sa2.
+
+Lemma Sep_alg_ext {T} {J} {PA: @Perm_alg _ J}:
+   forall (sa1 sa2: @Sep_alg T J), sa1=sa2.
+
+Definition nonunit {A} `{Join A}  (a: A) := forall x, ~ unit_for a x.
+
+Lemma nonidentity_nonunit {A} {JA: Join A} {PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A}:
+  forall {a}, nonidentity a -> nonunit a.
+
+Lemma nonunit_nonidentity {A}{JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}:
+  forall x, nonunit x -> ~identity x.
+
+Class Canc_alg (t: Type) {J: Join t} :=
+    join_canc: forall {a1 a2 b c}, join a1 b c -> join a2 b c -> a1 = a2.
+Arguments Canc_alg _ [J]. *)
+
+Require Import VST.msl.sepalg_generators.
+(* VST.msl.sepalg_generators:
+Lemma join_equiv_refl: forall A (v: A), @join A (Join_equiv A) v v v.
+End SepAlgFun.
+
+Existing Instance Join_fun.
+Existing Instance Perm_fun.
+Existing Instance Sep_fun.
+Existing Instance Sing_fun.
+Existing Instance Canc_fun.
+Existing Instance Disj_fun.
+
+Section SepAlgPi.
+  Variable I:Type.
+  Variable Pi: I -> Type.
+  Variable pi_J: forall i, Join (Pi i).
+  Variable PA:  forall i, Perm_alg (Pi i).
+
+  Let P := forall i:I, Pi i.
+
+End SepAlgPi.
+Existing Instance Join_pi.
+Existing Instance Perm_pi.
+Existing Instance Sep_pi.
+Existing Instance Canc_pi.
+Existing Instance Disj_pi.
+
+Section SepAlgSigma.
+  Variable I:Type.
+  Variable Sigma: I -> Type.
+  Variable JOIN: forall i, Join (Sigma i).
+  Variable PA: forall i, Perm_alg (Sigma i).
+  Let S := sigT Sigma.
+
+End sa_list.
+Existing Instance Join_list.
+Existing Instance Perm_list.
+Existing Instance Sep_list.
+Existing Instance Canc_list.
+Existing Instance Disj_list.
+
+Definition raw_join_hom A B (j1: A -> A -> A -> Prop) (j2: B -> B -> B -> Prop) (f:A ->B) :=
+  forall x y z,
+    j1 x y z ->
+    j2 (f x) (f y) (f z).
+Arguments raw_join_hom [A B] _ _ _.
+
+Definition join_hom {A} {JA: Join A} {B} {JB: Join B} (f:A ->B) :=
+  forall x y z,
+    join x y z ->
+    join (f x) (f y) (f z).
+
+Section sa_preimage.
+  Variables A B:Type.
+  Variable B_J: Join B.
+   Variable PA: Perm_alg B.
+
+  Variable f:A -> B.
+  Variable f':B -> A.
+
+  Hypothesis Hf'_f : forall x, f' (f x) = x.
+  Hypothesis Hf_f' : join_hom (f oo f').
+
+  Lemma f_inj : forall x y : A,  f x = f y -> x = y.
+
+End sa_preimage.
+
+Existing Instance Join_preimage.
+Existing Instance Perm_preimage.
+Existing Instance Sep_preimage.
+Existing Instance Sing_preimage.
+Existing Instance Canc_preimage.
+Existing Instance Disj_preimage.
+
+Section SepAlgBijection.
+  Variables (A: Type) (Ja: Join A)(PAa: Perm_alg A).
+  Variable B:Type .
+
+  Variable bij : bijection A B.
+  Instance Join_bij: Join B := fun (x y z : B) => join (bij_g _ _ bij x) (bij_g _ _ bij y) (bij_g _ _ bij z).
+
+  Lemma Perm_bij  : Perm_alg B.
+
+ Lemma Sing_bij {SAa: Sep_alg A}{SingA: Sing_alg A} : Sing_alg B.
+
+End SepAlgBijection.
+Existing Instance Join_bij.
+Existing Instance Perm_bij.
+Existing Instance Sep_bij.
+Existing Instance Sing_bij.
+Existing Instance Canc_bij.
+Existing Instance Disj_bij. *)
+
+Require Import VST.veric.SeparationLogic.
+(* VST.veric.SeparationLogic:
+Require Import VST.veric.Clight_base.
+Require Export compcert.lib.Axioms.
+Require Import compcert.lib.Coqlib.
+Require Export compcert.lib.Integers.
+Require Export compcert.lib.Floats.
+Require Export compcert.lib.Maps.
+Require Export compcert.common.AST.
+Require Export compcert.common.Values.
+Require Export compcert.cfrontend.Ctypes.
+Require Export compcert.cfrontend.Clight.
+Require Export VST.sepcomp.Address.
+Require Export VST.msl.eq_dec.
+Require Export VST.msl.shares.
+Require Export VST.msl.predicates_rec.
+Require Export VST.msl.contractive.
+Require Export VST.msl.seplog.
+Require Export VST.msl.ghost_seplog.
+Require Export VST.msl.alg_seplog.
+Require Export VST.msl.log_normalize.
+Require Export VST.msl.wand_frame.
+Require Export VST.msl.wandQ_frame.
+Require Export VST.msl.ramification_lemmas.
+Require Export VST.veric.tycontext.
+Require Export VST.veric.change_compspecs.
+Require Export VST.veric.mpred.
+Require Export VST.veric.expr.
+Require Export VST.veric.expr_rel.
+Require Export VST.veric.Clight_lemmas.
+Require Export VST.veric.composite_compute.
+Require Export VST.veric.align_mem.
+Require Export VST.veric.shares.
+
+Require VST.veric.Clight_seplog.
+Require VST.veric.Clight_assert_lemmas.
+Require Import VST.msl.Coqlib2.
+Require Import VST.veric.juicy_extspec.
+Require Import VST.veric.valid_pointer.
+Require Import VST.veric.own.
+Require VST.veric.semax_prog.
+Require VST.veric.semax_ext.
+
+Instance Nveric: NatDed mpred := algNatDed compcert_rmaps.RML.R.rmap.
+Instance Sveric: SepLog mpred := algSepLog compcert_rmaps.RML.R.rmap.
+Instance Cveric: ClassicalSep mpred := algClassicalSep compcert_rmaps.RML.R.rmap.
+Instance Iveric: Indir mpred := algIndir compcert_rmaps.RML.R.rmap.
+Instance Rveric: RecIndir mpred := algRecIndir compcert_rmaps.RML.R.rmap.
+Instance SIveric: SepIndir mpred := algSepIndir compcert_rmaps.RML.R.rmap.
+Instance CSLveric: CorableSepLog mpred := algCorableSepLog compcert_rmaps.RML.R.rmap.
+Instance CIveric: CorableIndir mpred := algCorableIndir compcert_rmaps.RML.R.rmap.
+Instance SRveric: SepRec mpred := algSepRec compcert_rmaps.RML.R.rmap.
+Instance Bveric: BupdSepLog mpred gname compcert_rmaps.RML.R.preds :=
+  mkBSL _ _ _ _ _ bupd (@own) bupd_intro bupd_mono bupd_trans bupd_frame_r
+    (@ghost_alloc) (@ghost_op) (@ghost_valid_2) (@ghost_update_ND) (@ghost_dealloc).
+
+Instance LiftNatDed' T {ND: NatDed T}: NatDed (LiftEnviron T) := LiftNatDed _ _.
+Instance LiftSepLog' T {ND: NatDed T}{SL: SepLog T}: SepLog (LiftEnviron T) := LiftSepLog _ _.
+Instance LiftClassicalSep' T {ND: NatDed T}{SL: SepLog T}{CS: ClassicalSep T} :
+           ClassicalSep (LiftEnviron T) := LiftClassicalSep _ _.
+Instance LiftIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T} :
+           Indir (LiftEnviron T) := LiftIndir _ _.
+Instance LiftSepIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T}{SI: SepIndir T} :
+           SepIndir (LiftEnviron T) := LiftSepIndir _ _.
+Instance LiftCorableSepLog' T {ND: NatDed T}{SL: SepLog T}{CSL: CorableSepLog T} :
+           CorableSepLog (LiftEnviron T) := LiftCorableSepLog _ _.
+Instance LiftCorableIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T}{SI: SepIndir T}{CSL: CorableSepLog T}{CI: CorableIndir T} :
+           CorableIndir (LiftEnviron T) := LiftCorableIndir _ _.
+
+Definition local:  (environ -> Prop) -> environ->mpred :=  lift1 prop.
+
+Global Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
+
+Hint Resolve any_environ : typeclass_instances.
+
+Local Open Scope logic.
+
+Transparent mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
+
+Definition denote_tc_iszero v : mpred :=
+         match v with
+         | Vint i => prop (is_true (Int.eq i Int.zero))
+         | Vlong i => prop (is_true (Int64.eq i Int64.zero))
+         | _ => FF
+         end.
+
+Definition denote_tc_nonzero v : mpred :=
+         match v with
+         | Vint i => prop (i <> Int.zero)
+         | Vlong i =>prop (i <> Int64.zero)
+         | _ => FF end.
+
+Definition denote_tc_igt i v : mpred :=
+     match v with
+     | Vint i1 => prop (Int.unsigned i1 < Int.unsigned i)
+     | _ => FF
+     end.
+
+Definition denote_tc_lgt l v : mpred :=
+     match v with
+     | Vlong l1 => prop (Int64.unsigned l1 < Int64.unsigned l)
+     | _ => FF
+     end.
+
+Definition Zoffloat (f:float): option Z := 
+  match f with
+    | Fappli_IEEE.B754_finite s m (Zpos e) _ =>
+       Some (Fcore_Zaux.cond_Zopp s (Zpos m) * Zpower_pos 2 e)%Z
+    | Fappli_IEEE.B754_finite s m 0 _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m))
+    | Fappli_IEEE.B754_finite s m (Zneg e) _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m / Zpower_pos 2 e))
+    | Fappli_IEEE.B754_zero _ => Some 0
+    | _ => None
+  end.  
+
+Definition Zofsingle (f: float32): option Z := 
+  match f with
+    | Fappli_IEEE.B754_finite s m (Zpos e) _ =>
+       Some (Fcore_Zaux.cond_Zopp s (Zpos m) * Zpower_pos 2 e)%Z
+    | Fappli_IEEE.B754_finite s m 0 _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m))
+    | Fappli_IEEE.B754_finite s m (Zneg e) _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m / Zpower_pos 2 e))
+    | Fappli_IEEE.B754_zero _ => Some 0
+    | _ => None
+  end.  
+
+Definition denote_tc_Zge z v : mpred :=
+          match v with
+                     | Vfloat f => match Zoffloat f with
+                                    | Some n => prop (z >= n)
+                                    | None => FF
+                                   end
+                     | Vsingle f => match Zofsingle f with
+                                    | Some n => prop (z >= n)
+                                    | None => FF
+                                   end
+                     | _ => FF
+                  end.
+
+Definition denote_tc_Zle z v : mpred :=
+          match v with
+                     | Vfloat f => match Zoffloat f with
+                                    | Some n => prop (z <= n)
+                                    | None => FF
+                                   end
+                     | Vsingle f => match Zofsingle f with
+                                    | Some n => prop (z <= n)
+                                    | None => FF
+                                   end
+                     | _ => FF
+                  end.
+
+Definition sameblock v1 v2 : bool :=
+         match v1, v2 with
+          | Vptr b1 _, Vptr b2 _ => peq b1 b2
+          | _, _ => false
+         end.
+
+Definition denote_tc_samebase v1 v2 : mpred :=
+       prop (is_true (sameblock v1 v2)).
+
+Definition denote_tc_nodivover v1 v2 : mpred :=
+match v1, v2 with
+          | Vint n1, Vint n2 => prop (~(n1 = Int.repr Int.min_signed /\ n2 = Int.mone))
+          | Vlong n1, Vlong n2 => prop (~(n1 = Int64.repr Int64.min_signed /\ n2 = Int64.mone))
+          | Vint n1, Vlong n2 => TT
+          | Vlong n1, Vint n2 => prop (~ (n1 = Int64.repr Int64.min_signed  /\ n2 = Int.mone))
+          | _ , _ => FF
+        end.
+
+Definition denote_tc_nosignedover (op: Z->Z->Z) v1 v2 : mpred :=
+ match v1,v2 with
+ | Vint n1, Vint n2 => 
+   prop (Int.min_signed <= op (Int.signed n1) (Int.signed n2) <= Int.max_signed)
+ | Vlong n1, Vlong n2 =>
+   prop (Int64.min_signed <= op (Int64.signed n1) (Int64.signed n2) <= Int64.max_signed)
+ | Vint n1, Vlong n2 =>
+   prop (Int64.min_signed <= op (Int.signed n1) (Int64.signed n2) <= Int64.max_signed)
+ | Vlong n1, Vint n2 =>
+   prop (Int64.min_signed <= op (Int64.signed n1) (Int.signed n2) <= Int64.max_signed)
+ | _, _ => FF
+ end.
+
+Definition denote_tc_initialized id ty rho : mpred :=
+    prop (exists v, Map.get (te_of rho) id = Some v
+               /\ tc_val ty v).
+
+Definition denote_tc_isptr v : mpred :=
+  prop (isptr v).
+
+Definition denote_tc_isint v : mpred :=
+  prop (is_int I32 Signed v).
+
+Definition denote_tc_islong v : mpred :=
+  prop (is_long v).
+
+Definition test_eq_ptrs v1 v2 : mpred :=
+  if sameblock v1 v2
+  then (andp (weak_valid_pointer v1) (weak_valid_pointer v2))
+  else (andp (valid_pointer v1) (valid_pointer v2)).
+
+Definition test_order_ptrs v1 v2 : mpred :=
+  if sameblock v1 v2
+  then (andp (weak_valid_pointer v1) (weak_valid_pointer v2))
+  else FF.
+
+Definition denote_tc_test_eq v1 v2 : mpred :=
+ match v1, v2 with
+ | Vint i, Vint j => 
+     if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (prop (j = Int.zero))
+ | Vlong i, Vlong j => 
+     if Archi.ptr64 then andp (prop (i = Int64.zero)) (prop (j = Int64.zero)) else FF
+ | Vint i, Vptr _ _ =>
+      if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (weak_valid_pointer v2)
+ | Vlong i, Vptr _ _ =>
+      if Archi.ptr64 then andp (prop (i = Int64.zero)) (weak_valid_pointer v2) else FF
+ | Vptr _ _, Vint i =>
+      if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (weak_valid_pointer v1)
+ | Vptr _ _, Vlong i =>
+      if Archi.ptr64 then andp (prop (i = Int64.zero)) (weak_valid_pointer v1) else FF
+ | Vptr _ _, Vptr _ _ =>
+      test_eq_ptrs v1 v2
+ | _, _ => FF
+ end.
+
+Definition denote_tc_test_order v1 v2 : mpred :=
+ match v1, v2 with
+ | Vint i, Vint j => if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (prop (j = Int.zero))
+ | Vlong i, Vlong j => if Archi.ptr64 then andp (prop (i = Int64.zero)) (prop (j = Int64.zero)) else FF
+ | Vptr _ _, Vptr _ _ =>
+      test_order_ptrs v1 v2
+ | _, _ => FF
+ end.
+
+Definition typecheck_error (e: tc_error) : Prop := False.
+Global Opaque typecheck_error.
+
+Definition fool := @map _ Type (fun it : ident * type => mpred).
+
+Fixpoint denote_tc_assert {CS: compspecs} (a: tc_assert) : environ -> mpred :=
+  match a with
+  | tc_FF msg => `(prop (typecheck_error msg))
+  | tc_TT => TT
+  | tc_andp' b c => fun rho => andp (denote_tc_assert b rho) (denote_tc_assert c rho)
+  | tc_orp' b c => `orp (denote_tc_assert b) (denote_tc_assert c)
+  | tc_nonzero' e => `denote_tc_nonzero (eval_expr e)
+  | tc_isptr e => `denote_tc_isptr (eval_expr e)
+  | tc_isint e => `denote_tc_isint (eval_expr e)
+  | tc_islong e => `denote_tc_islong (eval_expr e)
+  | tc_test_eq' e1 e2 => `denote_tc_test_eq (eval_expr e1) (eval_expr e2)
+  | tc_test_order' e1 e2 => `denote_tc_test_order (eval_expr e1) (eval_expr e2)
+  | tc_ilt' e i => `(denote_tc_igt i) (eval_expr e)
+  | tc_llt' e i => `(denote_tc_lgt i) (eval_expr e)
+  | tc_Zle e z => `(denote_tc_Zge z) (eval_expr e)
+  | tc_Zge e z => `(denote_tc_Zle z) (eval_expr e)
+  | tc_samebase e1 e2 => `denote_tc_samebase (eval_expr e1) (eval_expr e2)
+  | tc_nodivover' v1 v2 => `denote_tc_nodivover (eval_expr v1) (eval_expr v2)
+  | tc_initialized id ty => denote_tc_initialized id ty
+  | tc_iszero' e => `denote_tc_iszero (eval_expr e)
+  | tc_nosignedover op e1 e2 => `(denote_tc_nosignedover op) (eval_expr e1) (eval_expr e2)
+ end.
+
+Definition fool' := @map _ Type (fun it : ident * type => mpred).
+
+Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
+
+Definition cast_pointer_to_bool t1 t2 :=
+ match t1 with (Tpointer _ _ | Tarray _ _ _ | Tfunction _ _ _) => 
+           match t2 with Tint IBool _ _ => true | _ => false end
+ | _ => false
+end.
+
+Fixpoint ext_link_prog' (dl: list (ident * globdef fundef type)) (s: String.string) : option ident :=
+ match dl with
+ | (id, Gfun (External EF_malloc _ _ _)) :: dl' =>
+      if String.string_dec s "_malloc" then Some id else ext_link_prog' dl' s
+ | (id, Gfun (External EF_free _ _ _)) :: dl' =>
+      if String.string_dec s "_free" then Some id else ext_link_prog' dl' s
+ | (id, Gfun (External (EF_external s' _) _ _ _)) :: dl' =>
+      if String.string_dec s s' then Some id else ext_link_prog' dl' s
+ | (id, Gfun (External (EF_builtin s' _) _ _ _)) :: dl' =>
+      if String.string_dec s s' then Some id else ext_link_prog' dl' s
+ | _ :: dl' =>
+     ext_link_prog' dl' s
+ | nil => None
+ end.
+
+Definition ext_link_prog (p: program) (s: String.string) : ident :=
+  match ext_link_prog' (prog_defs p) s with Some id => id | None => 1%positive end.
+
+Definition closed_wrt_vars {B} (S: ident -> Prop) (F: environ -> B) : Prop :=
+  forall rho te',
+     (forall i, S i \/ Map.get (te_of rho) i = Map.get te' i) ->
+     F rho = F (mkEnviron (ge_of rho) (ve_of rho) te').
+
+Definition closed_wrt_lvars {B} (S: ident -> Prop) (F: environ -> B) : Prop :=
+  forall rho ve',
+     (forall i, S i \/ Map.get (ve_of rho) i = Map.get ve' i) ->
+     F rho = F (mkEnviron (ge_of rho) ve' (te_of rho)).
+
+Definition not_a_param (params: list (ident * type)) (i : ident) : Prop :=
+  ~ In i (map (@fst _ _) params).
+
+Definition is_a_local (vars: list (ident * type)) (i: ident) : Prop :=
+  In  i (map (@fst _ _) vars) .
+
+Definition precondition_closed (f: function) {A: rmaps.TypeTree}
+  (P: forall ts, functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts (AssertTT A)) mpred) : Prop :=
+ forall ts x,
+  closed_wrt_vars (not_a_param (fn_params f)) (P ts x) /\
+  closed_wrt_lvars (is_a_local (fn_vars f)) (P ts x).
+
+Definition typed_true (t: type) (v: val)  : Prop :=  strict_bool_val v t
+= Some true.
+
+Definition typed_false (t: type)(v: val) : Prop :=  strict_bool_val v t =
+Some false.
+
+Definition subst {A} (x: ident) (v: environ -> val) (P: environ -> A) : environ -> A :=
+   fun s => P (env_set s x (v s)).
+
+Definition substopt {A} (ret: option ident) (v: environ -> val) (P: environ -> A)  : environ -> A :=
+   match ret with
+   | Some id => subst id v P
+   | None => P
+   end.
+
+Definition cast_expropt {CS: compspecs} (e: option expr) t : environ -> option val :=
+ match e with Some e' => `Some (eval_expr (Ecast e' t))  | None => `None end.
+
+Definition typecheck_tid_ptr_compare
+Delta id :=
+match (temp_types Delta) ! id with
+| Some t => is_int_type t
+| None => false
+end.
+
+Definition mapsto (sh: Share.t) (t: type) (v1 v2 : val): mpred :=
+  match access_mode t with
+  | By_value ch =>
+   match type_is_volatile t with
+   | false =>
+    match v1 with
+     | Vptr b ofs =>
+       if readable_share_dec sh
+       then (!!tc_val t v2 &&
+             res_predicates.address_mapsto ch v2 sh (b, Ptrofs.unsigned ofs)) ||
+            (!! (v2 = Vundef) &&
+             EX v2':val, res_predicates.address_mapsto ch v2' sh (b, Ptrofs.unsigned ofs))
+       else !! (tc_val' t v2 /\ (Memdata.align_chunk ch | Ptrofs.unsigned ofs)) && res_predicates.nonlock_permission_bytes sh (b, Ptrofs.unsigned ofs) (Memdata.size_chunk ch)
+     | _ => FF
+    end
+    | _ => FF
+    end
+  | _ => FF
+  end.
+
+Definition mapsto_ sh t v1 := mapsto sh t v1 Vundef.
+
+Definition mapsto_zeros (n: Z) (sh: share) (a: val) : mpred :=
+ match a with
+  | Vptr b z => 
+    !! (0 <= Ptrofs.unsigned z  /\ n + Ptrofs.unsigned z < Ptrofs.modulus)%Z &&
+    mapsto_memory_block.address_mapsto_zeros sh (nat_of_Z n) (b, Ptrofs.unsigned z)
+  | _ => FF
+  end.
+
+Definition init_data2pred (d: init_data)  (sh: share) (a: val) (rho: environ) : mpred :=
+ match d with
+  | Init_int8 i => mapsto sh (Tint I8 Unsigned noattr) a (Vint (Int.zero_ext 8 i))
+  | Init_int16 i => mapsto sh (Tint I16 Unsigned noattr) a (Vint (Int.zero_ext 16 i))
+  | Init_int32 i => mapsto sh (Tint I32 Unsigned noattr) a (Vint i)
+  | Init_int64 i => mapsto sh (Tlong Unsigned noattr) a (Vlong i)
+  | Init_float32 r =>  mapsto sh (Tfloat F32 noattr) a (Vsingle r)
+  | Init_float64 r =>  mapsto sh (Tfloat F64 noattr) a (Vfloat r)
+  | Init_space n => mapsto_zeros n sh a
+  | Init_addrof symb ofs =>
+       match Map.get (ge_of rho) symb with
+       | Some b => mapsto sh (Tpointer Tvoid noattr) a (Vptr b ofs)
+       | _ => mapsto_ sh (Tpointer Tvoid noattr) a
+       end
+ end.
+
+Definition init_data_size (i: init_data) : Z :=
+  match i with
+  | Init_int8 _ => 1
+  | Init_int16 _ => 2
+  | Init_int32 _ => 4
+  | Init_int64 _ => 8
+  | Init_float32 _ => 4
+  | Init_float64 _ => 8
+  | Init_addrof _ _ => if Archi.ptr64 then 8 else 4
+  | Init_space n => Z.max n 0
+  end.
+
+Fixpoint init_data_list_size (il: list init_data) {struct il} : Z :=
+  match il with
+  | nil => 0
+  | i :: il' => init_data_size i + init_data_list_size il'
+  end.
+
+Fixpoint init_data_list2pred  (dl: list init_data)
+                           (sh: share) (v: val)  : environ -> mpred :=
+  match dl with
+  | d::dl' => 
+      sepcon (init_data2pred d sh v) 
+                  (init_data_list2pred dl' sh (offset_val (init_data_size d) v))
+  | nil => emp
+ end.
+
+Definition readonly2share (rdonly: bool) : share :=
+  if rdonly then Ers else Ews.
+
+Definition globals := ident -> val.
+
+Definition globvar2pred (gv: globals) (idv: ident * globvar type) : environ->mpred :=
+   if (gvar_volatile (snd idv))
+                       then  lift0 TT
+                       else    init_data_list2pred (gvar_init (snd idv))
+                                   (readonly2share (gvar_readonly (snd idv))) (gv (fst idv)).
+
+Definition globals_of_env (rho: environ) (i: ident) : val := 
+  match Map.get (ge_of rho) i with Some b => Vptr b Ptrofs.zero | None => Vundef end.
+
+Definition globvars2pred  (gv: globals)  (vl: list (ident * globvar type)) : environ->mpred :=
+  (lift2 andp) (fun rho => prop (gv = globals_of_env rho))
+  (fold_right sepcon emp (map (globvar2pred gv) vl)).
+
+Definition initializer_aligned (z: Z) (d: init_data) : bool :=
+  match d with
+  | Init_int16 n => Zeq_bool (z mod 2) 0
+  | Init_int32 n => Zeq_bool (z mod 4) 0
+  | Init_int64 n => Zeq_bool (z mod 8) 0
+  | Init_float32 n =>  Zeq_bool (z mod 4) 0
+  | Init_float64 n =>  Zeq_bool (z mod 8) 0
+  | Init_addrof symb ofs =>  Zeq_bool (z mod (size_chunk Mptr)) 0
+  | _ => true
+  end.
+
+Fixpoint initializers_aligned (z: Z) (dl: list init_data) : bool :=
+  match dl with
+  | nil => true
+  | d::dl' => andb (initializer_aligned z d) (initializers_aligned (z + init_data_size d) dl')
+  end.
+
+Definition funsig := (list (ident*type) * type)%type. 
+
+Definition memory_block (sh: share) (n: Z) (v: val) : mpred :=
+ match v with
+ | Vptr b ofs => (!! (Ptrofs.unsigned ofs + n < Ptrofs.modulus)) && mapsto_memory_block.memory_block' sh (nat_of_Z n) b (Ptrofs.unsigned ofs)
+ | _ => FF
+ end.
+
+Lemma memory_block_zero_Vptr: forall sh b z, memory_block sh 0 (Vptr b z) = emp.
+
+Lemma mapsto_mapsto_: forall sh t v v', mapsto sh t v v' |-- mapsto_ sh t v.
+
+Lemma mapsto_tc_val': forall sh t p v, mapsto sh t p v |-- !! tc_val' t v.
+
+Lemma memory_block_split:
+  forall (sh : share) (b : block) (ofs n m : Z),
+  0 <= n ->
+  0 <= m ->
+  n + m <= n + m + ofs < Ptrofs.modulus ->
+
+Lemma mapsto_share_join:
+ forall sh1 sh2 sh t p v,
+   sepalg.join sh1 sh2 sh ->
+
+Lemma memory_block_share_join:
+  forall sh1 sh2 sh n p,
+   sepalg.join sh1 sh2 sh ->
+
+Lemma mapsto_conflict:
+  forall sh t v v2 v3,
+  sepalg.nonunit sh ->
+
+Lemma memory_block_conflict: forall sh n m p,
+  sepalg.nonunit sh ->
+
+Definition align_compatible {C: compspecs} t p :=
+  match p with
+  | Vptr b i_ofs => align_compatible_rec cenv_cs t (Ptrofs.unsigned i_ofs)
+  | _ => True
+  end.
+
+Definition size_compatible {C: compspecs} t p :=
+  match p with
+  | Vptr b i_ofs => Ptrofs.unsigned i_ofs + sizeof t < Ptrofs.modulus
+  | _ => True
+  end.
+
+Lemma mapsto_valid_pointer: forall {cs: compspecs} sh t p v i,
+  size_compatible t p ->
+  0 <= i < sizeof t ->
+  sepalg.nonidentity sh ->
+
+Lemma memory_block_valid_pointer: forall {cs: compspecs} sh n p i,
+  0 <= i < n ->
+  sepalg.nonidentity sh ->
+
+Lemma memory_block_weak_valid_pointer: forall {cs: compspecs} sh n p i,
+  0 <= i <= n -> 0 < n -> sepalg.nonidentity sh ->
+
+Lemma mapsto_zeros_memory_block: forall sh n p,
+  readable_share sh ->
+  mapsto_zeros n sh p |--
+  memory_block sh n p.
+
+Lemma mapsto_pointer_void:
+  forall sh t a, 
+    eqb_type (Tpointer t a) int_or_ptr_type = false ->
+    eqb_type (Tpointer Tvoid a) int_or_ptr_type = false ->
+    mapsto sh (Tpointer t a) = mapsto sh (Tpointer Tvoid a).
+
+Lemma mapsto_unsigned_signed:
+ forall sign1 sign2 sh sz v i,
+  mapsto sh (Tint sz sign1 noattr) v (Vint (Cop.cast_int_int sz sign1 i)) =
+
+Lemma mapsto_tuint_tint:
+  forall sh, mapsto sh tuint = mapsto sh tint.
+
+Lemma mapsto_tuint_tptr_nullval:
+  forall sh p t, 
+  mapsto sh (Tpointer t noattr) p nullval = mapsto sh size_t p nullval.
+
+Lemma mapsto_size_t_tptr_nullval:
+  forall sh p t, mapsto sh (Tpointer t noattr) p nullval = mapsto sh size_t p nullval.
+
+Definition is_int32_noattr_type t :=
+ match t with
+ | Tint I32 _ {| attr_volatile := false; attr_alignas := None |} => True
+ | _ => False
+ end.
+
+Lemma mapsto_mapsto_int32:
+  forall sh t1 t2 p v,
+   is_int32_noattr_type t1 ->
+   is_int32_noattr_type t2 ->
+   mapsto sh t1 p v |-- mapsto sh t2 p v.
+
+Lemma mapsto_mapsto__int32:
+  forall sh t1 t2 p v,
+   is_int32_noattr_type t1 ->
+   is_int32_noattr_type t2 ->
+   mapsto sh t1 p v |-- mapsto_ sh t2 p.
+
+Lemma mapsto_null_mapsto_pointer:
+  forall t sh v,
+       Archi.ptr64 = false ->
+
+Definition eval_lvar (id: ident) (ty: type) (rho: environ) :=
+ match Map.get (ve_of rho) id with
+| Some (b, ty') => if eqb_type ty ty' then Vptr b Ptrofs.zero else Vundef
+| None => Vundef
+end.
+
+Definition var_block (sh: Share.t) {cs: compspecs} (idt: ident * type) : environ -> mpred :=
+  !! (sizeof (snd idt) <= Ptrofs.max_unsigned) &&
+  `(memory_block sh (sizeof (snd idt)))
+             (eval_lvar (fst idt) (snd idt)).
+
+Definition stackframe_of {cs: compspecs} (f: Clight.function) : environ->mpred :=
+  fold_right sepcon emp (map (var_block Tsh) (fn_vars f)).
+
+Lemma  subst_derives {A}{NA: NatDed A}:
+ forall a v (P Q: environ -> A), P |-- Q -> subst a v P |-- subst a v Q.
+
+Definition func_ptr (f: funspec) (v: val): mpred :=
+  EX b: block, !! (v = Vptr b Ptrofs.zero) && seplog.func_at f (b, 0).
+
+Lemma corable_func_ptr: forall f v, corable (func_ptr f v).
+
+Lemma func_ptr_isptr: forall spec f, func_ptr spec f |-- !! isptr f.
+
+Definition NDmk_funspec (f: funsig) (cc: calling_convention)
+  (A: Type) (Pre Post: A -> environ -> mpred): funspec :=
+  mk_funspec f cc (rmaps.ConstType A) (fun _ => Pre) (fun _ => Post)
+    (const_super_non_expansive _ _) (const_super_non_expansive _ _).
+
+Lemma approx_func_ptr: forall (A: Type) fsig0 cc (P Q: A -> environ -> mpred) (v: val) (n: nat),
+  compcert_rmaps.RML.R.approx n (func_ptr (NDmk_funspec fsig0 cc A P Q) v) = compcert_rmaps.RML.R.approx n (func_ptr (NDmk_funspec fsig0 cc A (fun a rho => compcert_rmaps.RML.R.approx n (P a rho)) (fun a rho => compcert_rmaps.RML.R.approx n (Q a rho))) v).
+
+Definition allp_fun_id (Delta : tycontext): environ -> mpred :=
+(ALL id : ident ,
+ (ALL fs : funspec ,
+  !! ((glob_specs Delta) ! id = Some fs) -->
+  (EX b : block, local (`eq (fun rho => Map.get (ge_of rho) id) `(Some b)) && `(seplog.func_at fs (b, 0))))).
+
+Lemma corable_allp_fun_id: forall Delta rho,
+  corable (allp_fun_id Delta rho).
+
+Definition type_of_funsig (fsig: funsig) :=
+   Tfunction (type_of_params (fst fsig)) (snd fsig) cc_default.
+Definition fn_funsig (f: function) : funsig := (fn_params f, fn_return f).
+
+Definition tc_fn_return (Delta: tycontext) (ret: option ident) (t: type) :=
+ match ret with
+ | None => True
+ | Some i => match (temp_types Delta) ! i with Some t' => t=t' | _ => False end
+ end.
+
+Definition globals_only (rho: environ) : environ :=
+    mkEnviron (ge_of rho) (Map.empty _) (Map.empty _).
+
+Fixpoint make_args (il: list ident) (vl: list val) (rho: environ)  :=
+  match il, vl with
+  | nil, nil => globals_only rho
+  | i::il', v::vl' => env_set (make_args il' vl' rho) i v
+   | _ , _ => rho
+ end.
+Definition make_args' (fsig: funsig) args rho :=
+   make_args (map (@fst _ _) (fst fsig)) (args rho) rho.
+
+Definition ret_temp : ident := 1%positive.
+
+Definition get_result1 (ret: ident) (rho: environ) : environ :=
+   make_args (ret_temp::nil) (eval_id ret rho :: nil) rho.
+
+Definition get_result (ret: option ident) : environ -> environ :=
+ match ret with
+ | None => make_args nil nil
+ | Some x => get_result1 x
+ end.
+
+Definition maybe_retval (Q: environ -> mpred) retty ret :=
+ match ret with
+ | Some id => fun rho => Q (get_result1 id rho)
+ | None =>
+    match retty with
+    | Tvoid => (fun rho => Q (globals_only rho))
+    | _ => fun rho => EX v: val, Q (make_args (ret_temp::nil) (v::nil) rho)
+    end
+ end.
+
+Definition bind_ret (vl: option val) (t: type) (Q: environ -> mpred) : environ -> mpred :=
+     match vl, t with
+     | None, Tvoid =>`Q (make_args nil nil)
+     | Some v, _ => @andp (environ->mpred) _ (!! tc_val t v)
+                             (`Q (make_args (ret_temp::nil) (v::nil)))
+     | _, _ => FF
+     end.
+
+Definition overridePost  (Q: environ->mpred)  (R: ret_assert) :=
+ match R with 
+  {| RA_normal := _; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := Q; RA_break := b; RA_continue := c; RA_return := r |}
+ end.
+
+Definition existential_ret_assert {A: Type} (R: A -> ret_assert) :=
+  {| RA_normal := fun rho => EX x:A, (R x).(RA_normal) rho;
+     RA_break := fun rho => EX x:A, (R x).(RA_break) rho;
+     RA_continue := fun rho => EX x:A, (R x).(RA_continue) rho;
+     RA_return := fun vl rho => EX x:A, (R x).(RA_return) vl rho
+   |}.
+
+Definition normal_ret_assert (Q: environ->mpred) : ret_assert :=
+  {| RA_normal := Q; RA_break := seplog.FF; RA_continue := seplog.FF; RA_return := fun _ => seplog.FF |}.
+
+Definition frame_ret_assert (R: ret_assert) (F: environ->mpred) : ret_assert :=
+ match R with 
+  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := n * F; 
+     RA_break := b * F; 
+     RA_continue := c * F;
+     RA_return := fun vl => r vl * F |}
+ end.
+
+Definition switch_ret_assert (R: ret_assert) : ret_assert :=
+ match R with 
+  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := FF; 
+     RA_break := n; 
+     RA_continue := c;
+     RA_return := r |}
+ end.
+
+Definition with_ge (ge: genviron) (G: environ->mpred) : mpred :=
+     G (mkEnviron ge (Map.empty _) (Map.empty _)).
+
+Fixpoint prog_funct' {F V} (l: list (ident * globdef F V)) : list (ident * F) :=
+ match l with nil => nil | (i,Gfun f)::r => (i,f):: prog_funct' r | _::r => prog_funct' r
+ end.
+
+Definition prog_funct (p: program) := prog_funct' (prog_defs p).
+
+Fixpoint prog_vars' {F V} (l: list (ident * globdef F V)) : list (ident * globvar V) :=
+ match l with nil => nil | (i,Gvar v)::r => (i,v):: prog_vars' r | _::r => prog_vars' r
+ end.
+
+Definition prog_vars (p: program) := prog_vars' (prog_defs p).
+
+Definition all_initializers_aligned (prog: program) :=
+  forallb (fun idv => andb (initializers_aligned 0 (gvar_init (snd idv)))
+                                 (Zlt_bool (init_data_list_size (gvar_init (snd idv))) Ptrofs.modulus))
+                      (prog_vars prog) = true.
+
+Definition loop1_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
+ match R with 
+  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := Inv;
+     RA_break := n; 
+     RA_continue := Inv;
+     RA_return := r |}
+ end.
+
+Definition loop2_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
+ match R with 
+  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := Inv;
+     RA_break := n;
+     RA_continue := seplog.FF;
+     RA_return := r |}
+ end.
+
+Definition function_body_ret_assert (ret: type) (Q: environ->mpred) : ret_assert :=
+ {| RA_normal := seplog.FF;
+    RA_break := seplog.FF; 
+    RA_continue := seplog.FF;
+    RA_return := fun vl => bind_ret vl ret Q |}.
+
+Definition loop_nocontinue_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
+ match R with 
+  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
+  {| RA_normal := Inv;
+     RA_break := n; 
+     RA_continue := seplog.FF;
+     RA_return := r |}
+ end.
+
+Definition tc_environ (Delta: tycontext) : environ -> Prop :=
+   fun rho => typecheck_environ Delta rho.
+
+Definition tc_temp_id  (id: ident)  (ty: type) {CS: compspecs} (Delta: tycontext)
+                       (e:expr): environ -> mpred :=
+      denote_tc_assert (typecheck_temp_id id ty Delta e).
+
+Definition typeof_temp (Delta: tycontext) (id: ident) : option type :=
+ match (temp_types Delta) ! id with
+ | Some t => Some t
+ | None => None
+ end.
+
+Definition tc_expr {CS: compspecs} (Delta: tycontext) (e: expr) : environ -> mpred :=
+    denote_tc_assert (typecheck_expr Delta e).
+
+Definition tc_exprlist {CS: compspecs} (Delta: tycontext) (t: list type) (e: list expr)  : environ -> mpred :=
+      denote_tc_assert (typecheck_exprlist Delta t e).
+
+Definition tc_lvalue {CS: compspecs} (Delta: tycontext) (e: expr) : environ -> mpred :=
+     denote_tc_assert (typecheck_lvalue Delta e).
+
+Definition tc_expropt {CS: compspecs} Delta (e: option expr) (t: type) : environ -> mpred :=
+   match e with None => `!!(t=Tvoid)
+                     | Some e' => tc_expr Delta (Ecast e' t)
+   end.
+
+Definition is_comparison op :=
+match op with
+  | Cop.Oeq | Cop.One | Cop.Olt | Cop.Ogt | Cop.Ole | Cop.Oge => true
+  | _ => false
+end.
+
+Definition blocks_match op v1 v2  :=
+match op with Cop.Olt | Cop.Ogt | Cop.Ole | Cop.Oge =>
+  match v1, v2 with
+    Vptr b _, Vptr b2 _ => b=b2
+    | _, _ => False
+  end
+| _ => True
+end.
+
+Definition cmp_ptr_no_mem c v1 v2  :=
+match v1, v2 with
+Vptr b o, Vptr b1 o1 =>
+  if peq b b1 then
+    Val.of_bool (Ptrofs.cmpu c o o1)
+  else
+    match Val.cmp_different_blocks c with
+    | Some b => Val.of_bool b
+    | None => Vundef
+    end
+| _, _ => Vundef
+end.
+
+Definition op_to_cmp cop :=
+match cop with
+| Cop.Oeq => Ceq | Cop.One =>  Cne
+| Cop.Olt => Clt | Cop.Ogt =>  Cgt
+| Cop.Ole => Cle | Cop.Oge =>  Cge
+| _ => Ceq 
+end.
+
+Fixpoint arglist (n: positive) (tl: typelist) : list (ident*type) :=
+ match tl with
+  | Tnil => nil
+  | Tcons t tl' => (n,t):: arglist (n+1)%positive tl'
+ end.
+
+Definition closed_wrt_modvars c (F: environ->mpred) : Prop :=
+    closed_wrt_vars (modifiedvars c) F.
+
+Definition initblocksize (V: Type)  (a: ident * globvar V)  : (ident * Z) :=
+ match a with (id,l) => (id , init_data_list_size (gvar_init l)) end.
+
+Definition main_pre (prog: program) : list Type -> globals -> environ -> mpred :=
+(fun nil gv => globvars2pred gv (prog_vars prog)).
+
+Definition main_pre_ext {Espec: OracleKind} (prog: program) (ora: OK_ty) : list Type -> globals -> environ -> mpred :=
+(fun nil gv rho => globvars2pred gv (prog_vars prog) rho * has_ext ora).
+
+Definition main_post (prog: program) : list Type -> (ident->val) -> environ->mpred :=
+  (fun nil _ _ => TT).
+
+Definition main_spec' (prog: program) 
+    (post: list Type -> globals -> environ -> mpred): funspec :=
+  mk_funspec (nil, tint) cc_default
+     (rmaps.ConstType globals) (main_pre prog) post
+       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
+
+Definition main_spec (prog: program): funspec :=
+  mk_funspec (nil, tint) cc_default
+     (rmaps.ConstType globals) (main_pre prog) (main_post prog)
+       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
+
+Definition main_spec_ext' {Espec: OracleKind} (prog: program) (ora: OK_ty)
+    (post: list Type -> globals -> environ -> mpred): funspec :=
+  mk_funspec (nil, tint) cc_default
+     (rmaps.ConstType globals) (main_pre_ext prog ora) post
+       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
+
+Definition main_spec_ext {Espec: OracleKind} (prog: program) (ora: OK_ty) : funspec :=
+  mk_funspec (nil, tint) cc_default
+     (rmaps.ConstType globals) (main_pre_ext prog ora) (main_post prog)
+       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
+
+Fixpoint match_globvars (gvs: list (ident * globvar type)) (V: varspecs) : bool :=
+ match V with
+ | nil => true
+ | (id,t)::V' => match gvs with
+                       | nil => false
+                       | (j,g)::gvs' => if eqb_ident id j
+                                              then andb (eqb_type t (gvar_info g)) (match_globvars gvs' V')
+                                              else match_globvars gvs' V
+                      end
+  end.
+
+Definition int_range (sz: intsize) (sgn: signedness) (i: int) :=
+ match sz, sgn with
+ | I8, Signed => -128 <= Int.signed i < 128
+ | I8, Unsigned => 0 <= Int.unsigned i < 256
+ | I16, Signed => -32768 <= Int.signed i < 32768
+ | I16, Unsigned => 0 <= Int.unsigned i < 65536
+ | I32, Signed => -2147483648 <= Int.signed i < 2147483648
+ | I32, Unsigned => 0 <= Int.unsigned i < 4294967296
+ | IBool, _ => 0 <= Int.unsigned i < 256
+end.
+
+Lemma mapsto_value_range:
+ forall sh v sz sgn i,
+   readable_share sh ->
+   mapsto sh (Tint sz sgn noattr) v (Vint i) =
+    !! int_range sz sgn i && mapsto sh (Tint sz sgn noattr) v (Vint i).
+
+Definition semax_body_params_ok f : bool :=
+   andb
+        (compute_list_norepet (map (@fst _ _) (fn_params f) ++ map (@fst _ _) (fn_temps f)))
+        (compute_list_norepet (map (@fst _ _) (fn_vars f))).
+
+Definition var_sizes_ok {cs: compspecs} (vars: list (ident*type)) :=
+   Forall (fun var : ident * type => sizeof (snd var) <= Ptrofs.max_unsigned)%Z vars.
+
+Definition make_ext_rval  (gx: genviron) (v: option val):=
+  match v with
+  | Some v' =>  mkEnviron gx (Map.empty _)
+                              (Map.set 1%positive v' (Map.empty _))
+  | None => mkEnviron gx (Map.empty _) (Map.empty _)
+  end.
+
+Definition tc_option_val (sig: type) (ret: option val) :=
+  match sig, ret with
+    | Tvoid, None => True
+    | Tvoid, Some _ => False
+    | ty, Some v => tc_val ty v
+    | _, _ => False
+  end.
+
+Fixpoint zip_with_tl {A : Type} (l1 : list A) (l2 : typelist) : list (A*type) :=
+  match l1, l2 with
+    | a::l1', Tcons b l2' => (a,b)::zip_with_tl l1' l2'
+    | _, _ => nil
+  end.
+
+Definition  funspecs_norepeat (fs : funspecs) := list_norepet (map fst fs).
+
+Require VST.veric.semax_ext.
+
+Definition add_funspecs (Espec : OracleKind)
+         (ext_link: Strings.String.string -> ident)
+         (fs : funspecs) : OracleKind :=
+   veric.semax_ext.add_funspecs Espec ext_link fs.
+
+Definition funsig2signature (s : funsig) cc : signature :=
+  mksignature (map typ_of_type (map snd (fst s))) (opttyp_of_type (snd s)) cc.
+
+Transparent mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric SRveric Bveric.
+
+Lemma typecheck_lvalue_sound {CS: compspecs} :
+  forall Delta rho e,
+    typecheck_environ Delta rho ->
+    tc_lvalue Delta e rho |-- !! is_pointer_or_null (eval_lvalue e rho).
+
+Lemma typecheck_expr_sound {CS: compspecs} :
+  forall Delta rho e,
+    typecheck_environ Delta rho ->
+    tc_expr Delta e rho |-- !! tc_val (typeof e) (eval_expr e rho).
+
+Lemma rel_expr_const_int: forall {CS: compspecs} i ty P rho,
+              P |-- rel_expr (Econst_int i ty) (Vint i) rho.
+
+Lemma rel_expr_const_float: forall {CS: compspecs}  f ty P rho,
+              P |-- rel_expr (Econst_float f ty) (Vfloat f) rho.
+
+Lemma rel_expr_const_single: forall {CS: compspecs}   f ty P rho,
+              P |-- rel_expr (Econst_single f ty) (Vsingle f) rho.
+
+Lemma rel_expr_const_long: forall {CS: compspecs}  i ty P rho,
+             P |--  rel_expr (Econst_long i ty) (Vlong i) rho.
+
+Lemma rel_expr_tempvar: forall {CS: compspecs}  id ty v P rho,
+          Map.get (te_of rho) id = Some v ->
+
+Lemma rel_expr_addrof: forall {CS: compspecs} a ty v P rho,
+               P |-- rel_lvalue a v rho ->
+               P |-- rel_expr (Eaddrof a ty) v rho.
+
+Lemma rel_expr_unop: forall {CS: compspecs}  P a1 v1 v ty op rho,
+                 P |-- rel_expr a1 v1 rho ->
+                 (forall m, Cop.sem_unary_operation op v1 (typeof a1) m = Some v) ->
+
+Lemma rel_expr_binop: forall {CS: compspecs}  a1 a2 v1 v2 v ty op P rho,
+                 P |-- rel_expr a1 v1 rho ->
+                 P |-- rel_expr  a2 v2 rho ->
+                 binop_stable cenv_cs op a1 a2 = true ->
+                 (forall m, Cop.sem_binary_operation cenv_cs op v1 (typeof a1) v2 (typeof a2) m = Some v) ->
+
+Lemma rel_expr_cast: forall {CS: compspecs}  a1 v1 v ty P rho,
+                 P |-- rel_expr a1 v1 rho ->
+                 (forall m, Cop.sem_cast v1 (typeof a1) ty m = Some v) ->
+
+Lemma rel_expr_lvalue_By_value: forall {CS: compspecs} ch a sh v1 v2 P rho,
+           access_mode (typeof a) = By_value ch ->
+           P |-- rel_lvalue a v1 rho ->
+           P |-- mapsto sh (typeof a) v1 v2 * TT  ->
+           v2 <> Vundef ->
+           readable_share sh ->
+           P |-- rel_expr a v2 rho.
+
+Lemma rel_expr_lvalue_By_reference: forall {CS: compspecs} a v1 P rho,
+           access_mode (typeof a) = By_reference ->
+           P |-- rel_lvalue a v1 rho ->
+           P |-- rel_expr a v1 rho.
+
+Lemma rel_lvalue_local: forall {CS: compspecs} id ty b P rho,
+                 P |-- !! (Map.get (ve_of rho) id = Some (b,ty)) ->
+
+Lemma rel_lvalue_global: forall {CS: compspecs} id ty b P rho,
+              P |-- !! (Map.get (ve_of rho) id = None /\ Map.get (ge_of rho) id = Some b) ->
+
+Lemma rel_lvalue_deref: forall {CS: compspecs} a b z ty P rho,
+              P |-- rel_expr a (Vptr b z) rho->
+              P |-- rel_lvalue (Ederef a ty) (Vptr b z) rho.
+
+Lemma rel_lvalue_field_struct: forall {CS: compspecs}  i ty a b z id att delta co P rho,
+               typeof a = Tstruct id att ->
+               cenv_cs ! id = Some co ->
+               field_offset cenv_cs i (co_members co) = Errors.OK delta ->
+
+Global Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric SRveric Bveric.
+Global Opaque rel_expr.
+Global Opaque rel_lvalue.
+
+Hint Resolve (@subp_sepcon mpred Nveric Iveric Sveric SIveric Rveric SRveric): contractive.
+
+Fixpoint unfold_Ssequence c :=
+  match c with
+  | Ssequence c1 c2 => unfold_Ssequence c1 ++ unfold_Ssequence c2
+  | _ => c :: nil
+  end.
+
+Fixpoint nocontinue s :=
+ match s with
+ | Ssequence s1 s2 => if nocontinue s1 then nocontinue s2 else false
+ | Sifthenelse _ s1 s2 => if nocontinue s1 then nocontinue s2 else false
+ | Sswitch _ sl => nocontinue_ls sl
+ | Sgoto _ => false
+ | Scontinue => false
+ | Slabel _ s => nocontinue s
+ | _ => true
+end
+with nocontinue_ls sl :=
+ match sl with LSnil => true | LScons _ s sl' => if nocontinue s then nocontinue_ls sl' else false
+ end.
+
+Module Type CLIGHT_SEPARATION_HOARE_LOGIC_DEF.
+
+Parameter semax: forall {CS: compspecs} {Espec: OracleKind},
+    tycontext -> (environ->mpred) -> statement -> ret_assert -> Prop.
+
+Parameter semax_func:
+    forall {Espec: OracleKind},
+    forall (V: varspecs) (G: funspecs) {C: compspecs} (fdecs: list (ident * fundef)) (G1: funspecs), Prop.
+
+Parameter semax_external:
+  forall {Hspec: OracleKind} (ids: list ident) (ef: external_function)
+  (A: rmaps.TypeTree)
+  (P Q: forall ts, functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts (AssertTT A)) mpred),
+     Prop.
+
+End CLIGHT_SEPARATION_HOARE_LOGIC_DEF.
+
+Module DerivedDefs (Def: CLIGHT_SEPARATION_HOARE_LOGIC_DEF).
+
+Local Open Scope pred.
+
+Definition semax_body
+       (V: varspecs) (G: funspecs) {C: compspecs} (f: function) (spec: ident * funspec): Prop :=
+  match spec with (_, mk_funspec _ cc A P Q NEP NEQ) =>
+    forall Espec ts x, 
+      @Def.semax C Espec (func_tycontext f V G nil )
+          (P ts x *  stackframe_of f)
+          (Ssequence f.(fn_body) (Sreturn None))
+          (frame_ret_assert (function_body_ret_assert (fn_return f) (Q ts x)) (stackframe_of f))
+ end.
+
+Definition semax_prog
+    {Espec: OracleKind} {C: compspecs}
+     (prog: program)  (V: varspecs) (G: funspecs) : Prop :=
+  compute_list_norepet (prog_defs_names prog) = true  /\
+  all_initializers_aligned prog /\
+  cenv_cs = prog_comp_env prog /\
+  @Def.semax_func Espec V G C (prog_funct prog) G /\
+  match_globvars (prog_vars prog) V = true /\
+  match initial_world.find_id prog.(prog_main) G with
+  | Some s => exists post, s = main_spec' prog post
+  | None => False
+  end.
+
+Definition semax_prog_ext
+    {Espec: OracleKind} {C: compspecs}
+     (prog: program) (z : OK_ty) (V: varspecs) (G: funspecs) : Prop :=
+  compute_list_norepet (prog_defs_names prog) = true  /\
+  all_initializers_aligned prog /\
+  cenv_cs = prog_comp_env prog /\
+  @Def.semax_func Espec V G C (prog_funct prog) G /\ *)
+
+Require Import VST.progs.conclib.
+(* VST.progs.conclib:
+Require Import VST.veric.ghost_PCM.
+Require Export VST.msl.iter_sepcon.
+Require Export VST.concurrency.semax_conc_pred.
+Require Export VST.concurrency.semax_conc.
+Require Export VST.floyd.proofauto.
+Require Import VST.floyd.library.
+Require Export VST.floyd.sublist.
+
+Notation vint z := (Vint (Int.repr z)).
+Notation vptrofs z := (Vptrofs (Ptrofs.repr z)).
+
+Lemma app_cons_assoc : forall {A} l1 (x : A) l2, l1 ++ x :: l2 = (l1 ++ [x]) ++ l2.
+
+Lemma Forall_forall_Znth : forall {A}{d: Inhabitant A} (P : A -> Prop) l,
+  Forall P l <-> forall i, 0 <= i < Zlength l -> P (Znth i l).
+
+Lemma Zmod_smallish : forall x y, y <> 0 -> 0 <= x < 2 * y ->
+  x mod y = x \/ x mod y = x - y.
+
+Lemma Zmod_plus_inv : forall a b c d (Hc : c > 0) (Heq : (a + b) mod c = (d + b) mod c),
+  a mod c = d mod c.
+
+Lemma Znth_app : forall {A}{d: Inhabitant A} (l1 l2 : list A) i,
+      Zlength l1 = i -> Znth i (l1 ++ l2) = Znth 0 l2.
+
+Corollary Znth_app1 : forall {A}{d: Inhabitant A} l1 (x : A) l2 i,
+     Zlength l1 = i -> Znth i (l1 ++ x :: l2) = x.
+
+Lemma repable_0 : repable_signed 0.
+Hint Resolve repable_0.
+
+Definition complete MAX l := l ++ repeat (vptrofs 0) (Z.to_nat MAX - length l).
+
+Lemma upd_complete : forall l x MAX, Zlength l < MAX ->
+  upd_Znth (Zlength l) (complete MAX l) x = complete MAX (l ++ [x]).
+
+Lemma Znth_complete : forall n l MAX, n < Zlength l -> 
+     Znth n (complete MAX l) = Znth n l.
+
+Lemma remove_complete : forall l x MAX, Zlength l < MAX ->
+  upd_Znth (Zlength l) (complete MAX (l ++ [x])) (vptrofs 0) = complete MAX l.
+
+Lemma Forall_app : forall {A} (P : A -> Prop) l1 l2,
+  Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
+
+Lemma Forall_incl : forall {A} (P : A -> Prop) l1 l2 (Hall : Forall P l2) (Hincl : incl l1 l2),
+  Forall P l1.
+
+Lemma repeat_plus : forall {A} (x : A) i j, repeat x (i + j) = repeat x i ++ repeat x j.
+
+Lemma in_insert_iff : forall {A} (x y : A) l1 l2, In x (l1 ++ y :: l2) <-> x = y \/ In x (l1 ++ l2).
+
+Definition remove_at {A} i (l : list A) := firstn i l ++ skipn (S i) l.
+
+Lemma Forall_firstn : forall {A} (P : A -> Prop) l i, Forall P l ->
+  Forall P (firstn i l).
+
+Lemma Forall_skipn : forall {A} (P : A -> Prop) l i, Forall P l ->
+  Forall P (skipn i l).
+
+Lemma Forall_upd_Znth : forall {A} (P : A -> Prop) x l i, Forall P l -> P x ->
+  Forall P (upd_Znth i l x).
+
+Lemma last_cons : forall {A} (d : A) l x, l <> [] -> last (x :: l) d = last l d.
+
+Lemma nth_last : forall {A} (d : A) l, nth (length l - 1) l d = last l d.
+
+Lemma Znth_last : forall {A}{d: Inhabitant A} l, Znth (Zlength l - 1) l = last l default.
+
+Lemma last_app : forall {A} l1 l2 (d : A), l2 <> [] -> last (l1 ++ l2) d = last l2 d.
+
+Lemma nat_sorted_list_eq : forall d n l (Hl : forall i, (i < n)%nat <-> In i l) (Hlen : length l = n)
+  (Hsorted : forall i j, (i < j < n -> nth i l d < nth j l d)%nat) i (Hi : (i < n)%nat), nth i l d = i.
+
+Lemma Forall2_In_l : forall {A B} (P : A -> B -> Prop) x l1 l2, Forall2 P l1 l2 -> In x l1 ->
+  exists y, In y l2 /\ P x y.
+
+Lemma Forall2_In_r : forall {A B} (P : A -> B -> Prop) x l1 l2, Forall2 P l1 l2 -> In x l2 ->
+  exists y, In y l1 /\ P y x.
+
+Lemma last_snoc : forall {A} (d : A) x l, last (l ++ [x]) d = x.
+
+Lemma iter_sepcon_sepcon: forall {A} f g1 g2 l, (forall b : A, f b = g1 b * g2 b) ->
+  iter_sepcon f l = iter_sepcon g1 l * iter_sepcon g2 l.
+
+Lemma sepcon_app : forall l1 l2, fold_right sepcon emp (l1 ++ l2) =
+  fold_right sepcon emp l1 * fold_right sepcon emp l2.
+
+Definition rotate {A} (l : list A) n m := sublist (m - n) (Zlength l) l ++
+  sublist 0 (m - n) l.
+
+Lemma sublist_of_nil : forall {A} i j, sublist i j (@nil A) = [].
+
+Lemma sublist_0_cons : forall {A} j x (l : list A), j > 0 ->
+  sublist 0 j (x :: l) = x :: sublist 0 (j - 1) l.
+
+Lemma sublist_S_cons : forall {A} i j x (l : list A), i > 0 ->
+  sublist i j (x :: l) = sublist (i - 1) (j - 1) l.
+
+Lemma upd_rotate : forall {A} i (l : list A) n m x (Hl : Zlength l = m) (Hlt : 0 <= n <= m)
+  (Hi : 0 <= i < Zlength l),
+  upd_Znth i (rotate l n m) x = rotate (upd_Znth ((i - n) mod m) l x) n m.
+
+Lemma Znth_cons_eq : forall {A}{d : Inhabitant A} i x l, 
+   Znth i (x :: l) = if eq_dec i 0 then x else Znth (i - 1) l.
+
+Lemma Znth_rotate : forall {A} {d : Inhabitant A} i l n, 
+    0 <= n <= Zlength l -> 0 <= i < Zlength l ->
+  Znth i (rotate l n (Zlength l)) = Znth ((i - n) mod Zlength l) l.
+
+Lemma rotate_nil : forall {A} n m, rotate (@nil A) n m = [].
+
+Lemma Forall_sublist_le : forall {A} {d : Inhabitant A} (P : A -> Prop) i j l
+  (Hrangei : 0 <= i) (Hrangej : j <= Zlength l) (Hi : ~P (Znth i l)) (Hj : Forall P (sublist 0 j l)),
+  j <= i.
+
+Corollary Forall_sublist_first : forall {A} {d : Inhabitant A} (P : A -> Prop) i j l
+  (Hrangei : 0 <= i <= Zlength l) (Hi : Forall P (sublist 0 i l)) (Hi' : ~P (Znth i l))
+  (Hrangej : 0 <= j <= Zlength l) (Hj : Forall P (sublist 0 j l)) (Hj' : ~P (Znth j l)),
+  i = j.
+
+Lemma NoDup_Znth_inj : forall {A} {d : Inhabitant A} l i j (HNoDup : NoDup l)
+  (Hi : 0 <= i < Zlength l) (Hj : 0 <= j < Zlength l) (Heq : Znth i l = Znth j l ),
+  i = j.
+
+Lemma rotate_In : forall {A} (x : A) n m l, 0 <= m - n <= Zlength l -> In x (rotate l n m) <-> In x l.
+
+Lemma rotate_map : forall {A B} (f : A -> B) n m l, rotate (map f l) n m = map f (rotate l n m).
+
+Lemma combine_app : forall {A B} (l1 l2 : list A) (l1' l2' : list B), length l1 = length l1' ->
+  combine (l1 ++ l2) (l1' ++ l2') = combine l1 l1' ++ combine l2 l2'.
+
+Lemma combine_app' : forall {A B} (l1 l2 : list A) (l1' l2' : list B), Zlength l1 = Zlength l1' ->
+  combine (l1 ++ l2) (l1' ++ l2') = combine l1 l1' ++ combine l2 l2'.
+
+Lemma Forall_rotate : forall {A} P (l : list A) n m, Forall P l ->
+  Forall P (rotate l m n).
+
+Lemma Forall_repeat : forall {A} (P : A -> Prop) x n, P x -> Forall P (repeat x n).
+
+Lemma Forall_complete : forall P l m, Forall P l -> P (vptrofs 0) ->
+  Forall P (complete m l).
+
+Lemma app_eq_inv : forall {A} (l1 l2 l3 l4 : list A)
+  (Heq : l1 ++ l2 = l3 ++ l4) (Hlen : length l1 = length l3), l1 = l3 /\ l2 = l4.
+
+Lemma rotate_inj : forall {A} (l1 l2 : list A) n m, rotate l1 n m = rotate l2 n m ->
+  length l1 = length l2 -> 0 <= n <= m -> m <= Zlength l1 -> l1 = l2.
+
+Lemma complete_inj : forall l1 l2 m, complete m l1 = complete m l2 ->
+  length l1 = length l2 -> l1 = l2.
+
+Lemma length_complete : forall l m, Zlength l <= m -> length (complete m l) = Z.to_nat m.
+
+Lemma Zlength_rotate : forall {A} (l : list A) n m, 0 <= n <= m -> m <= Zlength l ->
+  Zlength (rotate l n m) = Zlength l.
+
+Lemma Zlength_repeat : forall {A} (x : A) n, Zlength (repeat x n) = Z.of_nat n.
+
+Lemma Zlength_complete : forall l m, Zlength l <= m -> Zlength (complete m l) = m.
+
+Lemma combine_eq : forall {A B} (l : list (A * B)), combine (map fst l) (map snd l) = l.
+
+Lemma signed_inj : forall i1 i2, Int.signed i1 = Int.signed i2 -> i1 = i2.
+
+Lemma mods_repr : forall a b, 0 <= a <= Int.max_signed -> 0 < b <= Int.max_signed ->
+
+Lemma repeat_list_repeat : forall {A} n (x : A), repeat x n = list_repeat n x.
+
+Lemma sublist_repeat : forall {A} i j k (v : A), 0 <= i -> i <= j <= k ->
+  sublist i j (repeat v (Z.to_nat k)) = repeat v (Z.to_nat (j - i)).
+
+Lemma Znth_head : forall reqs head m, Zlength reqs <= m -> 0 <= head < m ->
+  Zlength reqs > 0 ->
+  Znth head (rotate (complete m reqs) head m) = Znth 0 reqs.
+
+Lemma Znth_repeat : forall {A} {x : Inhabitant A} n i, Znth i (repeat default n) = default.
+
+Lemma Znth_repeat' : forall {A} {d: Inhabitant A} (x : A) n i, 
+    0 <= i < Z.of_nat n -> Znth i (repeat x n)  = x.
+
+Lemma rotate_1 : forall v l n m, 0 <= n < m -> Zlength l < m ->
+  rotate (upd_Znth 0 (complete m (v :: l)) (vptrofs 0)) n m =
+  rotate (complete m l) ((n + 1) mod m) m.
+
+Lemma upd_complete_gen : forall {A} (l : list A) x n y, Zlength l < n ->
+  upd_Znth (Zlength l) (l ++ repeat y (Z.to_nat (n - Zlength l))) x =
+
+Lemma upd_complete' : forall l x n, (length l < n)%nat ->
+  upd_Znth (Zlength l) (map Vint (map Int.repr l) ++ repeat Vundef (n - length l)) (Vint (Int.repr x)) =
+
+Fixpoint upto n :=
+  match n with
+  | O => []
+  | S n' => 0 :: map Z.succ (upto n')
+  end.
+
+Opaque Z.of_nat.
+
+Lemma upto_app : forall n m, upto (n + m) = upto n ++ map (fun i => Z.of_nat n + i) (upto m).
+
+Lemma upto_length : forall n, length (upto n) = n.
+
+Corollary Zlength_upto : forall n, Zlength (upto n) = Z.of_nat n.
+
+Lemma skipn_cons : forall {A}{d: Inhabitant A} n (l : list A), (length l > n)%nat ->
+  skipn n l = Znth (Z.of_nat n) l :: skipn (S n) l.
+
+Lemma Znth_upto : forall d m n, 
+  0 <= n < Z.of_nat m -> @Znth _ d n (upto m) = n.
+
+Transparent Z.of_nat.
+
+Lemma In_Znth : forall {A} {d: Inhabitant A} (l : list A) x,
+    In x l ->
+    exists i, 0 <= i < Zlength l /\ Znth i l = x.
+
+Lemma In_upd_Znth_old : forall {A}{d: Inhabitant A} i (x y : A) l, In x l -> x <> Znth i l -> 0 <= i <= Zlength l ->
+  In x (upd_Znth i l y).
+
+Lemma Znth_combine : forall {A B} {a: Inhabitant A} {b: Inhabitant B} i (l1: list A) (l2: list B), 
+   Zlength l1 = Zlength l2 ->
+  Znth i (combine l1 l2) = (Znth i l1, Znth i l2).
+
+Lemma Zlength_combine : forall {A B} (l : list A) (l' : list B),
+  Zlength (combine l l') = Z.min (Zlength l) (Zlength l').
+
+Lemma nth_Znth : forall {A}{d: Inhabitant A} i l, nth i l default = Znth (Z.of_nat i) l.
+
+Lemma upd_Znth_cons : forall {A} i a l (x : A), i > 0 ->
+  upd_Znth i (a :: l) x = a :: upd_Znth (i - 1) l x.
+
+Lemma upd_Znth_triv : forall {A}{d: Inhabitant A} i (l : list A) x (Hi : 0 <= i < Zlength l),
+  Znth i l = x -> upd_Znth i l x = l.
+
+Lemma combine_upd_Znth : forall {A B} (l1 : list A) (l2 : list B) i x1 x2, 0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 -> combine (upd_Znth i l1 x1) (upd_Znth i l2 x2) = upd_Znth i (combine l1 l2) (x1, x2).
+
+Corollary combine_upd_Znth1 : forall {A B}{d: Inhabitant B} (l1 : list A) (l2 : list B) i x,
+   0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 ->
+   combine (upd_Znth i l1 x) l2 = upd_Znth i (combine l1 l2) (x, Znth i l2).
+
+Corollary combine_upd_Znth2 : forall {A B}{d: Inhabitant A} (l1 : list A) (l2 : list B) i x, 0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 -> combine l1 (upd_Znth i l2 x) = upd_Znth i (combine l1 l2) (Znth i l1, x).
+
+Lemma in_concat : forall {A} (l : list (list A)) x, In x (concat l) <-> exists l1, In x l1 /\ In l1 l.
+
+Lemma length_concat : forall {A} (l : list (list A)), length (concat l) = fold_right plus O (map (@length A) l).
+
+Lemma length_concat_min : forall {A}{d: Inhabitant A} (l : list (list A)) i (Hi : 0 <= i < Zlength l),
+  (length (Znth i l) <= length (concat l))%nat.
+
+Lemma length_concat_upd : forall {A} {d: Inhabitant A} l i (l' : list A) (Hi : 0 <= i < Zlength l),
+  length (concat (upd_Znth i l l')) = (length (concat l) + length l' - length (Znth i l))%nat.
+
+Lemma sepcon_rev : forall l, fold_right sepcon emp (rev l) = fold_right sepcon emp l.
+
+Lemma incl_nil : forall {A} (l : list A), incl [] l.
+Hint Resolve incl_nil.
+
+Lemma incl_cons_out : forall {A} (a : A) l1 l2, incl l1 (a :: l2) -> ~In a l1 -> incl l1 l2.
+
+Lemma In_upto : forall n i, In i (upto n) <-> 0 <= i < Z.of_nat n.
+
+Lemma combine_fst : forall {A B} (l : list A) (l' : list B), length l = length l' ->
+  map fst (combine l l') = l.
+
+Lemma combine_snd : forall {A B} (l : list A) (l' : list B), length l = length l' ->
+  map snd (combine l l') = l'.
+
+Lemma rev_combine : forall {A B} (l1 : list A) (l2 : list B), length l1 = length l2 ->
+  rev (combine l1 l2) = combine (rev l1) (rev l2).
+
+Lemma combine_map_snd : forall {A B C} (l1 : list A) (l2 : list B) (f : B -> C),
+  combine l1 (map f l2) = map (fun x => let '(a, b) := x in (a, f b)) (combine l1 l2).
+
+Lemma combine_const1 : forall {A B} (l1 : list A) (x : B) n, Z.of_nat n >= Zlength l1 ->
+
+Lemma combine_const2 : forall {A B} (x : A) n (l2 : list B), Z.of_nat n >= Zlength l2 ->
+
+Lemma map_const: forall {A B} (c : A) (l : list B), map (fun _ => c) l = repeat c (length l).
+
+Lemma In_upd_Znth : forall {A} i l (x y : A), In x (upd_Znth i l y) -> x = y \/ In x l.
+
+Lemma upd_Znth_In : forall {A} i l (x : A), In x (upd_Znth i l x).
+
+Lemma NoDup_Znth_iff : forall {A}{d: Inhabitant A} (l : list A),
+  NoDup l <-> forall i j (Hi : 0 <= i < Zlength l)
+                            (Hj : 0 <= j < Zlength l), Znth i l = Znth j l -> i = j.
+
+Lemma concat_less_incl : forall {A} l i (l1 l2 : list A) (Hi : 0 <= i < Zlength l)
+  (Hless : Znth i l = l1 ++ l2), incl (concat (upd_Znth i l l1)) (concat l).
+
+Lemma NoDup_app : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) ->
+  NoDup l1 /\ NoDup l2 /\ forall x, In x l1 -> ~In x l2.
+
+Lemma NoDup_app_iff : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) <->
+  NoDup l1 /\ NoDup l2 /\ forall x, In x l1 -> ~In x l2.
+
+Corollary NoDup_app_swap : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) <-> NoDup (l2 ++ l1).
+
+Lemma NoDup_concat_less : forall {A} l i (l1 l2 : list A) (Hl : NoDup (concat l))
+  (Hi : 0 <= i < Zlength l) (Hless : Znth i l = l1 ++ l2),
+  NoDup (concat (upd_Znth i l l1)).
+
+Lemma Forall2_Znth : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B} (P : A -> B -> Prop) l1 l2 (Hall : Forall2 P l1 l2) i
+  (Hi : 0 <= i < Zlength l1), P (Znth i l1) (Znth i l2).
+
+Lemma Forall2_app_inv : forall {A B} (P : A -> B -> Prop) l1 l2 l3 l4 (Hlen : length l1 = length l3),
+  Forall2 P (l1 ++ l2) (l3 ++ l4) -> Forall2 P l1 l3 /\ Forall2 P l2 l4.
+
+Lemma Forall2_firstn : forall {A B} (P : A -> B -> Prop) l1 l2 n, Forall2 P l1 l2 ->
+  Forall2 P (firstn n l1) (firstn n l2).
+
+Lemma Forall2_upd_Znth : forall {A B} (P : A -> B -> Prop) l1 l2 i x1 x2, Forall2 P l1 l2 ->
+  P x1 x2 -> 0 <= i <= Zlength l1 -> Forall2 P (upd_Znth i l1 x1) (upd_Znth i l2 x2).
+
+Lemma Forall2_impl' : forall {A B} (P Q : A -> B -> Prop) l1 l2,
+  (forall a b, In a l1 -> In b l2 -> P a b -> Q a b) -> Forall2 P l1 l2 -> Forall2 Q l1 l2.
+
+Lemma Forall2_impl : forall {A B} (P Q : A -> B -> Prop), (forall a b, P a b -> Q a b) ->
+  forall l1 l2, Forall2 P l1 l2 -> Forall2 Q l1 l2.
+
+Lemma map_id_eq : forall {A} (l : list A), map (@id A) l = l.
+
+Lemma Forall2_map : forall {A B C D} (P : A -> B -> Prop) (f1 : C -> A) (f2 : D -> B) l1 l2,
+  Forall2 P (map f1 l1) (map f2 l2) <-> Forall2 (fun a b => P (f1 a) (f2 b)) l1 l2.
+
+Corollary Forall2_map1 : forall {A B C} (P : A -> B -> Prop) (f : C -> A) l1 l2, Forall2 P (map f l1) l2 <->
+  Forall2 (fun a b => P (f a) b) l1 l2.
+
+Corollary Forall2_map2 : forall {A B C} (P : A -> B -> Prop) (f : C -> B) l1 l2, Forall2 P l1 (map f l2) <->
+  Forall2 (fun a b => P a (f b)) l1 l2.
+
+Lemma sublist_max_length : forall {A} i j (al : list A), Zlength (sublist i j al) <= Zlength al.
+
+Lemma Forall2_sublist : forall {A B} (P : A -> B -> Prop) l1 l2 i j, Forall2 P l1 l2 -> 0 <= i ->
+  Forall2 P (sublist i j l1) (sublist i j l2).
+
+Lemma Forall_last : forall {A} (P : A -> Prop) d l, Forall P l -> P d -> P (last l d).
+
+Lemma last_map : forall {A B} (f : A -> B) d l, f (last l d) = last (map f l) (f d).
+
+Lemma In_removelast : forall {A} (l : list A) x, In x (removelast l) -> In x l.
+
+Definition nil_dec {A} (l : list A) : {l = []} + {l <> []}.
+
+Lemma Forall2_upd_Znth_l : forall {A B}{d: Inhabitant B} (P : A -> B -> Prop) l1 l2 i x, Forall2 P l1 l2 ->
+  P x (Znth i l2) -> 0 <= i < Zlength l1 -> Forall2 P (upd_Znth i l1 x) l2.
+
+Lemma Forall2_upd_Znth_r : forall {A B}{d: Inhabitant A} (P : A -> B -> Prop) l1 l2 i x, Forall2 P l1 l2 ->
+  P (Znth i l1) x -> 0 <= i < Zlength l1 -> Forall2 P l1 (upd_Znth i l2 x).
+
+Lemma Forall2_eq_upto : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B} (P : A -> B -> Prop) l1 l2, Forall2 P l1 l2 <->
+  Zlength l1 = Zlength l2 /\ Forall (fun i => P (Znth i l1) (Znth i l2)) (upto (Z.to_nat (Zlength l1))).
+
+Lemma Forall2_forall_Znth : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B}  (P : A -> B -> Prop) l1 l2,
+  Forall2 P l1 l2 <->
+  Zlength l1 = Zlength l2 /\ (forall i, 0 <= i < Zlength l1 -> P (Znth i l1) (Znth i l2)).
+
+Lemma Znth_inbounds : forall {A}{d: Inhabitant A} i (l : list A), 
+    Znth i l <> default -> 0 <= i < Zlength l.
+
+Lemma sublist_next : forall {A}{d: Inhabitant A} i j l,
+      0 <= i < j -> j <= Zlength l ->
+  sublist i j l = Znth i l :: sublist (i + 1) j l.
+
+Lemma upd_init : forall {A} (l : list A) i b v v', i < b -> Zlength l = i ->
+  upd_Znth i (l ++ repeat v (Z.to_nat (b - i))) v' = l ++ v' :: repeat v (Z.to_nat (b - (i + 1))).
+
+Corollary upd_init_const : forall {A} i b (v v' : A), 0 <= i < b ->
+  upd_Znth i (repeat v' (Z.to_nat i) ++ repeat v (Z.to_nat (b - i))) v' =
+
+Lemma list_Znth_eq : forall {A}{d: Inhabitant A} (l : list A),
+    l = map (fun j => Znth j l) (upto (length l)).
+
+Arguments eq_dec _ _ _ _ : simpl never.
+
+Lemma upd_Znth_eq : forall {A} {EqDec : EqDec A} {d: Inhabitant A} (x : A) (l : list A) i, 0 <= i < Zlength l ->
+  upd_Znth i l x = map (fun j => if eq_dec j i then x else Znth j l) (upto (length l)).
+
+Lemma upd_Znth_diff' : forall {A}{d: Inhabitant A} i j l (u : A),
+    0 <= j < Zlength l -> i <> j ->
+  Znth i (upd_Znth j l u) = Znth i l.
+
+Lemma list_nth_error_eq : forall {A} (l1 l2 : list A)
+  (Heq : forall j, nth_error l1 j = nth_error l2 j), l1 = l2.
+
+Lemma list_Znth_eq' : forall {A} {d: Inhabitant A} (l1 l2 : list A)
+  (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall j, 0 <= j < Zlength l1 -> Znth j l1 = Znth j l2), l1 = l2.
+
+Corollary upd_Znth_eq' : forall {A}{d: Inhabitant A} x (l1 l2 : list A) i (Hi : 0 <= i < Zlength l1)
+  (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall j, 0 <= j < Zlength l1 -> j <> i -> Znth j l1 = Znth j l2),
+  upd_Znth i l1 x = upd_Znth i l2 x.
+
+Lemma upd_Znth_twice : forall {A} i l (x y : A), 0 <= i < Zlength l ->
+  upd_Znth i (upd_Znth i l x) y = upd_Znth i l y.
+
+Lemma hd_Znth : forall {A}{d: Inhabitant A} (l : list A), hd default l = Znth 0 l.
+
+Lemma NoDup_filter : forall {A} (f : A -> bool) l, NoDup l -> NoDup (filter f l).
+
+Lemma Permutation_Zlength : forall {A} (l1 l2 : list A), Permutation.Permutation l1 l2 ->
+
+Lemma Permutation_filter : forall {A} (f : A -> bool) l1 l2, Permutation.Permutation l1 l2 ->
+
+Lemma NoDup_add : forall {A} l1 l2 (x : A), NoDup (l1 ++ l2) -> ~In x (l1 ++ l2) -> NoDup (l1 ++ x :: l2).
+
+Lemma list_in_count : forall {A} {A_eq : EqDec A} (l l' : list A), NoDup l' ->
+  (length (filter (fun x => if in_dec eq_dec x l then true else false) l') <= length l)%nat.
+
+Lemma filter_length : forall {A} (f : A -> bool) l,
+  length l = (length (filter f l) + length (filter (fun x => negb (f x)) l))%nat.
+
+Lemma Zlength_filter : forall {A} f (l : list A), Zlength (filter f l) <= Zlength l.
+
+Lemma Zlength_concat : forall {A} (l : list (list A)),
+  Zlength (concat l) = fold_right Z.add 0 (map (@Zlength A) l).
+
+Lemma Zlength_concat_le : forall {A} (l : list (list A)) n,
+  Forall (fun l => Zlength l <= n) l -> Zlength (concat l) <= n * Zlength l.
+
+Lemma filter_app : forall {A} (f : A -> bool) l1 l2, filter f (l1 ++ l2) = filter f l1 ++ filter f l2.
+
+Lemma filter_concat : forall {A} f (l : list (list A)),
+  filter f (concat l) = concat (map (filter f) l).
+
+Lemma NoDup_upto : forall n, NoDup (upto n).
+
+Lemma In_remove : forall {A} {A_eq : EqDec A} (x y : A) l, In x (remove A_eq y l) <-> In x l /\ x <> y.
+
+Lemma remove_NoDup : forall {A} {A_eq : EqDec A} (x : A) l, NoDup l -> NoDup (remove A_eq x l).
+
+Lemma remove_out : forall {A} {A_eq : EqDec A} (x : A) l, ~In x l -> remove A_eq x l = l.
+
+Lemma remove_from_NoDup : forall {A} {A_eq : EqDec A} (x : A) l1 l2, NoDup (l1 ++ x :: l2) ->
+  remove A_eq x (l1 ++ x :: l2) = l1 ++ l2.
+
+Lemma incl_remove_add : forall {A} {A_eq : EqDec A} (x : A) l1 l2, incl l1 l2 -> incl l1 (x :: remove A_eq x l2).
+
+Lemma list_pigeonhole : forall l n, Zlength l < n -> exists a, 0 <= a < n /\ ~In a l.
+
+Lemma In_sublist_upto : forall n x i j, In x (sublist i j (upto n)) -> 0 <= i ->
+  i <= x < j /\ x < Z.of_nat n.
+
+Lemma incl_cons_iff : forall {A} (a : A) b c, incl (a :: b) c <-> In a c /\ incl b c.
+
+Lemma lt_le_1 : forall i j, i < j <-> i + 1 <= j.
+
+Lemma firstn_all : forall {A} n (l : list A), (length l <= n)%nat -> firstn n l = l.
+
+Lemma sublist_all : forall {A} i (l : list A), Zlength l <= i -> sublist 0 i l = l.
+
+Lemma sublist_prefix : forall {A} i j (l : list A), sublist 0 i (sublist 0 j l) = sublist 0 (Z.min i j) l.
+
+Lemma sublist_suffix : forall {A} i j (l : list A), 0 <= i -> 0 <= j ->
+  sublist i (Zlength l - j) (sublist j (Zlength l) l) = sublist (i + j) (Zlength l) l.
+
+Lemma sublist_parts1 : forall {A} i j (l : list A), 0 <= i -> sublist i j l = sublist i j (sublist 0 j l).
+
+Lemma sublist_parts2 : forall {A} i j (l : list A), 0 <= i -> j <= Zlength l ->
+  sublist i j l = sublist 0 (j - i) (sublist i (Zlength l) l).
+
+Lemma Forall_Forall2 : forall {A} (P : A -> Prop) Q l1 l2 (HP : Forall P l1) (HQ : Forall2 Q l1 l2)
+  (Htransfer : forall x y, P x -> Q x y -> P y), Forall P l2.
+
+Lemma Forall_suffix_max : forall {A} (P : A -> Prop) l1 l2 i j
+  (Hi : 0 <= i <= Zlength l1) (Hj : 0 <= j <= Zlength l1)
+  (Hl1 : Forall P (sublist j (Zlength l1) l1))
+  (Hl2 : sublist i (Zlength l1) l1 = sublist i (Zlength l2) l2),
+  Forall P (sublist (Z.max i j) (Zlength l2) l2).
+
+Fixpoint extend {A} (l : list A) ls :=
+  match l, ls with
+  | x :: xs, y :: ys => (x :: y) :: extend xs ys
+  | _, _ => ls
+  end.
+
+Lemma Zlength_extend : forall {A} (l : list A) ls, Zlength (extend l ls) = Zlength ls.
+
+Lemma Znth_extend_in : forall {A}{d: Inhabitant A}  (l : list A) ls i, 0 <= i < Zlength l -> Zlength l <= Zlength ls ->
+  Znth i (extend l ls) = Znth i l :: Znth i ls.
+
+Lemma Znth_extend_ge : forall {A}{d: Inhabitant A}  (l : list A) ls i, Zlength l <= i ->
+  Znth i (extend l ls) = Znth i ls.
+
+Fixpoint extendr {A} (l : list A) ls :=
+  match l, ls with
+  | x :: xs, y :: ys => (y ++ [x]) :: extendr xs ys
+  | _, _ => ls
+  end.
+
+Lemma Zlength_extendr : forall {A} (l : list A) ls, Zlength (extendr l ls) = Zlength ls.
+
+Lemma Znth_extendr_in : forall {A}{d: Inhabitant A}  (l : list A) ls i, 0 <= i < Zlength l -> Zlength l <= Zlength ls ->
+  Znth i (extendr l ls) = Znth i ls ++ [Znth i l].
+
+Lemma Znth_extendr_ge : forall {A}{d: Inhabitant A}  (l : list A) ls i, Zlength l <= i ->
+  Znth i (extendr l ls) = Znth i ls.
+
+Lemma list_join_eq : forall (b : list share) a c c'
+  (Hc : sepalg_list.list_join a b c) (Hc' : sepalg_list.list_join a b c'), c = c'.
+
+Lemma readable_share_list_join : forall sh shs sh', sepalg_list.list_join sh shs sh' ->
+
+Lemma sublist_0_cons' : forall {A} i j (x : A) l, i <= 0 -> j > i -> sublist i j (x :: l) =
+  x :: sublist i (j - 1) l.
+
+Lemma sublist_combine : forall {A B} (l1 : list A) (l2 : list B) i j,
+  sublist i j (combine l1 l2) = combine (sublist i j l1) (sublist i j l2).
+
+Lemma extend_nil : forall {A} (l : list A), extend l [] = [].
+
+Lemma extend_cons : forall {A} (l : list A) l1 ls, extend l (l1 :: ls) =
+  match l with [] => l1 :: ls | a :: l' => (a :: l1) :: extend l' ls end.
+
+Lemma sublist_extend : forall {A} (l : list A) ls i j,
+  sublist i j (extend l ls) = extend (sublist i j l) (sublist i j ls).
+
+Lemma extendr_nil : forall {A} (l : list A), extendr l [] = [].
+
+Lemma extendr_cons : forall {A} (l : list A) l1 ls, extendr l (l1 :: ls) =
+  match l with [] => l1 :: ls | a :: l' => (l1 ++ [a]) :: extendr l' ls end.
+
+Lemma sublist_extendr : forall {A} (l : list A) ls i j,
+  sublist i j (extendr l ls) = extendr (sublist i j l) (sublist i j ls).
+
+Lemma sublist_over : forall {A} (l : list A) i j, Zlength l <= i -> sublist i j l = [].
+
+Lemma make_tycontext_s_distinct : forall a l (Ha : In a l) (Hdistinct : NoDup (map fst l)),
+  (make_tycontext_s l) ! (fst a) = Some (snd a).
+
+Lemma lookup_distinct : forall {A B} (f : A -> B) a l t (Ha : In a l) (Hdistinct : NoDup (map fst l)),
+  (fold_right (fun v : ident * A => PTree.set (fst v) (f (snd v))) t l) ! (fst a) =
+
+Lemma lookup_out : forall {A B} (f : A -> B) a l t (Ha : ~In a (map fst l)),
+  (fold_right (fun v : ident * A => PTree.set (fst v) (f (snd v))) t l) ! a = t ! a.
+
+Lemma data_at__eq : forall {cs : compspecs} sh t p, data_at_ sh t p = data_at sh t (default_val t) p.
+
+Lemma func_tycontext_sub : forall f V G A V2 G2 (HV : incl V V2) (HG : incl G G2)
+  (Hdistinct : NoDup (map fst V2 ++ map fst G2)),
+  tycontext_sub (func_tycontext f V G A) (func_tycontext f V2 G2 A).
+
+Lemma semax_body_mono : forall V G {cs : compspecs} f s V2 G2
+  (HV : incl V V2) (HG : incl G G2) (Hdistinct : NoDup (map fst V2 ++ map fst G2)),
+  semax_body V G f s -> semax_body V2 G2 f s.
+
+Lemma weak_exclusive_conflict : forall P,
+  predicates_hered.derives ((weak_exclusive_mpred P && emp) * P * P) FF.
+
+Lemma exclusive_sepcon1 : forall (P Q : mpred) (HP : exclusive_mpred P), exclusive_mpred (P * Q).
+
+Lemma exclusive_sepcon2 : forall (P Q : mpred) (HP : exclusive_mpred Q), exclusive_mpred (P * Q).
+
+Lemma exclusive_andp1 : forall P Q (HP : exclusive_mpred P), exclusive_mpred (P && Q).
+
+Lemma exclusive_andp2 : forall P Q (HQ : exclusive_mpred Q), exclusive_mpred (P && Q).
+
+Lemma lock_inv_exclusive : forall v sh R, exclusive_mpred (lock_inv sh v R).
+
+Lemma selflock_exclusive : forall R sh v, exclusive_mpred R -> exclusive_mpred (selflock R v sh).
+
+Lemma exclusive_FF : exclusive_mpred FF.
+
+Lemma derives_exclusive : forall P Q (Hderives : P |-- Q) (HQ : exclusive_mpred Q),
+  exclusive_mpred P.
+
+Lemma mapsto_exclusive : forall (sh : Share.t) (t : type) (v : val),
+
+Lemma field_at__exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) (p : val),
+
+Lemma ex_field_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) (p : val),
+
+Corollary field_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) v (p : val),
+
+Lemma ex_data_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (p : val),
+
+Corollary data_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) v (p : val),
+
+Corollary data_at__exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (p : val),
+
+Lemma cond_var_exclusive : forall {cs} sh p, sepalg.nonidentity sh ->
+
+Lemma lock_inv_isptr : forall sh v R, lock_inv sh v R = !!isptr v && lock_inv sh v R.
+
+Lemma cond_var_isptr : forall {cs} sh v, @cond_var cs sh v = !! isptr v && cond_var sh v.
+Hint Resolve lock_inv_isptr cond_var_isptr : saturate_local.
+
+Lemma cond_var_share_join : forall {cs} sh1 sh2 sh v (Hjoin : sepalg.join sh1 sh2 sh),
+
+Hint Resolve lock_inv_exclusive selflock_exclusive cond_var_exclusive data_at_exclusive
+  data_at__exclusive field_at_exclusive field_at__exclusive selflock_rec.
+
+Lemma eq_dec_refl : forall {A B} {A_eq : EqDec A} (a : A) (b c : B), (if eq_dec a a then b else c) = b.
+
+Lemma LKspec_readable lock_size :
+  0 < lock_size ->
+  forall R sh p, predicates_hered.derives (res_predicates.LKspec lock_size R sh p)
+
+Lemma lock_inv_share_join : forall sh1 sh2 sh v R (Hsh1 : readable_share sh1) (Hsh2 : readable_share sh2)
+  (Hjoin : sepalg.join sh1 sh2 sh),
+
+Lemma comp_join_top : forall sh, sepalg.join sh (Share.comp sh) Tsh.
+
+Lemma unreadable_bot : ~readable_share Share.bot.
+Hint Resolve unreadable_bot.
+
+Definition join_Bot := join_Bot.
+
+Lemma join_Tsh : forall a b, sepalg.join Tsh a b -> b = Tsh /\ a = Share.bot.
+
+Definition gsh1 := fst (slice.cleave Tsh).
+Definition gsh2 := snd (slice.cleave Tsh).
+
+Lemma readable_gsh1 : readable_share gsh1.
+
+Lemma readable_gsh2 : readable_share gsh2.
+
+Lemma gsh1_gsh2_join : sepalg.join gsh1 gsh2 Tsh.
+
+Hint Resolve readable_gsh1 readable_gsh2 gsh1_gsh2_join.
+
+Lemma gsh1_not_bot : gsh1 <> Share.bot.
+
+Lemma gsh2_not_bot : gsh2 <> Share.bot.
+Hint Resolve gsh1_not_bot gsh2_not_bot.
+
+Lemma split_readable_share sh :
+  readable_share sh ->
+  exists sh1, exists sh2,
+    readable_share sh1 /\
+    readable_share sh2 /\
+    sepalg.join sh1 sh2 sh.
+
+Lemma split_Ews :
+  exists sh1, exists sh2,
+    readable_share sh1 /\
+    readable_share sh2 /\
+    sepalg.join sh1 sh2 Ews.
+
+Definition remove_Znth {A} i (al : list A) := sublist 0 i al ++ sublist (i + 1) (Zlength al) al.
+
+Lemma remove_Znth0 : forall {A} (l : list A), remove_Znth 0 l = sublist 1 (Zlength l) l.
+
+Lemma remove_Znth_cons : forall {A} i a (l : list A), i > 0 ->
+  remove_Znth i (a :: l) = a :: remove_Znth (i - 1) l.
+
+Lemma Zlength_remove_Znth : forall {A} i (l : list A), 0 <= i < Zlength l ->
+  Zlength (remove_Znth i l) = Zlength l - 1.
+
+Lemma remove_upd_Znth: forall {A} i l (a : A), 0 <= i < Zlength l ->
+  remove_Znth i (upd_Znth i l a) = remove_Znth i l.
+
+Lemma remove_Znth_map: forall {A B} (f : A -> B) i l,
+  remove_Znth i (map f l) = map f (remove_Znth i l).
+
+Lemma remove_Znth_combine: forall {A B} i (l1 : list A) (l2 : list B),
+  0 <= i < Zlength l1 -> Zlength l1 = Zlength l2 ->
+  remove_Znth i (combine l1 l2) = combine (remove_Znth i l1) (remove_Znth i l2).
+
+Lemma iter_sepcon_Znth: forall {A} {d : Inhabitant A} f (l : list A) i, 0 <= i < Zlength l ->
+  iter_sepcon f l = f (Znth i l) * iter_sepcon f (remove_Znth i l).
+
+Lemma iter_sepcon2_Znth: forall {A B} {d1 : Inhabitant A} {d2 : Inhabitant B}
+  f (l1 : list A) (l2 : list B) i, 0 <= i < Zlength l1 -> Zlength l1 = Zlength l2 ->
+  iter_sepcon2 f l1 l2 =
+  f (Znth i l1) (Znth i l2) * iter_sepcon2 f (remove_Znth i l1) (remove_Znth i l2).
+
+Instance Inhabitant_share : Inhabitant share := Share.bot.  
+Instance Inhabitant_mpred : Inhabitant mpred := @FF mpred Nveric.  
+
+Lemma join_shares_nth : forall shs sh1 sh i, sepalg_list.list_join sh1 shs sh -> 0 <= i < Zlength shs ->
+
+Lemma list_join_comm : forall (l1 l2 : list share) a b, sepalg_list.list_join a (l1 ++ l2) b ->
+
+Lemma split_shares : forall n sh, readable_share sh ->
+  exists sh1 shs, Zlength shs = Z.of_nat n /\ readable_share sh1 /\ Forall readable_share shs /\
+
+Lemma data_at_shares_join : forall {cs} sh t v p shs sh1 (Hsplit : sepalg_list.list_join sh1 shs sh),
+
+Lemma exp_comm : forall {A B} P,
+  (EX x : A, EX y : B, P x y) = EX y : B, EX x : A, P x y.
+
+Lemma mapsto_value_eq: forall sh1 sh2 t p v1 v2, readable_share sh1 -> readable_share sh2 ->
+  v1 <> Vundef -> v2 <> Vundef -> mapsto sh1 t p v1 * mapsto sh2 t p v2 |-- !!(v1 = v2).
+
+Lemma mapsto_value_cohere: forall sh1 sh2 t p v1 v2, readable_share sh1 ->
+  mapsto sh1 t p v1 * mapsto sh2 t p v2 |-- mapsto sh1 t p v1 * mapsto sh2 t p v1.
+
+Lemma struct_pred_value_cohere : forall {cs : compspecs} m sh1 sh2 p t f off v1 v2
+  (Hsh1 : readable_share sh1) (Hsh2 : readable_share sh2)
+  (IH : Forall (fun it : ident * type => forall v1 v2 (p : val),
+        readable_share sh1 -> readable_share sh2 ->
+        data_at_rec sh1 (t it) v1 p * data_at_rec sh2 (t it) v2 p |--
+        data_at_rec sh1 (t it) v1 p * data_at_rec sh2 (t it) v1 p) m),
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh1 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh1 (t it) v) (f it))) v1 p *
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh2 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh2 (t it) v) (f it))) v2 p |--
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh1 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh1 (t it) v) (f it))) v1 p *
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh2 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh2 (t it) v) (f it))) v1 p.
+
+Lemma data_at_value_cohere : forall {cs : compspecs} sh1 sh2 t v1 v2 p, readable_share sh1 ->
+  type_is_by_value t = true -> type_is_volatile t = false ->
+  data_at sh1 t v1 p * data_at sh2 t v2 p |--
+  data_at sh1 t v1 p * data_at sh2 t v1 p.
+
+Lemma data_at_array_value_cohere : forall {cs : compspecs} sh1 sh2 t z a v1 v2 p, readable_share sh1 ->
+  type_is_by_value t = true -> type_is_volatile t = false ->
+  data_at sh1 (Tarray t z a) v1 p * data_at sh2 (Tarray t z a) v2 p |--
+  data_at sh1 (Tarray t z a) v1 p * data_at sh2 (Tarray t z a) v1 p.
+
+Lemma extract_nth_sepcon : forall l i, 0 <= i < Zlength l ->
+  fold_right sepcon emp l = Znth i l * fold_right sepcon emp (upd_Znth i l emp).
+
+Lemma replace_nth_sepcon : forall P l i, P * fold_right sepcon emp (upd_Znth i l emp) =
+  fold_right sepcon emp (upd_Znth i l P).
+
+Lemma sepcon_derives_prop : forall P Q R, P |-- !!R -> P * Q |-- !!R.
+
+Lemma sepcon_map : forall {A} P Q (l : list A), fold_right sepcon emp (map (fun x => P x * Q x) l) =
+  fold_right sepcon emp (map P l) * fold_right sepcon emp (map Q l).
+
+Lemma sepcon_list_derives : forall l1 l2 (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall i, 0 <= i < Zlength l1 -> Znth i l1 |-- Znth i l2),
+  fold_right sepcon emp l1 |-- fold_right sepcon emp l2.
+
+Lemma sepcon_rotate : forall lP m n, 0 <= n - m < Zlength lP ->
+  fold_right sepcon emp lP = fold_right sepcon emp (rotate lP m n).
+
+Lemma wand_eq : forall P Q R, P = Q * R -> P = Q * (Q -* P).
+
+Lemma wand_twice : forall P Q R, P -* Q -* R = P * Q -* R.
+
+Lemma sepcon_In : forall l P, In P l -> exists Q, fold_right sepcon emp l = P * Q.
+
+Lemma extract_wand_sepcon : forall l P, In P l ->
+  fold_right sepcon emp l = P * (P -* fold_right sepcon emp l).
+
+Lemma wand_sepcon_map : forall {A} (R : A -> mpred) l P Q
+  (HR : forall i, In i l -> R i = P i * Q i),
+  fold_right sepcon emp (map R l) = fold_right sepcon emp (map P l) *
+    (fold_right sepcon emp (map P l) -* fold_right sepcon emp (map R l)).
+
+Lemma wand_frame : forall P Q R, P -* Q |-- P * R -* Q * R.
+
+Lemma semax_extract_later_prop'':
+  forall {CS : compspecs} {Espec: OracleKind},
+    forall (Delta : tycontext) (PP : Prop) P Q R c post P1 P2,
+      P2 |-- !!PP ->
+      (PP -> semax Delta (PROPx P (LOCALx Q (SEPx (P1 && |>P2 :: R)))) c post) ->
+      semax Delta (PROPx P (LOCALx Q (SEPx (P1 && |>P2 :: R)))) c post.
+
+Lemma field_at_array_inbounds : forall {cs : compspecs} sh t z a i v p,
+  field_at sh (Tarray t z a) [ArraySubsc i] v p |-- !!(0 <= i < z).
+
+Lemma valid_pointer_isptr : forall v, valid_pointer v |-- !!(is_pointer_or_null v).
+
+Hint Resolve valid_pointer_isptr : saturate_local.
+
+Lemma approx_imp : forall n P Q, compcert_rmaps.RML.R.approx n (predicates_hered.imp P Q) =
+
+Definition super_non_expansive' {A} P := forall n ts x, compcert_rmaps.RML.R.approx n (P ts x) =
+  compcert_rmaps.RML.R.approx n (P ts (functors.MixVariantFunctor.fmap (rmaps.dependent_type_functor_rec ts A)
+        (compcert_rmaps.RML.R.approx n) (compcert_rmaps.RML.R.approx n) x)).
+
+Lemma approx_sepcon_list: forall n lP, lP <> [] ->
+  compcert_rmaps.RML.R.approx n (fold_right sepcon emp lP) =
+
+Corollary approx_sepcon_list' : forall n lP P,
+  compcert_rmaps.RML.R.approx n (fold_right sepcon emp lP)  * compcert_rmaps.RML.R.approx n P =
+
+Lemma approx_FF : forall n, compcert_rmaps.RML.R.approx n FF = FF.
+
+Lemma later_nonexpansive : nonexpansive (@later mpred _ _).
+
+Lemma eqp_refl : forall (G : Triv) P, G |-- P <=> P.
+
+Lemma eqp_sepcon : forall (G : Triv) (P P' Q Q' : mpred)
+  (HP : G |-- P <=> P') (HQ : G |-- Q <=> Q'), G |-- P * Q <=> P' * Q'.
+
+Lemma eqp_andp : forall (G : Triv) (P P' Q Q' : mpred)
+  (HP : G |-- P <=> P') (HQ : G |-- Q <=> Q'), G |-- P && Q <=> P' && Q'.
+
+Lemma eqp_exp : forall (A : Type) (NA : NatDed A) (IA : Indir A) (RecIndir : RecIndir A)
+    (G : Triv) (B : Type) (X Y : B -> A),
+  (forall x : B, G |-- X x <=> Y x) ->
+  G |-- (EX x : _, X x) <=> (EX x : _, Y x).
+
+Lemma fold_right_sepcon_nonexpansive : forall lP1 lP2, Zlength lP1 = Zlength lP2 ->
+  (ALL i : Z, Znth i lP1 <=> Znth i lP2) |--
+  fold_right sepcon emp lP1 <=> fold_right sepcon emp lP2.
+
+Lemma void_ret : ifvoid tvoid (` (PROP ( )  LOCAL ()  SEP ()) (make_args [] []))
+  (EX v : val, ` (PROP ( )  LOCAL ()  SEP ()) (make_args [ret_temp] [v])) = emp.
+
+Ltac lock_props := rewrite ?sepcon_assoc; rewrite <- sepcon_emp at 1; rewrite sepcon_comm; apply sepcon_derives;
+  [repeat apply andp_right; auto; eapply derives_trans;
+   try (apply exclusive_weak_exclusive || (apply rec_inv_weak_rec_inv; try apply selflock_rec)); auto |
+   try timeout 20 cancel].
+
+Ltac join_sub := repeat (eapply sepalg.join_sub_trans;
+  [eexists; first [eassumption | simple eapply sepalg.join_comm; eassumption]|]); eassumption.
+
+Ltac join_inj := repeat match goal with H1 : sepalg.join ?a ?b ?c, H2 : sepalg.join ?a ?b ?d |- _ =>
+    pose proof (sepalg.join_eq H1 H2); clear H1 H2; subst; auto end.
+
+Ltac fast_cancel := rewrite ?sepcon_emp, ?emp_sepcon; rewrite ?sepcon_assoc;
+  repeat match goal with
+    | |- ?P |-- ?P => apply derives_refl
+    | |- ?P * _ |-- ?P * _ => apply sepcon_derives; [apply derives_refl|]
+    | |- _ |-- ?P * _ => rewrite <- !sepcon_assoc, (sepcon_comm _ P), !sepcon_assoc end;
+  try cancel_frame.
+
+Lemma semax_fun_id'' id f gv Espec {cs} Delta P Q R Post c :
+  (var_types Delta) ! id = None ->
+  (glob_specs Delta) ! id = Some f ->
+  (glob_types Delta) ! id = Some (type_of_funspec f) ->
+  snd (local2ptree Q) = Some gv ->
+  @semax cs Espec Delta
+    (PROPx P
+      (LOCALx Q
+      (SEPx ((func_ptr' f (gv id)) :: R)))) c Post ->
+  @semax cs Espec Delta (PROPx P (LOCALx Q (SEPx R))) c Post.
+
+Ltac get_global_function'' _f :=
+eapply (semax_fun_id'' _f); try reflexivity.
+
+Ltac start_dep_function := 
+  match goal with |- semax_body ?V ?G ?F ?spec =>
+    let s := fresh "spec" in
+    pose (s:=spec); hnf in s;
+    match goal with
+    | s :=  (DECLARE _ WITH _ : globals
+               PRE  [] main_pre _ nil _
+               POST [ tint ] main_post _ nil _) |- _ => idtac
+    | s := ?spec' |- _ => check_canonical_funspec spec'
+   end;
+   change (semax_body V G F s); subst s
+ end;
+ let DependedTypeList := fresh "DependedTypeList" in
+ match goal with |- semax_body _ _ _ (pair _ (mk_funspec _ _ _ ?Pre _ _ _)) =>
+   match Pre with 
+   | (fun x => match _ with (a,b) => _ end) => intros Espec DependedTypeList [a b] 
+   | (fun i => _) => intros Espec DependedTypeList i
+   end;
+   simpl fn_body; simpl fn_params; simpl fn_return
+ end;
+ simpl functors.MixVariantFunctor._functor in *;
+ simpl rmaps.dependent_type_functor_rec;
+ repeat match goal with |- @semax _ _ _ (match ?p with (a,b) => _ end * _) _ _ =>
+             destruct p as [a b]
+           end;
+ simplify_func_tycontext;
+ repeat match goal with 
+ | |- context [Sloop (Ssequence (Sifthenelse ?e Sskip Sbreak) ?s) Sskip] =>
+       fold (Swhile e s)
+ | |- context [Ssequence ?s1 (Sloop (Ssequence (Sifthenelse ?e Sskip Sbreak) ?s2) ?s3) ] =>
+      match s3 with
+      | Sset ?i _ => match s1 with Sset ?i' _ => unify i i' | Sskip => idtac end
+      end;
+      fold (Sfor s1 e s2 s3)
+ end;
+ try expand_main_pre;
+ process_stackframe_of;
+ repeat change_mapsto_gvar_to_data_at;  
+ repeat rewrite <- data_at__offset_zero;
+ try apply start_function_aux1;
+ repeat (apply semax_extract_PROP; 
+              match goal with
+              | |- _ ?sh -> _ =>
+                 match type of sh with
+                 | share => intros ?SH 
+                 | Share.t => intros ?SH 
+                 | _ => intro
+                 end
+               | |- _ => intro
+               end);
+ first [ eapply eliminate_extra_return'; [ reflexivity | reflexivity | ]
+        | eapply eliminate_extra_return; [ reflexivity | reflexivity | ]
+        | idtac];
+ abbreviate_semax.
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2) =>
+     match x with (x1,x2) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2) =>
+     match x with (x1,x2) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3) =>
+     match x with (x1,x2,x3) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3) =>
+     match x with (x1,x2,x3) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4) =>
+     match x with (x1,x2,x3,x4) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4) =>
+     match x with (x1,x2,x3,x4) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5) =>
+     match x with (x1,x2,x3,x4,x5) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5) =>
+     match x with (x1,x2,x3,x4,x5) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6) =>
+     match x with (x1,x2,x3,x4,x5,x6) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6) =>
+     match x with (x1,x2,x3,x4,x5,x6) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, 
+             x5 at level 0, x6 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0, x10 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0, x10 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
+             P at level 100, Q at level 100).
+
+Definition call_setup2'
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+  (bl: list expr) (vl : list val)
+  (Qactuals : PTree.t _)
+  (witness: functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts A) mpred)
+  (Frame: list mpred)
+  (Ppre: list Prop) (Qpre : list localdef) (Rpre: list mpred)
+  (Qpre_temp : PTree.t _) GV' :=
+ call_setup1 cs Qtemp Qvar GV a Delta P Q R R' fs argsig retty cc A Pre Post NEPre NEPost bl vl Qactuals /\
+  Pre ts witness = PROPx Ppre (LOCALx Qpre (SEPx Rpre)) /\
+  local2ptree Qpre = (Qpre_temp, PTree.empty _, nil, GV') /\
+  ENTAIL Delta, PROPx P (LOCALx Q (SEPx R))
+           |-- !! Forall (check_one_temp_spec Qactuals) (PTree.elements Qpre_temp) /\
+  check_gvars_spec GV GV' /\
+  fold_right_sepcon R |-- fold_right_sepcon Rpre * fold_right_sepcon Frame.
+
+Lemma call_setup2'_i:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree) Pre Post NEPre NEPost
+
+Ltac check_witness_type' ts A witness :=
+  (unify A (rmaps.ConstType Ridiculous); 
+             elimtype False)
+ ||
+ let TA := constr:(functors.MixVariantFunctor._functor
+     (rmaps.dependent_type_functor_rec ts A) mpred) in
+  let TA' := eval cbv 
+     [functors.MixVariantFunctor._functor
+      functors.MixVariantFunctorGenerator.fpair
+      functors.MixVariantFunctorGenerator.fconst
+      functors.MixVariantFunctorGenerator.fidentity
+      rmaps.dependent_type_functor_rec
+      functors.GeneralFunctorGenerator.CovariantBiFunctor_MixVariantFunctor_compose
+      functors.CovariantFunctorGenerator.fconst
+      functors.CovariantFunctorGenerator.fidentity
+      functors.CovariantBiFunctor._functor
+      functors.CovariantBiFunctorGenerator.Fpair
+      functors.GeneralFunctorGenerator.CovariantFunctor_MixVariantFunctor
+      functors.CovariantFunctor._functor
+      functors.MixVariantFunctor.fmap
+      ] in TA
+ in let TA'' := eval simpl in TA'
+  in match type of witness with ?T => 
+       unify T TA''
+      + (fail "Type of witness does not match type required by funspec WITH clause.
+Witness value: " witness "
+Witness type: " T "
+Funspec type: " TA'')
+     end.
+
+Ltac prove_call_setup' ts witness :=
+ prove_call_setup1 subsume_funspec_refl;
+ [ .. | 
+ match goal with |- call_setup1  _ _ _ _ _ _ _ _ _ _ _ _ _ _ ?A _ _ _ _ _ _ _ -> _ =>
+      check_witness_type' ts A witness
+ end;
+ let H := fresh in
+ intro H;
+ match goal with | |- @semax ?CS _ _ _ _ _ =>
+ let Frame := fresh "Frame" in evar (Frame: list mpred);
+ exploit (call_setup2'_i _ _ _ _ _ _ _ _ _ _ _ _ _ _ ts _ _ _ _ _ _ _ _ H witness Frame); clear H;
+ simpl functors.MixVariantFunctor._functor;
+ [ reflexivity
+ | check_prove_local2ptree
+ | Forall_pTree_from_elements
+ | unfold check_gvars_spec; solve [exact I | reflexivity]
+ | try change_compspecs CS; cancel_for_forward_call
+ | 
+ ]
+ end].
+
+Lemma semax_call_aux55:
+ forall (cs: compspecs) (Qtemp: PTree.t val) (Qvar: PTree.t (type * val)) GV (a: expr)
+
+Lemma semax_call_id00_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar a GV Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_x_wow:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty' cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_y_wow:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty' cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id01_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Ltac  forward_call_id1_wow' := 
+let H := fresh in intro H;
+eapply (semax_call_id1_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H);
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [check_result_type
+ |apply Logic.I
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id1_x_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id1_x_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type | check_result_type
+ | apply Coq.Init.Logic.I | apply Coq.Init.Logic.I | reflexivity
+ | (clear; let H := fresh in intro H; inversion H)
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id1_y_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id1_y_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type | check_result_type
+ | apply Coq.Init.Logic.I | apply Coq.Init.Logic.I | reflexivity
+ | (clear; let H := fresh in intro H; inversion H)
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id01_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id01_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ apply Coq.Init.Logic.I 
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id00_wow'  :=
+let H := fresh in intro H;
+eapply (semax_call_id00_wow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type 
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+    repeat rewrite exp_uncurry;
+    try rewrite no_post_exists0;
+    repeat rewrite exp_unfold;
+    first [reflexivity | extensionality; simpl; reflexivity | give_EX_warning]
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac fwd_call'_dep ts witness :=
+lazymatch goal with
+| |- semax _ _ (Ssequence (Scall _ _ _) _) _ =>
+  eapply semax_seq';
+    [prove_call_setup' ts witness;
+     clear_Delta_specs; clear_MORE_POST;
+     [ .. |
+      lazymatch goal with
+      | |- _ -> semax _ _ (Scall (Some _) _ _) _ =>
+         forward_call_id1_wow'
+      | |- call_setup2' _ _ _ _ _ _ _ _ _ _ _ _ ?retty _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ -> 
+                semax _ _ (Scall None _ _) _ =>
+        tryif (unify retty Tvoid)
+        then forward_call_id00_wow'
+        else forward_call_id01_wow'
+     end]
+   | after_forward_call ]
+| |- semax _ _ (Ssequence (Ssequence (Scall (Some ?ret') _ _)
+                                       (Sset _ (Ecast (Etempvar ?ret'2 _) _))) _) _ =>
+       unify ret' ret'2;
+       eapply semax_seq';
+         [prove_call_setup' ts witness;
+          clear_Delta_specs; clear_MORE_POST;
+             [ .. | forward_call_id1_x_wow' ]
+         |  after_forward_call ]
+| |- semax _ _ (Ssequence (Ssequence (Scall (Some ?ret') _ _)
+                                       (Sset _ (Etempvar ?ret'2 _))) _) _ =>
+       unify ret' ret'2;
+       eapply semax_seq';
+         [prove_call_setup' ts witness;
+          clear_Delta_specs; clear_MORE_POST;
+             [ .. | forward_call_id1_y_wow' ]
+         |  after_forward_call ]
+| |- _ => rewrite <- seq_assoc; fwd_call'_dep ts witness
+end.
+
+Ltac fwd_call_dep ts witness :=
+ try lazymatch goal with
+      | |- semax _ _ (Scall _ _ _) _ => rewrite -> semax_seq_skip
+      end;
+ repeat lazymatch goal with
+  | |- semax _ _ (Ssequence (Ssequence (Ssequence _ _) _) _) _ =>
+      rewrite <- seq_assoc
+ end;
+lazymatch goal with |- @semax ?CS _ ?Delta _ (Ssequence ?C _) _ =>
+  lazymatch C with context [Scall _ _ _] =>
+         fwd_call'_dep ts witness
+    end
+end.
+
+Tactic Notation "forward_call_dep" constr(ts) constr(witness) := fwd_call_dep ts witness.
+
+Lemma PROP_into_SEP : forall P Q R, PROPx P (LOCALx Q (SEPx R)) =
+  PROPx [] (LOCALx Q (SEPx (!!fold_right and True P && emp :: R))).
+
+Ltac cancel_for_forward_spawn :=
+  eapply symbolic_cancel_setup;
+   [ construct_fold_right_sepcon
+   | construct_fold_right_sepcon
+   | fold_abnormal_mpred
+   | cbv beta iota delta [before_symbol_cancel]; cancel_for_forward_call].
+
+Ltac forward_spawn id arg wit :=
+  match goal with gv : globals |- _ =>
+  make_func_ptr id; let f := fresh "f_" in set (f := gv id);
+  match goal with |- context[func_ptr' (NDmk_funspec _ _ (val * ?A) ?Pre _) f] =>
+    let y := fresh "y" in let Q := fresh "Q" in let R := fresh "R" in
+    evar (y : ident); evar (Q : A -> globals); evar (R : A -> val -> mpred);
+    replace Pre with (fun '(a, w) => PROPx [] (LOCALx (temp y a :: gvars (Q w) :: nil) (SEPx [R w a])));
+    [|let x := fresh "x" in extensionality x; destruct x as (?, x);
+      instantiate (1 := fun w a => _ w) in (Value of R);
+      repeat (destruct x as (x, ?);
+        instantiate (1 := fun '(a, b) => _ a) in (Value of Q);
+        instantiate (1 := fun '(a, b) => _ a) in (Value of R));
+      etransitivity; [|symmetry; apply PROP_into_SEP]; f_equal; f_equal ; [instantiate (1 := fun _ => _) in (Value of Q); subst y Q; f_equal; simpl; f_equal |
+       unfold SEPx; extensionality; simpl; rewrite sepcon_emp; instantiate (1 := fun _ => _); reflexivity]];
+  forward_call_dep [A] (f, arg, Q, wit, R); subst Q R; [ .. | subst y f]; try (Exists y; subst y f; simpl; cancel_for_forward_spawn) end end. *)
+
+Import List.
+
+
+
+Hint Resolve Share.nontrivial.
+
+
+
+Definition gname := own.gname.
+
+
+
+Instance Inhabitant_preds : Inhabitant preds := NoneP.
+
+
+
+Section ghost.
+
+
+
+Context {RA: Ghost}.
+
+
+
+Lemma own_op' : forall g a1 a2 pp,
+
+  own g a1 pp * own g a2 pp = EX a3 : _, !!(join a1 a2 a3 /\ valid a3) && own g a3 pp.
+
+Proof.
+
+  intros.
+
+  apply pred_ext.
+
+  - assert_PROP (valid_2 a1 a2) as Hjoin by (apply own_valid_2).
+
+    destruct Hjoin as (a3 & ? & ?); Exists a3; entailer!.
+
+    erewrite <- own_op by eauto.  apply derives_refl.
+
+  - Intros a3.
+
+    erewrite own_op by eauto.  apply derives_refl.
+
+Qed.
+
+
+
+Lemma own_op_gen : forall g a1 a2 a3 pp, (valid_2 a1 a2 -> join a1 a2 a3) ->
+
+  own g a1 pp * own g a2 pp = !!(valid_2 a1 a2) && own g a3 pp.
+
+Proof.
+
+  intros; apply pred_ext.
+
+  - assert_PROP (valid_2 a1 a2) as Hv by apply own_valid_2.
+
+    erewrite <- own_op by eauto; entailer!.
+
+  - Intros.
+
+    erewrite own_op by eauto; entailer!.
+
+Qed.
+
+
+
+Lemma own_list_alloc : forall la lp, Forall valid la -> length lp = length la ->
+
+  emp |-- |==> (EX lg : _, !!(Zlength lg = Zlength la) &&
+
+    iter_sepcon (fun '(g, a, p) => own g a p) (combine (combine lg la) lp)).
+
+Proof.
+
+  intros until 1; revert lp; induction H; intros.
+
+  - eapply derives_trans, bupd_intro.
+
+    Exists (@nil own.gname). simpl. entailer!.
+
+  - destruct lp; inv H1.
+
+    rewrite <- emp_sepcon at 1.
+
+    eapply derives_trans; [apply sepcon_derives; [apply IHForall; eauto | apply own_alloc; eauto]|].
+
+    eapply derives_trans; [apply bupd_sepcon|].
+
+    apply bupd_mono.
+
+    Intros lg g.
+
+    Exists (g :: lg); rewrite !Zlength_cons; simpl.
+
+    rewrite sepcon_comm; entailer!.
+
+    apply derives_refl.
+
+Qed.
+
+
+
+Corollary own_list_alloc' : forall a pp i, 0 <= i -> valid a ->
+
+  emp |-- |==> (EX lg : _, !!(Zlength lg = i) && iter_sepcon (fun g => own g a pp) lg).
+
+Proof.
+
+  intros.
+
+  eapply derives_trans;
+
+    [apply own_list_alloc with (la := repeat a (Z.to_nat i))(lp := repeat pp (Z.to_nat i))|].
+
+  { apply Forall_repeat; auto. }
+
+  { rewrite !repeat_length; auto. }
+
+  apply bupd_mono; Intros lg; Exists lg.
+
+  rewrite Zlength_repeat, Z2Nat.id in H1 by omega.
+
+  rewrite !combine_const1 by (rewrite ?Zlength_combine, ?Zlength_repeat, ?Z2Nat.id, ?Z.min_r; omega).
+
+  entailer!.
+
+  clear H; induction lg; simpl; entailer!.
+
+Qed.
+
+
+
+Lemma own_list_dealloc : forall {A} f (l : list A),
+
+  (forall b, exists g a pp, f b |-- own g a pp) ->
+
+  iter_sepcon f l |-- |==> emp.
+
+Proof.
+
+  intros; induction l; simpl.
+
+  - apply bupd_intro.
+
+  - eapply derives_trans; [apply sepcon_derives, IHl|].
+
+    + destruct (H a) as (? & ? & ? & Hf).
+
+      eapply derives_trans; [apply Hf | apply own_dealloc].
+
+    + eapply derives_trans, bupd_mono; [apply bupd_sepcon | cancel].
+
+Qed.
+
+
+
+Lemma own_list_dealloc' : forall {A} g a p (l : list A),
+
+  iter_sepcon (fun x => own (g x) (a x) (p x)) l |-- |==> emp.
+
+Proof.
+
+  intros; apply own_list_dealloc.
+
+  repeat eexists; apply derives_refl.
+
+Qed.
+
+
+
+End ghost.
+
+
+
+Program Instance exclusive_PCM A : Ghost := { valid a := True;
+
+  Join_G := Join_lower (Join_discrete A) }.
+
+
+
+Definition excl {A} g a := own(RA := exclusive_PCM A) g (Some a) NoneP.
+
+
+
+Lemma exclusive_update : forall {A} (v v' : A) p, excl p v |-- |==> excl p v'.
+
+Proof.
+
+  intros; apply own_update.
+
+  intros ? (? & ? & _).
+
+  exists (Some v'); split; simpl; auto; inv H; constructor.
+
+  inv H1.
+
+Qed.
+
+
+
+Local Obligation Tactic := idtac.
+
+
+
+Program Instance prod_PCM (GA GB: Ghost): Ghost := { G := @G GA * @G GB;
+
+  valid a := valid (fst a) /\ valid (snd a); Join_G := Join_prod _ _ _ _ }.
+
+Next Obligation.
+
+  intros GA GB ??? [] []; split; eapply join_valid; eauto.
+
+Defined.
+
+
+
+Class PCM_order `{P : Ghost} (ord : G -> G -> Prop) := { ord_refl :> RelationClasses.Reflexive ord;
+
+  ord_trans :> RelationClasses.Transitive ord;
+
+  ord_lub : forall a b c, ord a c -> ord b c -> {c' | join a b c' /\ ord c' c};
+
+  join_ord : forall a b c, join a b c -> ord a c /\ ord b c; ord_join : forall a b, ord b a -> join a b a }.
+
+
+
+Section Snapshot.
+
+
+
+Context `{ORD : PCM_order}.
+
+
+
+Lemma join_refl : forall (v : G), join v v v.
+
+Proof.
+
+  intros. apply ord_join; reflexivity.
+
+Qed.
+
+
+
+Lemma join_compat : forall v1 v2 v' v'', join v2 v' v'' -> ord v1 v2 -> exists v0, join v1 v' v0 /\ ord v0 v''.
+
+Proof.
+
+  intros.
+
+  destruct (join_ord _ _ _ H).
+
+  destruct (ord_lub v1 v' v'') as (? & ? & ?); eauto.
+
+  etransitivity; eauto.
+
+Qed.
+
+
+
+Lemma join_ord_eq : forall a b, ord a b <-> exists c, join a c b.
+
+Proof.
+
+  split.
+
+  - intros; exists b.
+
+    apply ord_join in H.
+
+    apply join_comm; auto.
+
+  - intros (? & H); apply join_ord in H; tauto.
+
+Qed.
+
+
+
+Global Program Instance snap_PCM : Ghost :=
+
+  { valid _ := True; Join_G a b c := sepalg.join (fst a) (fst b) (fst c) /\
+
+      if eq_dec (fst a) Share.bot then if eq_dec (fst b) Share.bot then join (snd a) (snd b) (snd c)
+
+        else ord (snd a) (snd b) /\ snd c = snd b else snd c = snd a /\
+
+          if eq_dec (fst b) Share.bot then ord (snd b) (snd a) else snd c = snd b }.
+
+Next Obligation.
+
+  exists (fun '(sh, a) => (Share.bot, core a)); repeat intro.
+
+  + destruct t; constructor; auto; simpl.
+
+    rewrite eq_dec_refl.
+
+    if_tac; [apply core_unit | split; auto].
+
+    rewrite join_ord_eq; eexists; apply core_unit.
+
+  + destruct a, b, c; f_equal.
+
+    inv H; simpl in *.
+
+    destruct (eq_dec t Share.bot); [|destruct H1; subst; auto].
+
+    subst; apply bot_identity in H0; subst.
+
+    destruct (eq_dec t1 Share.bot); [|destruct H1; subst; auto].
+
+    * eapply join_core; eauto.
+
+    * rewrite join_ord_eq in H; destruct H.
+
+      eapply join_core; eauto.
+
+Defined.
+
+Next Obligation.
+
+  constructor.
+
+  - intros ???? [? Hjoin1] [? Hjoin2].
+
+    assert (fst z = fst z') by (eapply join_eq; eauto).
+
+    destruct z, z'; simpl in *; subst; f_equal.
+
+    destruct (eq_dec (fst x) Share.bot); [|destruct Hjoin1, Hjoin2; subst; auto].
+
+    destruct (eq_dec (fst y) Share.bot); [|destruct Hjoin1, Hjoin2; subst; auto].
+
+    eapply join_eq; eauto.
+
+  - intros ????? [Hsh1 Hjoin1] [Hsh2 Hjoin2].
+
+    destruct (sepalg.join_assoc Hsh1 Hsh2) as [sh' []].
+
+    destruct (eq_dec (fst b) Share.bot) eqn: Hb.
+
+    + assert (fst d = fst a) as Hd.
+
+      { eapply sepalg.join_eq; eauto.
+
+        rewrite e0; apply join_bot_eq. }
+
+      rewrite Hd in *.
+
+      assert (sh' = fst c) as Hc.
+
+      { eapply sepalg.join_eq; eauto.
+
+        rewrite e0; apply bot_join_eq. }
+
+      rewrite Hc in *.
+
+      destruct (eq_dec (fst c) Share.bot) eqn: Hc1.
+
+      * destruct (eq_dec (fst a) Share.bot) eqn: Ha.
+
+        -- destruct (join_assoc Hjoin1 Hjoin2) as [c' []].
+
+           exists (Share.bot, c'); split; split; rewrite ?e2, ?e0, ?e1, ?eq_dec_refl in *; auto.
+
+        -- destruct Hjoin1 as [Hc' ?]; rewrite Hc' in *.
+
+           destruct Hjoin2, (ord_lub (snd b) (snd c) (snd a)) as [c' []]; eauto.
+
+           exists (Share.bot, c'); split; split; rewrite ?e0, ?e1, ?eq_dec_refl, ?Ha in *; auto.
+
+      * exists c.
+
+        destruct (eq_dec (fst a) Share.bot) eqn: Ha; try solve [split; split; auto].
+
+        -- destruct Hjoin2.
+
+           apply join_ord in Hjoin1; destruct Hjoin1.
+
+           split; split; rewrite ?e0, ?Ha, ?Hc1, ?eq_dec_refl; auto; split; auto; etransitivity; eauto.
+
+        -- destruct Hjoin2 as [He1 He2]; rewrite He1, He2 in *.
+
+           destruct Hjoin1 as [Hd' ?]; rewrite Hd' in *; split; split; rewrite ?e0, ?Ha, ?Hc1, ?eq_dec_refl, ?Hd'; auto.
+
+    + exists (sh', snd b); simpl.
+
+      destruct (eq_dec (fst d) Share.bot).
+
+      { rewrite e0 in Hsh1; apply join_Bot in Hsh1; destruct Hsh1; contradiction. }
+
+      destruct (eq_dec sh' Share.bot) eqn: Hn'.
+
+      { subst; apply join_Bot in H; destruct H; contradiction. }
+
+      assert (snd d = snd b) as Hd by (destruct (eq_dec (fst a) Share.bot); tauto).
+
+      destruct Hjoin2 as [He ?]; rewrite He in *; split; split; simpl; rewrite ?Hb, ?Hn', ?Hd, ?He in *; auto.
+
+  - intros ??? []; split; [apply join_comm; auto|].
+
+    if_tac; if_tac; auto; tauto.
+
+  - intros ???? [? Hjoin1] [? Hjoin2].
+
+    assert (fst a = fst b) by (eapply join_positivity; eauto).
+
+    destruct (eq_dec (fst a) Share.bot), a, a', b, b'; simpl in *; subst; f_equal.
+
+    + apply join_Bot in H0 as []; subst.
+
+      apply join_Bot in H as []; subst.
+
+      rewrite eq_dec_refl in Hjoin1, Hjoin2, Hjoin2.
+
+      eapply join_positivity; eauto.
+
+    + destruct Hjoin1; auto.
+
+Defined.
+
+Next Obligation.
+
+  auto.
+
+Defined.
+
+
+
+Definition ghost_snap (a : @G P) p := own p (Share.bot, a) NoneP.
+
+
+
+Lemma ghost_snap_join : forall v1 v2 p v, join v1 v2 v ->
+
+  ghost_snap v1 p * ghost_snap v2 p = ghost_snap v p.
+
+Proof.
+
+  intros; symmetry; apply own_op.
+
+  split; simpl; rewrite ?eq_dec_refl; auto.
+
+Qed.
+
+
+
+Lemma ghost_snap_conflict : forall v1 v2 p, ghost_snap v1 p * ghost_snap v2 p |-- !!(joins v1 v2).
+
+Proof.
+
+  intros; eapply derives_trans; [apply own_valid_2|].
+
+  apply prop_left; intros ((?, a) & (? & Hj) & _); simpl in Hj.
+
+  rewrite !eq_dec_refl in Hj.
+
+  apply prop_right; exists a; auto.
+
+Qed.
+
+
+
+Lemma ghost_snap_join' : forall v1 v2 p,
+
+  ghost_snap v1 p * ghost_snap v2 p = EX v : _, !!(join v1 v2 v) && ghost_snap v p.
+
+Proof.
+
+  intros; apply pred_ext.
+
+  - assert_PROP (joins v1 v2) as H by apply ghost_snap_conflict.
+
+    destruct H as [v]; Exists v; entailer!.
+
+    erewrite ghost_snap_join; eauto.  apply derives_refl.
+
+  - Intros v; erewrite ghost_snap_join; eauto.  apply derives_refl.
+
+Qed.
+
+
+
+Definition ghost_master sh (a : @G P) p := own p (sh, a) NoneP.
+
+
+
+Lemma snap_master_join : forall v1 sh v2 p, sh <> Share.bot ->
+
+  ghost_snap v1 p * ghost_master sh v2 p = !!(ord v1 v2) && ghost_master sh v2 p.
+
+Proof.
+
+  intros; setoid_rewrite own_op'.
+
+  apply pred_ext.
+
+  - Intros a3.
+
+    destruct a3 as (sh', ?), H0 as [Hsh Hj]; simpl in *.
+
+    apply bot_identity in Hsh; subst sh'.
+
+    rewrite eq_dec_refl in Hj.
+
+    destruct (eq_dec sh Share.bot); [contradiction|].
+
+    destruct Hj; subst; entailer!.
+
+  - Intros; Exists (sh, v2); entailer!.
+
+    split; simpl; rewrite ?eq_dec_refl.
+
+    + apply bot_join_eq.
+
+    + if_tac; auto; contradiction.
+
+    + apply derives_refl.
+
+Qed.
+
+
+
+Corollary snaps_master_join : forall lv sh v2 p, sh <> Share.bot ->
+
+  fold_right sepcon emp (map (fun v => ghost_snap v p) lv) * ghost_master sh v2 p =
+
+  !!(Forall (fun v1 => ord v1 v2) lv) && ghost_master sh v2 p.
+
+Proof.
+
+  induction lv; simpl; intros.
+
+  - rewrite emp_sepcon, prop_true_andp; auto.
+
+  - rewrite sepcon_comm, <- sepcon_assoc, (sepcon_comm (ghost_master _ _ _)), snap_master_join by auto.
+
+    apply pred_ext.
+
+    + Intros; rewrite sepcon_comm, IHlv by auto; entailer!.
+
+    + Intros.
+
+      match goal with H : Forall _ _ |- _ => inv H end.
+
+      rewrite prop_true_andp, sepcon_comm, IHlv by auto; entailer!.
+
+Qed.
+
+
+
+Lemma master_update : forall v v' p, ord v v' -> ghost_master Tsh v p |-- |==> ghost_master Tsh v' p.
+
+Proof.
+
+  intros; apply own_update.
+
+  intros ? (x & Hj & _); simpl in Hj.
+
+  exists (Tsh, v'); simpl; split; auto.
+
+  destruct Hj as [Hsh Hj]; simpl in *.
+
+  apply join_Tsh in Hsh as []; destruct c, x; simpl in *; subst.
+
+  split; auto; simpl.
+
+  fold share in *; destruct (eq_dec Tsh Share.bot); [contradiction Share.nontrivial|].
+
+  destruct Hj as [? Hc']; subst.
+
+  rewrite eq_dec_refl in Hc' |- *; split; auto.
+
+  etransitivity; eauto.
+
+Qed.
+
+
+
+Lemma master_init : forall (a : @G P), exists g', joins (Tsh, a) g'.
+
+Proof.
+
+  intros; exists (Share.bot, a), (Tsh, a); simpl.
+
+  split; auto; simpl.
+
+  apply join_refl.
+
+Qed.
+
+
+
+Lemma make_snap : forall (sh : share) v p, ghost_master sh v p |-- |==> ghost_snap v p * ghost_master sh v p.
+
+Proof.
+
+  intros; destruct (eq_dec sh Share.bot).
+
+  - subst; setoid_rewrite ghost_snap_join; [apply bupd_intro | apply join_refl].
+
+  - rewrite snap_master_join by auto.
+
+    eapply derives_trans, bupd_intro; entailer!.
+
+Qed.
+
+
+
+Lemma ghost_snap_forget : forall v1 v2 p, ord v1 v2 -> ghost_snap v2 p |-- |==> ghost_snap v1 p.
+
+Proof.
+
+  intros; apply own_update.
+
+  intros (shc, c) [(shx, x) [[? Hj] _]]; simpl in *.
+
+  rewrite eq_dec_refl in Hj.
+
+  assert (shx = shc) by (eapply sepalg.join_eq; eauto); subst.
+
+  unfold share in Hj; destruct (eq_dec shc Share.bot); subst.
+
+  - destruct (join_compat _ _ _ _ Hj H) as [x' []].
+
+    exists (Share.bot, x'); simpl; split; auto; split; auto; simpl.
+
+    rewrite !eq_dec_refl; auto.
+
+  - destruct Hj; subst.
+
+    exists (shc, c); simpl; split; auto; split; auto; simpl.
+
+    rewrite eq_dec_refl; if_tac; [contradiction|].
+
+    split; auto.
+
+    etransitivity; eauto.
+
+Qed.
+
+
+
+Lemma ghost_snap_choose : forall v1 v2 p, ghost_snap v1 p * ghost_snap v2 p |-- |==> ghost_snap v1 p.
+
+Proof.
+
+  intros.
+
+  setoid_rewrite own_op'.
+
+  Intros v'.
+
+  destruct v', H as [Hsh Hj]; apply bot_identity in Hsh; simpl in *; subst.
+
+  rewrite !eq_dec_refl in Hj.
+
+  apply ghost_snap_forget.
+
+  rewrite join_ord_eq; eauto.
+
+Qed.
+
+
+
+Lemma master_share_join : forall sh1 sh2 sh v p, sepalg.join sh1 sh2 sh ->
+
+  ghost_master sh1 v p * ghost_master sh2 v p = ghost_master sh v p.
+
+Proof.
+
+  intros; symmetry; apply own_op; split; auto; simpl.
+
+  if_tac; if_tac; try split; auto; try apply ord_refl; apply join_refl.
+
+Qed.
+
+
+
+Lemma master_inj : forall sh1 sh2 v1 v2 p, readable_share sh1 -> readable_share sh2 ->
+
+  ghost_master sh1 v1 p * ghost_master sh2 v2 p |-- !!(v1 = v2).
+
+Proof.
+
+  intros.
+
+  eapply derives_trans; [apply own_valid_2|].
+
+  apply prop_left; intros ((?, ?) & [[? Hj] _]); simpl in Hj.
+
+  fold share in *.
+
+  destruct (eq_dec sh1 Share.bot); [subst; contradiction unreadable_bot|].
+
+  destruct (eq_dec sh2 Share.bot); [subst; contradiction unreadable_bot|].
+
+  destruct Hj; subst; apply prop_right; auto.
+
+Qed.
+
+
+
+Lemma master_share_join' : forall sh1 sh2 sh v1 v2 p, readable_share sh1 -> readable_share sh2 ->
+
+  sepalg.join sh1 sh2 sh ->
+
+  ghost_master sh1 v1 p * ghost_master sh2 v2 p = !!(v1 = v2) && ghost_master sh v2 p.
+
+Proof.
+
+  intros; apply pred_ext.
+
+  - assert_PROP (v1 = v2) by (apply master_inj; auto).
+
+    subst; erewrite master_share_join; eauto; entailer!.
+
+  - Intros; subst.
+
+    erewrite master_share_join; eauto.  apply derives_refl.
+
+Qed.
+
+
+
+Definition ghost_master1 a p := ghost_master Tsh a p.
+
+
+
+Lemma snap_master_join1 : forall v1 v2 p,
+
+  ghost_snap v1 p * ghost_master1 v2 p = !!(ord v1 v2) && ghost_master1 v2 p.
+
+Proof.
+
+  intros; apply snap_master_join, Share.nontrivial.
+
+Qed.
+
+
+
+Lemma snap_master_update1 : forall v1 v2 p v', ord v2 v' ->
+
+  ghost_snap v1 p * ghost_master1 v2 p |-- |==> ghost_snap v' p * ghost_master1 v' p.
+
+Proof.
+
+  intros; rewrite !snap_master_join1.
+
+  Intros.
+
+  eapply derives_trans; [apply master_update; eauto|].
+
+  apply bupd_mono; entailer!.
+
+  apply derives_refl.
+
+Qed.
+
+
+
+End Snapshot.
+
+
+
+Definition pos_PCM := ghost_PCM.pos_PCM.
+
+Definition ref_PCM := ghost_PCM.ref_PCM.
+
+Notation completable := ghost_PCM.completable.
+
+
+
+Section Reference.
+
+
+
+Context {P : Ghost}.
+
+
+
+Definition ghost_reference g a := own(RA := ref_PCM P) g (None, Some a) NoneP.
+
+Definition ghost_part g sh a := own(RA := ref_PCM P) g (Some (sh, a), None) NoneP.
+
+Definition ghost_part_ref g sh a r :=
+
+  own(RA := ref_PCM P) g (Some (sh, a), Some r) NoneP.
+
+
+
+Lemma ghost_part_ref_join : forall g (sh : share) a b,
+
+  ghost_part g sh a * ghost_reference g b = ghost_part_ref g sh a b.
+
+Proof.
+
+  intros.
+
+  symmetry; apply own_op.
+
+  hnf; simpl.
+
+  split; auto; constructor.
+
+Qed.
+
+
+
+Lemma ref_sub : forall g sh a b pp,
+
+  own(RA := ref_PCM P) g (Some (sh, a), None) pp * own(RA := ref_PCM P) g (None, Some b) pp |--
+
+    !!(if eq_dec sh Tsh then a = b else exists x, join a x b).
+
+Proof.
+
+  intros.
+
+  eapply derives_trans; [apply own_valid_2|].
+
+  apply prop_left; intros (c & [Hsh Hj] & ?); simpl in *.
+
+  apply prop_right.
+
+  destruct (fst c); [subst | contradiction].
+
+  inv Hj.
+
+  rewrite <- H0 in H.
+
+  destruct H as (? & c' & Hsub).
+
+  destruct c' as [(?, ?)|].
+
+  - destruct Hsub as (? & ? & Hsh & ?).
+
+    if_tac; eauto; subst.
+
+    apply join_Tsh in Hsh; tauto.
+
+  - inv Hsub.
+
+    rewrite eq_dec_refl; auto.
+
+Qed.
+
+
+
+Lemma ref_add : forall g sh a r b a' r' pp
+
+  (Ha : join a b a') (Hr : join r b r') (Hb : forall c, join_sub a c -> join_sub c r -> joins c b),
+
+  own(RA := ref_PCM P) g (Some (sh, a), Some r) pp |-- |==>
+
+  own(RA := ref_PCM P) g (Some (sh, a'), Some r') pp.
+
+Proof.
+
+  intros; apply own_update.
+
+  intros (c, ?) ((x, ?) & [J1 J2] & [? Hvalid]); simpl in *.
+
+  inv J2; [|contradiction].
+
+  destruct c as [(?, c)|], x as [(shx, x)|]; try contradiction.
+
+  - destruct J1 as (? & ? & ? & Hx).
+
+    destruct (Hb x) as [x' Hx'].
+
+    { eexists; eauto. }
+
+    { destruct Hvalid as [[(?, ?)|] Hvalid]; hnf in Hvalid.
+
+      + destruct Hvalid as (? & ? & ? & ?); eexists; eauto.
+
+      + inv Hvalid; apply join_sub_refl. }
+
+    exists (Some (shx, x'), Some r'); repeat (split; auto); try constructor; simpl.
+
+    + destruct (join_assoc (join_comm Hx) Hx') as (? & ? & ?).
+
+      eapply join_eq in Ha; eauto; subst; auto.
+
+    + destruct Hvalid as (d & Hvalid); hnf in Hvalid.
+
+      exists d; destruct d as [(shd, d)|]; hnf.
+
+      * destruct Hvalid as (? & ? & ? & Hd); repeat (split; auto).
+
+        destruct (join_assoc (join_comm Hd) Hr) as (? & ? & ?).
+
+        eapply join_eq in Hx'; eauto; subst; auto.
+
+      * inv Hvalid; f_equal.
+
+        eapply join_eq; eauto.
+
+  - inv J1.
+
+    exists (Some (sh, a'), Some r'); repeat split; simpl; auto; try constructor.
+
+    destruct Hvalid as (d & Hvalid); hnf in Hvalid.
+
+    exists d; destruct d as [(shd, d)|]; hnf.
+
+    + destruct Hvalid as (? & ? & ? & Hd); repeat (split; auto).
+
+      destruct (join_assoc (join_comm Hd) Hr) as (? & ? & ?).
+
+      eapply join_eq in Ha; eauto; subst; auto.
+
+    + inv Hvalid; f_equal.
+
+      eapply join_eq; eauto.
+
+Qed.
+
+
+
+Lemma self_completable : forall a, completable (Some (Tsh, a)) a.
+
+Proof.
+
+  intros; unfold completable.
+
+  exists None; constructor.
+
+Qed.
+
+
+
+End Reference.
+
+
+
+Hint Resolve self_completable : init.
+
+
+
+Section Discrete.
+
+
+
+Program Instance discrete_PCM (A : Type) : Ghost := { valid a := True;
+
+  Join_G := Join_equiv A }.
+
+Next Obligation.
+
+  auto.
+
+Defined.
+
+
+
+End Discrete.
+
+
+
+Section GVar.
+
+
+
+Context {A : Type}.
+
+
+
+Definition ghost_var (sh : share) (v : A) g :=
+
+  own(RA := @pos_PCM (discrete_PCM A)) g (Some (sh, v)) NoneP.
+
+
+
+Lemma ghost_var_share_join : forall sh1 sh2 sh v p, sepalg.join sh1 sh2 sh ->
+
+  sh1 <> Share.bot -> sh2 <> Share.bot ->
+
+  ghost_var sh1 v p * ghost_var sh2 v p = ghost_var sh v p.
+
+Proof.
+
+  intros; symmetry; apply own_op.
+
+  repeat (split; auto).
+
+Qed.
+
+
+
+Lemma ghost_var_share_join_gen : forall sh1 sh2 v1 v2 p,
+
+  ghost_var sh1 v1 p * ghost_var sh2 v2 p = EX sh : _,
+
+  !!(v1 = v2 /\ sh1 <> Share.bot /\ sh2 <> Share.bot /\ sepalg.join sh1 sh2 sh) && ghost_var sh v1 p.
+
+Proof.
+
+  intros; setoid_rewrite own_op'.
+
+  apply pred_ext.
+
+  - Intros a.
+
+    destruct a as [(sh, v')|]; inv H.
+
+    destruct H2 as (? & ? & Hv); inv Hv.
+
+    Exists sh; entailer!.
+
+  - Intros sh; subst.
+
+    Exists (Some (sh, v2)); apply andp_right, derives_refl.
+
+    apply prop_right; repeat (split; auto); simpl.
+
+    intro; subst; apply join_Bot in H2 as []; contradiction.
+
+Qed.
+
+
+
+Lemma ghost_var_inj : forall sh1 sh2 v1 v2 p, sh1 <> Share.bot -> sh2 <> Share.bot ->
+
+  ghost_var sh1 v1 p * ghost_var sh2 v2 p |-- !!(v1 = v2).
+
+Proof.
+
+  intros; rewrite ghost_var_share_join_gen; Intros sh; entailer!.
+
+Qed.
+
+
+
+Lemma ghost_var_share_join' : forall sh1 sh2 sh v1 v2 p, sh1 <> Share.bot -> sh2 <> Share.bot ->
+
+  sepalg.join sh1 sh2 sh ->
+
+  ghost_var sh1 v1 p * ghost_var sh2 v2 p = !!(v1 = v2) && ghost_var sh v2 p.
+
+Proof.
+
+  intros; rewrite ghost_var_share_join_gen.
+
+  apply pred_ext.
+
+  - Intros sh'; entailer!.
+
+    eapply join_eq in H1; eauto; subst; auto.
+
+  - Intros; Exists sh; entailer!.
+
+Qed.
+
+
+
+Lemma ghost_var_update : forall v p v', ghost_var Tsh v p |-- |==> ghost_var Tsh v' p.
+
+Proof.
+
+  intros; apply own_update.
+
+  intros [[]|] ([[]|] & J & ?); inv J.
+
+  - destruct H1 as (? & ?%join_Tsh & ?); tauto.
+
+  - exists (Some (Tsh, v')); split; [constructor | auto].
+
+Qed.
+
+
+
+End GVar.
+
+
+
+Section PVar.
+
+
+
+Global Program Instance nat_PCM: Ghost := { valid a := True; Join_G a b c := c = Nat.max a b }.
+
+Next Obligation.
+
+  exists (fun _ => O); auto; intros.
+
+  apply Nat.max_0_l.
+
+Defined.
+
+Next Obligation.
+
+  constructor.
+
+  - unfold join; congruence.
+
+  - unfold join; eexists; split; eauto.
+
+    rewrite Nat.max_assoc; subst; auto.
+
+  - unfold join; intros.
+
+    rewrite Nat.max_comm; auto.
+
+  - unfold join; intros.
+
+    apply Nat.le_antisymm; [subst b | subst a]; apply Nat.le_max_l.
+
+Defined.
+
+Next Obligation.
+
+  auto.
+
+Defined.
+
+
+
+Global Instance max_order : PCM_order le.
+
+Proof.
+
+  constructor; auto; intros.
+
+  - intros ???; omega.
+
+  - eexists; unfold join; simpl; split; eauto.
+
+    apply Nat.max_lub; auto.
+
+  - hnf in H; subst.
+
+    split; [apply Nat.le_max_l | apply Nat.le_max_r].
+
+  - hnf.
+
+    rewrite Nat.max_l; auto.
+
+Defined.
+
+
+
+Lemma ghost_snap_join_N : forall v1 v2 p, ghost_snap v1 p * ghost_snap v2 p = ghost_snap (Nat.max v1 v2) p.
+
+Proof.
+
+  intros; apply ghost_snap_join; hnf; auto.
+
+Qed.
+
+
+
+Lemma snap_master_join' : forall v1 v2 p,
+
+  ghost_snap v1 p * ghost_master1 v2 p = !!(v1 <= v2)%nat && ghost_master1 v2 p.
+
+Proof.
+
+  intros; apply snap_master_join1.
+
+Qed.
+
+
+
+Lemma snap_master_update' : forall (v1 v2 : nat) p v', (v2 <= v')%nat ->
+
+  ghost_snap v1 p * ghost_master1 v2 p |-- |==> ghost_snap v' p * ghost_master1 v' p.
+
+Proof.
+
+  intros; apply snap_master_update1; auto.
+
+Qed.
+
+
+
+End PVar.
+
+
+
+Section Maps.
+
+
+
+Context {A B : Type} {A_eq : EqDec A}.
+
+
+
+Implicit Types (k : A) (v : B) (m : A -> option B).
+
+
+
+Definition map_upd m k v k' := if eq_dec k' k then Some v else m k'.
+
+
+
+Lemma map_upd_triv : forall m k v, m k = Some v -> map_upd m k v = m.
+
+Proof.
+
+  intros; extensionality; unfold map_upd.
+
+  if_tac; subst; auto.
+
+Qed.
+
+
+
+Fixpoint map_upd_list m l :=
+
+  match l with
+
+  | [] => m
+
+  | (k, v) :: rest => map_upd_list (map_upd m k v) rest
+
+  end.
+
+
+
+Definition map_add m1 m2 k := match m1 k with Some v' => Some v' | None => m2 k end.
+
+
+
+Definition empty_map k : option B := None.
+
+
+
+Global Instance Inhabitant_map : Inhabitant (A -> option B) := empty_map.
+
+
+
+Definition singleton k v k1 := if eq_dec k1 k then Some v else None.
+
+
+
+Definition map_incl m1 m2 := forall k v, m1 k = Some v -> m2 k = Some v.
+
+
+
+Global Instance map_incl_refl : Reflexive map_incl.
+
+Proof.
+
+  repeat intro; auto.
+
+Qed.
+
+
+
+Global Instance map_incl_antisym : Antisymmetric _ _ map_incl.
+
+Proof.
+
+  intros x y Hx Hy a.
+
+  specialize (Hx a); specialize (Hy a).
+
+  destruct (x a); [erewrite Hx; eauto|].
+
+  destruct (y a); auto.
+
+Qed.
+
+
+
+Global Instance map_incl_trans : Transitive map_incl.
+
+Proof.
+
+  repeat intro; auto.
+
+Qed.
+
+
+
+Lemma map_add_incl_compat : forall m1 m2 m3, map_incl m1 m2 -> map_incl (map_add m3 m1) (map_add m3 m2).
+
+Proof.
+
+  unfold map_add; repeat intro.
+
+  destruct (m3 k); auto.
+
+Qed.
+
+
+
+Definition compatible m1 m2 := forall k v1 v2, m1 k = Some v1 -> m2 k = Some v2 -> v1 = v2.
+
+
+
+Global Instance compatible_refl : Reflexive compatible.
+
+Proof.
+
+  repeat intro.
+
+  congruence.
+
+Qed.
+
+
+
+Global Instance compatible_comm : Symmetric compatible.
+
+Proof.
+
+  repeat intro.
+
+  symmetry; eauto.
+
+Qed.
+
+
+
+Lemma map_add_comm : forall m1 m2, compatible m1 m2 -> map_add m1 m2 = map_add m2 m1.
+
+Proof.
+
+  intros; extensionality x; unfold map_add.
+
+  destruct (m1 x) eqn: Hm1, (m2 x) eqn: Hm2; eauto.
+
+Qed.
+
+
+
+Lemma map_add_assoc : forall m1 m2 m3, map_add (map_add m1 m2) m3 = map_add m1 (map_add m2 m3).
+
+Proof.
+
+  intros; extensionality; unfold map_add.
+
+  destruct (m1 x); auto.
+
+Qed.
+
+
+
+Lemma compatible_add_assoc : forall m1 m2 m3, compatible m1 m2 ->
+
+  compatible (map_add m1 m2) m3 -> compatible m1 (map_add m2 m3).
+
+Proof.
+
+  unfold compatible, map_add; intros.
+
+  repeat match goal with H : forall _, _ |- _ => specialize (H k) end.
+
+  replace (m1 k) with (Some v1) in *.
+
+  destruct (m2 k); auto.
+
+Qed.
+
+
+
+Lemma compatible_incl : forall m1 m2 m (Hcompat : compatible m2 m) (Hincl : map_incl m1 m2), compatible m1 m.
+
+Proof.
+
+  repeat intro; eauto.
+
+Qed.
+
+
+
+Lemma map_incl_add : forall m1 m2, map_incl m1 (map_add m1 m2).
+
+Proof.
+
+  repeat intro; unfold map_add.
+
+  rewrite H; auto.
+
+Qed.
+
+
+
+Lemma map_incl_compatible : forall m1 m2 m3 (Hincl1 : map_incl m1 m3) (Hincl2 : map_incl m2 m3),
+
+  compatible m1 m2.
+
+Proof.
+
+  intros; intros ??? Hk1 Hk2.
+
+  apply Hincl1 in Hk1; apply Hincl2 in Hk2.
+
+  rewrite Hk1 in Hk2; inv Hk2; auto.
+
+Qed.
+
+
+
+Lemma map_add_incl : forall m1 m2 m3, map_incl m1 m3 -> map_incl m2 m3 -> map_incl (map_add m1 m2) m3.
+
+Proof.
+
+  unfold map_add; intros.
+
+  intros ?? Hk.
+
+  destruct (m1 k) eqn: Hk1; auto.
+
+  inv Hk; auto.
+
+Qed.
+
+
+
+Global Instance map_join : Join (A -> option B) :=
+
+  fun a b c => forall k v, c k = Some v <-> a k = Some v \/ b k = Some v.
+
+
+
+Lemma map_join_spec : forall m1 m2 m3, join m1 m2 m3 <-> compatible m1 m2 /\ m3 = map_add m1 m2.
+
+Proof.
+
+  unfold join, map_join; simpl; split; intros.
+
+  - split.
+
+    + repeat intro.
+
+      assert (m3 k = Some v1) as Hk by (rewrite H; auto).
+
+      replace (m3 k) with (Some v2) in Hk by (symmetry; rewrite H; auto).
+
+      inv Hk; auto.
+
+    + extensionality x; unfold map_add.
+
+      destruct (m1 x) eqn: Hm1; [rewrite H; auto|].
+
+      destruct (m2 x) eqn: Hm2; [rewrite H; auto|].
+
+      destruct (m3 x) eqn: Hm3; auto.
+
+      rewrite H in Hm3; destruct Hm3 as [Hm3 | Hm3]; rewrite Hm3 in *; discriminate.
+
+  - destruct H as [Hcompat]; subst; unfold map_add.
+
+    destruct (m1 k) eqn: Hm1; split; auto; intros [?|?]; eauto; discriminate.
+
+Qed.
+
+
+
+Global Program Instance map_PCM : Ghost := { valid a := True; Join_G := map_join }.
+
+Next Obligation.
+
+  exists (fun _ => empty_map); auto; repeat intro.
+
+  split; auto; intros [|]; auto; discriminate.
+
+Defined.
+
+Next Obligation.
+
+  constructor.
+
+  - intros.
+
+    extensionality k.
+
+    specialize (H k); specialize (H0 k).
+
+    destruct (z k).
+
+    + destruct (H b) as [X _]; specialize (X eq_refl).
+
+      rewrite <- H0 in X; auto.
+
+    + destruct (z' k); auto.
+
+      destruct (H0 b) as [X _]; specialize (X eq_refl).
+
+      rewrite <- H in X; auto.
+
+  - intros.
+
+    rewrite map_join_spec in *.
+
+    destruct H, H0; subst.
+
+    rewrite map_add_assoc.
+
+    eexists; rewrite !map_join_spec; repeat split.
+
+    + eapply compatible_incl; eauto.
+
+      rewrite map_add_comm by auto; apply map_incl_add.
+
+    + apply compatible_add_assoc; auto.
+
+  - intros ???; rewrite !map_join_spec; intros []; subst.
+
+    split; [symmetry | apply map_add_comm]; auto.
+
+  - intros.
+
+    extensionality k; specialize (H k); specialize (H0 k).
+
+    destruct (a k), (b k); auto.
+
+    + apply H0; auto.
+
+    + destruct (H b0) as [_ H']; lapply H'; auto.
+
+    + destruct (H0 b0) as [_ H']; lapply H'; auto.
+
+Defined.
+
+Next Obligation.
+
+  auto.
+
+Defined.
+
+
+
+Instance fmap_order : PCM_order map_incl.
+
+Proof.
+
+  constructor.
+
+  - apply map_incl_refl.
+
+  - apply map_incl_trans.
+
+  - intros ??? Ha Hb; exists (map_add a b); split; simpl.
+
+    + rewrite map_join_spec; split; auto.
+
+      eapply map_incl_compatible; eauto.
+
+    + apply map_add_incl; auto.
+
+  - split; repeat intro; specialize (H k v); rewrite H; auto.
+
+  - split; auto; intros [|]; auto.
+
+Defined.
+
+
+
+Lemma map_snap_join : forall m1 m2 p,
+
+  ghost_snap m1 p * ghost_snap m2 p = !!(compatible m1 m2) && ghost_snap (map_add m1 m2) p.
+
+Proof.
+
+  intros; rewrite ghost_snap_join'.
+
+  apply pred_ext.
+
+  - Intros m.
+
+    rewrite map_join_spec in H; destruct H; subst; entailer!.
+
+  - Intros; Exists (map_add m1 m2).
+
+    rewrite map_join_spec; entailer!.
+
+Qed.
+
+
+
+Lemma map_upd_list_app : forall l1 l2 m, map_upd_list m (l1 ++ l2) = map_upd_list (map_upd_list m l1) l2.
+
+Proof.
+
+  induction l1; auto; simpl; intros.
+
+  destruct a; auto.
+
+Qed.
+
+
+
+Lemma map_upd_list_out : forall l m k, m k = None -> ~In k (map fst l) -> map_upd_list m l k = None.
+
+Proof.
+
+  induction l; auto; simpl; intros.
+
+  destruct a; apply IHl.
+
+  - unfold map_upd; if_tac; auto.
+
+    subst; simpl in *; tauto.
+
+  - tauto.
+
+Qed.
+
+
+
+Lemma compatible_k : forall m1 m2 (Hcompat : compatible m1 m2) k v, m2 k = Some v -> map_add m1 m2 k = Some v.
+
+Proof.
+
+  unfold compatible; intros.
+
+  unfold map_add.
+
+  destruct (m1 k) eqn: Hk; eauto.
+
+Qed.
+
+
+
+Lemma map_join_incl_compat : forall m1 m2 m' m'' (Hincl : map_incl m1 m2) (Hjoin : join m2 m' m''),
+
+  exists m, join m1 m' m /\ map_incl m m''.
+
+Proof.
+
+  intros; apply (@join_comm _ _ (@Perm_G map_PCM)) in Hjoin.
+
+  rewrite map_join_spec in Hjoin; destruct Hjoin as [Hjoin]; subst.
+
+  do 2 eexists; [|apply map_add_incl_compat; eauto].
+
+  symmetry in Hjoin; eapply compatible_incl in Hjoin; eauto.
+
+  rewrite map_join_spec; split; auto.
+
+  rewrite <- map_add_comm; auto.
+
+Qed.
+
+
+
+Lemma map_add_empty : forall m, map_add m empty_map = m.
+
+Proof.
+
+  intros; extensionality; unfold map_add, empty_map.
+
+  destruct (m x); auto.
+
+Qed.
+
+
+
+Lemma map_upd_incl : forall m1 m2 k v, map_incl m1 m2 ->
+
+  m2 k = Some v -> map_incl (map_upd m1 k v) m2.
+
+Proof.
+
+  unfold map_upd; repeat intro.
+
+  destruct (eq_dec k0 k); [congruence | auto].
+
+Qed.
+
+
+
+Lemma map_add_single : forall m k v, map_add (singleton k v) m = map_upd m k v.
+
+Proof.
+
+  intros; extensionality; unfold map_add, singleton, map_upd; if_tac; auto.
+
+Qed.
+
+
+
+Lemma incl_compatible : forall m1 m2, map_incl m1 m2 -> compatible m1 m2.
+
+Proof.
+
+  intros; intros ??? Hk1 Hk2.
+
+  specialize (H _ _ Hk1); rewrite H in Hk2; inv Hk2; auto.
+
+Qed.
+
+
+
+Lemma map_add_redundant : forall m1 m2, map_incl m1 m2 -> map_add m1 m2 = m2.
+
+Proof.
+
+  intros; unfold map_add; extensionality k.
+
+  destruct (m1 k) eqn: Hk; auto; symmetry; auto.
+
+Qed.
+
+
+
+Lemma empty_map_incl : forall m, map_incl empty_map m.
+
+Proof.
+
+  repeat intro; discriminate.
+
+Qed.
+
+
+
+Lemma map_upd2_incl : forall m1 m2 k v, map_incl m1 m2 -> map_incl (map_upd m1 k v) (map_upd m2 k v).
+
+Proof.
+
+  unfold map_upd; repeat intro.
+
+  if_tac; auto.
+
+Qed.
+
+
+
+Lemma compatible_upd : forall m1 m2 k v, compatible m1 m2 -> m2 k = None ->
+
+  compatible (map_upd m1 k v) m2.
+
+Proof.
+
+  unfold map_upd; repeat intro.
+
+  destruct (eq_dec k0 k); eauto; congruence.
+
+Qed.
+
+
+
+Lemma map_add_upd : forall m1 m2 k v, map_upd (map_add m1 m2) k v = map_add (map_upd m1 k v) m2.
+
+Proof.
+
+  intros.
+
+  rewrite <- !map_add_single.
+
+  rewrite map_add_assoc; auto.
+
+Qed.
+
+
+
+Notation maps_add l := (fold_right map_add empty_map l).
+
+
+
+Lemma in_maps_add : forall l (k : A) (v : B), maps_add l k = Some v -> exists m, In m l /\ m k = Some v.
+
+Proof.
+
+  induction l; [discriminate | simpl; intros].
+
+  unfold map_add at 1 in H.
+
+  destruct (a k) eqn: Ha.
+
+  - inv H; eauto.
+
+  - destruct (IHl _ _ H) as (? & ? & ?); eauto.
+
+Qed.
+
+
+
+Definition all_compatible (l : list (A -> option B)) := forall m1 m2, In m1 l -> In m2 l -> compatible m1 m2.
+
+
+
+Lemma all_compatible_cons : forall (m : A -> option B) l, all_compatible (m :: l) -> compatible m (maps_add l) /\ all_compatible l.
+
+Proof.
+
+  split; repeat intro.
+
+  - eapply in_maps_add in H1 as (m2 & ? & ?).
+
+    eapply (H m m2); simpl; eauto.
+
+  - eapply (H m1 m2); simpl; eauto.
+
+Qed.
+
+
+
+Lemma maps_add_in : forall l m (k : A) (v : B) (Hcompat : all_compatible l),
+
+  In m l -> m k = Some v -> maps_add l k = Some v.
+
+Proof.
+
+  induction l; [contradiction | simpl; intros].
+
+  destruct H.
+
+  - subst.
+
+    unfold map_add.
+
+    replace (m k) with (Some v); auto.
+
+  - apply all_compatible_cons in Hcompat as [].
+
+    rewrite map_add_comm by auto.
+
+    unfold map_add.
+
+    erewrite IHl; eauto.
+
+Qed.
+
+
+
+Lemma fold_right_maps_add : forall l (e : A -> option B), fold_right map_add e l = map_add (maps_add l) e.
+
+Proof.
+
+  induction l; auto; simpl; intros.
+
+  rewrite map_add_assoc, IHl; auto.
+
+Qed.
+
+
+
+Section Maps_Disjoint.
+
+
+
+Definition disjoint m1 m2 := forall k v1, m1 k = Some v1 -> m2 k = None.
+
+
+
+Global Instance disjoint_comm : Symmetric disjoint.
+
+Proof.
+
+  repeat intro.
+
+  destruct (x k) eqn: Hx; auto.
+
+  specialize (H _ _ Hx); congruence.
+
+Qed.
+
+
+
+Lemma disjoint_compatible : forall m1 m2, disjoint m1 m2 -> compatible m1 m2.
+
+Proof.
+
+  repeat intro.
+
+  specialize (H _ _ H0); congruence.
+
+Qed.
+
+
+
+Instance map_disj_join : Join (A -> option B) :=
+
+  fun a b c => forall k, match a k, b k with Some v, None | None, Some v => c k = Some v | None, None => c k = None | _, _ => False end.
+
+
+
+Lemma map_disj_join_spec : forall m1 m2 m3, join m1 m2 m3 <-> disjoint m1 m2 /\ m3 = map_add m1 m2.
+
+Proof.
+
+  unfold join, map_disj_join; simpl; split; intros.
+
+  - split.
+
+    + repeat intro.
+
+      specialize (H k); rewrite H0 in H.
+
+      destruct (m2 k); auto; contradiction.
+
+    + extensionality k; unfold map_add.
+
+      specialize (H k).
+
+      destruct (m1 k), (m2 k); auto; contradiction.
+
+  - destruct H as [Hdisj]; subst; unfold map_add.
+
+    specialize (Hdisj k).
+
+    destruct (m1 k); [specialize (Hdisj _ eq_refl) as ->; auto|].
+
+    destruct (m2 k); auto.
+
+Qed.
+
+
+
+Lemma disjoint_incl : forall m1 m2 m (Hcompat : disjoint m2 m) (Hincl : map_incl m1 m2), disjoint m1 m.
+
+Proof.
+
+  repeat intro; eauto.
+
+Qed.
+
+
+
+Lemma disjoint_add : forall m1 m2 m3, disjoint m1 m2 -> disjoint m1 m3 -> disjoint m1 (map_add m2 m3).
+
+Proof.
+
+  unfold disjoint; intros.
+
+  unfold map_add.
+
+  specialize (H _ _ H1); specialize (H0 _ _ H1).
+
+  rewrite H, H0; auto.
+
+Qed.
+
+
+
+Global Program Instance map_disj_PCM : Ghost := { valid a := True; Join_G := map_disj_join }.
+
+Next Obligation.
+
+  exists (fun _ => empty_map); auto; repeat intro.
+
+  simpl.
+
+  destruct (t k); auto.
+
+Defined.
+
+Next Obligation.
+
+  constructor.
+
+  - intros.
+
+    extensionality k.
+
+    specialize (H k); specialize (H0 k).
+
+    destruct (x k), (y k); try congruence; contradiction.
+
+  - intros.
+
+    rewrite map_disj_join_spec in *.
+
+    destruct H, H0; subst.
+
+    rewrite map_add_assoc.
+
+    eexists; rewrite !map_disj_join_spec; repeat split.
+
+    + eapply disjoint_incl; eauto.
+
+      rewrite map_add_comm by (apply disjoint_compatible; auto); apply map_incl_add.
+
+    + apply disjoint_add; auto.
+
+      eapply disjoint_incl; eauto.
+
+      apply map_incl_add.
+
+  - intros ???; rewrite !map_disj_join_spec; intros []; subst.
+
+    split; [symmetry | apply map_add_comm, disjoint_compatible]; auto.
+
+  - intros.
+
+    extensionality k; specialize (H k); specialize (H0 k).
+
+    destruct (a k), (b k); auto.
+
+    + destruct (a' k); [contradiction | auto].
+
+    + destruct (a' k); [contradiction | auto].
+
+    + destruct (b' k); [contradiction | auto].
+
+Defined.
+
+Next Obligation.
+
+  auto.
+
+Defined.
+
+
+
+Lemma disj_join_sub : forall m1 m2, map_incl m1 m2 -> exists m3, join m1 m3 m2.
+
+Proof.
+
+  intros; exists (fun x => match m2 x, m1 x with Some v, None => Some v | _, _ => None end).
+
+  intro k; specialize (H k).
+
+  destruct (m1 k).
+
+  - erewrite H; eauto.
+
+  - destruct (m2 k); auto.
+
+Qed.
+
+
+
+Definition all_disjoint (l : list (A -> option B)) := forall i j, 0 <= i < Zlength l -> 0 <= j < Zlength l ->
+
+  i <> j -> disjoint (Znth i l) (Znth j l).
+
+
+
+Lemma all_disjoint_compatible : forall l, all_disjoint l -> all_compatible l.
+
+Proof.
+
+  unfold all_disjoint, all_compatible; intros.
+
+  apply In_Znth in H0 as (i & ? & ?); apply In_Znth in H1 as (j & ? & ?); subst.
+
+  destruct (eq_dec i j); [subst; reflexivity|].
+
+  apply disjoint_compatible; auto.
+
+Qed.
+
+
+
+Lemma all_disjoint_nil : all_disjoint [].
+
+Proof.
+
+  repeat intro.
+
+  rewrite Zlength_nil in *; omega.
+
+Qed.
+
+
+
+Lemma all_disjoint_cons : forall (m : A -> option B) l, all_disjoint (m :: l) <-> disjoint m (maps_add l) /\ all_disjoint l.
+
+Proof.
+
+  split.
+
+  - split; repeat intro.
+
+    + destruct (maps_add l k) eqn: Hl; auto.
+
+      eapply in_maps_add in Hl as (m2 & ? & ?).
+
+      apply In_Znth in H1 as (j & ? & ?); subst.
+
+      specialize (H 0 (j + 1)).
+
+      rewrite Znth_0_cons, Znth_pos_cons, Z.add_simpl_r, Zlength_cons in H by omega.
+
+      erewrite H in H2; eauto; omega.
+
+    + specialize (H (i + 1) (j + 1)).
+
+      rewrite !Znth_pos_cons, !Z.add_simpl_r, Zlength_cons in H by omega.
+
+      eapply H; eauto; omega.
+
+  - intros []; repeat intro.
+
+    rewrite Zlength_cons in *.
+
+    destruct (eq_dec i 0), (eq_dec j 0); subst; try contradiction.
+
+    + rewrite Znth_0_cons in H4; rewrite Znth_pos_cons by omega.
+
+      specialize (H _ _ H4).
+
+      destruct (Znth _ _ _) eqn: Hj; auto.
+
+      apply maps_add_in with (l := l) in Hj; try congruence.
+
+      * apply all_disjoint_compatible; auto.
+
+      * apply Znth_In; omega.
+
+    + rewrite Znth_0_cons; rewrite Znth_pos_cons in H4 by omega.
+
+      destruct (m k) eqn: Hm; auto.
+
+      specialize (H _ _ Hm).
+
+      apply maps_add_in with (l := l) in H4; try congruence.
+
+      * apply all_disjoint_compatible; auto.
+
+      * apply Znth_In; omega.
+
+    + rewrite Znth_pos_cons in * by omega.
+
+      eapply (H0 (i - 1) (j - 1)); eauto; omega.
+
+Qed.
+
+
+
+Lemma all_disjoint_rev1 : forall l, all_disjoint l -> all_disjoint (rev l).
+
+Proof.
+
+  unfold all_disjoint; intros.
+
+  rewrite Zlength_rev in *.
+
+  rewrite !Znth_rev by auto.
+
+  apply H; omega.
+
+Qed.
+
+
+
+Lemma all_disjoint_rev : forall l, all_disjoint l <-> all_disjoint (rev l).
+
+Proof.
+
+  split; [apply all_disjoint_rev1|].
+
+  intros ?%all_disjoint_rev1.
+
+  rewrite rev_involutive in *; auto.
+
+Qed.
+
+
+
+Lemma maps_add_rev : forall l, all_compatible l -> maps_add (rev l) = maps_add l.
+
+Proof.
+
+  induction l; auto; simpl; intros.
+
+  apply all_compatible_cons in H as [].
+
+  rewrite map_add_comm, fold_right_app by auto; simpl.
+
+  rewrite map_add_empty.
+
+  rewrite (fold_right_maps_add _ a).
+
+  rewrite <- IHl; auto.
+
+Qed.
+
+
+
+Lemma all_disjoint_snoc : forall m l, all_disjoint (l ++ [m]) <-> disjoint m (maps_add l) /\ all_disjoint l.
+
+Proof.
+
+  intros.
+
+  replace (l ++ [m]) with (rev (m :: rev l)) by (simpl; rewrite rev_involutive; auto).
+
+  rewrite all_disjoint_rev, rev_involutive, all_disjoint_cons, <- all_disjoint_rev.
+
+  split; intros []; rewrite maps_add_rev in *; auto; apply all_disjoint_compatible; auto.
+
+Qed.
+
+
+
+Lemma empty_map_disjoint : forall m, disjoint empty_map m.
+
+Proof.
+
+  repeat intro; discriminate.
+
+Qed.
+
+
+
+Definition map_sub (m : A -> option B) k := fun x => if eq_dec x k then None else m x.
+
+
+
+Lemma map_upd_sub : forall m (k : A) (v : B), m k = Some v -> map_upd (map_sub m k) k v = m.
+
+Proof.
+
+  intros; unfold map_upd, map_sub.
+
+  extensionality x.
+
+  if_tac; subst; auto.
+
+Qed.
+
+
+
+Lemma map_sub_upd : forall m (k : A) (v : B), m k = None -> map_sub (map_upd m k v) k = m.
+
+Proof.
+
+  intros; unfold map_upd, map_sub.
+
+  extensionality x.
+
+  if_tac; subst; auto.
+
+Qed.
+
+
+
+Lemma disjoint_sub : forall (m1 m2 : A -> option B) k, disjoint m1 m2 ->
+
+  disjoint (map_sub m1 k) m2.
+
+Proof.
+
+  unfold map_sub, disjoint; intros.
+
+  destruct (eq_dec _ _); [discriminate | eauto].
+
+Qed.
+
+
+
+End Maps_Disjoint.
+
+
+
+End Maps.
+
+
+
+Notation maps_add l := (fold_right map_add empty_map l).
+
+
+
+Hint Resolve empty_map_incl empty_map_disjoint all_disjoint_nil.
+
+
+
+Section GHist.
+
+
+
+Context {hist_el : Type}.
+
+
+
+Notation hist_part := (nat -> option hist_el).
+
+
+
+Definition hist_sub sh (h : hist_part) hr := sh <> Share.bot /\ if eq_dec sh Tsh then h = hr
+
+  else map_incl h hr.
+
+
+
+Lemma completable_alt : forall sh h hr, @completable map_disj_PCM (Some (sh, h)) hr <-> hist_sub sh h hr.
+
+Proof.
+
+  unfold completable, hist_sub; intros; simpl; split.
+
+  - intros ([(?, ?)|] & Hcase).
+
+    + destruct Hcase as (? & ? & Hsh & Hj); split; auto.
+
+      if_tac.
+
+      * subst; apply join_Tsh in Hsh; tauto.
+
+      * rewrite map_disj_join_spec in Hj; destruct Hj; subst.
+
+        apply map_incl_add.
+
+    + hnf in Hcase.
+
+      inv Hcase.
+
+      rewrite eq_dec_refl; auto.
+
+  - if_tac.
+
+    + intros []; subst; exists None; split; auto.
+
+    + intros [? Hincl].
+
+      apply disj_join_sub in Hincl as (h' & ?).
+
+      exists (Some (Share.comp sh, h')).
+
+      split; auto.
+
+      split.
+
+      { intro Hbot; contradiction H.
+
+        rewrite <- Share.comp_inv at 1.
+
+        rewrite Hbot; apply comp_bot. }
+
+      split; [apply comp_join_top | auto].
+
+Qed.
+
+
+
+Lemma hist_sub_upd : forall sh h hr t' e (Hsub : hist_sub sh h hr),
+
+  hist_sub sh (map_upd h t' e) (map_upd hr t' e).
+
+Proof.
+
+  unfold hist_sub; intros.
+
+  destruct Hsub; split; auto.
+
+  if_tac; subst; auto.
+
+  apply map_upd2_incl; auto.
+
+Qed.
+
+
+
+Definition ghost_hist (sh : share) (h : hist_part) g :=
+
+  own(RA := ref_PCM map_disj_PCM) g (Some (sh, h), None) NoneP.
+
+
+
+Lemma ghost_hist_join : forall sh1 sh2 sh h1 h2 p (Hsh : sepalg.join sh1 sh2 sh)
+
+  (Hsh1 : sh1 <> Share.bot) (Hsh2 : sh2 <> Share.bot),
+
+  ghost_hist sh1 h1 p * ghost_hist sh2 h2 p = !!(disjoint h1 h2) && ghost_hist sh (map_add h1 h2) p.
+
+Proof.
+
+  intros; unfold ghost_hist.
+
+  erewrite own_op_gen.
+
+  apply pred_ext; Intros; apply andp_right, derives_refl; apply prop_right.
+
+  - destruct H as (? & [] & ?); simpl in *.
+
+    destruct (fst x) as [[]|]; [|contradiction].
+
+    rewrite map_disj_join_spec in H; tauto.
+
+  - eexists (Some (sh, map_add h1 h2), None); split; [split|]; simpl.
+
+    + rewrite map_disj_join_spec; auto.
+
+    + constructor.
+
+    + split; auto.
+
+      intro; subst.
+
+      apply join_Bot in Hsh as []; auto.
+
+  - intros (? & [] & ?); simpl in *.
+
+    destruct (fst x) as [[]|]; [|contradiction].
+
+    split; [simpl | constructor].
+
+    rewrite map_disj_join_spec in *; tauto.
+
+Qed.
+
+
+
+Definition hist_incl (h : hist_part) l := forall t e, h t = Some e -> nth_error l t = Some e.
+
+
+
+Definition hist_list (h : hist_part) l := forall t e, h t = Some e <-> nth_error l t = Some e.
+
+
+
+Lemma hist_list_inj : forall h l1 l2 (Hl1 : hist_list h l1) (Hl2 : hist_list h l2), l1 = l2.
+
+Proof.
+
+  unfold hist_list; intros; apply list_nth_error_eq.
+
+  intro j; specialize (Hl1 j); specialize (Hl2 j).
+
+  destruct (nth_error l1 j).
+
+  - symmetry; rewrite <- Hl2, Hl1; auto.
+
+  - destruct (nth_error l2 j); auto.
+
+    specialize (Hl2 h0); rewrite Hl1 in Hl2; tauto.
+
+Qed.
+
+
+
+Lemma hist_list_nil_inv1 : forall l, hist_list empty_map l -> l = [].
+
+Proof.
+
+  unfold hist_list; intros.
+
+  destruct l; auto.
+
+  specialize (H O h); destruct H as [_ H]; specialize (H eq_refl); discriminate.
+
+Qed.
+
+
+
+Lemma hist_list_nil_inv2 : forall h, hist_list h [] -> h = empty_map.
+
+Proof.
+
+  unfold hist_list; intros.
+
+  extensionality t.
+
+  specialize (H t); destruct (h t); auto.
+
+  destruct (H h0) as [H' _].
+
+  specialize (H' eq_refl); rewrite nth_error_nil in H'; discriminate.
+
+Qed.
+
+
+
+Definition ghost_ref l g := EX hr : hist_part, !!(hist_list hr l) &&
+
+  own(RA := ref_PCM map_disj_PCM) g (None, Some hr) NoneP.
+
+
+
+Lemma hist_next : forall h l (Hlist : hist_list h l), h (length l) = None.
+
+Proof.
+
+  intros.
+
+  specialize (Hlist (length l)).
+
+  destruct (h (length l)); auto.
+
+  destruct (Hlist h0) as [H' _].
+
+  pose proof (nth_error_Some l (length l)) as (Hlt & _).
+
+  lapply Hlt; [omega|].
+
+  rewrite H' by auto; discriminate.
+
+Qed.
+
+
+
+Definition ghost_hist_ref sh (h r : hist_part) g :=
+
+  own(RA := ref_PCM map_disj_PCM) g (Some (sh, h), Some r) NoneP.
+
+
+
+Lemma hist_add : forall (sh : share) (h h' : hist_part) e p t' (Hfresh : h' t' = None),
+
+  ghost_hist_ref sh h h' p |-- |==> ghost_hist_ref sh (map_upd h t' e) (map_upd h' t' e) p.
+
+Proof.
+
+  intros.
+
+  erewrite (add_andp (ghost_hist_ref _ _ _ _)) by apply own_valid.
+
+  Intros.
+
+  destruct H as [? Hcomp]; simpl in *.
+
+  rewrite completable_alt in Hcomp; destruct Hcomp as [_ Hcomp].
+
+  apply (ref_add(P := map_disj_PCM)) with (b := fun k => if eq_dec k t' then Some e else None).
+
+  - repeat intro.
+
+    unfold map_upd.
+
+    if_tac; [|destruct (h k); auto].
+
+    subst; destruct (h t') eqn: Hh; auto.
+
+    if_tac in Hcomp; [congruence|].
+
+    apply Hcomp in Hh; congruence.
+
+  - repeat intro.
+
+    unfold map_upd.
+
+    if_tac; [|destruct (h' k); auto].
+
+    subst; rewrite Hfresh; auto.
+
+  - intros ?? Hsub.
+
+    exists (map_upd c t' e); repeat intro.
+
+    unfold map_upd.
+
+    if_tac; [|destruct (c k); auto].
+
+    subst; destruct (c t') eqn: Hc; auto.
+
+    destruct Hsub as [x Hsub]; hnf in Hsub.
+
+    specialize (Hsub t'); rewrite Hc in Hsub.
+
+    destruct (x t'); congruence.
+
+Qed.
+
+
+
+Lemma hist_incl_nil : forall h, hist_incl empty_map h.
+
+Proof.
+
+  repeat intro; discriminate.
+
+Qed.
+
+
+
+Lemma hist_list_nil : hist_list empty_map [].
+
+Proof.
+
+  split; [discriminate|].
+
+  rewrite nth_error_nil; discriminate.
+
+Qed.
+
+
+
+Lemma hist_list_snoc : forall h l e, hist_list h l ->
+
+  hist_list (map_upd h (length l) e) (l ++ [e]).
+
+Proof.
+
+  unfold hist_list, map_upd; split.
+
+  - if_tac.
+
+    + intro X; inv X.
+
+      rewrite nth_error_app2, minus_diag; auto.
+
+    + rewrite H.
+
+      intro X; rewrite nth_error_app1; auto.
+
+      rewrite <- nth_error_Some, X; discriminate.
+
+  - if_tac.
+
+    + subst; rewrite nth_error_app2, minus_diag; auto.
+
+    + intro X; apply H; rewrite nth_error_app1 in X; auto.
+
+      assert (t < length (l ++ [e]))%nat; [|rewrite app_length in *; simpl in *; omega].
+
+      rewrite <- nth_error_Some, X; discriminate.
+
+Qed.
+
+
+
+Lemma hist_sub_list_incl : forall sh h h' l (Hsub : hist_sub sh h h') (Hlist : hist_list h' l),
+
+  hist_incl h l.
+
+Proof.
+
+  unfold hist_list, hist_incl; intros.
+
+  apply Hlist.
+
+  destruct Hsub.
+
+  destruct (eq_dec sh Tsh); subst; auto.
+
+Qed.
+
+
+
+Lemma hist_sub_Tsh : forall h h', hist_sub Tsh h h' <-> (h = h').
+
+Proof.
+
+  intros; unfold hist_sub; rewrite eq_dec_refl; repeat split; auto; tauto.
+
+Qed.
+
+
+
+Lemma hist_ref_join : forall sh h l p, sh <> Share.bot ->
+
+  ghost_hist sh h p * ghost_ref l p =
+
+  EX h' : hist_part, !!(hist_list h' l /\ hist_sub sh h h') && ghost_hist_ref sh h h' p.
+
+Proof.
+
+  unfold ghost_hist, ghost_ref; intros; apply pred_ext.
+
+  - Intros hr; Exists hr.
+
+    erewrite own_op_gen.
+
+    + Intros; apply andp_right, derives_refl; apply prop_right.
+
+      split; auto.
+
+      destruct H1 as ([g] & [H1 H2] & [? Hcompat]); simpl in *.
+
+      destruct g as [[]|]; [|contradiction].
+
+      inv H1; inv H2.
+
+      apply completable_alt; auto.
+
+    + split; simpl; auto; constructor.
+
+  - Intros h'; Exists h'; entailer!.
+
+    erewrite <- own_op; [apply derives_refl|].
+
+    split; simpl; auto; constructor.
+
+Qed.
+
+
+
+Corollary hist_ref_join_nil : forall sh p, sh <> Share.bot ->
+
+  ghost_hist sh empty_map p * ghost_ref [] p = ghost_hist_ref sh empty_map empty_map p.
+
+Proof.
+
+  intros; rewrite hist_ref_join by auto.
+
+  apply pred_ext; entailer!.
+
+  - apply hist_list_nil_inv2 in H0; subst; auto.
+
+  - Exists (fun _ : nat => @None hist_el); apply andp_right, derives_refl.
+
+    apply prop_right; split; [apply hist_list_nil|].
+
+    split; auto.
+
+    if_tac; auto.
+
+Qed.
+
+
+
+Lemma hist_ref_incl : forall sh h h' p, sh <> Share.bot ->
+
+  ghost_hist sh h p * ghost_ref h' p |-- !!hist_incl h h'.
+
+Proof.
+
+  intros; rewrite hist_ref_join by auto.
+
+  Intros l; eapply prop_right, hist_sub_list_incl; eauto.
+
+Qed.
+
+
+
+Lemma hist_add' : forall sh h h' e p, sh <> Share.bot ->
+
+  ghost_hist sh h p * ghost_ref h' p |-- |==>
+
+  ghost_hist sh (map_upd h (length h') e) p * ghost_ref (h' ++ [e]) p.
+
+Proof.
+
+  intros; rewrite !hist_ref_join by auto.
+
+  Intros hr.
+
+  eapply derives_trans; [apply hist_add|].
+
+  { apply hist_next; eauto. }
+
+  apply bupd_mono.
+
+  Exists (map_upd hr (length h') e); apply andp_right, derives_refl.
+
+  apply prop_right; split; [apply hist_list_snoc | apply hist_sub_upd]; auto.
+
+Qed.
+
+
+
+Definition newer (l : hist_part) t := forall t', l t' <> None -> (t' < t)%nat.
+
+
+
+Lemma newer_trans : forall l t1 t2, newer l t1 -> (t1 <= t2)%nat -> newer l t2.
+
+Proof.
+
+  repeat intro.
+
+  specialize (H _ H1); omega.
+
+Qed.
+
+
+
+Corollary newer_upd : forall l t1 e t2, newer l t1 -> (t1 < t2)%nat ->
+
+  newer (map_upd l t1 e) t2.
+
+Proof.
+
+  unfold newer, map_upd; intros.
+
+  destruct (eq_dec t' t1); [omega|].
+
+  eapply newer_trans; eauto; omega.
+
+Qed.
+
+
+
+Lemma newer_over : forall h t t', newer h t -> (t <= t')%nat -> h t' = None.
+
+Proof.
+
+  intros.
+
+  specialize (H t').
+
+  destruct (h t'); auto.
+
+  lapply H; [omega | discriminate].
+
+Qed.
+
+
+
+Corollary newer_out : forall h t, newer h t -> h t = None.
+
+Proof.
+
+  intros; eapply newer_over; eauto.
+
+Qed.
+
+
+
+Lemma add_new_inj : forall h h' t t' v v' (Ht : newer h t) (Ht' : newer h' t'),
+
+  map_upd h t v = map_upd h' t' v' -> h = h' /\ t = t' /\ v = v'.
+
+Proof.
+
+  intros.
+
+  pose proof (equal_f H t) as Hh.
+
+  pose proof (equal_f H t') as Hh'.
+
+  pose proof (newer_out _ _ Ht) as Hout.
+
+  pose proof (newer_out _ _ Ht') as Hout'.
+
+  unfold map_upd in Hh, Hh'.
+
+  rewrite eq_dec_refl in Hh, Hh'.
+
+  if_tac in Hh.
+
+  - inv Hh; clear Hh'.
+
+    repeat split; auto.
+
+    erewrite <- (map_sub_upd h) by (eapply newer_out; eauto).
+
+    rewrite H, map_sub_upd; auto.
+
+  - rewrite if_false in Hh' by auto.
+
+    lapply (Ht t'); [|rewrite Hh'; discriminate].
+
+    lapply (Ht' t); [|rewrite <- Hh; discriminate].
+
+    omega.
+
+Qed.
+
+
+
+Lemma hist_incl_lt : forall h l, hist_incl h l -> newer h (length l).
+
+Proof.
+
+  unfold hist_incl; repeat intro.
+
+  specialize (H t').
+
+  destruct (h t'); [|contradiction].
+
+  specialize (H _ eq_refl).
+
+  rewrite <- nth_error_Some, H; discriminate.
+
+Qed.
+
+
+
+Corollary hist_list_lt : forall h l, hist_list h l -> newer h (length l).
+
+Proof.
+
+  intros; apply hist_incl_lt; repeat intro; apply H; auto.
+
+Qed.
+
+
+
+Inductive hist_list' : hist_part -> list hist_el -> Prop :=
+
+| hist_list'_nil : hist_list' empty_map []
+
+| hist_list'_snoc : forall h l t e (Hlast : newer h t) (Hrest : hist_list' h l),
+
+    hist_list' (map_upd h t e) (l ++ [e]).
+
+Hint Resolve hist_list'_nil.
+
+
+
+Lemma hist_list'_in : forall h l (Hl : hist_list' h l) e, (exists t, h t = Some e) <-> In e l.
+
+Proof.
+
+  induction 1.
+
+  - split; [intros (? & ?); discriminate | contradiction].
+
+  - intro; subst; split.
+
+    + unfold map_upd; intros (? & Hin); rewrite in_app in *.
+
+      destruct (eq_dec x t); [inv Hin; simpl; auto|].
+
+      rewrite <- IHHl; eauto.
+
+    + rewrite in_app; intros [Hin | [Heq | ?]]; [| inv Heq | contradiction].
+
+      * rewrite <- IHHl in Hin; destruct Hin as (? & ?).
+
+        apply newer_out in Hlast.
+
+        unfold map_upd; exists x; if_tac; auto; congruence.
+
+      * unfold map_upd; eexists; apply eq_dec_refl.
+
+Qed.
+
+
+
+Lemma hist_list_weak : forall l h (Hl : hist_list h l), hist_list' h l.
+
+Proof.
+
+  induction l using rev_ind; intros.
+
+  - apply hist_list_nil_inv2 in Hl; subst; auto.
+
+  - destruct (Hl (length l) x) as (_ & H); exploit H.
+
+    { rewrite nth_error_app2, minus_diag by omega; auto. }
+
+    intro Hx.
+
+    set (h0 := fun k => if eq_dec k (length l) then None else h k).
+
+    replace h with (map_upd h0 (length l) x).
+
+    constructor.
+
+    + pose proof (hist_list_lt _ _ Hl) as Hn.
+
+      intro t; specialize (Hn t).
+
+      subst h0; simpl; if_tac; [contradiction|].
+
+      intro X; specialize (Hn X); rewrite app_length in Hn; simpl in Hn; omega.
+
+    + apply IHl.
+
+      intros t e; specialize (Hl t e).
+
+      subst h0; simpl; if_tac.
+
+      * split; [discriminate|].
+
+        intro X; assert (t < length l)%nat by (rewrite <- nth_error_Some, X; discriminate); omega.
+
+      * rewrite Hl; destruct (lt_dec t (length l)).
+
+        { rewrite nth_error_app1 by auto; reflexivity. }
+
+        split; intro X.
+
+        -- assert (t < length (l ++ [x]))%nat by (rewrite <- nth_error_Some, X; discriminate);
+
+             rewrite app_length in *; simpl in *; omega.
+
+        -- assert (t < length l)%nat by (rewrite <- nth_error_Some, X; discriminate); contradiction.
+
+    + unfold map_upd; subst h0; simpl.
+
+      extensionality k'; if_tac; subst; auto.
+
+Qed.
+
+
+
+Lemma hist_list'_add : forall h1 h2 (l : list hist_el) (Hdisj : disjoint h1 h2), hist_list' (map_add h1 h2) l ->
+
+  exists l1 l2, Permutation l (l1 ++ l2) /\ hist_list' h1 l1 /\ hist_list' h2 l2.
+
+Proof.
+
+  intros.
+
+  remember (map_add h1 h2) as h.
+
+  revert dependent h2; revert h1; induction H; intros.
+
+  - exists [], []; split; [reflexivity|].
+
+    assert (h1 = empty_map /\ h2 = empty_map) as [].
+
+    { split; extensionality k; apply equal_f with (x := k) in Heqh; unfold map_add in Heqh;
+
+        destruct (h1 k); auto; discriminate. }
+
+    subst; split; constructor.
+
+  - pose proof (equal_f Heqh t) as Ht.
+
+    unfold map_upd, map_add in Ht.
+
+    rewrite eq_dec_refl in Ht by auto.
+
+    destruct (h1 t) eqn: Hh1.
+
+    + inv Ht.
+
+      destruct (IHhist_list' (map_sub h1 t) h2) as (l1 & l2 & ? & ? & ?).
+
+      { apply disjoint_sub; auto. }
+
+      { extensionality k.
+
+        apply equal_f with (x := k) in Heqh.
+
+        unfold map_upd, map_sub, map_add in *.
+
+        if_tac; auto; subst.
+
+        apply newer_out in Hlast.
+
+        apply Hdisj in Hh1; congruence. }
+
+      exists (l1 ++ [h0]), l2; repeat split; auto.
+
+      * etransitivity; [|apply Permutation_app_comm].
+
+        rewrite app_assoc; apply Permutation_app_tail.
+
+        etransitivity; eauto.
+
+        apply Permutation_app_comm.
+
+      * erewrite <- (map_upd_sub h1 t) by eauto.
+
+        constructor; auto.
+
+        repeat intro.
+
+        unfold map_sub in *.
+
+        apply equal_f with (x := t') in Heqh.
+
+        unfold map_upd, map_add in Heqh.
+
+        apply Hlast.
+
+        destruct (eq_dec _ _); [contradiction|].
+
+        destruct (h1 t'); [congruence | contradiction].
+
+    + destruct (IHhist_list' h1 (map_sub h2 t)) as (l1 & l2 & ? & ? & ?).
+
+      { symmetry; apply disjoint_sub; symmetry; auto. }
+
+      { extensionality k.
+
+        apply equal_f with (x := k) in Heqh.
+
+        unfold map_upd, map_sub, map_add in *.
+
+        if_tac; auto; subst.
+
+        apply newer_out in Hlast.
+
+        rewrite Hh1; auto. }
+
+      exists l1, (l2 ++ [e]); repeat split; auto.
+
+      * rewrite app_assoc; apply Permutation_app_tail; auto.
+
+      * erewrite <- (map_upd_sub h2 t) by eauto.
+
+        constructor; auto.
+
+        repeat intro.
+
+        unfold map_sub in *.
+
+        apply equal_f with (x := t') in Heqh.
+
+        unfold map_upd, map_add in Heqh.
+
+        apply Hlast.
+
+        destruct (eq_dec _ _); [contradiction|].
+
+        destruct (h1 t'); congruence.
+
+Qed.
+
+
+
+Lemma ghost_hist_init : @valid (ref_PCM (@map_disj_PCM nat hist_el)) (Some (Tsh, empty_map), Some empty_map).
+
+Proof.
+
+  split; simpl; auto.
+
+  rewrite completable_alt; split; auto.
+
+  rewrite eq_dec_refl; auto.
+
+Qed.
+
+
+
+Inductive add_events h : list hist_el -> hist_part -> Prop :=
+
+| add_events_nil : add_events h [] h
+
+| add_events_snoc : forall le h' t e (Hh' : add_events h le h') (Ht : newer h' t),
+
+    add_events h (le ++ [e]) (map_upd h' t e).
+
+Hint Resolve add_events_nil.
+
+
+
+Lemma add_events_1 : forall h t e (Ht : newer h t), add_events h [e] (map_upd h t e).
+
+Proof.
+
+  intros; apply (add_events_snoc _ []); auto.
+
+Qed.
+
+
+
+Lemma add_events_trans : forall h le h' le' h'' (H1 : add_events h le h') (H2 : add_events h' le' h''),
+
+  add_events h (le ++ le') h''.
+
+Proof.
+
+  induction 2.
+
+  - rewrite app_nil_r; auto.
+
+  - rewrite app_assoc; constructor; auto.
+
+Qed.
+
+
+
+Lemma add_events_add : forall h le h', add_events h le h' ->
+
+  exists h2, h' = map_add h h2 /\ forall t e, h2 t = Some e -> newer h t /\ In e le.
+
+Proof.
+
+  induction 1.
+
+  - eexists; rewrite map_add_empty; split; auto; discriminate.
+
+  - destruct IHadd_events as (h2 & ? & Hh2); subst.
+
+    assert (compatible h h2).
+
+    { repeat intro.
+
+      destruct (Hh2 _ _ H1) as [Hk _].
+
+      specialize (Hk k); lapply Hk; [omega | congruence]. }
+
+    assert (newer h t).
+
+    { repeat intro; apply Ht.
+
+      unfold map_add.
+
+      destruct (h t'); auto. }
+
+    rewrite map_add_comm, map_add_upd, map_add_comm; auto.
+
+    eexists; split; eauto; intros.
+
+    unfold map_upd in *.
+
+    rewrite in_app; simpl.
+
+    destruct (eq_dec t0 t); [inv H2; auto|].
+
+    destruct (Hh2 _ _ H2); auto.
+
+    { apply compatible_upd; [symmetry; auto|].
+
+      specialize (H1 t).
+
+      destruct (h t); auto.
+
+      lapply H1; [omega | discriminate]. }
+
+Qed.
+
+
+
+Corollary add_events_dom : forall h le h' t e, add_events h le h' -> h' t = Some e ->
+
+  h t = Some e \/ In e le.
+
+Proof.
+
+  intros; apply add_events_add in H as (? & ? & Hh2); subst.
+
+  unfold map_add in H0.
+
+  destruct (h t); [inv H0; auto|].
+
+  destruct (Hh2 _ _ H0); auto.
+
+Qed.
+
+
+
+Corollary add_events_incl : forall h le h', add_events h le h' -> map_incl h h'.
+
+Proof.
+
+  intros; apply add_events_add in H as (? & ? & ?); subst.
+
+  apply map_incl_add.
+
+Qed.
+
+
+
+Corollary add_events_newer : forall h le h' t, add_events h le h' -> newer h' t -> newer h t.
+
+Proof.
+
+  repeat intro.
+
+  apply H0.
+
+  destruct (h t') eqn: Ht'; [|contradiction].
+
+  eapply add_events_incl in Ht' as ->; eauto.
+
+Qed.
+
+
+
+Lemma add_events_in : forall h le h' e, add_events h le h' -> In e le ->
+
+  exists t, newer h t /\ h' t = Some e.
+
+Proof.
+
+  induction 1; [contradiction|].
+
+  rewrite in_app; intros [? | [? | ?]]; try contradiction.
+
+  - destruct IHadd_events as (? & ? & ?); auto.
+
+    do 2 eexists; eauto.
+
+    unfold map_upd; if_tac; auto; subst.
+
+    specialize (Ht t); rewrite H2 in Ht; lapply Ht; [omega | discriminate].
+
+  - subst; unfold map_upd; do 2 eexists; [|apply eq_dec_refl].
+
+    eapply add_events_newer; eauto.
+
+Qed.
+
+
+
+End GHist.
+
+
+
+Hint Resolve hist_incl_nil hist_list_nil hist_list'_nil add_events_nil.
+
+
+
+Hint Resolve  master_init  ghost_hist_init : init.
+
+
+
+Ltac ghost_alloc G :=
+
+  match goal with |-semax _ (PROPx ?P (LOCALx ?Q (SEPx ?R))) _ _ =>
+
+    apply (semax_pre_bupd (PROPx P (LOCALx Q (SEPx ((EX g : _, G g) :: R)))));
+
+  [go_lower; rewrite !prop_true_andp by (repeat (split; auto));
+
+   rewrite <- emp_sepcon at 1; eapply derives_trans, bupd_frame_r;
+
+   apply sepcon_derives, derives_refl; apply own_alloc; auto; simpl; auto with init|] end.
+
+
+
+Ltac ghosts_alloc G n :=
+
+  match goal with |-semax _ (PROPx ?P (LOCALx ?Q (SEPx ?R))) _ _ =>
+
+    apply (semax_pre_bupd (PROPx P (LOCALx Q (SEPx ((EX lg : _, !!(Zlength lg = n) && iter_sepcon G lg) :: R)))));
+
+  [go_lower; rewrite !prop_true_andp by (repeat (split; auto));
+
+   rewrite <- emp_sepcon at 1; eapply derives_trans, bupd_frame_r;
+
+   apply sepcon_derives, derives_refl; apply own_list_alloc'; auto; simpl; auto with init|] end.
+
+
+
+Program Definition weak_view_shift (P Q: mpred): mpred :=
+
+  fun w => predicates_hered.derives (approx (S (level w)) P) (own.bupd (approx (S (level w)) Q)).
+
+Next Obligation.
+
+  repeat intro.
+
+  destruct H1.
+
+  apply age_level in H.
+
+  lapply (H0 a0); [|split; auto; omega].
+
+  intro HQ; destruct (HQ _ H2) as (? & ? & ? & ? & ? & ? & []).
+
+  eexists; split; eauto; eexists; split; eauto; repeat split; auto; omega.
+
+Defined.
+
+
+
+Lemma view_shift_nonexpansive: forall P Q n,
+
+  approx n (weak_view_shift P Q) = approx n (weak_view_shift (approx n P) (approx n Q)).
+
+Proof.
+
+  apply nonexpansive2_super_non_expansive; repeat intro.
+
+  - split; intros ??%necR_level Hshift ? HP ? J;
+
+      destruct (Hshift _ HP _ J) as (? & ? & m' & ? & ? & ? & []); destruct HP;
+
+      eexists; split; eauto; eexists; split; eauto; repeat split; auto;
+
+      apply (H m'); auto; omega.
+
+  - split; intros ??%necR_level Hshift ? []; apply Hshift; split; auto; apply (H a0); auto; omega.
+
+Qed.
+
+
+
+Lemma view_shift_nonexpansive_l: forall P Q n,
+
+  approx n (weak_view_shift P Q) = approx n (weak_view_shift (approx n P) Q).
+
+Proof.
+
+  repeat intro.
+
+  apply (nonexpansive_super_non_expansive (fun P => weak_view_shift P Q)); repeat intro.
+
+  split; intros ??%necR_level Hshift ? []; apply Hshift; split; auto; apply (H a0); auto; omega.
+
+Qed.
+
+
+
+Lemma view_shift_nonexpansive_R: forall P Q n,
+
+  approx n (weak_view_shift P Q) = approx n (weak_view_shift P (approx n Q)).
+
+Proof.
+
+  repeat intro.
+
+  apply (nonexpansive_super_non_expansive (fun Q => weak_view_shift P Q)); repeat intro.
+
+  split; intros ??%necR_level Hshift ? HP ? J;
+
+      destruct (Hshift _ HP _ J) as (? & ? & m' & ? & ? & ? & []); destruct HP;
+
+      eexists; split; eauto; eexists; split; eauto; repeat split; auto;
+
+      apply (H m'); auto; omega.
+
+Qed.
+
+
+
+Lemma view_shift_weak: forall P Q, P |-- |==> Q -> TT |-- weak_view_shift P Q.
+
+Proof.
+
+  intros.
+
+  change (predicates_hered.derives TT (weak_view_shift P Q)).
+
+  intros w _ ? [? HP] ? J.
+
+  destruct (H _ HP _ J) as (? & ? & ? & ? & ? & ? & ?).
+
+  eexists; split; eauto; eexists; split; eauto; repeat split; auto; omega.
+
+Qed.
+
+
+
+Lemma apply_view_shift: forall P Q, (weak_view_shift P Q && emp) * P |-- |==> Q.
+
+Proof.
+
+  intros.
+
+  change (predicates_hered.derives ((weak_view_shift P Q && emp) * P) (own.bupd Q)).
+
+  intros ? (? & ? & ? & [Hshift Hemp] & HP) ? J.
+
+  destruct (join_level _ _ _ H).
+
+  apply Hemp in H; subst.
+
+  lapply (Hshift a); [|split; auto; omega].
+
+  intro X; destruct (X _ J) as (? & ? & ? & ? & ? & ? & []); eauto 7.
+
+Qed.
+

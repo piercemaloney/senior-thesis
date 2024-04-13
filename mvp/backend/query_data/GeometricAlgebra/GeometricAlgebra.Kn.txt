@@ -1,0 +1,1698 @@
+Require Import Aux List Setoid Field VectorSpace.
+(* Aux:
+Require Import List Min Arith Div2.
+
+Notation "n .+1" := (S n)(at level 2, left associativity, format "n .+1"): nat_scope.
+
+Lemma minus_match k1 k2: match k2 - k1 with O => k2 <= k1 | S _ => k1 < k2 end.
+
+Section Exp.
+
+Fixpoint exp (n m: nat) {struct m} : nat := 
+  match m with O => 1 | 1 => n | (S m1) => n * exp n m1 end.
+
+Lemma exp0 n: exp n 0 = 1.
+
+Lemma expS n m: exp n (S m) = n * exp n m.
+
+End Exp.
+
+Section Fold2.
+
+Variable A B C: Type.
+Variable f: A -> B -> C -> C.
+
+Definition dhead a (l : list A) :=
+  match l with nil => a | b :: _ => b end.
+
+Fixpoint fold2 (l1: list A) (l2: list B) (c: C) {struct l1}: C :=
+  match l1, l2 with
+    a::l3, b::l4 => fold2 l3 l4 (f a b c)
+  | _, _ => c
+  end.
+
+Variable g: A -> B -> C.
+
+Fixpoint map2 (l1: list A) (l2: list B) {struct l1}: list C :=
+  match l1, l2 with
+    a::l3, b::l4 => (g a b)::map2 l3 l4
+  | _, _ => nil
+  end.
+
+Lemma map2_length l1 l2:
+  length (map2 l1 l2) = min (length l1) (length l2).
+
+Fixpoint dmap2 (a : A) (l1: list A) (l2: list B) {struct l2}: list C :=
+  match l1, l2 with
+    a1::l3, b1 :: l4 => g a1 b1 :: dmap2 a l3 l4
+  |    nil, b1 :: l4 =>  g a b1 :: dmap2 a nil l4
+  | _, _ => nil
+  end.
+
+End Fold2.
+Arguments dhead[A].
+Arguments fold2[A B C].
+Arguments map2[A B C].
+Arguments dmap2[A B C].
+
+Section Perm.
+
+Variable A: Type.
+
+Inductive perm: list A -> list A -> Prop :=
+  perm_id: forall l, perm l l
+| perm_swap: forall a b l,  perm (a::b::l) (b::a::l)
+| perm_skip: forall a l1 l2,  perm l1 l2 -> perm (a::l1) (a::l2)
+| perm_trans: forall l1 l2 l3, perm l1 l2 -> perm l2 l3 -> perm l1 l3.
+
+Lemma perm_sym l1 l2: perm l1 l2 -> perm l2 l1.
+
+Lemma perm_cons_app a l1 l2: perm ((a:: l1) ++ l2) (l1 ++ (a:: l2)).
+
+Lemma perm_length l1 l2: perm l1 l2 -> length l1 = length l2.
+
+Lemma perm_in a l1 l2: perm l1 l2 -> In a l1 -> In a l2.
+
+Lemma perm_in_inv a l1: In a l1 -> exists l2, perm l1 (a:: l2).
+
+Lemma perm_incl_r l1 l2 l3: perm l1 l2 -> incl l1 l3 -> incl l2 l3.
+
+Lemma perm_incl_l l1 l2 l3: perm l1 l2 -> incl l3 l1 -> incl l3 l2.
+
+End Perm.
+
+Arguments perm[A].
+
+Section Uniq.
+
+Variable A: Type.
+
+Inductive uniq: list A -> Prop :=
+  uniq_nil: uniq nil
+| uniq_cons: forall a l, ~ In a l -> uniq l -> uniq (a::l).
+
+Lemma uniq_perm l1 l2: perm l1 l2 -> uniq l1 -> uniq l2.
+
+Lemma uniq_cons_inv a l: uniq (a::l) -> uniq l.
+
+Lemma uniq_app_inv_l l1 l2: uniq (l1 ++ l2) -> uniq l1.
+
+Lemma uniq_app_inv_r l1 l2: uniq (l1 ++ l2) -> uniq l2.
+
+Lemma perm_incl_inv l1 l2: 
+  uniq l1 -> uniq l2 -> incl l1 l2 -> exists l3, perm l2 (l1 ++ l3).
+
+End Uniq.
+
+Lemma list_split (A: Type) n1 n2 (l: list A):
+ length l = n1 + n2 ->
+   exists l1, exists l2, l = l1 ++ l2 /\ length l1 = n1 /\ length l2 = n2.
+
+Lemma length_split (A B: Type) (a b: A) (lk: list B) l1 l2:
+ length lk = length ((a:: l1) ++ b :: l2)%list ->
+ exists k1, exists k2, exists lk1, exists lk2,
+ lk = ((k1::lk1) ++ k2::lk2)%list /\ length lk1 = length l1 /\ length lk2 = length l2.
+
+Lemma list_app_inj (A: Type) (l1 l2 l3 l4: list A):
+ length l1 = length l3 -> l1 ++ l2 = l3 ++ l4 -> l1 = l3 /\ l2 = l4.
+
+Lemma list_case (A:Type) (l: list A): l = nil \/ l <> nil.
+
+Lemma list_dec (A: Type) (P: A -> Prop) l:
+ (forall x, P x \/ ~ P x) -> (forall x, In x l -> P x) \/ (exists x, In x l /\ ~ P x).
+
+Arguments uniq[A].
+
+Inductive eq_Spec (A: Type) (x y: A): bool -> Prop :=
+ |eq_Spect:  x = y -> eq_Spec A x y true
+ |eq_Specf: x <> y -> eq_Spec A x y false.
+
+Arguments eq_Spec[A].
+
+Fixpoint bin (a b : nat) {struct a} : nat :=
+ match a, b with
+   _, O => 1
+  | O, S b' => 0
+  | S a', S b' => bin a' (S b') + bin a' b'
+ end.
+
+Lemma bin_0: forall (n : nat),  bin n 0 = 1.
+
+Lemma bin_1: forall (n : nat),  bin n 1 = n.
+
+Lemma bin_more: forall (n m : nat), n < m ->  bin n m = 0.
+ 
+Lemma bin_nn: forall (n : nat),  bin n n = 1.
+ 
+Lemma bin_def:
+ forall (n k : nat),  bin (S n) (S k) = bin n (S k) + bin n k.
+ 
+Fixpoint iter {A: Type} (f: A -> A) (n: nat) (x: A) :=
+  match n with 
+  | O => x
+  | S n1 => f (iter f n1 x)
+  end.
+
+Coercion b2Prop (x : bool) := x = true.
+
+Lemma b2PropT: b2Prop true.
+
+Hint Resolve b2PropT.
+
+Require Import Bool.
+
+Lemma andbP b1 b2: b1 && b2 <-> b1 /\ b2.
+
+Lemma div2_double_p n m : div2 (2 * n + m) = n + div2 m.
+
+Lemma div2_prop n: n + div2 (n * (n - 1)) = div2 (n.+1 * n).
+
+Lemma minus_minus_le m n: n <= m -> m - (m - n) = n.
+
+Lemma minus0_le m n: m <= n -> m - n = 0.
+
+Fixpoint eq_nat (m n: nat) :=
+  match m, n with (S m), (S n) => eq_nat m n | 0, 0 => true | _, _ => false end.
+
+Notation "m ?= n" := (eq_nat m n) (at level 70): nat_scope.
+
+Inductive eq_nat_spec: nat -> nat -> bool -> Type := 
+  eq_nat_spect: forall m, eq_nat_spec m m true
+| eq_nat_specb: forall m n, m <> n -> eq_nat_spec m n false.
+
+Lemma eq_natP m n: eq_nat_spec m n (m ?= n).
+
+Notation "x .+2" := (S (S x))  (at level 9): nat_scope. *)
+(* Field:
+Require Import ZArith Aux Even.
+
+Structure fparams: Type := {
+ K:> Set;               
+ v0: K;                
+ v1: K;                
+ eqK: K -> K -> bool;  
+ oppK: K -> K;         
+ addK : K -> K -> K;   
+ multK : K -> K -> K;  
+ invK : K -> K         
+}.
+
+Delimit Scope field_scope with f.
+
+Notation "x ?= y" := (eqK _ x y) (at level 70) : field_scope.
+Notation "x + y" := (addK _ x y) : field_scope.
+Notation "- x" := (oppK _ x) : field_scope.
+Notation "x ^-1" := (invK _ x) (at level 25) : field_scope.
+Notation "x * y" := (multK _ x y) : field_scope.
+Notation "0" := (v0 _) : field_scope.
+Notation "1" := (v1 _) : field_scope.
+
+Section ParamsProp.
+
+Variable p: fparams.
+Open Scope field_scope.
+
+Structure fparamsProp: Type := {
+ eqK_dec: forall x y: p, if x ?= y then x = y else x <> y;        
+          
+ addK_assoc: forall x y z: p, (x + y) + z = x + (y + z);
+          
+ addK_com: forall x y: p, x + y = y + x;
+          
+ addK0l: forall x: p, 0 + x = x;
+          
+ oppKr: forall x: p, x + - x = 0;
+          
+ multK_assoc: forall x y z: p, (x * y) * z = x * (y * z);
+          
+ multK_com: forall x y: p, x * y = y * x;
+          
+ multK1l: forall x: p, 1 * x = x;
+          
+ add_multKl: forall x y z: p, (x + y) * z = x * z + y * z;
+          
+ one_diff_zero: 1 <> 0 :> p;
+          
+ invKl: forall x: p, x <> 0 -> x * x^-1 = 1
+}.
+
+Fixpoint expK  (k: p) (n:nat) {struct n}: p := 
+  match n with O => 1 | (S n1) => k * expK k n1 end.
+
+Notation "x ^ k" := (expK x k) : field_scope.
+
+Variable Hp: fparamsProp.
+
+Implicit Types x y z: p.
+
+Lemma eqKI: forall x, x ?= x = true.
+
+Lemma eqK_spec x y: eq_Spec x y (x ?= y).
+
+Lemma oppKl:  forall x, - x + x = 0.
+
+Lemma addK_cancel x y z: x + y = x + z -> y = z.
+
+Lemma addK_eq_opp: forall x y, x + (-y) = 0 -> x = y.
+
+Lemma addK0r x: x + 0 = x.
+
+Lemma opp_oppK x: - (- x) = x.
+
+Lemma multK1r x: x * 1 = x.
+
+Lemma add_multKr x y z: z * (x + y) = z * x + z * y.
+
+Lemma oppK0: - 0 = 0 :> p.
+
+Lemma opp_addK x y: - (x + y) = - x + - y.
+
+Lemma multK0l x: 0 * x = 0.
+
+Lemma multK0r x: x * 0 = 0.
+
+Lemma opp_multKl x y: - (x * y) = - x * y.
+
+Lemma opp_multKr x y: - (x * y) = x * - y.
+
+Lemma opp_multK1l x: - x  = (-(1)) * x.
+
+Lemma opp_multK1r x: - x  = x * (-(1)).
+
+Lemma multK_m1_m1: -(1) * -(1) = 1 :>p.
+
+Lemma expKS n: (-(1)) ^n.+1 = -(-(1)) ^n.
+
+Lemma expK2m1 n: (-(1)) ^ n * (- (1)) ^  n =1.
+
+Lemma expK_add n1 n2 a: a ^ (n1 + n2) = a ^n1 * a ^ n2.
+
+Lemma expKm1_even n: even n -> (-(1))^ n = 1
+with expKm1_odd n: odd n -> (-(1))^ n = -(1).
+
+Lemma expKm1_sub m n: m <= n -> (-(1))^ (n - m) = (-(1))^ (n + m).
+
+Lemma expKm1_2 n: (-(1))^ (2 * n) = 1.
+
+Lemma expKm1_2E n m: (-(1))^ (2 * n + m) = (-(1))^ m.
+
+Lemma invKr x: x <> 0 -> x^-1 * x = 1.
+
+Lemma multK_cancel x y z: x <> 0 -> x * y = x * z -> y = z.
+
+Lemma multK_swap x y z: x * (y * z) = y * (x * z).
+
+Lemma multK_integral x y : x * y = 0 -> x = 0 \/ y = 0.
+
+Lemma expK_integral x n : x^n = 0 -> x = 0.
+
+Lemma expKm1_n0 n : (-(1))^n <> 0.
+
+Fixpoint n_to_K n := 
+  match n with O => 0: p | S n => (1 + n_to_K n) end.
+
+Lemma n_to_K0: n_to_K 0 = 0.
+
+Lemma n_to_K1: n_to_K 1 = 1.
+
+Lemma n_to_K_add m n : n_to_K (m + n) = n_to_K m + n_to_K n.
+
+Lemma n_to_K_minus m n : n <= m -> n_to_K (m - n) = n_to_K m + -n_to_K n.
+
+Lemma n_to_K_mult m n : n_to_K (m * n) = n_to_K m * n_to_K n.
+
+Definition Z_to_K (z: Z) :=
+  match z with
+  | Z0 => 0
+  | Zpos _ => n_to_K (Z.abs_nat z)
+  | Zneg _ => - (n_to_K (Z.abs_nat z))
+  end.
+
+Lemma Z_to_K_opp (z: Z): Z_to_K (-z)%Z = - Z_to_K z.
+
+Lemma Z_to_K_pos (z: Z): (0 <= z)%Z -> Z_to_K z = n_to_K (Z.abs_nat z).
+
+Lemma Z_to_K_add (z1 z2: Z): 
+  Z_to_K (z1 + z2)%Z = Z_to_K z1 + Z_to_K z2.
+
+Lemma Z_to_K_minus (z1 z2: Z): 
+  Z_to_K (z1 - z2)%Z = Z_to_K z1 + - Z_to_K z2.
+
+Lemma Z_to_K_mult (z1 z2: Z): 
+  Z_to_K (z1 * z2)%Z = Z_to_K z1 * Z_to_K z2.
+
+End ParamsProp.
+
+Notation "x ^ k" := (expK _ x%f k) : field_scope.
+
+Ltac Krm0 :=
+ repeat ((rewrite multK0l || rewrite multK0r || rewrite oppK0 ||
+         rewrite addK0l || rewrite addK0r)); auto.
+
+Ltac Krm1 :=
+  Krm0; 
+  repeat (rewrite multK1l || rewrite multK1r || rewrite <- opp_multKr ||
+          rewrite expK2m1  || rewrite <- opp_multKl || rewrite opp_oppK); auto. *)
+(* VectorSpace:
+Require Import Setoid Field Min List Aux.
+
+Structure eparams: Type := {
+ E:> Set;                      
+ stype:> fparams;              
+ E0: E;                        
+ eqE: E -> E -> bool;          
+ addE : E -> E -> E;          
+ scalE : (K stype) -> E -> E   
+}.
+
+Delimit Scope vector_scope with v.
+
+Notation "x ?= y" := (eqE _ x y) (at level 70): vector_scope.
+Notation "0" := (E0 _): vector_scope.
+Notation "x + y" := (addE _ x y): vector_scope.
+Notation "x .* y" := (scalE _ x%f y) (at level 31, no associativity): vector_scope.
+
+Arguments scalE _ _%field_scope _%vector_scope.
+
+Section VectorSpace.
+
+Variable p : eparams.
+
+Open Scope vector_scope.
+
+Implicit Type v x y z: p.
+Implicit Type k: stype p.
+
+Definition  mprod ks vs :=
+   fold2 (fun k v r => k .* v + r) ks vs 0.
+
+Notation " x *X* y " := (mprod x y) (at level 40, no associativity): vector_scope.
+
+Definition free vs := 
+  forall ks, length ks = length vs -> ks *X* vs = 0 -> 
+    (forall k, In k ks -> k = 0%f).
+
+Inductive cbl (l: list (E p)): (E p) -> Prop :=
+  cbl0: cbl l 0
+| cbl_in: forall v, In v l -> cbl l v
+| cbl_add: forall x y, cbl l x -> cbl l y -> cbl l (x + y)
+| cbl_scal: forall k x, cbl l x -> cbl l (k .* x).
+
+Lemma cbl_trans l1 l2 x: 
+  (forall i, In i l2 -> cbl l1 i) -> cbl l2 x -> cbl l1 x.
+ 
+Definition is_base vs := free vs /\ forall e, cbl vs e.
+
+Structure vparamsProp: Type := {
+ sProp : fparamsProp p;
+ eqE_dec: forall x y, if x ?= y then x = y else x <> y;        
+          
+ addE_assoc: forall x y z, (x + y) + z = x + (y + z);
+          
+ addE_com: forall x y, x + y = y + x;
+          
+ addE0l: forall x, 0 + x = x;
+          
+ scalE0l: forall x, 0 .* x = 0;
+          
+ scalE1: forall x, 1 .* x = x;
+          
+ scal_addEl: forall k1 k2 x, (k1 + k2) .* x = (k1.* x) + (k2 .* x);
+          
+ scal_addEr: forall k x y, k .* (x + y) = k .* x + k .* y;
+          
+ scal_multE: forall k1 k2 x, (k1 * k2) .* x = k1.* (k2 .* x)
+          
+}.
+
+Variable Hp: vparamsProp.
+
+Lemma eqE_refl x: (x ?= x) = true.
+
+Lemma addE0r: forall x, x + 0 = x.
+
+Let sfP := sProp Hp.
+
+Lemma addE_cancell x y z : z + x = z + y -> x = y.
+
+Lemma addE_cancelr x y z : x + z = y + z -> x = y.
+
+Lemma scalE0r k : k .* 0 = 0.
+
+Lemma scal_addE0 x : x + (- (1)) .* x = 0.
+
+Lemma addE_eq_opp x y : x + (-(1)) .* y = 0 -> x = y.
+
+Lemma mprod_S k ks v vs : (k :: ks) *X* (v :: vs) = k .* v + ks *X* vs.
+
+Lemma mprod0l vs : nil *X* vs = 0.
+
+Lemma mprod0r ks : ks *X* nil = 0.
+
+Lemma mprod0 vs1 vs2 : map (fun _ : E p => 0%f) vs1 *X* vs2 = 0.
+
+Lemma mprod_app ks1 ks2 vs1 vs2 :
+   length ks1 = length vs1 -> 
+      (ks1 ++ ks2) *X* (vs1 ++ vs2) = ks1 *X* vs1 + ks2 *X* vs2.
+
+Lemma eqE_spec x y : eq_Spec x y (x ?= y).
+
+Lemma free_nil : free nil.
+
+Lemma free_cons v vs : free (v::vs) -> free vs.
+
+Lemma free_perm vs1 vs2 : perm vs1 vs2 -> free vs2 -> free vs1.
+
+Lemma uniq_free vs : free vs -> uniq vs.
+
+Lemma free_incl vs1 vs2 : incl vs1 vs2 -> uniq vs1 -> free vs2 -> free vs1.
+
+Lemma cbl_incl l1 l2 v : incl l1 l2 -> cbl l1 v -> cbl l2 v.
+
+Lemma cbl0_inv x : cbl nil x -> x = 0.
+
+Lemma mprod_cbl l ks : cbl l (ks *X* l).
+
+Lemma addE_mprod ks1 ks2 vs : length ks1 = length ks2 ->
+  map2 (fun k1 k2 => (k1 + k2)%f) ks1 ks2 *X* vs = ks1 *X* vs + ks2 *X* vs.
+
+Lemma scalE_mprod k ks vs : 
+ map (fun k1 => (k * k1)%f) ks *X* vs = k .* (ks *X* vs).
+
+Lemma mprod_perm l1 l2 lk1: perm l1 l2 -> length lk1 = length l1 ->
+  exists lk2, perm lk1 lk2 /\ lk1 *X* l1 = lk2 *X* l2.
+
+Fixpoint lgenk (n: nat) (k: K p) {struct n} : list (K p) :=
+  match n  with
+    O => nil
+  | 1 => k :: nil
+  | S n1 => k::lgenk n1 k
+  end.
+
+Lemma lgenk_length n k : length (lgenk n k) = n.
+
+Lemma genk0_mprod vs :  0 = lgenk (length vs) 0%f *X* vs.
+
+Lemma cbl_mprod vs v : cbl vs v -> 
+  exists ks, length ks = length vs /\ v = ks *X* vs.
+
+Lemma scalE_add0 x : x + (- (1)) .* x = 0.
+
+Lemma scalE_integral k x : k .* x = 0 -> {k = 0%f} + {x = 0}.
+
+Lemma scalE_opp k1 k2 x : k1 .* ((- (k2)) .* x) = (-k1).* (k2 .* x).
+
+Lemma scalE_swap k1 k2 x : k1 .* (k2 .* x) = k2 .* (k1 .* x).
+
+Lemma addE_swap x1 x2 x3 : x1 + (x2 + x3) = x2 + (x1 + x3).
+
+Lemma cblnil x : cbl nil x -> x = 0.
+
+Lemma cbl1 x y : cbl (x::nil) y -> exists k, y = k .* x.
+
+End VectorSpace.
+
+Notation " x *X* y " := (mprod _ x y) (at level 40, no associativity): vector_scope.
+
+Section Trans.
+
+Variable p p1 : eparams.
+Hypothesis Hp: vparamsProp p.
+Hypothesis Hp1: vparamsProp p1.
+Variable (f: p -> p1).
+Variable (g : stype p -> stype p1).
+Variable (g1 : stype p1 -> stype p).
+Hypothesis Hf0: f 0%v = 0%v.
+Hypothesis Hf1: forall x y : p, (f (x + y) = f x + f y)%v.
+Hypothesis Hf2: forall (k: stype p) (x : p), (f (k .* x) = g k .* f x)%v.
+Hypothesis Hg: forall k, g (g1 k) = k. 
+
+Lemma cbl_map l v : cbl _ l v -> cbl _ (map f l) (f v).
+
+Lemma cbl_map_inv l v :
+ cbl _ (map f l) v -> exists v1, cbl _ l v1 /\ v = f v1.
+
+End Trans.
+
+Structure params: Type := {
+ dim:> nat;           
+ K:> fparams          
+}.
+
+Ltac Vrm0 := Krm0;
+  repeat (rewrite addE0l ||rewrite addE0r || rewrite scalE0l|| rewrite scalE0r); auto. *)
+
+
+
+Section Kn.
+
+
+
+Variable p : params.
+
+
+
+Hypothesis Hp : fparamsProp p.
+
+
+
+Notation "'K'" := (K p).
+
+
+
+Delimit Scope kn_scope with k.
+
+Open Scope vector_scope.
+
+Open Scope kn_scope.
+
+
+
+Fixpoint kn (n: nat): Set := 
+
+  match n with O => unit | S n1 => (K * kn n1)%type end.
+
+
+
+Fixpoint eq (n : nat) : kn n -> kn n -> bool :=
+
+  match n return (kn n -> kn n -> bool) with
+
+  | 0%nat => fun a b => true
+
+  | S n1 =>
+
+      fun l1 l2 =>
+
+      let (v1, l3) := l1 in
+
+      let (v2, l4) := l2 in 
+
+      if (v1 ?= v2)%f then eq n1 l3 l4 else false
+
+  end.
+
+
+
+Fixpoint genk (n: nat) (k: K) {struct n}: (kn n) :=
+
+   match n return kn n with 0%nat => tt |  
+
+                            (S n1) => (k, genk n1 k) end.
+
+
+
+Notation " [ k ] " := (genk _ k) (at level 10): kn_scope.
+
+
+
+Fixpoint add (n : nat) : kn n -> kn n -> kn n :=
+
+  match n return (kn n -> kn n -> kn n) with
+
+  | 0%nat => fun a b => tt
+
+  | S n1 =>
+
+      fun l1 l2 =>
+
+      let (v1, l3) := l1 in
+
+      let (v2, l4) := l2 in ((v1 + v2)%f, add n1 l3 l4)
+
+  end.
+
+
+
+Fixpoint scal (n : nat) (k: K) {struct n}: kn n -> kn n :=
+
+  match n return (kn n -> kn n) with
+
+  | 0%nat => fun a => tt
+
+  | S n1 =>
+
+      fun l1 =>
+
+      let (v1,l2) := l1 in ((k * v1)%f , scal n1 k l2)
+
+  end.
+
+
+
+Canonical Structure vn_eparams (n: nat) :=
+
+  Build_eparams (kn n) K (genk n 0%f) (eq n) (add n) (scal n).
+
+
+
+Definition fn n : vparamsProp (vn_eparams n).
+
+apply Build_vparamsProp; auto.
+
+
+
+induction n as [| n IH]; simpl.
+
+  intros [] []; auto.
+
+intros (v1,l1) (v2, l2); 
+
+  generalize (eqK_dec _ Hp v1 v2); case eqK; intros HH; subst.
+
+  generalize (IH l1 l2); unfold eqE; simpl.
+
+case eq; intros HH; subst; auto.
+
+  intros HH1; injection HH1; intros; case HH; auto.
+
+intros HH1; injection HH1; intros; case HH; auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros (v1,l3) (v2, l4) (v3, l5); simpl in IH; 
+
+ rewrite IH, (addK_assoc _ Hp); auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros (v1,l3) (v2, l4); simpl in IH; 
+
+  rewrite (addK_com _ Hp), (IH l3); auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+  intros []; auto.
+
+intros (l1,l2); simpl in IH; rewrite (addK0l _ Hp), IH; auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros (l1, l2); simpl in IH; rewrite (multK0l _ Hp), IH; auto.
+
+
+
+induction n as [| n IH]; simpl.
+
+  intros []; auto.
+
+intros (l1, l2); simpl in IH; rewrite (multK1l _ Hp), IH; auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros k1 k2 (l1, l2); simpl in IH; rewrite (add_multKl _ Hp), IH; auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros k (l1, l3) (l2, l4); simpl in IH; rewrite (add_multKr _ Hp), IH; auto.
+
+
+
+induction n as [| n IH]; simpl; auto.
+
+intros k1 k2 (k, x); simpl in IH; rewrite (multK_assoc _ Hp), IH; auto.
+
+Qed.
+
+
+
+Hint Resolve fn.
+
+
+
+Ltac Kfold n :=
+
+     change (add n) with (addE (vn_eparams n));
+
+     change (scal n) with (scalE (vn_eparams n));
+
+     change (genk n 0%f) with (E0 (vn_eparams n)).
+
+
+
+Lemma scal_integral n k (x: kn n) : k .* x = 0 -> k = 0%f \/ x = 0.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto.
+
+  destruct x; auto.
+
+destruct x as (x1, x2); intros HH; injection HH; intros HH1 HH2.
+
+case (IH _ _ HH1); case (multK_integral _ Hp k x1); auto.
+
+intros; right; apply f_equal2 with (f := @pair _ _); auto.
+
+Qed.
+
+
+
+Lemma genk_inj n k1 k2 : [k1] = [k2] :> kn n.+1 -> k1 = k2.
+
+Proof.
+
+simpl; intros HH; injection HH; auto.
+
+Qed.
+
+
+
+Lemma genk0_dec n (x: kn n) :  x = 0 \/ x <> 0.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto.
+
+destruct x; auto.
+
+destruct x as (x1, x2).
+
+case (IH x2); intros H1; subst; auto.
+
+generalize (eqK_dec _ Hp x1 0%f); case eqK;intros H1; subst; auto.
+
+right; intro HH; case H1; injection HH; auto.
+
+right; intro HH; case H1; injection HH; auto.
+
+Qed.
+
+
+
+Fixpoint l2kn (n:nat) (l:list K) {struct l} : kn n:=
+
+  match n return kn n with 
+
+  | 0 => tt 
+
+  | S n1 => match l with 
+
+            | nil => genk (S n1) 0%f
+
+            | a::l1 =>  (a,l2kn n1 l1)
+
+            end
+
+  end.
+
+
+
+Fixpoint kn2l (n : nat) : kn n -> list K :=
+
+  match n return (kn n -> list K) with
+
+  | 0 => fun x => nil
+
+  | S n1 => fun v => let (a, v1) := v in a :: kn2l n1 v1
+
+  end.
+
+
+
+Lemma kn2ll2knE n x : l2kn n (kn2l n x) = x.
+
+Proof.
+
+induction n as [| n IH]; destruct x; simpl; auto.
+
+rewrite IH; auto.
+
+Qed.
+
+
+
+Lemma genk_id0 n i : In i (kn2l n (genk n 0%f)) -> i = 0%f.
+
+Proof.
+
+induction n as [| n IH]; simpl;
+
+  intros HH; case HH; auto.
+
+Qed.
+
+
+
+Inductive eql_t0 : list K -> list K -> Prop :=
+
+  eql_t0N: eql_t0 nil nil
+
+| eql_t0Nl: forall l, eql_t0 l nil -> eql_t0 (0%f :: l) nil
+
+| eql_t0Nr: forall l, eql_t0 nil l -> eql_t0 nil (0%f :: l) 
+
+| eql_t0R: forall a l1 l2, eql_t0 l1 l2 -> eql_t0 (a :: l1) (a :: l2).
+
+
+
+Hint Constructors eql_t0.
+
+
+
+Lemma eql_refl l : eql_t0 l l.
+
+Proof. elim l; auto. Qed.
+
+
+
+Lemma eql_sym l1 l2 : eql_t0 l1 l2 -> eql_t0 l2 l1.
+
+Proof. intros HH; elim HH; auto.
+
+Qed.
+
+
+
+Lemma eql_trans l2 l1 l3 : eql_t0 l1 l2 -> eql_t0 l2 l3 -> eql_t0 l1 l3.
+
+Proof.
+
+intros HH; generalize l3; elim HH; auto; clear l1 l2 l3 HH.
+
+intros l1 HH IH l3 HH1.
+
+  generalize (IH _ HH1); inversion_clear HH1; auto.
+
+intros l1 HH IH l3 HH1.
+
+  inversion_clear HH1; auto.
+
+intros a l1 l2 HH IH l3 HH1.
+
+  inversion_clear HH1; auto.
+
+Qed.
+
+
+
+Lemma dmap2_eql a l1 l2 l3 :
+
+  eql_t0 l2 l3 -> 
+
+  eql_t0 (dmap2 (multK K) a l1 l2) (dmap2 (multK K) a l1 l3).
+
+Proof.
+
+intros HH; generalize l1; elim HH; clear l1 l2 l3 HH; simpl; auto.
+
+intros [|b l1]; auto.
+
+intros l2 HH IH [|b l1].
+
+  rewrite multK0r; auto; apply eql_t0Nl.
+
+  generalize (IH nil); auto.
+
+  rewrite multK0r; auto; apply eql_t0Nl.
+
+  generalize (IH l1); auto; case l1; auto.
+
+intros l2 HH IH [|b l1].
+
+  rewrite multK0r; auto; apply eql_t0Nr.
+
+  generalize (IH nil); auto.
+
+  rewrite multK0r; auto; apply eql_t0Nr.
+
+  generalize (IH l1); auto; case l1; auto.
+
+intros b l2 l3 HH IH [|c l1].
+
+ apply eql_t0R; auto.
+
+ apply eql_t0R; auto.
+
+Qed.
+
+
+
+Lemma kn2l_0 n : eql_t0 (kn2l n 0) nil.
+
+Proof. elim n; simpl; auto. Qed.
+
+
+
+Fixpoint gen (n: nat) (p: nat) {struct n} : kn n :=
+
+  match n return kn n with O => tt | S n1 =>
+
+    match p with
+
+      0 => (1%f, genk n1 0%f)
+
+    | S p1 =>  (0%f, gen n1 p1) 
+
+    end
+
+  end.
+
+
+
+Notation " 'e_ p" := (gen _ p) (at level 70): kn_scope.
+
+
+
+Lemma gen_inj n p1 p2 : p1 < n -> p2 < n ->
+
+  'e_p1 = ('e_p2 : kn n)  -> p1 = p2.
+
+Proof.
+
+generalize p1 p2; clear p1 p2.
+
+induction n as [| n IH]; auto.
+
+intros p1 p2 Hp1; contradict Hp1; auto with arith.
+
+intros [|p1] [|p2] HH1 HH2; simpl; auto.
+
+intros HH; injection HH; intros; case (one_diff_zero _ Hp); auto.
+
+intros HH; injection HH; intros; case (one_diff_zero _ Hp); auto.
+
+intros HH; rewrite (IH p1 p2); auto with arith.
+
+injection HH; auto.
+
+Qed.
+
+
+
+Lemma kn2l_e0 n : eql_t0 (kn2l n.+1 ('e_0)) (1%f :: nil).
+
+Proof. 
+
+simpl; auto.
+
+apply eql_t0R.
+
+apply kn2l_0; auto.
+
+Qed.
+
+
+
+Lemma kn2l_ei n i :
+
+  eql_t0 (kn2l n.+1 ('e_i.+1))  (0%f :: kn2l n ('e_i)).
+
+Proof.
+
+apply eql_refl.
+
+Qed.
+
+
+
+Definition lift (n: nat) (v: kn n) : (kn (S n)) :=  (0%f, v).
+
+
+
+Lemma lift0 n : lift n 0 = 0.
+
+Proof. auto. Qed.
+
+
+
+Lemma lift_e : forall n i, 'e_(S i) = lift n ('e_i).
+
+Proof. auto. Qed.
+
+
+
+Lemma lift_add n x y : lift n (x + y) = lift n x + lift n y.
+
+Proof. unfold lift; simpl; rewrite addK0l; auto. Qed.
+
+
+
+Lemma lift_scal n k x :  lift n (k .* x) = scalE (vn_eparams (S n)) k (lift n x).
+
+Proof. unfold lift; simpl; rewrite multK0r; auto. Qed.
+
+
+
+Lemma lift_mprod (n: nat) ks vs : ks *X* map (lift n) vs =
+
+  lift n (mprod (vn_eparams n) ks vs).
+
+Proof.
+
+generalize vs; clear vs; induction ks as [| k ks IH].
+
+  intros vs; repeat rewrite mprod0l; auto.
+
+intros [| v vs]; simpl; try rewrite mprod0r; auto.
+
+rewrite (mprod_S (vn_eparams n.+1)); auto.
+
+rewrite mprod_S; auto.
+
+rewrite IH, lift_add, lift_scal; auto.
+
+Qed.
+
+
+
+Fixpoint base (n : nat) : list (kn n) :=
+
+  match n return list (kn n) with
+
+  | 0 => nil
+
+  | S n1 => ('e_0: kn (S n1)) :: map (lift n1) (base n1)
+
+  end.
+
+
+
+Lemma e_in_base n i : i < n -> In ('e_i) (base n).
+
+Proof.
+
+generalize i; clear i; induction n as [| n IH].
+
+  intros i HH; contradict HH; auto with arith.
+
+intros [| p1] Hp1; simpl; Kfold n; auto; right.
+
+refine (in_map _ _ _ _); auto with arith.
+
+Qed.
+
+
+
+Lemma e_in_base_ex n v : 
+
+  In v (base n) -> exists p1, p1 < n /\ v = 'e_p1.
+
+Proof.
+
+generalize v; clear v; induction n as [| n IH].
+
+  intros v [].
+
+simpl; intros [vv1 vv2] [H1 | H1].
+
+  exists 0%nat; auto with arith.
+
+rewrite in_map_iff in H1; case H1.
+
+intros vv3 [Hvv3 Hvv3'].
+
+case (IH _ Hvv3'); intros p1 [Hp1 Hp2].
+
+exists (S p1); split; auto with arith.
+
+rewrite <- Hvv3; rewrite Hp2; auto.
+
+Qed.
+
+
+
+Lemma base_length n : length (base n) = n.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto.
+
+rewrite map_length; rewrite IH; auto.
+
+Qed.
+
+
+
+Lemma base_free n : free _ (base n).
+
+Proof.
+
+  induction n as [|n IH].
+
+  *
+
+     intro. simpl. intros H H0 k H1.
+
+    assert (ks = nil) by (destruct ks; auto; discriminate).  subst.  inversion H1. 
+
+  * intro. destruct ks as [| k ks].
+
+  - simpl. intros. discriminate.
+
+  -
+
+    intros H1. simpl base. rewrite mprod_S, lift_mprod; auto.
+
+    simpl. intros HH. injection HH. clear HH.
+
+    Kfold n.
+
+    rewrite scalE0r, addE0l, addK0r; auto.
+
+    intros H2 H3 k1 [Hk1 | Hk1].
+
+    +
+
+      case (multK_integral _ Hp _ _ H3); try subst; auto; intros Heq.
+
+      case (one_diff_zero (vn_eparams n)); auto; apply (vgenk_inj _ _ _ Heq).
+
+    +
+
+      injection H1; rewrite map_length; auto.
+
+      intros Hl; apply (IH ks); auto.
+
+Qed.
+
+
+
+Lemma k2l_mprod n (v: kn n) : kn2l n v *X* base n = v.
+
+Proof.
+
+generalize v; clear v; induction n as [| n IH].
+
+simpl; intros []; auto.
+
+simpl; intros (x, v).
+
+rewrite (mprod_S (vn_eparams n.+1)); auto.
+
+rewrite lift_mprod, IH.
+
+simpl; Kfold n; auto.
+
+Krm1; Vrm0.
+
+Qed.
+
+
+
+Lemma cbl_base n v : cbl _ (base n) v.
+
+Proof. rewrite <- (k2l_mprod n v); apply mprod_cbl; auto. Qed.
+
+
+
+Lemma  kn_induct n (P: kn n -> Prop) :
+
+     P 0 -> 
+
+     (forall p, p < n -> P ('e_p)) ->
+
+     (forall v1 v2, P v1 -> P v2 -> P (v1 + v2)) ->
+
+     (forall k v, P v -> P (k .* v)) ->
+
+     (forall x, P x).
+
+Proof.
+
+intros H1 H2 H3 H4 x.
+
+elim (cbl_base n x); clear x; auto.
+
+intros v HH; case (e_in_base_ex _ _ HH); intros m (Hl,Hm).
+
+rewrite Hm; auto with arith.
+
+Qed.
+
+
+
+Fixpoint proj (n: nat) k : (kn n) -> K :=
+
+  match n return kn n -> K with 
+
+  | O => fun _ => 0%f
+
+  | S n1 => fun l => let (a,l1) := l in 
+
+          match k with | O => a | S k1 => 
+
+           proj n1 k1 l1
+
+          end
+
+  end.
+
+
+
+Lemma proj0 n i : proj n i 0 = 0%f.
+
+Proof.
+
+generalize i; clear i.
+
+induction n as [| n IH]; intros [|i]; simpl; auto.
+
+Qed.
+
+
+
+Lemma proj_e n i j : j < n ->
+
+  proj n i ('e_j) = if (i ?= j)%nat then 1%f else 0%f.
+
+Proof.
+
+generalize i j; clear i j.
+
+induction n as [| n IH]; intros [|i] [|j] H; 
+
+  simpl; auto with arith; try (contradict H; auto with arith; fail).
+
+rewrite proj0; auto.
+
+Qed.
+
+
+
+Lemma proj_scal n i k x :  proj n i (k .* x) = (k * proj n i x)%f.
+
+Proof.
+
+generalize i x; clear i x.
+
+induction n as [| n IH]; simpl; auto.
+
+Krm0.
+
+intros [| i] [x1 x2]; auto.
+
+exact (IH _ i x2).
+
+Qed.
+
+
+
+Lemma proj_add n i x y : 
+
+ proj n i (x + y) = (proj n i x + proj n i y)%f.
+
+Proof.
+
+generalize  i x y; clear i x y.
+
+induction n as [| n IH]; simpl; auto.
+
+intros [| i]; Krm0.
+
+intros [| i] (x1,x2) (x3,x4); auto.
+
+exact (IH i x2 x4).
+
+Qed.
+
+
+
+Fixpoint pscal (n: nat): (kn n) -> (kn n) -> K :=
+
+  match n return kn n -> kn n -> K with 
+
+  | O => fun a b => 0%f
+
+  | S n1 => fun l1 l2 => let (a,l3) := l1 in let (b,l4) := l2 in
+
+                         (a * b + pscal n1 l3 l4)%f
+
+  end.
+
+
+
+Notation "a  [.]  b" := (pscal _ a b) (at level 40): kn_scope.
+
+
+
+Lemma pscal0l n (x: kn n) : 0 [.] x = 0%f.
+
+Proof.
+
+induction n as [| n IH]; simpl.
+
+ intros; Krm0.
+
+destruct x; rewrite IH; Krm0.
+
+Qed.
+
+
+
+Lemma pscal0r n (x: kn n) : x [.] 0 = 0%f.
+
+Proof.
+
+induction n as [| n IH]; simpl.
+
+ intros; Krm0.
+
+destruct x; rewrite IH; Krm0.
+
+Qed.
+
+
+
+Lemma pscal_com n (x y: kn n) : x [.] y = y [.] x.
+
+Proof.
+
+induction n as [| n IH]; simpl.
+
+ intros; Krm0.
+
+destruct x; destruct y; rewrite multK_com, IH; auto.
+
+Qed.
+
+
+
+Lemma pscal_e n (i j: nat) : i < n -> j < n ->
+
+  ('e_i: kn n) [.] ('e_j) = if (i ?= j)%nat then 1%f else 0%f.
+
+Proof.
+
+generalize i j; clear i j.
+
+induction n as [| n IH].
+
+  intros i j HH; contradict HH; auto with arith.
+
+intros [|i] [|j] Hi Hj; 
+
+  simpl; auto with arith; 
+
+  try rewrite pscal0l; try rewrite pscal0r; Krm0; Krm1.
+
+apply IH; auto with arith.
+
+Qed.
+
+
+
+Lemma pscal_scall n k (x y: kn n) :  
+
+  (k .* x) [.] y = (k * (x [.] y))%f.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto; try Kfold n; Krm0.
+
+destruct x; destruct y.
+
+rewrite add_multKr, multK_assoc, IH; auto.
+
+Qed.
+
+
+
+Lemma pscal_scalr n k (x y: kn n) :  
+
+  x [.] (k .* y) = (k * (x [.] y))%f.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto; try Kfold n; Krm0.
+
+destruct x as [a x]; destruct y.
+
+rewrite add_multKr, <-multK_assoc, (multK_com _ Hp a), multK_assoc, IH; auto.
+
+Qed.
+
+
+
+Lemma pscal_addl n (x y z: kn n) :  
+
+  (x + y) [.] z = (x [.] z + (y [.] z))%f.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto; try Kfold n; Krm0.
+
+destruct x; destruct y as [b y]; destruct z as [c z].
+
+rewrite add_multKl, IH; auto.
+
+rewrite !addK_assoc; auto.
+
+rewrite <-(addK_assoc _ Hp (b * c)%f), (addK_com _ Hp (b * c)%f),
+
+        !addK_assoc; auto.
+
+Qed.
+
+
+
+Lemma pscal_addr n (x y z: kn n) :  
+
+  z [.] (x + y) = (z [.] x + (z [.] y))%f.
+
+Proof.
+
+induction n as [| n IH]; simpl; auto; try Kfold n; Krm0.
+
+destruct x; destruct y as [b y]; destruct z as [c z].
+
+rewrite add_multKr, IH; auto.
+
+rewrite !addK_assoc; auto.
+
+rewrite <-(addK_assoc _ Hp (c * b)%f), (addK_com _ Hp (c * b)%f),
+
+        !addK_assoc; auto.
+
+Qed.
+
+
+
+Definition Kn := kn p.
+
+Definition K0 := genk p 0%f.
+
+Definition Keq: Kn -> Kn -> bool := eq p.
+
+Definition Kadd: Kn -> Kn -> Kn := add p.
+
+Definition Kscal: K -> Kn -> Kn := scal p.
+
+Definition Kproj: nat -> Kn -> K := proj p.
+
+Definition Ksprod: Kn -> Kn -> K := pscal p.
+
+Definition Kgen := gen p.
+
+
+
+Canonical Structure v_eparams :=
+
+  Build_eparams Kn K K0 Keq Kadd Kscal.
+
+Definition f : vparamsProp v_eparams := fn p.
+
+
+
+Fixpoint kprod (n : nat) : kn n -> kn n -> kn n :=
+
+  match n with
+
+  | 0%nat => fun a b => tt
+
+  | S n1 =>
+
+      fun l1 l2 =>
+
+      let (v1, l3) := l1 in
+
+      let (v2, l4) := l2 in ((v1 * v2)%f, kprod n1 l3 l4)
+
+  end.
+
+
+
+Local Notation "a  [*]  b" := (kprod _ a b) (at level 40).
+
+
+
+Lemma kprod0l n a : 0 [*] a = 0 :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; simpl; rewrite IH; Krm0.
+
+Qed.
+
+
+
+Lemma kprod0r n a : a [*] 0 = 0 :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; simpl; rewrite IH; Krm0.
+
+Qed.
+
+
+
+Lemma kprodkl n k a : [k] [*] a = k .* a :> kn n.
+
+Proof.
+
+induction n as [|n IH]; destruct a; simpl; auto.
+
+rewrite IH; Krm1.
+
+Qed.
+
+
+
+Lemma kprodkr n k a : a [*] [k] = k .* a :> kn n.
+
+Proof.
+
+induction n as [|n IH]; destruct a; simpl; auto.
+
+rewrite IH, multK_com; Krm1.
+
+Qed.
+
+
+
+Lemma kprod1l n a : [1%f] [*] a = a :> kn n.
+
+Proof.
+
+rewrite kprodkl, scalE1; auto.
+
+Qed.
+
+
+
+Lemma kprod1r n a : a [*] [1%f] = a :> kn n.
+
+Proof.
+
+rewrite kprodkr, scalE1; auto.
+
+Qed.
+
+
+
+Lemma kprod_addl n a b c : 
+
+  (a + b) [*] c = a [*] c + b [*] c :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; destruct b; destruct c; simpl.
+
+Kfold n; rewrite IH, add_multKl; Krm0.
+
+Qed.
+
+
+
+Lemma kprod_addr n a b c : 
+
+  a [*] (b + c) = a [*] b + a [*] c :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; destruct b; destruct c; simpl.
+
+Kfold n; rewrite IH, add_multKr; Krm0.
+
+Qed.
+
+
+
+Lemma kprod_scall n k a b : 
+
+  (k .* a) [*] b = k .* (a [*] b) :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; destruct b; simpl.
+
+Kfold n; rewrite IH, multK_assoc; Krm0.
+
+Qed.
+
+
+
+Lemma kprod_scalr n k a b : 
+
+  a [*] (k .* b) = k .* (a [*] b) :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; destruct b; simpl.
+
+Kfold n; rewrite IH, multK_swap; Krm0.
+
+Qed.
+
+
+
+Lemma kprod_assoc n a b c : 
+
+  (a [*] b) [*] c = a [*] (b [*] c) :> kn n.
+
+Proof.
+
+induction n as [|n IH]; simpl; auto.
+
+destruct a; destruct b; destruct c; simpl.
+
+Kfold n; rewrite IH, multK_assoc; Krm0.
+
+Qed.
+
+
+
+End Kn.
+
+
+
+Notation " 'e_ p" := (gen _ _ p) (at level 8) : Kn_scope.
+
+Notation " [ k ] " := (genk _ _ k) (at level 9) : Kn_scope.
+
+Notation "a  [.]  b" := (pscal _ _ a b) (at level 40): Kn_scope.
+
+Notation "a  [*]  b" := (kprod _ _ a b) (at level 40): Kn_scope.
+
+
+
+Delimit Scope Kn_scope with Kn.
+
+
+
+Hint Constructors eql_t0.
+

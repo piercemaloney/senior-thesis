@@ -1,0 +1,1753 @@
+From L Require Import L Reduction Encodings InterpreterResults Rice DecidableRecognisable Enumerable.
+(* L.L:
+Require Export String.
+From Undecidability.L Require Export Preliminaries.
+
+Inductive term : Type :=
+| var (n : nat) : term
+| app (s : term) (t : term) : term
+| lambda (s : term).
+
+Definition lam s := exists t, s = lambda t.
+Hint Unfold lam.
+
+Lemma lambda_lam s : lam (lambda s).
+Hint Resolve lambda_lam.
+
+Fixpoint size t :=
+  match t with
+  | var n => 1
+  | app s t => size s + size t
+  | lambda s => 1 + size s
+  end.
+
+Fixpoint convert' (F : list string) (s : bterm) : term := match s with
+| bvar x => match pos _ x F with None => 100 | Some t =>  t end
+| bapp s t => app (convert' F s) (convert' F t)
+| blambda x s => lambda (convert' (x:: F) s)
+| bter t => t
+end.
+
+Coercion bvar : string >-> bterm.
+Coercion bapp : bterm >-> Funclass.
+Definition convert := convert' [].
+Coercion convert : bterm >-> term.
+
+Arguments convert /.
+
+Hint Unfold convert: cbv.
+
+Notation ".\ x , .. , y ; t" := ((blambda x .. (blambda y t) .. )) (at level 100, right associativity).
+Notation "'λ'  x , .. , y ; t" := ((blambda x .. (blambda y t) .. )) (at level 100, right associativity).
+
+Notation "'!' s" := (bter s) (at level 0).
+
+Implicit Types s t u v : term.
+Implicit Types p q : term -> Prop.
+Implicit Types n m k l : nat.
+
+Fixpoint subst s k u :=
+  match s with
+      | var n => if decision (n = k) then u else (var n)
+      | app s t => app (subst s k u) (subst t k u)
+      | lambda s => lambda (subst s (S k) u)
+  end.
+Hint Unfold subst : cbv.
+
+Fixpoint bound (k : nat) (t : term) : bool :=
+match t with
+| var n => if decision (n < k) then true else false
+| app s t => andb (bound k s) (bound k t)
+| lambda s => bound (S k) s
+end.
+
+Definition closed s := bound 0 s = true.
+Definition proc s := closed s /\ lam s.
+
+Lemma bound_ge k s : bound k s = true -> forall m, m >= k -> bound m s = true.
+
+Lemma bound_closed_k s k n u : bound n s = true -> k >= n -> subst s k u = s.
+
+Lemma closed_subst s k u : closed s -> subst s k u = s.
+
+Lemma closed_app s t : closed (s t) -> closed s /\ closed t.
+
+Lemma app_closed s t : closed s -> closed t -> closed (s t).
+
+Definition I : term := .\"x"; "x".
+Definition T : term := .\"x","y"; "x".
+Definition F : term := .\"x","y"; "y".
+
+Definition omega : term := .\"x"; "x" "x".
+Definition Omega := omega omega.
+Definition D: term := lambda (omega omega).
+
+Inductive evaluates : term -> term -> Prop :=
+  evaluates_lam s : evaluates (lambda s) (lambda s)
+| evaluates_app s t u v w : evaluates s (lambda u) -> evaluates t v -> evaluates (subst u 0 v) w ->
+                            evaluates (s t) w.
+Hint Constructors evaluates.
+
+Notation "s '▷' t" := (evaluates s t) (at level 50).
+
+Definition eva s := exists t, evaluates s t.
+Hint Unfold eva.
+
+Lemma evaluates_abst s t : s ▷ t -> lam t.
+
+Lemma evaluates_functional s t1 t2 :
+  s ▷ t1 -> s ▷ t2 -> t1 = t2.
+      
+Lemma evaluates_bound : ~ forall s t n, s ▷ t -> bound n s = true -> bound n t = true.
+
+Lemma bound_subst s t k : bound (S k) s = true -> bound k t = true -> bound k (subst s k t) = true.
+
+Lemma evaluates_closed s t : s ▷ t -> closed s -> closed t.
+
+Lemma app_eva s t : eva (s t) -> eva s /\ eva t.
+
+Lemma F_eva s t : eva (F s t) <-> eva s /\ eva t.
+
+Lemma F_correct s t : lam s -> lam t -> F s t ▷ t.
+
+Lemma eva_Omega : ~ eva Omega.
+
+Lemma eva_D s : ~ eva (D s).
+
+Lemma evaluates_D s v : D s ▷ v <-> False.
+
+Lemma star_stepn s t : s ≻* t <-> exists n, stepn n s t.
+
+Lemma evaluates_star s t : s ▷ t -> s ≻* t /\ lam t.
+
+Lemma step_evaluates s s' t : s ≻ s' -> s' ▷ t -> s ▷ t.
+
+Lemma steps_evaluates s s' t : s ≻* s' -> s' ▷ t -> s ▷ t.
+
+Lemma star_evaluates s t : s ≻* t -> lam t -> s ▷ t.
+
+Lemma stepn_plus s s' t n m : s ≻^n s' -> s' ≻^m t -> s ≻^(n+m) t.
+
+Definition C := .\ "x", "y"; "y" (.\ "z"; "x" "x" "y" "z").
+Definition rho s : term := Eval cbv in .\ "x" ; C C !s "x".
+
+Lemma rho_lam s : lam (rho s).
+
+Lemma rho_closed s : closed s -> closed (rho s).
+
+Lemma rho_correct u v : proc u -> proc v -> rho u v ≻^3 u (rho u) v.
+
+Lemma uniform_confluence s t1 t2 :
+  s ≻ t1 -> s ≻ t2 -> t1 = t2 \/ exists u, t1 ≻ u /\ t2 ≻ u.
+
+Lemma parametric_semi_confluence s t1 t2 n :
+  s ≻ t1 -> s ≻^n t2 -> exists k l u, k <= n /\ l <= 1 /\ t1 ≻^k u /\ t2 ≻^l u /\ 1 + k = n + l.
+
+Lemma parametric_confluence s t1 t2 m n :
+  s ≻^m t1 -> s ≻^n t2 -> exists k l u, k <= n /\ l <= m /\ t1 ≻^k u /\ t2 ≻^l u /\ m + k = n + l.
+
+Lemma confluence s t1 t2 : s ≻* t1 -> s ≻* t2 -> exists u, t1 ≻*u /\ t2 ≻* u.
+
+Definition evaluatesin n s t := (s ≻^n t /\ lam t).
+Notation "s '▷^' n t" := (evaluatesin n s t) (at level 40, n at level 5).
+
+Definition stepplus s t := (exists s', s ≻ s' /\ s' ≻* t).
+Notation "s '≻^+' t" := (stepplus s t) (at level 40).
+
+Lemma unique_step_index s m t n : s ▷^m t -> s ▷^n t -> m = n.
+
+Lemma stepplus_stepn s t : s ≻^+ t <-> exists n, s ≻^(S n) t.
+
+Lemma triangle s n t s' : s ▷^n t -> s ≻^+ s' -> exists k, k < n /\ s' ▷^k t.
+
+Lemma star_equiv s t : s ≻* t -> s ≡ t.
+
+Lemma church_rosser s t : s ≡ t -> exists u, s ≻* u /\ t ≻* u.
+
+Lemma equiv_star_lam s t : lam t -> s ≡ t <-> s ≻* t.
+
+Lemma unique_normal_forms (s t : term) : lam s -> lam t ->  s ≡ t -> s = t.
+
+Lemma evaluates_equiv s t : s ▷ t <-> s ≡ t /\ lam t.
+
+Lemma equiv_evaluates s t v : s ≡ t -> s ▷ v -> t ▷ v.
+
+Lemma equiv_eva s t : s ≡ t -> eva s <-> eva t.
+
+Lemma stepplus_star_stepplus s s' t : s ≻^+ s' -> s' ≻* t ->  s ≻^+ t.
+
+Lemma I_neq_Omega : ~ I ≡ Omega. *)
+(* L.Reduction:
+Require Import L Encodings DecidableRecognisable Markov Enumerable.
+
+Implicit Types P Q : term -> Prop.
+
+Definition computable_gen X Y (xenc : X -> term) (yenc : Y -> term) f :=
+  exists u, proc u /\ forall s, u (xenc s) ▷ (yenc (f s)).
+
+Definition computable_fun f := computable_gen tenc tenc f.
+
+Record mreducible P Q : Prop :=
+  { f : term -> term ;
+    f_red : forall s, P s <-> Q (f s) ;
+    f_comp : computable_fun f ;
+  }.
+Notation "P ⪯ Q" := (mreducible P Q) (at level 40, no associativity).
+
+Lemma mreducible_sane P Q :
+  mreducible P Q <-> exists u, proc u /\ forall s, exists t, u (tenc s) ▷ tenc t /\ (P s <-> Q t).
+
+Lemma mreducible_ext P Q P' Q' :
+  (forall s, P s <-> P' s) -> (forall s, Q s <-> Q' s) -> P ⪯ Q -> P' ⪯ Q'.
+
+Lemma mreducible_comp P Q :
+  P ⪯ Q -> (fun s => ~ P s) ⪯ (fun s => ~ Q s).
+
+Lemma mreducible_comp_conv :
+  (forall P Q, (fun s => ~ P s) ⪯ (fun s => ~ Q s) -> P ⪯ Q) ->
+  Markov_Eva.
+
+Lemma mreducible_dec P Q :
+  decidable Q -> P ⪯ Q -> decidable P.
+
+Lemma mreducible_red P Q s t :
+  Q s -> ~ Q t -> decidable P -> P ⪯ Q.
+
+Lemma mreducible_recognisable P Q :
+  recognisable Q -> P ⪯ Q -> recognisable P.
+
+Lemma mreducible_full P :
+  P ⪯ (fun s => True) <-> (forall s, P s).
+
+Lemma mreducible_empty P :
+  P ⪯ (fun s => False) <-> (forall s, ~ P s).
+
+Lemma eva_red :
+  (fun s => eva (s (tenc s))) ⪯ eva.
+
+Lemma recognisable_iff P :
+  recognisable P <-> P ⪯ eva.
+
+Lemma preceq_lub P Q : exists R,
+    P ⪯ R /\ Q ⪯ R /\ forall R', P ⪯ R' -> Q ⪯ R' -> R ⪯ R'. *)
+(* L.Encodings:
+From Undecidability.L Require Export Tactics.
+
+Fixpoint enc (n : nat) :=
+  match n with
+  | 0   => lambda(lambda (1))
+  | S n => lambda(lambda ( 0 (enc n)))
+  end.
+
+Lemma enc_proc m :
+  proc (enc m).
+
+Hint Resolve enc_proc : cbv.
+
+Lemma enc_injective m n : enc m = enc n -> m = n.
+
+Lemma enc_inj m n : enc m ≡ enc n -> m = n.
+
+Definition Zero : term := .\"z","s"; "z".
+Definition Succ : term := .\"n","z","s"; "s" "n".
+
+Hint Unfold Zero Succ : cbv.
+
+Lemma Succ_correct n : Succ (enc n) ≻* enc (S n).
+
+Definition Add  := Eval cbn in rho (.\ "a", "n", "m"; "n" "m" (.\"n"; !Succ ("a" "n" "m"))).
+
+Hint Unfold Add : cbv.
+
+Lemma Add_correct n m :
+  Add (enc n) (enc m) ≡ enc (n + m).
+
+Fixpoint tenc t :=
+  lambda (  lambda (  lambda ( 
+     match t with
+       | var n => (var 2) (enc n)
+       | app s t => (var 1) (tenc s) (tenc t)
+       | lambda s => (var 0) (tenc s)
+     end
+  ))).
+
+Lemma tenc_proc s : proc (tenc s).
+
+Hint Resolve tenc_proc : cbv.
+
+Lemma tenc_injective s t : tenc s = tenc t -> s = t.
+
+Lemma tenc_inj s t : tenc s ≡ tenc t -> s = t.
+
+Definition Var : term := .\"n";     .\"v","a","l"; "v" "n".
+Definition App : term := .\"s","t"; .\"v","a","l"; "a" "s" "t".
+Definition Lam : term := .\"s";     .\"v","a","l"; "l" "s".
+
+Lemma Var_correct n : Var (enc n) ≡ tenc (n).
+
+Lemma App_correct s t : App (tenc s) (tenc t) ≡ tenc (s t).
+
+Lemma Lam_correct s : Lam (tenc s) ≡ tenc (lambda s).
+
+Definition N := rho ( .\"N", "n"; "n"
+   !(tenc Zero)
+   (.\"n"; !Lam (!Lam (!App !(tenc 0) ("N" "n"))))).
+
+Lemma N_correct n : N (enc n) ≡ tenc(enc n).
+
+Definition Q := Eval cbn in rho ( .\"Q", "s"; "s"
+   (.\"n";     !Lam (!Lam (!Lam (!App !(tenc 2) (!N "n")))))
+   (.\"s","t"; !Lam (!Lam (!Lam (!App (!App !(tenc 1) ("Q" "s")) ("Q" "t")))))
+   (.\"s";     !Lam (!Lam (!Lam (!App !(tenc 0) ("Q" "s"))))) ).
+
+Lemma Q_correct s : Q (tenc s) ≡ tenc(tenc s).
+
+Definition benc (b:bool) : term := if b then T else F.
+Hint Unfold T F : cbv.
+
+Lemma benc_proc b : proc (benc b).
+Hint Resolve benc_proc : cbv.
+
+Lemma T_equiv_F : ~ T ≡ F. *)
+(* L.InterpreterResults:
+From Undecidability.L Require Export L Encodings Interpreter Choose.
+
+Definition none : term := .\"s", "n"; "n".
+Definition some : term := .\"t", "s", "n"; "s" "t".
+
+Hint Unfold some none : cbv.
+
+Definition oenc t :=
+  match t with
+  | Some t => lambda(lambda (1 (tenc t)))
+  | None => none
+  end.
+
+Lemma oenc_cls s: closed (oenc s).
+
+Lemma oenc_lambda s: lam (oenc s).
+
+Hint Resolve oenc_cls oenc_lambda: cbv.  
+ 
+Lemma some_correct s : some (tenc s) ≡ oenc (Some s).
+
+Lemma some_correct_r s t t' : proc t -> proc t' -> oenc (Some s) t t' ≡ t (tenc s).
+
+Lemma none_correct s t : proc s -> proc t  -> none s t ≡ t.
+
+Lemma oenc_correct_some s v : lam v -> oenc (Some s) ≡ some v -> v ≡ tenc s.
+
+Lemma oenc_inj o1 o2 : oenc o1 ≡ oenc o2 -> o1 = o2.
+
+Lemma none_equiv_some v : ~ oenc None ≡ some v.
+
+Definition EqN := rho (.\"EqN", "n", "m"; "n" ("m" !T !(lambda F)) (.\"n"; "m" !F (.\"m"; "EqN" "n" "m"))).
+
+Hint Unfold EqN: cbv.
+
+Lemma EqN_correct m n : EqN (enc m) (enc n) ≡ benc (Nat.eqb m n).
+
+Definition Subst := rho (.\ "Subst", "s", "k", "u"; "s" (.\"n"; !EqN "n" "k" "u" (!Var "n"))
+                                                     (.\"s1", "s2"; !App ("Subst" "s1" "k" "u") ("Subst" "s2" "k" "u"))
+                                                     (.\"s1"; !Lam ("Subst" "s1" (!Succ "k") "u")) ).
+
+Hint Unfold Subst : cbv.
+
+Lemma Subst_correct s k u :
+  Subst (tenc s) (enc k) (tenc u) ≡ tenc (subst s k u).
+
+Definition E := Eval cbv in
+                 rho (.\ "Eval","n","u";"u"
+                   (.\"";!none)
+                   (.\"s","t"; "n" !none 
+                                   (.\"n"; "Eval" "n" "s" 
+                                           (.\"s"; "Eval" "n" "t" 
+                                                 (.\"t"; "s"
+                                                           (.\""; !none)
+                                                           (.\"",""; !none)
+                                                           (.\"s"; "Eval" "n" (!Subst "s" !Zero "t")))
+                                                 !none)
+                                           !none))
+                   (.\"s"; !some (!Lam "s"))).
+
+Definition cLam s := lambda(lambda(lambda(0 s))).
+Hint Unfold cLam : cbv. 
+
+Lemma E_rec_app_Sn_1 s t n s1 t1 : 
+   proc s1 ->
+   proc t1 ->
+   E (enc n) (tenc s) ≡ some (cLam s1) -> 
+   E (enc n) (tenc t) ≡ some (cLam t1) ->
+   E (enc (S n)) (tenc (app s t)) ≡ E (enc n) (Subst s1 Zero (cLam t1)).
+
+Lemma E_rec_app_Sn_2 s t n : E (enc n) (tenc s) ≡ none -> E (enc (S n)) (tenc (s t)) ≡ none.
+
+Lemma E_rec_app_Sn_3 s t n t1 : proc t1
+                                   -> E (enc n) (tenc s) ≡ some (cLam t1)
+                                   -> E (enc n) (tenc t) ≡ none
+                                   -> E (enc (S n)) (tenc (s t)) ≡ none.
+                                              
+Lemma E_correct k s : E (enc k) (tenc s) ≡ oenc (eval k s).
+
+Lemma E_S n s t : E (enc n) (tenc s) ▷ oenc (Some t) -> E (enc (S n)) (tenc s) ▷ oenc (Some t).
+
+Lemma E_sound n s : E (enc n) (tenc s) ▷ oenc (None) \/ exists t, E (enc n) (tenc s) ▷ oenc (Some t) /\ s ▷ t.
+
+Lemma E_complete s t : s ▷ t -> exists n, E (enc n) (tenc s) ▷ oenc (Some t).
+
+Require Import DecidableRecognisable Rice.
+
+Lemma totality : ~ recognisable (fun s => proc s /\ forall t, eva(s (tenc t))).
+
+Theorem totality_hard : ~ recognisable (fun s => forall t, pi s t) /\ ~ recognisable (fun s => ~ forall t, pi s t).
+
+Definition H s : term := Eval cbv in (.\ "y"; !E "y" !s !(lambda T) !F).
+Definition U : term := Eval cbv in .\ "x"; !E !(C (H 1)) "x" !I !I.
+
+Lemma U_rec s : U (tenc s) ≡ E (C (H (tenc s))) (tenc s) I I.
+
+Lemma H_test s : test (H (tenc s)).
+
+Lemma H_inv n s : satis ( H (tenc s) ) n -> eval n s <> None.
+
+Lemma H_proc s : proc (H (tenc s)).
+
+Lemma U_complete s t : s ▷ t -> U (tenc s) ▷ tenc t.
+
+Lemma U_sound s : eva (U (tenc s)) -> eva s.
+
+Lemma U_eva s : eva s <-> eva (U (tenc s)).
+
+Lemma recognisable_eva : recognisable eva. *)
+(* L.Rice:
+From Undecidability.L Require Import Tactics Encodings DecidableRecognisable.
+Implicit Type p : term -> Prop.
+Implicit Types s t u : term.
+
+Definition Leb := Eval cbn in
+      rho (.\ "leb", "m", "n"; "m" !T (.\ "m'"; "n" !F (.\ "n'"; "leb" "m'" "n'"))).
+
+Hint Unfold Leb: cbv.
+
+Lemma Leb_correct m n : Leb (enc m) (enc n) ≡ benc (leb m n).
+
+Hint Rewrite Leb_correct : Lcorrect.
+
+Definition Lt : term := .\ "m", "n"; !Leb (!Succ "m") "n".
+
+Lemma Lt_correct n k : Lt (enc n) (enc k) ≡ benc (Nat.ltb n k).
+
+Definition Bound := Eval cbn in
+      rho (.\ "d", "k", "t";
+           "t" (.\ "n"; !Lt "n" "k")
+               (.\ "s", "t"; ("d" "k" "s") ("d" "k" "t") !F)
+               (.\ "s"; "d" (!Succ "k") "s")).
+
+Lemma Bound_correct k s : Bound (enc k) (tenc s) ≡ benc (bound k s).
+
+Definition Closed := Bound (enc 0).
+
+Lemma decidable_closed : decidable closed.
+
+Definition Lambda := lambda (0 (lambda F) (lambda (lambda F)) (lambda T)).
+
+Hint Unfold Lambda : cbv.
+
+Lemma Lambda_correct s : Lambda (tenc s) ▷ T /\ lam s \/
+                         Lambda (tenc s) ▷ F /\ ~ lam s.
+
+Lemma decidable_lam : decidable lam.
+
+Lemma decidable_proc : decidable proc.
+
+Notation "s '≈' t" := (forall u v, t (tenc u) ▷ v <-> s (tenc u) ▷ v) (at level 50).
+
+Lemma equiv_semantic s t : s ≡ t -> s ≈ t.
+
+Definition closed_under_proc R p := forall s t , proc s -> proc t -> p s -> R s t -> p t.
+Definition semantic p := closed_under_proc (fun s t => s ≈ t) p.
+
+Lemma unrecognisable_russell : ~ recognisable (fun s => closed s /\ ~ eva (s (tenc s))).
+
+Lemma Reduction p f v :
+  proc v ->
+  (forall s, closed s -> p (f s) <-> ~ eva (s (tenc s))) ->
+  (forall s, v (tenc s) ≡ tenc (f s)) ->
+  ~ recognisable p.
+
+Lemma D_pi u : pi D u <-> False.
+
+Lemma Rice p N :
+  semantic p ->
+  proc N -> ~ p N ->
+  p D ->
+  ~ recognisable p.
+
+Lemma Rice_pi p :
+  closed_under_proc (fun s t => (forall u, pi s u <-> pi t u)) p ->
+ (exists u, proc u /\ ~ p u) -> 
+ p (lambda Omega) -> ~ recognisable p.
+
+Lemma rec_total : ~ recognisable (fun s => ~forall t, pi s t).
+
+Lemma rec_total_cls : ~ recognisable (fun s => closed s /\ ~forall t, pi s t).
+
+Lemma rec_total_proc : ~ recognisable (fun s => proc s /\ ~forall t, pi s t).
+
+Theorem Rice_Theorem p :
+  closed_under_proc (fun s t => s ≈ t) p ->
+ (exists u, proc u /\ ~ p u) -> (exists u, proc u /\ p u) ->
+  ~ decidable p.
+
+Lemma dec_total : ~ decidable (fun s => proc s /\ forall t, pi s t).
+Proof.
+  eapply Rice_Theorem. *)
+(* L.DecidableRecognisable:
+From Undecidability.L Require Import Encodings.
+
+Implicit Types s t u v : term.
+Implicit Types p q : term -> Prop.
+
+Definition decides u p := forall s, (p s /\ u (tenc s) ▷ T) \/ (~ p s /\ u (tenc s) ▷ F).
+Definition decidable p := 
+  exists u, proc u /\ decides u p.
+
+Lemma decidable_spec u p : decides u p -> forall s, (p s <-> u (tenc s) ▷ T) /\ (~ p s <-> u (tenc s) ▷ F).
+
+Definition pi s t := eva (s (tenc t)).
+
+Definition recognisable p := 
+  exists u, proc u /\ forall s, p s <-> eva (u (tenc s)).
+
+Definition complement p := fun t => ~ p t.
+Definition intersection p q := fun t => p t /\ q t.
+Definition union p q := fun t => p t \/ q t.
+
+Definition tcompl (u : term) : term := .\"x"; (!u "x") !F !T.
+
+Definition tintersection u v : term := .\"x"; (!u "x") (!v "x") !F.
+
+Definition tunion u v : term := .\"x"; (!u "x") !T (!v "x").
+
+Lemma decidable_intersection p q : decidable p -> decidable q -> decidable (intersection p q).
+
+Lemma decidable_union p q : decidable p -> decidable q -> decidable (union p q).
+
+Lemma decidable_complement p : decidable p -> decidable (complement p).
+
+Lemma undecidable_russell : ~ decidable (fun s => ~ s (tenc s) ▷ T).
+
+Definition recinter u v : term := .\"x"; !F (!u "x") (!v "x").
+Hint Unfold recinter : cbv.
+
+Lemma recinter_correct u v s : closed u -> closed v -> eva (recinter u v (tenc s)) <-> eva ( u (tenc s)) /\ eva (v (tenc s)).
+
+Lemma recognisable_intersection p q : recognisable p -> recognisable q -> recognisable (intersection p q).
+
+Lemma dec_recognisable p : decidable p -> recognisable p.
+
+Lemma dec_rec p : decidable p -> recognisable p /\ recognisable (complement p).
+
+Theorem SecondFixedPoint (s : term) : closed s -> exists t, closed t /\ s (tenc t) ≡ t.
+
+Theorem Scott p : 
+  (forall s t, closed s -> p s -> closed t -> t ≡ s -> p t) ->
+  (exists t1, closed t1 /\ p t1) -> (exists t2, closed t2 /\ ~ p t2) ->
+  ~ decidable p.                                                                 
+
+Lemma eva_dec : ~ decidable eva.
+
+Lemma equiv_spec_decidable : forall t, closed t -> ~ decidable (fun x => x ≡ t). *)
+(* L.Enumerable:
+From Undecidability.L Require Import DecidableRecognisable InterpreterResults.
+Open Scope list_scope.
+Implicit Types s t : term.
+
+Definition enumerable p := exists u, proc u /\ (forall n, u(enc n) ≡ none \/ exists s, u (enc n) ≡ oenc (Some s) /\ p s) /\ forall s, p s -> exists n, u (enc n) ≡ oenc (Some s).
+
+Definition Eq := rho (.\ "Eq", "s", "t"; "s" (.\"n";        "t" (.\"m"; !EqN "n" "m") !(lambda (lambda F)) !(lambda F))
+                                           (.\"s1", "s2"; "t" !(lambda F) (.\"t1","t2"; ("Eq" "s1" "t1") ("Eq" "s2" "t2") !F) !(lambda F))
+                                           (.\"s1";       "t" !(lambda F) !(lambda (lambda F)) (.\"t1"; "Eq" "s1" "t1")) ).
+Hint Unfold Eq : cbv.
+
+Definition term_eq_bool s t := if decision (s = t) then true else false.
+
+Lemma Eq_correct' s t :
+  Eq (tenc s) (tenc t) ≡ benc (term_eq_bool s t).
+
+Lemma Eq_correct s t :
+      (s  = t -> Eq (tenc s) (tenc t) ≡ T )
+  /\ ( s <> t -> Eq (tenc s) (tenc t) ≡ F ).
+
+Section Fix_f.
+
+  Variable u : term.
+  Hypothesis proc_u : proc u.
+  Hypothesis total_u : forall n, u (enc n) ≡ none \/ exists s, u (enc n) ≡ oenc (Some s).
+
+  Definition Re : term := Eval cbv in
+        .\ "s"; !C (.\ "n"; !u "n" (.\ "t"; !Eq "s" "t") !F).
+
+  Lemma Re_proc :
+    proc Re.
+
+  Lemma H_rec n s : ((lambda (((u 0) (lambda ((Eq (tenc s)) 0))) F)) (enc n) ≡ u (enc n) (lambda (Eq (tenc s) 0)) F).
+
+  Lemma H_proc s : proc (.\ "n"; !u "n" (.\ "t"; !Eq !(tenc s) "t") !F).
+
+  Lemma H_test s : test (.\ "n"; !u "n" (.\ "t"; !Eq !(tenc s) "t") !F).
+
+  Lemma Re_sound s : eva (Re (tenc s)) -> exists n, u (enc n) ≡ oenc (Some s).
+
+  Lemma Re_complete n s : u (enc n) ≡ oenc (Some s) -> eva (Re (tenc s)).
+
+End Fix_f.
+
+Lemma enumerable_recognisable p : enumerable p -> recognisable p.
+
+Lemma R_enumerates (R : nat -> option term) (u : term) :
+  proc u -> (forall s, exists n, R n = Some s) -> (forall n, u (enc n) ▷ oenc (R n)) ->
+  enumerable (fun s => True).
+
+Fixpoint L n :=
+  match n with
+  | 0 => [ ]
+  | S n => L n ++ var n :: map_pro L.app (L n) (L n) ++ map lambda (L n)
+  end.
+
+Lemma length_L n : |L n| >= n.
+
+Lemma L_exists n : exists s, nth n (L (S n)) = Some s.
+
+Lemma L_cum m n : m <= n -> exists A, L n = L m ++ A.
+
+Lemma nth_app_l X (x : X) n A B :
+  nth n A = Some x -> nth n (A ++ B) = Some x.
+
+Lemma L_inv m n k s t :
+  nth k (L m) = Some s -> nth k (L n) = Some t -> s = t.
+
+Definition R n := nth n (L (S n)).
+
+Fixpoint beta s :=
+  match s with
+  | var n => S n
+  | app s t => S (beta s + beta t)
+  | lambda s => S (beta s)
+  end.
+
+Lemma L_el s m n : s el L m -> m <= n -> s el L n.
+  
+Lemma L_beta s : s el L (beta s).
+  
+Lemma R_surjective s : exists n, R n = Some s.
+
+Section Fix_X.
+
+  Variable X : Type.
+  Variable enc : X -> term.
+  Hypothesis enc_proc : (forall x, proc (enc x)).
+
+  Fixpoint lenc (A : list X) :=
+    match A with
+    | nil => lambda (lambda 1)
+    | a::A => lambda(lambda (0 (enc a) (lenc A)))
+    end.
+
+  Definition Nil : term := .\ "n", "c"; "n".
+  Definition Cons: term := .\ "a", "A", "n", "c"; "c" "a" "A".
+
+  Lemma lenc_proc A : proc (lenc A).
+
+  Hint Resolve lenc_proc : cbv.
+
+  Lemma Cons_correct a A : Cons (enc a) (lenc A) ≡ lenc(a::A).
+
+  Definition Append := rho (.\ "app", "A", "B";
+                            "A" "B" (.\"a", "A"; !Cons "a" ("app" "A" "B"))).
+
+  Hint Unfold Append : cbv.
+
+  Lemma Append_correct A B : Append (lenc A) (lenc B) ≡ lenc(A ++ B).
+
+  Definition sim (F : term) f := proc F /\ forall x, F (enc x) ≡ (enc (f x)).
+
+  Definition Map := rho (.\ "map", "F", "A";
+                         "A" !Nil (.\"a", "A"; !Cons ("F" "a") ("map" "F" "A"))).
+
+  Hint Unfold sim Map : cbv.
+
+  Lemma Map_correct f A F : sim F f ->
+                            Map F (lenc A) ≡ lenc(map f A).
+
+  Definition sim2 (F : term) f := proc F /\ forall x y, F (enc x) (enc y) ≡ (enc (f x y)).
+
+  Definition Map_pro := rho (.\ "map_pro", "f", "A", "B";
+                               "A" !Nil (.\"a", "A"; !Append ("map_pro" "f" "A" "B") (!Map (.\"y" ; "f" "a" "y") "B"))).
+
+  Goal proc Map_pro.
+
+  Hint Unfold sim2 Map_pro : cbv.
+
+  Lemma Map_pro_correct f A B F : sim2 F f ->
+                            Map_pro F (lenc A) (lenc B) ≡ lenc(map_pro f A B).
+
+  Definition Nth := rho (.\ "nth", "n", "A";
+                         "n" ("A" !none (.\ "a", "A"; !some "a"))
+                             (.\"n"; ("A" !none (.\"a", "A"; "nth" "n" "A"))) ).
+
+  Definition onatenc x := match x with None => none | Some x => (lambda(lambda(1 (enc x)))) end.
+
+  Lemma Nth_correct A n : Nth (Encodings.enc n) (lenc A) ≡ onatenc(nth n A).
+
+End Fix_X.
+
+Definition L_term := rho (.\ "L", "n";
+                            "n" !Nil (.\ "n"; !Append ("L" "n") (!Cons (!Var "n") (!Append (!Map_pro !App ("L" "n") ("L" "n")) (!Map !Lam ("L" "n")))))).
+
+Lemma L_term_correct n : L_term (enc n) ≡ lenc tenc (L n).
+
+Definition OfNat : term := .\ "n" ; !Nth "n" (!L_term (!Succ ("n"))).
+
+Lemma OfNat_correct n : OfNat (enc n) ≡ oenc (R n).
+  
+Lemma enumerable_all : enumerable (fun s => True).
+
+Theorem recognisable_enumerable p : recognisable p -> enumerable p.
+
+Lemma recognisable_range_total f u : proc u -> (forall n, u (enc n) ▷ tenc (f n)) -> recognisable (fun t => exists n, f n = t). *)
+
+
+
+Implicit Types P Q : term -> Prop.
+
+
+
+Lemma id_computable : computable_fun (fun x : term => x).
+
+Proof.
+
+  exists I. split; value. intros. solveeq.
+
+Qed.
+
+Hint Resolve id_computable.
+
+
+
+Definition π (u : term) s := eva (u (tenc s)).
+
+
+
+Definition rel_eq P Q := forall x, P x <-> Q x.
+
+Definition rel_incl P Q := forall x, P x -> Q x.
+
+
+
+Notation "P <⋅> Q" := (rel_eq P Q) (at level 50).
+
+Notation "f ^-1 A" := (fun s => A (f s)) (at level 40).
+
+
+
+Notation "P <<=1 Q" := (rel_incl P Q) (at level 50).
+
+
+
+Instance rel_eq_equiv : Equivalence rel_eq.
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Instance proper_rel_incl :
+
+  Proper (rel_eq ==> rel_eq ==> iff) rel_incl.
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Instance proper_pi :
+
+  Proper (equiv ==> rel_eq) π.
+
+Proof.
+
+  intros ? ? ? ?. unfold π. now rewrite H.
+
+Qed.
+
+
+
+Lemma inv_incl P Q (f : term -> term) : P <<=1 Q -> f ^-1 P <<=1 f ^-1 Q.
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Definition productive P :=
+
+  exists g, computable_fun g /\ forall u, π u <<=1 P -> P (g u) /\ ~ π u (g u).
+
+
+
+Definition creative P := recognisable P /\ productive (complement P).
+
+
+
+Lemma productive_K : productive (fun s : term => ~ eva (s (tenc s))).
+
+Proof.
+
+  exists (fun x => x). split.
+
+  - eapply id_computable.
+
+  - unfold π. firstorder.
+
+Qed.
+
+
+
+Lemma productive_red P Q : productive P -> P ⪯ Q -> productive Q.
+
+Proof.
+
+  intros (g & (v & proc_v & ?) & ?) [f ? (u & ? & ?)].
+
+  pose (k s := lambda (U (App (tenc s) (Encodings.Q (u 0))))).
+
+  assert (forall s, π (k s) <⋅> f ^-1 (π s)). {
+
+    unfold π. intros s t.
+
+    transitivity (eva (U (App (tenc s) (Encodings.Q (u (tenc t)))))).
+
+    eapply eva_proper. solveeq.
+
+    rewrite H2, Q_correct, App_correct.
+
+    now rewrite <- U_eva.
+
+  }
+
+  exists (fun x => f (g (k x))). split.
+
+  - enough (computable_fun k) as (k' & ? & ?).
+
+    + exists (lambda (u (v (k' 0)))). split; value.
+
+      intros. eapply evaluates_equiv; split; value.
+
+      transitivity (u (v (k' (tenc s)))). solveeq.
+
+      now rewrite H5, H, H2.
+
+    + admit.
+
+  - assert True by tauto. intros s ?. pose proof (inv_incl (f := f) H5).
+
+    rewrite <- H3 in H6. 
+
+    assert (f ^-1 Q <⋅> P) by firstorder. rewrite H7 in H6.
+
+    eapply H0 in H6 as []. split.
+
+    + now eapply f_red.
+
+    + intros ?. eapply H8. 
+
+      eapply eva_proper. transitivity (U (App (tenc s) (Encodings.Q (u (tenc (g (k s))))))).
+
+      solveeq. reflexivity.
+
+      rewrite H2, Q_correct, App_correct, <- U_eva. eassumption.        
+
+Admitted.
+
+
+
+Lemma extend g :
+
+  computable_fun g -> exists k, computable_fun k /\ forall s t, pi (k s) t <-> pi s t \/ t = g s.
+
+Proof.
+
+  intros (u & ? & ?).
+
+  exists (fun s => lambda (Eq 0 (u (tenc s)) (lambda T) (lambda (U (App (tenc s) (Q 1)))) I)). split.
+
+  - admit.
+
+  - intros.
+
+    transitivity (eva (Eq (tenc t) (u (tenc s)) (lambda T) (lambda (U (App (tenc s) (Q (tenc t))))) I)).
+
+    eapply eva_proper. solveeq.
+
+    rewrite H0. destruct (Eq_correct t (g s)).
+
+    decide (t = g s).
+
+    + pose proof (H1 e) as ->.
+
+      transitivity (eva T). eapply eva_proper. solveeq.
+
+      firstorder; exists T; solveeq.
+
+    + pose proof (H2 n) as ->.
+
+      transitivity (eva (U (App (tenc s) (Q (tenc t))))). eapply eva_proper. solveeq.
+
+      rewrite Q_correct, App_correct, <- U_eva. firstorder.
+
+Admitted.
+
+
+
+Definition infinite_fun P := exists f : nat -> term, forall n, P (f n) /\ forall m, m < n -> f m <> f n.
+
+Definition really_infinite P := ~ exists L, forall x, P x -> x el L.
+
+Definition infinite P := forall n, ~~ exists A, card A >= n /\  forall x, x el A -> P x.
+
+
+
+Lemma infinite_fun_infinite P : infinite_fun P -> infinite P.
+
+Proof.
+
+  intros [f] n. 
+
+    
+
+Admitted.
+
+
+
+Lemma infinite_list B L : infinite B -> ~~ exists s, B s /\ ~ s el L.
+
+Proof.
+
+Admitted.
+
+
+
+Lemma productive_inf P : productive P -> exists A, A <<=1 P /\ recognisable A /\ infinite A.
+
+Proof.
+
+  intros (g & ? & ?). destruct (extend H) as (k & (v & ? & ?) & ?).
+
+  pose (f := fix f n := match n with 0 => D | S n => k (f n) end).
+
+  assert (computable_gen enc tenc f). {
+
+    exists (rho (lambda (lambda (0 (tenc D) (lambda (v (2 0))))))). split; value.
+
+    intros n. eapply evaluates_equiv; split; value.
+
+    induction n; try specialize (H2 (f n)); solveeq.
+
+  } 
+
+  exists (fun s => exists n, g (f n) = s).
+
+  assert (Hf : forall n, pi (f n) <<=1 P /\ P (g (f n))). {
+
+    induction n.
+
+    * cbn in *. split.
+
+      -- intros ? ?. now eapply D_pi in H5.
+
+      -- eapply H0. intros ? ?. now eapply D_pi in H5.
+
+    * unfold f. fold f. split.
+
+      -- intros ?. rewrite H3. intros [ | ->]; firstorder.
+
+      -- eapply H0. intros ?. rewrite H3. intros [ | ->]; firstorder.
+
+  }
+
+  - repeat split.
+
+    + intros ? [n <-]. eapply Hf. 
+
+    + destruct H as (u' & ? & ?). destruct H4 as (v' & ? & ?).
+
+      eapply recognisable_range_total with (u := lambda (u' (v' 0))). value.
+
+      intros. specialize (H6 n). specialize (H5 (f n)). solveeq.
+
+    + eapply infinite_fun_infinite. exists (fun n => g (f n)). intros. split. eauto.
+
+      intros ? ? ?.
+
+      destruct (H0 (f n)) as [_ ?]; try eapply Hf. eapply H7. rewrite <- H6. clear H6 H7.
+
+      induction H5; eapply H3; eauto.
+
+Qed.
+
+
+
+Definition simple P := recognisable P /\ infinite (complement P) /\ ~ exists A, A <<=1 complement P /\ recognisable A /\ infinite A.
+
+
+
+Lemma simple_spec P : simple P -> ~ decidable P /\ ~ creative P.
+
+Proof.
+
+  intros. split.
+
+  - intros [_] % dec_rec. eapply H.
+
+    exists (complement P). repeat split. firstorder. eassumption. eapply H.
+
+  - intros [? ? % productive_inf]. now eapply H.
+
+Qed.
+
+
+
+Definition ran (u : term) t := exists s, u (tenc s) ▷ tenc t.
+
+Definition dom (u : term) s := exists t, u (tenc s) ▷ tenc t.
+
+
+
+Definition Extr := lambda (0 (lambda (lambda 1)) D I).
+
+
+
+Lemma Extr_spec s : Extr (oenc (Some s)) ▷ tenc s /\ ~ eva (Extr (oenc None)).
+
+Proof.
+
+  split.
+
+  - eapply evaluates_equiv; split; value. solveeq.
+
+  - assert (Extr (oenc None) ≡ Omega) as -> by solveeq. eapply eva_Omega.
+
+Qed.
+
+
+
+Ltac fdecide P := let H := fresh "H" in assert (H : ~~ (P \/ ~ P)) by tauto; apply H; clear H; intros [H|H].
+
+
+
+Lemma filter_predicate X (A : list X) (p : X -> Prop) :
+
+  ~~ exists B, forall x, x el B <-> x el A  /\ p x.
+
+Proof.
+
+  induction A; intros H.
+
+  - apply H. exists []. firstorder.
+
+  - apply IHA. intros [B]. fdecide (p a); apply H.
+
+    + exists (a :: B). cbn. intros. rewrite H0. now intuition subst.
+
+    + exists B. cbn. intros. rewrite H0. now intuition subst.
+
+Qed.    
+
+
+
+Lemma simple_ex : exists P, simple P.
+
+Proof.
+
+  pose (El := I). pose (Not := I). pose (Beta := I). pose (R := fun {X} (x : X) (n : nat) => I).
+
+  pose (u := (.\ "s"; !U (!App "s" (!Encodings.N (!C (.\ "n"; !Not (!El (!U (!App "s" (!Encodings.N "n"))) (!L_term (!Encodings.Add (!Beta "s") (!Beta "s"))))))))) : term).
+
+  enough (forall s v, u (tenc s) ▷ tenc v <-> Inj L beta _ v > 2 * Inj L beta _ s).
+
+  exists (ran u).
+
+  repeat split.
+
+  - admit.
+
+  - unfold infinite. intros n.
+
+    pose proof (@filter_predicate _ (seq 0 (2 * n)) (fun x => exists n, n el seq 0 (n - 1) /\ u (R _ Enumerable.L n) ▷ tenc x)).
+
+    intros ?. eapply H0. clear H0. intros [B]. eapply H1. clear H1.
+
+    exists (map (fun n => R _ L n) B). split.
+
+    + admit.
+
+    + intros ? (? & ? & ?) % in_map_iff. subst. intros [].
+
+      eapply H in H1. eapply H0 in H2 as [[_ ?] % in_seq (? & [_ ?] % in_seq & ?)]. omega.
+
+  - intros (B & ? & ? & ?). eapply recognisable_enumerable in H1 as [s].
+
+    pose (s' := lambda (Extr (s 0))).    
+
+    eapply infinite_list with (L := L (2 * Inj L beta _ s')) in H2. eapply H2. clear H2. intros (t & ? & ?).
+
+    enough (Inj L beta _ t > (2 * Inj L beta term_eq_dec s')).
+
+    eapply H in H4. eapply H0; eauto. exists s'. eauto. unfold gt. eapply not_ge. intros ?.
+
+    eapply H3. admit.
+
+Admitted.
+
+
+
+Definition m_complete P := recognisable P /\ forall Q, recognisable Q -> Q ⪯ P.
+
+
+
+Definition mequiv P Q := P ⪯ Q /\ Q ⪯ P.
+
+Notation "P ≡𝐦 Q" := (mequiv P Q) (at level 40).
+
+
+
+Instance Subrel_mequiv : subrelation mequiv mreducible.
+
+Proof.
+
+  intros ? ? ?. eapply H.
+
+Qed.
+
+
+
+Instance mequiv_proper : Proper (mequiv ==> mequiv ==> iff) mreducible.
+
+Proof.
+
+  intros P1 P2 [] Q1 Q2 []. split; intros.
+
+  - transitivity P1; eauto. transitivity Q1; eauto. 
+
+  - transitivity P2; eauto. transitivity Q2; eauto.
+
+Qed.
+
+
+
+Instance Equivalence_mequiv : Equivalence mequiv.
+
+Proof.
+
+  econstructor.
+
+  - split; reflexivity.
+
+  - intros ? ? []. split; eassumption.
+
+  - intros ? ? ? [] []. split; now transitivity y.
+
+Qed.
+
+
+
+Lemma m_complete_red P Q :
+
+  m_complete P -> m_complete Q -> P ≡𝐦 Q.
+
+Proof.
+
+  intros [] []. split; intuition.
+
+Qed.
+
+
+
+Lemma m_complete_K : m_complete eva.
+
+Proof.
+
+  split.
+
+  - eapply mreducible_recognisable. eapply recognisable_eva. reflexivity.
+
+  - intros. now eapply recognisable_iff.
+
+Qed.
+
+    
+
+Lemma mcomplete_creative P : m_complete P -> creative P.
+
+Proof.
+
+  intros []. split. eauto.
+
+  eapply productive_red. eapply productive_K. eapply mreducible_comp.
+
+  transitivity eva. eapply eva_red. eapply H0. eapply recognisable_eva.
+
+Qed.
+
+
+
+Lemma simple_dec P : simple P -> ~ decidable P.
+
+Proof.
+
+  intros ? [_ ?] % dec_rec. eapply H.
+
+  exists (complement P). firstorder.
+
+Qed.
+
+
+
+Lemma simple_creative P : simple P -> ~ creative P.
+
+Proof.
+
+  intros ? [? ? %productive_inf]. now eapply H.
+
+Qed.
+
+
+
+Lemma simple_nontrivial P : simple P -> exists s t, P s /\ ~ P t.
+
+Admitted.
+
+
+
+Lemma simple_between P :
+
+  simple P -> 𝐎𝐦 <𝐦 mdegree_of P /\ mdegree_of P <𝐦 𝐎𝐦'.
+
+Proof.
+
+  intros. pose proof (simple_dec H). pose proof (simple_creative H).
+
+  split.
+
+  - split.
+
+    + eapply 𝐎𝐦_spec. intros. hnf in H2.  
+
+Admitted.
+
+
+
+Generalizable Variables n m.
+
+
+
+Definition d_𝐦 P := fun Q => P ≡𝐦 Q.
+
+
+
+Record mdegree :=
+
+  { mdegree_a :> (term -> Prop) -> Prop ;
+
+    mdegree_spec : exists P, forall Q, mdegree_a Q <-> P ≡𝐦 Q
+
+  }.
+
+Implicit Types a b : mdegree.
+
+Notation "P ∈ a" := (mdegree_a a P) (at level 50).
+
+
+
+Lemma mdegree_nonempty a : exists P, P ∈ a.
+
+Proof.
+
+  destruct a as (a & P & ?). exists P. cbn. now eapply i.
+
+Qed.
+
+
+
+Definition mdegree_of (R : (term -> Prop)) : mdegree.
+
+Proof.
+
+  exists (d_𝐦 R). exists R. firstorder.
+
+Defined.
+
+
+
+Definition leq_mdegree a b := forall P Q, P ∈ a -> Q ∈ b -> P ⪯ Q.
+
+Notation "a ≤𝐦 b" := (leq_mdegree a b) (at level 40).
+
+
+
+Lemma leq_mdegree_alt a b : a ≤𝐦 b <-> exists P Q, P ∈ a /\ Q ∈ b /\ P ⪯ Q.
+
+Proof.
+
+  split.
+
+  - intros. destruct (mdegree_nonempty a) as [P], (mdegree_nonempty b) as [Q].
+
+    exists P, Q. eauto.
+
+  - intros (P & Q & HP & HQ & H). intros P' Q' H1 H2.
+
+    destruct a as (a & Pa & Ha), b as (b & Pb & Hb). cbn in *. rewrite Ha, Hb in *.
+
+    now rewrite <- H1, HP, <- H2, HQ.
+
+Qed.
+
+
+
+Definition mdegree_eq : mdegree -> mdegree -> Prop := (@predicate_equivalence (Tcons (term -> Prop) Tnil)).
+
+
+
+Instance mdegree_eq_equiv : Equivalence mdegree_eq.
+
+Proof.
+
+  econstructor; firstorder.
+
+Qed.
+
+
+
+Notation "a =𝐦 b" := (mdegree_eq a b)  (at level 40).
+
+
+
+Definition lt_mdegree a b := a ≤𝐦 b /\ ~ a =𝐦 b.
+
+Notation "a <𝐦 b" := (lt_mdegree a b) (at level 40).
+
+
+
+Instance leq_pre : PreOrder leq_mdegree.
+
+Proof.
+
+  econstructor.
+
+  - intros (a & P & ?). unfold leq_mdegree. cbn in *.
+
+    intros. now assert (P0 ≡𝐦 P /\ Q ≡𝐦 P) as [-> ->] by firstorder.
+
+  - intros (a1 & Q1 & H1) (a2 & Q2 & H2) (a3 & Q3 & H3). unfold leq_mdegree. cbn. intros.
+
+    transitivity Q2.
+
+    + eapply H. eassumption. now eapply H2.
+
+    + eapply H0. now eapply H2. eassumption.
+
+Qed.
+
+
+
+Instance leq_porder : PartialOrder mdegree_eq leq_mdegree.
+
+Proof.
+
+  hnf. intros a b. hnf. split.
+
+  - destruct a as (a & P & ?). destruct b as (b & Q & ?). unfold leq_mdegree in *. cbn in *.
+
+    intros. split.
+
+    + intros. rewrite H in *.
+
+      eapply i0 in H0. eapply i0 in H1. now rewrite <- H0, <- H1.
+
+    + intros ? ? ? ?. cbn in *. rewrite H in *.
+
+      eapply i0 in H0. eapply i0 in H1. now rewrite <- H0, <- H1.
+
+  - intros []. unfold Basics.flip in H0.
+
+    destruct a as (a & P & ?). destruct b as (b & Q & ?). unfold leq_mdegree in *. cbn in *.
+
+    intros R. rewrite i, i0.
+
+    enough (P ≡𝐦 Q) by now rewrite H1. 
+
+    split. eapply H. now eapply i. now eapply i0.
+
+    eapply H0. now eapply i0. now eapply i.
+
+Qed.    
+
+
+
+Instance le_strict : StrictOrder lt_mdegree.
+
+Proof.
+
+  eapply PartialOrder_StrictOrder. exact _.
+
+Qed.
+
+
+
+Definition 𝐨 : mdegree.
+
+Proof.
+
+  exists (fun P => forall x, ~ P x). exists (fun _ => False).
+
+  intros. split; intros.
+
+  - split. exists (fun x => x).
+
+    + firstorder.
+
+    + eauto.
+
+    + now eapply mreducible_empty.
+
+  - destruct H. now eapply mreducible_empty.
+
+Defined.
+
+
+
+Definition 𝐧 : mdegree.
+
+Proof.
+
+  exists (fun P => forall x, P x). exists (fun _ => True). split; intros.
+
+  - split. exists (fun x => x).
+
+    + firstorder.
+
+    + eauto.
+
+    + now eapply mreducible_full.
+
+  - destruct H. now eapply mreducible_full.
+
+Defined.
+
+
+
+Definition decidable_mdegree a := exists P, P ∈ a /\ decidable P.
+
+Definition recognisable_mdegree a := exists P, P ∈ a /\ recognisable P.
+
+
+
+Lemma 𝐨_decidable : decidable_mdegree 𝐨.
+
+Proof.
+
+  exists (fun _ => False). split.
+
+  - cbn. firstorder.
+
+  - exists (lambda F). split; value.
+
+    right. split. auto. solveeq.
+
+Qed.
+
+
+
+Lemma 𝐧_decidable : decidable_mdegree 𝐧.
+
+Proof.
+
+  exists (fun _ => True). split.
+
+  - cbn. firstorder.
+
+  - exists (lambda T). split; value.
+
+    left. split. auto. solveeq.
+
+Qed.
+
+
+
+Definition 𝐎𝐦 : mdegree.
+
+Proof.
+
+  exists (fun P => (exists s, P s) /\ (exists s, ~ P s) /\ decidable P).
+
+  exists lam. intros. split.
+
+  + intros ([s ?] & [t ?] & ?).
+
+    split. eapply mreducible_red; eauto.
+
+    eapply decidable_lam.
+
+    eapply mreducible_red with (s := lambda 0) (t := 0); eauto.
+
+    firstorder congruence.
+
+  + intros [ [] ]. repeat split.
+
+    * exists (f (lambda 0)). eapply f_red. eauto.
+
+    * exists (f (0 0)). rewrite <- f_red. firstorder congruence.
+
+    * eapply mreducible_dec; eauto. eapply decidable_lam.
+
+Defined.
+
+
+
+Lemma 𝐎𝐦_spec a :
+
+  (forall P, P ∈ a -> exists s t, P s /\ ~ P t) -> 𝐎𝐦 ≤𝐦 a.
+
+Proof.
+
+  intros. intros ? ? ? ?. cbn in *.
+
+  specialize (H _ H1) as (? & ? & ? & ?).
+
+  eapply mreducible_red; firstorder eauto.
+
+Qed.
+
+
+
+Lemma 𝐨_min a : (forall P, P ∈ a -> exists s, ~ P s) -> 𝐨 ≤𝐦 a.
+
+Proof.
+
+  intros ? ? ? ? ?.
+
+  cbn in H0. transitivity (fun _ : term => False).
+
+  + eapply mreducible_empty. eassumption.
+
+  + destruct (H _ H1) as [s].
+
+    exists (fun _ => s). firstorder. exists (lambda (tenc s)).
+
+    split; value. intros. solveeq.
+
+Qed.      
+
+
+
+Lemma 𝐧_min a : (forall P, P ∈ a -> exists s, P s) -> 𝐧 ≤𝐦 a.
+
+Proof.
+
+  intros ? ? ? ? ?.
+
+  cbn in H0. transitivity (fun _ : term => True).
+
+  + eapply mreducible_full. eassumption.
+
+  + destruct (H _ H1) as [s].
+
+    exists (fun _ => s). firstorder. exists (lambda (tenc s)).
+
+    split; value. intros. solveeq.
+
+Qed.
+
+
+
+Lemma recognisable_mdegree_all a :
+
+  recognisable_mdegree a -> forall P, P ∈ a -> recognisable P.
+
+Proof.
+
+  intros (Q & ? & ?) ? ?. destruct a as (a & ? & ?). cbn in *.
+
+  eapply mreducible_recognisable; eauto. 
+
+  rewrite i in *. rewrite H in H1. now rewrite H1.
+
+Qed.
+
+
+
+Lemma mdegree_closed_recognisable a b :
+
+  a ≤𝐦 b -> recognisable_mdegree b -> recognisable_mdegree a.
+
+Proof.
+
+  intros (P & Q & ? & ? & ?) % leq_mdegree_alt. eintros ? % recognisable_mdegree_all; eauto.
+
+  exists P. split. eassumption. eapply mreducible_recognisable; eauto.
+
+Qed.
+
+    
+
+Lemma leq_mdegree_lub a b : exists c,
+
+    a ≤𝐦 c /\ b ≤𝐦 c /\ forall d, a ≤𝐦 d -> b ≤𝐦 d -> c ≤𝐦 d.
+
+Proof.
+
+  destruct a as (a & P & ?), b as (b & Q & ?).
+
+  pose (R := (fun s => match s with
+
+                         app 0 s => P s
+
+                       | app _ s => Q s
+
+                       | s => Q s
+
+                    end)).
+
+  assert (P ⪯ R). {
+
+    exists (fun s => app 0 s).
+
+    - cbn. firstorder.
+
+    - exists (lambda (App (tenc 0) 0)). split; value. intros.
+
+      eapply evaluates_equiv; split; value.
+
+      transitivity (App (tenc 0) (tenc s)). solveeq.
+
+      now rewrite App_correct.
+
+  }
+
+  assert (Q ⪯ R). {
+
+    exists (fun s => app 1 s).
+
+    - cbn. firstorder.
+
+    - exists (lambda (App (tenc 1) 0)). split; value. intros.
+
+      eapply evaluates_equiv; split; value.
+
+      transitivity (App (tenc 1) (tenc s)). solveeq.
+
+      now rewrite App_correct.
+
+  }
+
+  exists (mdegree_of R). rewrite !leq_mdegree_alt. cbn. repeat split.
+
+  - exists P, R. repeat split.
+
+    + now eapply i.
+
+    + reflexivity.
+
+    + reflexivity.
+
+    + eassumption.
+
+  - exists Q, R. repeat split.
+
+    + now eapply i0.
+
+    + reflexivity.
+
+    + reflexivity.
+
+    + eassumption.
+
+  - intros (d & ? & ?). unfold leq_mdegree. cbn. intros H1 H2.
+
+    intros ? D ? ?.
+
+    assert (P ⪯ D) as [f]. { eapply H1. now eapply i. eauto. }
+
+    assert (Q ⪯ D) as [g]. { eapply H2. now eapply i0. eauto. }
+
+    rewrite <- H3.
+
+    exists (fun s => match s with
+
+             | app 0 s => f s
+
+             | app _ s => g s
+
+             | _ => g s
+
+             end).
+
+    cbn. intros. destruct s as [ | [[] | | ] |]; cbn; firstorder.
+
+    destruct f_comp as (u & ? & ?), f_comp0 as (v & ? & ?).
+
+    exists (lambda (0 (lambda (v 1)) (lambda (lambda (1 (lambda (0 (u 1) (lambda (v 2)))) (lambda (lambda (v 2))) (lambda (v 1))))) (lambda (v 1)))).
+
+    split; value. intros. eapply evaluates_equiv; split; value.
+
+    destruct s as [ | [ [] | | ] | ] eqn:E.
+
+    + specialize (H8 s). subst. solveeq.
+
+    + specialize (H6 t1). subst. solveeq.
+
+    + specialize (H8 t1). specialize (H6 t1). subst. solveeq.
+
+    + specialize (H8 t2). specialize (H6 t2). solveeq.
+
+    + specialize (H8 t1). solveeq.
+
+    + specialize (H8 s). subst. solveeq.
+
+Qed.
+
+
+
+Definition 𝐎𝐦' := mdegree_of (fun s => eva (s (tenc s))).
+
+
+
+Lemma maximum_mdegree a :
+
+  recognisable_mdegree a ->
+
+  a ≤𝐦 𝐎𝐦'.
+
+Proof.
+
+  intros (P & ? & ?). eapply leq_mdegree_alt.
+
+  exists P, (fun s : term => eva (s (tenc s))).
+
+  do 2 try split; try now eauto.
+
+  now eapply recognisable_iff.
+
+Qed.
+

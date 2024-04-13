@@ -22,3 +22,10 @@ async def call_openai_gpt3(prompt: str):
         return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+async def call_openai_gpt4(prompt: str):
+    try:
+        response = openai.ChatCompletion.create( model="gpt-4-turbo", messages=[{"role": "user", "content": prompt}] )
+        return response.choices[0]['message']['content']
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

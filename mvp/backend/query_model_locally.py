@@ -17,6 +17,9 @@ tokenizer_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/bac
 # Load model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_save_path)
 tokenizer.pad_token = "</s>"
+for t in [4920, 441, 2178, 29889]:
+    print(t, tokenizer.decode([t]))
+
 # print(tokenizer.decode([10456]))
 model = AutoModelForCausalLM.from_pretrained(model_save_path, torch_dtype="auto",).to(device)  # Move model to the specified device
 

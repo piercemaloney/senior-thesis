@@ -1,0 +1,159 @@
+
+
+Require Import List Arith Omega.
+
+
+
+Require Import ILL.Definitions.
+(* ILL.Definitions:
+Require Export Problems.PCP Problems.Reduction. *)
+
+
+
+Require Import ill eill. 
+(* eill:
+Require Import List Permutation Arith Omega.
+
+Require Import utils pos vec ill.
+
+Set Implicit Arguments.
+
+Local Infix "~p" := (@Permutation _) (at level 70).
+
+Definition ll_vars := nat.
+
+Inductive eill_cmd : Set :=
+  | in_ll_cmd_inc  : ll_vars -> ll_vars -> ll_vars -> eill_cmd
+  | in_ll_cmd_dec  : ll_vars -> ll_vars -> ll_vars -> eill_cmd
+  | in_ll_cmd_fork : ll_vars -> ll_vars -> ll_vars -> eill_cmd.
+
+Notation LL_INC  := in_ll_cmd_inc.
+Notation LL_DEC  := in_ll_cmd_dec.
+Notation LL_FORK := in_ll_cmd_fork.
+
+Definition eill_cmd_vars c := 
+  match c with
+    | LL_INC  a p q => a::p::q::nil
+    | LL_DEC  a p q => a::p::q::nil
+    | LL_FORK p q r => p::q::r::nil
+  end.
+
+Definition eill_cmd_map c :=
+  match c with
+    | LL_INC  a p q => (£a ⊸ £p) -o £ q
+    | LL_DEC  a p q => £a ⊸ £p -o £ q
+    | LL_FORK p q r => (£p ﹠ £q) -o £ r
+  end. 
+
+Notation "'[i' c ']'" := (eill_cmd_map c) (at level 0).
+
+Reserved Notation "Si ; Ga '⊦' x" (at level 70, no associativity).
+
+Inductive G_eill (Σ : list eill_cmd) : list ll_vars -> ll_vars -> Prop :=
+  | in_eill_ax  : forall u,                                    Σ; u::∅ ⊦ u
+  | in_eill_perm : forall Γ Δ p,    Γ ~p Δ                 ->  Σ; Γ     ⊦ p
+                                                           ->  Σ; Δ     ⊦ p
+  | in_eill_inc : forall Γ a p q,   In (LL_INC a p q) Σ    ->  Σ; a::Γ  ⊦ p
+                                                           ->  Σ; Γ     ⊦ q
+  | in_eill_dec : forall Γ Δ p q r, In (LL_DEC p q r) Σ    ->  Σ; Γ     ⊦ p
+                                                           ->  Σ; Δ     ⊦ q
+                                                           ->  Σ; Γ++Δ  ⊦ r
+  | in_eill_fork : forall Γ p q r,  In (LL_FORK p q r) Σ   ->  Σ; Γ     ⊦ p
+                                                           ->  Σ; Γ     ⊦ q
+                                                           ->  Σ; Γ     ⊦ r
+where "Si ; Ga ⊦ u" := (G_eill Si Ga u).
+
+Definition EILL_SEQUENT := (list eill_cmd * list ll_vars * ll_vars)%type.
+
+Definition EILL_PROVABILITY (c : EILL_SEQUENT) := match c with (Σ,Γ,A) => Σ; Γ ⊦ A end. 
+
+Theorem g_eill_mono_Si Σ Σ' Γ u : incl Σ Σ' -> Σ; Γ ⊦ u -> Σ'; Γ ⊦ u.
+
+Theorem G_eill_sound Σ Γ p : Σ; Γ ⊦ p -> map (fun c => ![i c]) Σ ++ map £ Γ ⊢ £ p.
+
+Section TPS.
+
+  Variables (n : nat) (s : ll_vars -> vec nat n -> Prop) (rx : pos n -> ll_vars).
+
+  Fact ll_tps_vec_map_list_mono : 
+       (forall (p : pos n), s (rx p) (vec_one p)) 
+     -> forall v, ll_tps_list s (map £ (vec_map_list v rx)) v.
+
+  Fact ll_tps_vec_map_list : 
+       (forall (p : pos n) (v : vec nat n), s (rx p) v <-> v = vec_one p) 
+     -> forall v w, ll_tps_list s (map £ (vec_map_list v rx)) w <-> v = w.
+
+End TPS.
+
+Section g_eill_complete_bound.
+ 
+  Variable (Si : list eill_cmd) (Ga : list ll_vars) (n : nat).
+
+  Notation vars := (flat_map eill_cmd_vars Si ++ Ga).
+
+  Hypothesis (w : vec ll_vars n)
+             (w_surj : forall u, In u vars -> exists p, u = vec_pos w p).
+
+  Let rx p := vec_pos w p.
+
+  Let Hrx l : incl l (flat_map eill_cmd_vars Si ++ Ga) -> exists v, l ~p vec_map_list v rx.
+
+  Let s x v := Si; vec_map_list v rx ⊦ x.
+
+  Notation "⟦ A ⟧" := (ll_tps s A) (at level 65).
+  Notation "'[<' Γ '|-' A '>]'" := (ll_sequent_tps s Γ A) (at level 65).
+
+  Theorem G_eill_complete_bound x : [< map (fun c => ❗[i c]) Si ++ map £ Ga |- £ x >] vec_zero ->
+                              Si; Ga ⊦ x.
+
+End g_eill_complete_bound.
+
+Section g_eill_complete.
+ 
+  Variable (Si : list eill_cmd) (Ga : list ll_vars).
+
+  Notation vars := (flat_map eill_cmd_vars Si ++ Ga).
+
+  Let vv := nat_sort vars.
+
+  Let Hvv1 : list_injective vv.
+
+  Let Hvv2 : incl vv (flat_map eill_cmd_vars Si ++ Ga) 
+          /\ incl (flat_map eill_cmd_vars Si ++ Ga) vv.
+
+  Let n := length vv.
+  Let w : vec ll_vars n := proj1_sig (list_vec vv).
+  Let Hw : vec_list w = vv.
+
+  Let w_surj : forall u, In u vars -> exists p, u = vec_pos w p.
+
+  Variables (x : ll_vars)
+            (Hvalid : forall n s, @ll_sequent_tps n s (map (fun c : eill_cmd => ❗ [ic]) Si ++ map £ Ga) (£ x) vec_zero).
+
+  Theorem G_eill_complete : Si; Ga ⊦ x.
+
+End g_eill_complete.
+
+Theorem G_eill_correct Si Ga p : 
+           Si; Ga ⊦ p <-> map (fun c => ![i c]) Si ++ map £ Ga ⊢ £ p. *)
+
+
+
+Section EILL_ILL.
+
+
+
+  Theorem EILL_ILL_PROVABILITY : EILL_PROVABILITY ⪯ ILL_PROVABILITY.
+
+  Proof.
+
+    exists (fun p => match p with (Si,Ga,p) => (map (fun c => ![i c]) Si ++ map £ Ga,£ p) end).
+
+    intros ((Si,Ga),p); apply G_eill_correct.
+
+  Qed.
+
+
+
+End EILL_ILL.
+

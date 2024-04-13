@@ -1,0 +1,4085 @@
+Require Import VST.progs.io_specs.
+(* VST.progs.io_specs:
+Require Import VST.floyd.proofauto.
+Require Import VST.veric.juicy_extspec.
+Require Import DeepWeb.Free.Monad.Free.
+Import MonadNotations.
+Require Import DeepWeb.Free.Monad.Common.
+Require Import DeepWeb.Free.Monad.Eq.Utt.
+Import String.
+
+Inductive IO_event : Type -> Type :=
+| ERead : IO_event int
+| EWrite (c : int) : IO_event unit.
+
+Definition read : itree IO_event int := embed ERead.
+
+Definition write (c : int) : itree IO_event unit := embed (EWrite c).
+
+Definition IO_itree := itree IO_event unit.
+
+Definition ITREE (tr : IO_itree) := EX tr' : _, !!(eq_utt tr tr') &&
+  has_ext tr'.
+
+Lemma has_ext_ITREE : forall tr, has_ext tr |-- ITREE tr.
+
+Definition putchar_spec :=
+  WITH c : int, k : IO_itree
+  PRE [ 1%positive OF tint ]
+    PROP ()
+    LOCAL (temp 1%positive (Vint c))
+    SEP (ITREE (write c ;; k))
+  POST [ tint ]
+    PROP ()
+    LOCAL (temp ret_temp (Vint c))
+    SEP (ITREE k).
+
+Definition getchar_spec :=
+  WITH k : int -> IO_itree
+  PRE [ ]
+    PROP ()
+    LOCAL ()
+    SEP (ITREE (r <- read ;; k r))
+  POST [ tint ]
+   EX i : int,
+    PROP (- two_p 7 <= Int.signed i <= two_p 7 - 1)
+    LOCAL (temp ret_temp (Vint i))
+    SEP (ITREE (k i)).
+
+Fixpoint write_list l : IO_itree :=
+  match l with
+  | nil => Ret tt
+  | c :: rest => write c ;; write_list rest
+  end.
+
+Lemma ITREE_impl : forall tr tr', eq_utt tr tr' ->
+  ITREE tr |-- ITREE tr'.
+
+Lemma ITREE_ext : forall tr tr', eq_utt tr tr' ->
+  ITREE tr = ITREE tr'.
+
+Lemma write_list_app : forall l1 l2,
+  eq_utt (write_list (l1 ++ l2)) (write_list l1;; write_list l2).
+
+Definition char0 : Z := 48.
+Definition newline := 10.
+
+Definition IO_specs (ext_link : string -> ident) :=
+  [(ext_link "putchar"%string, putchar_spec); (ext_link "getchar"%string, getchar_spec)].
+
+Definition IO_ext_spec ext_link :=
+  semax_ext.add_funspecs_rec
+    ext_link
+    (ok_void_spec IO_itree).(@OK_ty)
+    (ok_void_spec IO_itree).(@OK_spec)
+    (IO_specs ext_link). *)
+
+Require Import VST.progs.io.
+(* VST.progs.io:
+From Coq Require Import String List ZArith.
+From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.
+Local Open Scope Z_scope.
+
+Module Info.
+  Definition version := "3.3"%string.
+  Definition build_number := ""%string.
+  Definition build_tag := ""%string.
+  Definition arch := "x86"%string.
+  Definition model := "32sse2"%string.
+  Definition abi := "standard"%string.
+  Definition bitsize := 32.
+  Definition big_endian := false.
+  Definition source_file := "progs/io.c"%string.
+  Definition normalized := true.
+End Info.
+
+Definition ___builtin_ais_annot : ident := 1%positive.
+Definition ___builtin_annot : ident := 8%positive.
+Definition ___builtin_annot_intval : ident := 9%positive.
+Definition ___builtin_bswap : ident := 2%positive.
+Definition ___builtin_bswap16 : ident := 4%positive.
+Definition ___builtin_bswap32 : ident := 3%positive.
+Definition ___builtin_bswap64 : ident := 34%positive.
+Definition ___builtin_clz : ident := 35%positive.
+Definition ___builtin_clzl : ident := 36%positive.
+Definition ___builtin_clzll : ident := 37%positive.
+Definition ___builtin_ctz : ident := 38%positive.
+Definition ___builtin_ctzl : ident := 39%positive.
+Definition ___builtin_ctzll : ident := 40%positive.
+Definition ___builtin_debug : ident := 52%positive.
+Definition ___builtin_fabs : ident := 5%positive.
+Definition ___builtin_fmadd : ident := 43%positive.
+Definition ___builtin_fmax : ident := 41%positive.
+Definition ___builtin_fmin : ident := 42%positive.
+Definition ___builtin_fmsub : ident := 44%positive.
+Definition ___builtin_fnmadd : ident := 45%positive.
+Definition ___builtin_fnmsub : ident := 46%positive.
+Definition ___builtin_fsqrt : ident := 6%positive.
+Definition ___builtin_membar : ident := 10%positive.
+Definition ___builtin_memcpy_aligned : ident := 7%positive.
+Definition ___builtin_nop : ident := 51%positive.
+Definition ___builtin_read16_reversed : ident := 47%positive.
+Definition ___builtin_read32_reversed : ident := 48%positive.
+Definition ___builtin_va_arg : ident := 12%positive.
+Definition ___builtin_va_copy : ident := 13%positive.
+Definition ___builtin_va_end : ident := 14%positive.
+Definition ___builtin_va_start : ident := 11%positive.
+Definition ___builtin_write16_reversed : ident := 49%positive.
+Definition ___builtin_write32_reversed : ident := 50%positive.
+Definition ___compcert_i64_dtos : ident := 19%positive.
+Definition ___compcert_i64_dtou : ident := 20%positive.
+Definition ___compcert_i64_sar : ident := 31%positive.
+Definition ___compcert_i64_sdiv : ident := 25%positive.
+Definition ___compcert_i64_shl : ident := 29%positive.
+Definition ___compcert_i64_shr : ident := 30%positive.
+Definition ___compcert_i64_smod : ident := 27%positive.
+Definition ___compcert_i64_smulh : ident := 32%positive.
+Definition ___compcert_i64_stod : ident := 21%positive.
+Definition ___compcert_i64_stof : ident := 23%positive.
+Definition ___compcert_i64_udiv : ident := 26%positive.
+Definition ___compcert_i64_umod : ident := 28%positive.
+Definition ___compcert_i64_umulh : ident := 33%positive.
+Definition ___compcert_i64_utod : ident := 22%positive.
+Definition ___compcert_i64_utof : ident := 24%positive.
+Definition ___compcert_va_composite : ident := 18%positive.
+Definition ___compcert_va_float64 : ident := 17%positive.
+Definition ___compcert_va_int32 : ident := 15%positive.
+Definition ___compcert_va_int64 : ident := 16%positive.
+Definition _c : ident := 62%positive.
+Definition _d : ident := 61%positive.
+Definition _getchar : ident := 53%positive.
+Definition _i : ident := 55%positive.
+Definition _main : ident := 63%positive.
+Definition _n : ident := 60%positive.
+Definition _print_int : ident := 59%positive.
+Definition _print_intr : ident := 58%positive.
+Definition _putchar : ident := 54%positive.
+Definition _q : ident := 56%positive.
+Definition _r : ident := 57%positive.
+Definition _t'1 : ident := 64%positive.
+Definition _t'2 : ident := 65%positive.
+
+Definition f_print_intr := {|
+  fn_return := tvoid;
+  fn_callconv := cc_default;
+  fn_params := ((_i, tuint) :: nil);
+  fn_vars := nil;
+  fn_temps := ((_q, tuint) :: (_r, tuint) :: nil);
+  fn_body :=
+(Sifthenelse (Ebinop One (Etempvar _i tuint) (Econst_int (Int.repr 0) tint)
+               tint)
+  (Ssequence
+    (Sset _q
+      (Ebinop Odiv (Etempvar _i tuint) (Econst_int (Int.repr 10) tuint)
+        tuint))
+    (Ssequence
+      (Sset _r
+        (Ebinop Omod (Etempvar _i tuint) (Econst_int (Int.repr 10) tuint)
+          tuint))
+      (Ssequence
+        (Scall None
+          (Evar _print_intr (Tfunction (Tcons tuint Tnil) tvoid cc_default))
+          ((Etempvar _q tuint) :: nil))
+        (Scall None
+          (Evar _putchar (Tfunction (Tcons tint Tnil) tint cc_default))
+          ((Ebinop Oadd (Etempvar _r tuint) (Econst_int (Int.repr 48) tint)
+             tuint) :: nil)))))
+  Sskip)
+|}.
+
+Definition f_print_int := {|
+  fn_return := tvoid;
+  fn_callconv := cc_default;
+  fn_params := ((_i, tuint) :: nil);
+  fn_vars := nil;
+  fn_temps := nil;
+  fn_body :=
+(Sifthenelse (Ebinop Oeq (Etempvar _i tuint) (Econst_int (Int.repr 0) tint)
+               tint)
+  (Scall None (Evar _putchar (Tfunction (Tcons tint Tnil) tint cc_default))
+    ((Econst_int (Int.repr 48) tint) :: nil))
+  (Scall None
+    (Evar _print_intr (Tfunction (Tcons tuint Tnil) tvoid cc_default))
+    ((Etempvar _i tuint) :: nil)))
+|}.
+
+Definition f_main := {|
+  fn_return := tint;
+  fn_callconv := cc_default;
+  fn_params := nil;
+  fn_vars := nil;
+  fn_temps := ((_n, tuint) :: (_d, tuint) :: (_c, tschar) :: (_t'2, tint) ::
+               (_t'1, tint) :: nil);
+  fn_body :=
+(Ssequence
+  (Ssequence
+    (Sset _n (Econst_int (Int.repr 0) tint))
+    (Ssequence
+      (Ssequence
+        (Scall (Some _t'1) (Evar _getchar (Tfunction Tnil tint cc_default))
+          nil)
+        (Sset _c (Ecast (Etempvar _t'1 tint) tschar)))
+      (Ssequence
+        (Swhile
+          (Ebinop Olt (Etempvar _n tuint) (Econst_int (Int.repr 1000) tint)
+            tint)
+          (Ssequence
+            (Sset _d
+              (Ebinop Osub (Ecast (Etempvar _c tschar) tuint)
+                (Ecast (Econst_int (Int.repr 48) tint) tuint) tuint))
+            (Ssequence
+              (Sifthenelse (Ebinop Oge (Etempvar _d tuint)
+                             (Econst_int (Int.repr 10) tint) tint)
+                Sbreak
+                Sskip)
+              (Ssequence
+                (Sset _n
+                  (Ebinop Oadd (Etempvar _n tuint) (Etempvar _d tuint) tuint))
+                (Ssequence
+                  (Scall None
+                    (Evar _print_int (Tfunction (Tcons tuint Tnil) tvoid
+                                       cc_default))
+                    ((Etempvar _n tuint) :: nil))
+                  (Ssequence
+                    (Scall None
+                      (Evar _putchar (Tfunction (Tcons tint Tnil) tint
+                                       cc_default))
+                      ((Econst_int (Int.repr 10) tint) :: nil))
+                    (Ssequence
+                      (Scall (Some _t'2)
+                        (Evar _getchar (Tfunction Tnil tint cc_default)) nil)
+                      (Sset _c (Ecast (Etempvar _t'2 tint) tschar)))))))))
+        (Sreturn (Some (Econst_int (Int.repr 0) tint))))))
+  (Sreturn (Some (Econst_int (Int.repr 0) tint))))
+|}.
+
+Definition composites : list composite_definition :=
+nil.
+
+Definition global_definitions : list (ident * globdef fundef type) :=
+((___builtin_ais_annot,
+   Gfun(External (EF_builtin "__builtin_ais_annot"
+                   (mksignature (AST.Tint :: nil) None
+                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
+     (Tcons (tptr tschar) Tnil) tvoid
+     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
+ (___builtin_bswap,
+   Gfun(External (EF_builtin "__builtin_bswap"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tuint cc_default)) ::
+ (___builtin_bswap32,
+   Gfun(External (EF_builtin "__builtin_bswap32"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tuint cc_default)) ::
+ (___builtin_bswap16,
+   Gfun(External (EF_builtin "__builtin_bswap16"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tushort Tnil) tushort cc_default)) ::
+ (___builtin_fabs,
+   Gfun(External (EF_builtin "__builtin_fabs"
+                   (mksignature (AST.Tfloat :: nil) (Some AST.Tfloat)
+                     cc_default)) (Tcons tdouble Tnil) tdouble cc_default)) ::
+ (___builtin_fsqrt,
+   Gfun(External (EF_builtin "__builtin_fsqrt"
+                   (mksignature (AST.Tfloat :: nil) (Some AST.Tfloat)
+                     cc_default)) (Tcons tdouble Tnil) tdouble cc_default)) ::
+ (___builtin_memcpy_aligned,
+   Gfun(External (EF_builtin "__builtin_memcpy_aligned"
+                   (mksignature
+                     (AST.Tint :: AST.Tint :: AST.Tint :: AST.Tint :: nil)
+                     None cc_default))
+     (Tcons (tptr tvoid)
+       (Tcons (tptr tvoid) (Tcons tuint (Tcons tuint Tnil)))) tvoid
+     cc_default)) ::
+ (___builtin_annot,
+   Gfun(External (EF_builtin "__builtin_annot"
+                   (mksignature (AST.Tint :: nil) None
+                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
+     (Tcons (tptr tschar) Tnil) tvoid
+     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
+ (___builtin_annot_intval,
+   Gfun(External (EF_builtin "__builtin_annot_intval"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) (Some AST.Tint)
+                     cc_default)) (Tcons (tptr tschar) (Tcons tint Tnil))
+     tint cc_default)) ::
+ (___builtin_membar,
+   Gfun(External (EF_builtin "__builtin_membar"
+                   (mksignature nil None cc_default)) Tnil tvoid cc_default)) ::
+ (___builtin_va_start,
+   Gfun(External (EF_builtin "__builtin_va_start"
+                   (mksignature (AST.Tint :: nil) None cc_default))
+     (Tcons (tptr tvoid) Tnil) tvoid cc_default)) ::
+ (___builtin_va_arg,
+   Gfun(External (EF_builtin "__builtin_va_arg"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) None
+                     cc_default)) (Tcons (tptr tvoid) (Tcons tuint Tnil))
+     tvoid cc_default)) ::
+ (___builtin_va_copy,
+   Gfun(External (EF_builtin "__builtin_va_copy"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) None
+                     cc_default))
+     (Tcons (tptr tvoid) (Tcons (tptr tvoid) Tnil)) tvoid cc_default)) ::
+ (___builtin_va_end,
+   Gfun(External (EF_builtin "__builtin_va_end"
+                   (mksignature (AST.Tint :: nil) None cc_default))
+     (Tcons (tptr tvoid) Tnil) tvoid cc_default)) ::
+ (___compcert_va_int32,
+   Gfun(External (EF_external "__compcert_va_int32"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons (tptr tvoid) Tnil) tuint cc_default)) ::
+ (___compcert_va_int64,
+   Gfun(External (EF_external "__compcert_va_int64"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tlong)
+                     cc_default)) (Tcons (tptr tvoid) Tnil) tulong
+     cc_default)) ::
+ (___compcert_va_float64,
+   Gfun(External (EF_external "__compcert_va_float64"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tfloat)
+                     cc_default)) (Tcons (tptr tvoid) Tnil) tdouble
+     cc_default)) ::
+ (___compcert_va_composite,
+   Gfun(External (EF_external "__compcert_va_composite"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) (Some AST.Tint)
+                     cc_default)) (Tcons (tptr tvoid) (Tcons tuint Tnil))
+     (tptr tvoid) cc_default)) ::
+ (___compcert_i64_dtos,
+   Gfun(External (EF_runtime "__compcert_i64_dtos"
+                   (mksignature (AST.Tfloat :: nil) (Some AST.Tlong)
+                     cc_default)) (Tcons tdouble Tnil) tlong cc_default)) ::
+ (___compcert_i64_dtou,
+   Gfun(External (EF_runtime "__compcert_i64_dtou"
+                   (mksignature (AST.Tfloat :: nil) (Some AST.Tlong)
+                     cc_default)) (Tcons tdouble Tnil) tulong cc_default)) ::
+ (___compcert_i64_stod,
+   Gfun(External (EF_runtime "__compcert_i64_stod"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tfloat)
+                     cc_default)) (Tcons tlong Tnil) tdouble cc_default)) ::
+ (___compcert_i64_utod,
+   Gfun(External (EF_runtime "__compcert_i64_utod"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tfloat)
+                     cc_default)) (Tcons tulong Tnil) tdouble cc_default)) ::
+ (___compcert_i64_stof,
+   Gfun(External (EF_runtime "__compcert_i64_stof"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tsingle)
+                     cc_default)) (Tcons tlong Tnil) tfloat cc_default)) ::
+ (___compcert_i64_utof,
+   Gfun(External (EF_runtime "__compcert_i64_utof"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tsingle)
+                     cc_default)) (Tcons tulong Tnil) tfloat cc_default)) ::
+ (___compcert_i64_sdiv,
+   Gfun(External (EF_runtime "__compcert_i64_sdiv"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
+ (___compcert_i64_udiv,
+   Gfun(External (EF_runtime "__compcert_i64_udiv"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
+ (___compcert_i64_smod,
+   Gfun(External (EF_runtime "__compcert_i64_smod"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
+ (___compcert_i64_umod,
+   Gfun(External (EF_runtime "__compcert_i64_umod"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
+ (___compcert_i64_shl,
+   Gfun(External (EF_runtime "__compcert_i64_shl"
+                   (mksignature (AST.Tlong :: AST.Tint :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tlong (Tcons tint Tnil)) tlong cc_default)) ::
+ (___compcert_i64_shr,
+   Gfun(External (EF_runtime "__compcert_i64_shr"
+                   (mksignature (AST.Tlong :: AST.Tint :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tulong (Tcons tint Tnil)) tulong cc_default)) ::
+ (___compcert_i64_sar,
+   Gfun(External (EF_runtime "__compcert_i64_sar"
+                   (mksignature (AST.Tlong :: AST.Tint :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tlong (Tcons tint Tnil)) tlong cc_default)) ::
+ (___compcert_i64_smulh,
+   Gfun(External (EF_runtime "__compcert_i64_smulh"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
+ (___compcert_i64_umulh,
+   Gfun(External (EF_runtime "__compcert_i64_umulh"
+                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
+                     (Some AST.Tlong) cc_default))
+     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
+ (___builtin_bswap64,
+   Gfun(External (EF_builtin "__builtin_bswap64"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tlong)
+                     cc_default)) (Tcons tulong Tnil) tulong cc_default)) ::
+ (___builtin_clz,
+   Gfun(External (EF_builtin "__builtin_clz"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tint cc_default)) ::
+ (___builtin_clzl,
+   Gfun(External (EF_builtin "__builtin_clzl"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tint cc_default)) ::
+ (___builtin_clzll,
+   Gfun(External (EF_builtin "__builtin_clzll"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tint)
+                     cc_default)) (Tcons tulong Tnil) tint cc_default)) ::
+ (___builtin_ctz,
+   Gfun(External (EF_builtin "__builtin_ctz"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tint cc_default)) ::
+ (___builtin_ctzl,
+   Gfun(External (EF_builtin "__builtin_ctzl"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tuint Tnil) tint cc_default)) ::
+ (___builtin_ctzll,
+   Gfun(External (EF_builtin "__builtin_ctzll"
+                   (mksignature (AST.Tlong :: nil) (Some AST.Tint)
+                     cc_default)) (Tcons tulong Tnil) tint cc_default)) ::
+ (___builtin_fmax,
+   Gfun(External (EF_builtin "__builtin_fmax"
+                   (mksignature (AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble Tnil)) tdouble cc_default)) ::
+ (___builtin_fmin,
+   Gfun(External (EF_builtin "__builtin_fmin"
+                   (mksignature (AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble Tnil)) tdouble cc_default)) ::
+ (___builtin_fmadd,
+   Gfun(External (EF_builtin "__builtin_fmadd"
+                   (mksignature
+                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
+     cc_default)) ::
+ (___builtin_fmsub,
+   Gfun(External (EF_builtin "__builtin_fmsub"
+                   (mksignature
+                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
+     cc_default)) ::
+ (___builtin_fnmadd,
+   Gfun(External (EF_builtin "__builtin_fnmadd"
+                   (mksignature
+                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
+     cc_default)) ::
+ (___builtin_fnmsub,
+   Gfun(External (EF_builtin "__builtin_fnmsub"
+                   (mksignature
+                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
+                     (Some AST.Tfloat) cc_default))
+     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
+     cc_default)) ::
+ (___builtin_read16_reversed,
+   Gfun(External (EF_builtin "__builtin_read16_reversed"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons (tptr tushort) Tnil) tushort cc_default)) ::
+ (___builtin_read32_reversed,
+   Gfun(External (EF_builtin "__builtin_read32_reversed"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons (tptr tuint) Tnil) tuint cc_default)) ::
+ (___builtin_write16_reversed,
+   Gfun(External (EF_builtin "__builtin_write16_reversed"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) None
+                     cc_default)) (Tcons (tptr tushort) (Tcons tushort Tnil))
+     tvoid cc_default)) ::
+ (___builtin_write32_reversed,
+   Gfun(External (EF_builtin "__builtin_write32_reversed"
+                   (mksignature (AST.Tint :: AST.Tint :: nil) None
+                     cc_default)) (Tcons (tptr tuint) (Tcons tuint Tnil))
+     tvoid cc_default)) ::
+ (___builtin_nop,
+   Gfun(External (EF_builtin "__builtin_nop"
+                   (mksignature nil None cc_default)) Tnil tvoid cc_default)) ::
+ (___builtin_debug,
+   Gfun(External (EF_external "__builtin_debug"
+                   (mksignature (AST.Tint :: nil) None
+                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
+     (Tcons tint Tnil) tvoid
+     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
+ (_getchar,
+   Gfun(External (EF_external "getchar"
+                   (mksignature nil (Some AST.Tint) cc_default)) Tnil tint
+     cc_default)) ::
+ (_putchar,
+   Gfun(External (EF_external "putchar"
+                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
+     (Tcons tint Tnil) tint cc_default)) ::
+ (_print_intr, Gfun(Internal f_print_intr)) ::
+ (_print_int, Gfun(Internal f_print_int)) ::
+ (_main, Gfun(Internal f_main)) :: nil).
+
+Definition public_idents : list ident :=
+(_main :: _print_int :: _print_intr :: _putchar :: _getchar ::
+ ___builtin_debug :: ___builtin_nop :: ___builtin_write32_reversed ::
+ ___builtin_write16_reversed :: ___builtin_read32_reversed ::
+ ___builtin_read16_reversed :: ___builtin_fnmsub :: ___builtin_fnmadd ::
+ ___builtin_fmsub :: ___builtin_fmadd :: ___builtin_fmin ::
+ ___builtin_fmax :: ___builtin_ctzll :: ___builtin_ctzl :: ___builtin_ctz ::
+ ___builtin_clzll :: ___builtin_clzl :: ___builtin_clz ::
+ ___builtin_bswap64 :: ___compcert_i64_umulh :: ___compcert_i64_smulh ::
+ ___compcert_i64_sar :: ___compcert_i64_shr :: ___compcert_i64_shl ::
+ ___compcert_i64_umod :: ___compcert_i64_smod :: ___compcert_i64_udiv ::
+ ___compcert_i64_sdiv :: ___compcert_i64_utof :: ___compcert_i64_stof ::
+ ___compcert_i64_utod :: ___compcert_i64_stod :: ___compcert_i64_dtou ::
+ ___compcert_i64_dtos :: ___compcert_va_composite ::
+ ___compcert_va_float64 :: ___compcert_va_int64 :: ___compcert_va_int32 ::
+ ___builtin_va_end :: ___builtin_va_copy :: ___builtin_va_arg ::
+ ___builtin_va_start :: ___builtin_membar :: ___builtin_annot_intval ::
+ ___builtin_annot :: ___builtin_memcpy_aligned :: ___builtin_fsqrt ::
+ ___builtin_fabs :: ___builtin_bswap16 :: ___builtin_bswap32 ::
+ ___builtin_bswap :: ___builtin_ais_annot :: nil).
+
+Definition prog : Clight.program := 
+  mkprogram composites global_definitions public_idents _main Logic.I. *)
+
+Require Import VST.floyd.proofauto.
+(* VST.floyd.proofauto:
+From compcert Require Export common.AST cfrontend.Ctypes cfrontend.Clight.
+Export Cop.
+Require Export VST.floyd.base2.
+Require Export VST.floyd.functional_base.
+Require Export VST.floyd.client_lemmas.
+Require Export VST.floyd.go_lower.
+Require Export VST.floyd.closed_lemmas.
+Require Export VST.floyd.compare_lemmas.
+Require Export VST.floyd.semax_tactics.
+Require Export VST.floyd.forward.
+Require Export VST.floyd.subsume_funspec.
+Require Export VST.floyd.call_lemmas.
+Require Export VST.floyd.forward_lemmas.
+Require Export VST.floyd.for_lemmas.
+Require Export VST.floyd.nested_pred_lemmas.
+Require Export VST.floyd.nested_field_lemmas.
+Require Export VST.floyd.efield_lemmas.
+Require Export VST.floyd.mapsto_memory_block.
+Require Export VST.floyd.aggregate_type.
+Require VST.floyd.aggregate_pred. Export floyd.aggregate_pred.aggregate_pred.
+Require Export VST.floyd.reptype_lemmas.
+Require Export VST.floyd.simpl_reptype.
+Require Export VST.floyd.data_at_rec_lemmas.
+Require Export VST.floyd.field_at.
+Require Export VST.floyd.field_at_wand.
+Require Export VST.floyd.field_compat.
+Require Export VST.floyd.stronger.
+Require Export VST.floyd.loadstore_mapsto.
+Require Export VST.floyd.loadstore_field_at.
+Require Export VST.floyd.nested_loadstore.
+Require Export VST.floyd.local2ptree_denote.
+Require Export VST.floyd.local2ptree_eval.
+Require Export VST.floyd.local2ptree_typecheck.
+Require Export VST.floyd.proj_reptype_lemmas.
+Require Export VST.floyd.replace_refill_reptype_lemmas.
+Require Export VST.floyd.sc_set_load_store.
+Require Export VST.floyd.unfold_data_at.
+Require Export VST.floyd.entailer.
+Require Export VST.floyd.globals_lemmas.
+Require Export VST.floyd.diagnosis.
+Require Export VST.floyd.freezer.
+Require Export VST.floyd.deadvars.
+Require Export VST.floyd.hints.
+Require Export VST.floyd.Clightnotations.
+Require VST.msl.iter_sepcon.
+Require VST.msl.wand_frame.
+Require VST.msl.wandQ_frame.
+
+Arguments semax {CS} {Espec} Delta Pre%assert cmd%C Post%assert.
+Export ListNotations.
+Export Clight_Cop2.
+
+Hint Rewrite add_repr mul_repr sub_repr : entailer_rewrite.
+Hint Rewrite ptrofs_add_repr ptrofs_mul_repr ptrofs_sub_repr : entailer_rewrite.
+Hint Rewrite mul64_repr add64_repr sub64_repr or64_repr and64_repr : entailer_rewrite.
+Hint Rewrite neg_repr neg64_repr : entailer_rewrite.
+Hint Rewrite ptrofs_to_int_repr: entailer_rewrite norm.
+
+Lemma Vptrofs_unfold_false: 
+Archi.ptr64 = false -> Vptrofs = fun x => Vint (Ptrofs.to_int x).
+
+Lemma Vptrofs_unfold_true: 
+Archi.ptr64 = true -> Vptrofs = fun x => Vlong (Ptrofs.to_int64 x).
+
+Lemma modu_repr: forall x y, 
+   0 <= x <= Int.max_unsigned ->
+Hint Rewrite modu_repr using rep_omega : entailer_rewrite norm.
+
+Hint Rewrite Vptrofs_unfold_false using reflexivity: entailer_rewrite norm.
+Hint Rewrite Vptrofs_unfold_true using reflexivity: entailer_rewrite norm.
+
+Hint Extern 1 (Vundef = default_val _) => reflexivity : cancel.
+Hint Extern 1 (default_val _ = Vundef) => reflexivity : cancel.
+Hint Extern 1 (list_repeat _ Vundef = default_val _) => reflexivity : cancel.
+Hint Extern 1 (default_val _ = list_repeat _ Vundef) => reflexivity : cancel.
+Hint Extern 1 (Vundef :: _ = default_val _) => reflexivity : cancel.
+Hint Extern 1 (default_val _ = Vundef :: _) => reflexivity : cancel.
+Hint Extern 1 (@nil _ = default_val _) => reflexivity : cancel.
+Hint Extern 1 (default_val _ = @nil _) => reflexivity : cancel.
+
+Instance Inhabitant_mpred : Inhabitant mpred := @FF mpred Nveric.
+Instance Inhabitant_share : Inhabitant share := Share.bot.
+
+Arguments deref_noload ty v / .
+Arguments nested_field_array_type {cs} t gfs lo hi / .
+Arguments nested_field_type {cs} t gfs / .  
+Arguments nested_field_offset {cs} t gfs / .  
+Arguments Z.mul !x !y.
+Arguments Z.sub !m !n.
+Arguments Z.add !x !y.
+Global Transparent peq.
+Global Transparent Archi.ptr64.
+
+Ltac step :=
+first [ progress Intros
+       | let x := fresh "x" in Intros x
+       | forward
+       | forward_if
+       | forward_call
+       | rep_omega | cstring' | list_solve
+       | EExists
+       | progress (autorewrite with sublist in *|-)
+       | progress (autorewrite with sublist)
+       | progress (autorewrite with norm)
+       | cstring1
+       | deadvars!
+       | progress_entailer
+       ]. *)
+
+Require Import DeepWeb.Free.Monad.Free.
+
+Require Import DeepWeb.Free.Monad.Eq.Utt.
+
+Import MonadNotations.
+
+Require Import VST.sepcomp.extspec.
+(* VST.sepcomp.extspec:
+Require Import Coq.Lists.ListSet.
+Require Import compcert.common.AST.
+Require Import compcert.common.Values.
+Require Import compcert.common.Memory.
+Require Import compcert.common.Globalenvs.
+Require Import compcert.lib.Maps.
+
+Definition PTree_injective {A} (t: PTree.t A) : Prop :=
+  forall id1 id2 b, t ! id1 = Some b -> t ! id2 = Some b -> id1 = id2.
+
+Definition injective_PTree A := sig (@PTree_injective A).
+
+Structure external_specification (M E Z : Type) :=
+  { ext_spec_type : E -> Type
+  ; ext_spec_pre: forall e: E,
+    ext_spec_type e -> injective_PTree block -> list typ -> list val -> Z -> M -> Prop
+  ; ext_spec_post: forall e: E,
+    ext_spec_type e -> injective_PTree block -> option typ -> option val -> Z -> M ->  Prop
+  ; ext_spec_exit: option val -> Z -> M ->  Prop }.
+
+Arguments ext_spec_type {M E Z} _ _.
+Arguments ext_spec_pre {M E Z} _ _ _ _ _ _ _ _.
+Arguments ext_spec_post {M E Z} _ _ _ _ _ _ _ _.
+Arguments ext_spec_exit {M E Z} _ _ _ _.
+
+Definition ext_spec := external_specification mem external_function.
+
+Lemma extfunct_eqdec (ef1 ef2 : external_function) : {ef1=ef2} + {~ef1=ef2}.
+
+Set Implicit Arguments.
+
+Definition ef_ext_spec (M Z : Type) :=
+  external_specification M AST.external_function Z.
+
+Definition spec_of
+  (M Z : Type) (ef : AST.external_function) (spec : ef_ext_spec M Z) :=
+  (ext_spec_pre spec ef, ext_spec_post spec ef).
+
+Definition oval_inject j (v tv : option val) :=
+  match v, tv with
+    | None, None => True
+    | Some v', Some tv' => Val.inject j v' tv'
+    | _, _ => False
+  end.
+
+Module ExtSpecProperties.
+
+Definition det (M E Z : Type) (spec : external_specification M E Z) :=
+  forall ef (x x' : ext_spec_type spec ef) ge tys z vals m
+         oty' ov' z' m' oty'' ov'' z'' m'',
+  ext_spec_pre spec ef x ge tys vals z m ->
+  ext_spec_post spec ef x ge oty' ov' z' m' ->
+  ext_spec_pre spec ef x' ge tys vals z m ->
+  ext_spec_post spec ef x' ge oty'' ov'' z'' m'' ->
+  oty'=oty'' /\ ov'=ov'' /\ z'=z'' /\ m'=m''.
+
+Record closed (Z : Type) (spec : ext_spec Z) :=
+  { P_closed :
+      forall ef (x : ext_spec_type spec ef) ge j tys vals z m tvals tm,
+      ext_spec_pre spec ef x ge tys vals z m ->
+      Val.inject_list j vals tvals ->
+      Mem.inject j m tm ->
+      ext_spec_pre spec ef x ge tys tvals z tm
+  ; Q_closed :
+      forall ef (x : ext_spec_type spec ef) ge j oty ov z m otv tm,
+      ext_spec_post spec ef x ge oty ov z m ->
+      oval_inject j ov otv ->
+      Mem.inject j m tm ->
+      ext_spec_post spec ef x ge oty otv z tm
+  ; exit_closed :
+      forall j ov z m otv tm,
+      ext_spec_exit spec ov z m ->
+      oval_inject j ov otv ->
+      Mem.inject j m tm ->
+      ext_spec_exit spec otv z tm }.
+
+End ExtSpecProperties. *)
+
+Require Import VST.veric.semax_ext.
+(* VST.veric.semax_ext:
+Require Import VST.veric.juicy_base.
+Require Import VST.veric.juicy_mem.
+Require Import VST.veric.juicy_mem_lemmas.
+Require Import VST.veric.juicy_mem_ops.
+Require Import VST.sepcomp.extspec.
+Require Import VST.veric.juicy_extspec.
+Require Import VST.veric.tycontext.
+Require Import VST.veric.expr2.
+Require Import VST.veric.semax.
+Require Import VST.veric.semax_call.
+Require Import VST.veric.res_predicates.
+
+Require Import VST.veric.res_predicates.
+Require Import compcert.cfrontend.Clight.
+Require Import compcert.exportclight.Clightdefs.
+
+Definition funsig2signature (s : funsig) cc : signature :=
+  mksignature (map typ_of_type (map snd (fst s))) (opttyp_of_type (snd s)) cc.
+
+Definition ef_id_sig (ext_link: Strings.String.string -> ident) ef :=
+  match ef with EF_external id sig => Some (ext_link id, sig) | _ => None end.
+
+Section funspecs2jspec.
+
+Variable Z : Type.
+
+Variable Espec : juicy_ext_spec Z.
+
+Definition symb2genv_upper_bound (s: PTree.t block) : block :=
+  Pos.succ (fold_right Pos.max  1%positive (map snd (PTree.elements s))).
+
+Definition symb2genv (ge_s: injective_PTree block) : genv.
+
+Lemma symb2genv_ax' : forall (ge_s : injective_PTree block), genv_symb_injective (symb2genv ge_s) = ge_s.
+
+Lemma symb2genv_ax : forall (ge: genv), Genv.genv_symb (symb2genv (genv_symb_injective ge)) = Genv.genv_symb ge.
+
+Lemma oi_eq_dec : forall a a' : option (ident * signature), { a = a' } + { a <> a' }.
+
+Definition funspec2pre (ext_link: Strings.String.string -> ident) (A : TypeTree)
+  (P: forall ts, dependent_type_functor_rec ts (AssertTT A) mpred)
+  (ids: list ident) (id: ident) (sig : signature) (ef: external_function) x (ge_s: injective_PTree block)
+           (tys : list typ) args (z : Z) m : Prop :=
+  match oi_eq_dec (Some (id, sig)) (ef_id_sig ext_link ef) as s
+  return ((if s then (rmap* (sigT (fun ts => dependent_type_functor_rec ts A mpred)))%type else ext_spec_type Espec ef) -> Prop)
+  with
+    | left _ => fun x' => Val.has_type_list args (sig_args (ef_sig ef)) /\
+                      exists phi0 phi1, join phi0 phi1 (m_phi m)
+                       /\ P (projT1 (snd x')) (projT2 (snd x')) (make_ext_args (filter_genv (symb2genv ge_s)) ids args) phi0
+                       /\ necR (fst x') phi1 /\ joins (ghost_of (m_phi m)) (Some (ghost_PCM.ext_ref z, NoneP) :: nil)
+    | right n => fun x' => ext_spec_pre Espec ef x' ge_s tys args z m
+  end x.
+
+Definition funspec2post (ext_link: Strings.String.string -> ident) (A : TypeTree)
+  (Q: forall ts, dependent_type_functor_rec ts (AssertTT A) mpred)
+  id sig ef x ge_s (tret : option typ) ret (z : Z) m : Prop :=
+  match oi_eq_dec (Some (id, sig)) (ef_id_sig ext_link ef) as s
+  return ((if s then (rmap*(sigT (fun ts => dependent_type_functor_rec ts A mpred)))%type else ext_spec_type Espec ef) -> Prop)
+  with
+    | left _ => fun x' => exists phi0 phi1, join phi0 phi1 (m_phi m)
+                       /\ Q (projT1 (snd x')) (projT2 (snd x')) (make_ext_rval (filter_genv (symb2genv ge_s)) ret) phi0
+                       /\ necR (fst x') phi1 /\ joins (ghost_of (m_phi m)) (Some (ghost_PCM.ext_ref z, NoneP) :: nil)
+    | right n => fun x' => ext_spec_post Espec ef x' ge_s tret ret z m
+  end x.
+
+Definition funspec2extspec (ext_link: Strings.String.string -> ident) (f : (ident*funspec))
+  : external_specification juicy_mem external_function Z :=
+  match f with
+    | (id, mk_funspec ((params, sigret) as fsig) cc A P Q NEP NEQ) =>
+      let sig := funsig2signature fsig cc in
+      Build_external_specification juicy_mem external_function Z
+        (fun ef => if oi_eq_dec (Some (id, sig)) (ef_id_sig ext_link ef) then (rmap* (sigT (fun ts => dependent_type_functor_rec ts A mpred)))%type else ext_spec_type Espec ef)
+        (funspec2pre ext_link A P (fst (split params)) id sig)
+        (funspec2post ext_link A Q id sig)
+        (fun rv z m => False)
+  end.
+
+Local Open Scope pred.
+
+Definition wf_funspec (f : funspec) :=
+  match f with
+    | mk_funspec sig cc A P Q _ _ =>
+        forall ts a (ge ge': genv) n args,
+          Genv.genv_symb ge = Genv.genv_symb ge' ->
+          P ts a (make_ext_args (filter_genv ge) n args) |-- P ts a (make_ext_args (filter_genv ge') n args)
+  end.
+
+Lemma make_ext_args_symb (ge ge' : genv)
+      (H: Genv.genv_symb ge = Genv.genv_symb ge') n args :
+
+Lemma all_funspecs_wf f : wf_funspec f.
+
+Program Definition funspec2jspec (ext_link: Strings.String.string -> ident) f : juicy_ext_spec Z :=
+
+End funspecs2jspec.
+
+Definition funspecs_norepeat (fs : funspecs) := list_norepet (map fst fs).
+
+Fixpoint add_funspecs_rec (ext_link: Strings.String.string -> ident) (Z : Type) (Espec : juicy_ext_spec Z) (fs : funspecs) :=
+  match fs with
+    | nil => Espec
+    | cons (i,f) fs' => funspec2jspec Z (add_funspecs_rec ext_link Z Espec fs') ext_link (i,f)
+  end.
+
+Require Import Coq.Logic.JMeq.
+
+Lemma add_funspecs_pre  (ext_link: Strings.String.string -> ident)
+
+Lemma add_funspecs_pre_void  (ext_link: Strings.String.string -> ident)
+
+Lemma add_funspecs_post_void (ext_link: Strings.String.string -> ident)
+
+Lemma add_funspecs_post (ext_link: Strings.String.string -> ident){Z Espec tret fs id sig cc A P Q NEP NEQ x ret m z ge_s} :
+
+Definition add_funspecs (Espec : OracleKind) (ext_link: Strings.String.string -> ident) (fs : funspecs) : OracleKind :=
+  match Espec with
+    | Build_OracleKind ty spec =>
+      Build_OracleKind ty (add_funspecs_rec ext_link ty spec fs)
+  end.
+
+Lemma necR_jm_phi : forall jm jm', necR jm jm' -> necR (m_phi jm) (m_phi jm').
+
+Section semax_ext.
+
+Variable Espec : OracleKind.
+
+Lemma semax_ext' (ext_link: Strings.String.string -> ident) id sig cc A P Q NEP NEQ (fs : funspecs) :
+
+Lemma semax_ext (ext_link: Strings.String.string -> ident) id ids sig sig' cc A P Q NEP NEQ (fs : funspecs) :
+
+Lemma semax_ext'_void (ext_link: Strings.String.string -> ident) id sig cc A P Q NEP NEQ (fs : funspecs) :
+
+Lemma semax_ext_void (ext_link: Strings.String.string -> ident) id ids sig sig' cc A P Q NEP NEQ (fs : funspecs) :
+
+End semax_ext. *)
+
+Require Import VST.veric.juicy_mem.
+(* VST.veric.juicy_mem:
+Require Import VST.veric.base.
+Require Import VST.veric.Memory.
+Require Import VST.veric.juicy_base.
+Require Import VST.veric.shares.
+Import cjoins.
+
+Definition dec_share_nonidentity (sh: Share.t) : {~identity sh}+{identity sh} :=
+   (Sumbool.sumbool_not _ _ (dec_share_identity sh)).
+
+Definition perm_of_sh (sh: Share.t): option permission :=
+  if writable0_share_dec sh
+  then if eq_dec sh Share.top
+            then Some Freeable
+            else Some Writable
+    else if readable_share_dec sh
+         then Some Readable
+         else if eq_dec sh Share.bot
+                   then None
+              else Some Nonempty.
+Functional Scheme perm_of_sh_ind := Induction for perm_of_sh Sort Prop.
+
+Definition contents_at (m: mem) (loc: address) : memval :=
+  ZMap.get (snd loc) (PMap.get (fst loc) (mem_contents m)).
+
+Definition contents_cohere (m: mem) (phi: rmap) :=
+  forall rsh sh v loc pp, phi @ loc = YES rsh sh (VAL v) pp -> contents_at m loc = v /\ pp=NoneP.
+
+Definition valshare (r: resource) : share :=
+    match r with
+      | YES sh rsh _ _ => Share.glb Share.Rsh sh
+      | _ => Share.bot
+    end.
+
+Definition res_retain' (r: resource) : Share.t :=
+ match r with
+  | NO sh _ => sh
+  | YES sh _ _ _ => Share.glb Share.Lsh sh
+  | PURE _ _ => Share.top
+ end.
+
+Definition perm_of_res (r: resource) :=
+  
+ match r with
+ | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+ | PURE _ _ => Some Nonempty
+ | YES sh rsh (VAL _) _ => perm_of_sh sh
+ | YES sh rsh _ _ => Some Nonempty
+ end.
+
+Definition perm_of_res_lock_explicit
+             (r : compcert_rmaps.RML.R.resource):=
+    match r with
+    | compcert_rmaps.RML.R.NO _ _ => None
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ => None
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ =>
+      if writable0_share_dec (Share.glb Share.Rsh sh)
+      then if eq_dec (Share.glb Share.Rsh sh) Share.top then Some Freeable else Some Writable
+      else if readable_share_dec (Share.glb Share.Rsh sh) then Some Readable else
+             if eq_dec  (Share.glb Share.Rsh sh) Share.bot then None else Some Nonempty
+    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => None
+    | compcert_rmaps.RML.R.PURE _ _ => None
+    end.
+      
+  Functional Scheme perm_of_res_lock_expl_ind := Induction for perm_of_res_lock_explicit Sort Prop.
+
+Definition perm_of_res' (r: resource) :=
+  
+ match r with
+ | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+ | PURE _ _ => Some Nonempty
+ | YES sh _ _ _ => perm_of_sh sh
+ end.
+
+Definition perm_of_res_lock (r: resource) := 
+  
+ match r with
+ | YES sh rsh (LK _ _) _ => perm_of_sh (Share.glb Share.Rsh sh)
+ | _ => None 
+ end.
+
+Definition perm_of_res_explicit
+               (r : compcert_rmaps.RML.R.resource):=
+        match r with
+        | compcert_rmaps.RML.R.NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ =>
+             if writable0_share_dec sh
+             then if eq_dec sh Share.top then Some Freeable else Some Writable
+             else
+               if readable_share_dec sh
+               then Some Readable
+               else if eq_dec sh Share.bot then None else Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ => Some Nonempty
+           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => Some Nonempty
+           | compcert_rmaps.RML.R.PURE _ _ => Some Nonempty
+        end.
+      
+Functional Scheme perm_of_res_expl_ind := Induction for perm_of_res_explicit Sort Prop.
+
+Lemma Rsh_not_top: Share.Rsh <> Share.top.
+
+Lemma nonidentity_Rsh: ~identity Share.Rsh.
+
+Lemma perm_of_sh_fullshare: perm_of_sh fullshare = Some Freeable.
+
+Lemma nonreadable_extern_retainer: ~readable_share extern_retainer.
+
+Lemma Lsh_nonreadable: ~readable_share Share.Lsh.
+
+Lemma perm_of_res_op1:
+  forall r,
+    perm_order'' (perm_of_res' r) (perm_of_res r).
+
+Lemma perm_of_res_op2:
+  forall r,
+    perm_order'' (perm_of_res' r) (perm_of_res_lock r).
+
+Definition access_cohere (m: mem)  (phi: rmap) :=
+  forall loc,  access_at m loc Cur = perm_of_res (phi @ loc).
+
+Definition max_access_at m loc := access_at m loc Max.
+
+Definition max_access_cohere (m: mem) (phi: rmap)  :=
+  forall loc,
+    perm_order'' (max_access_at m loc) (perm_of_res' (phi @ loc)).
+
+Definition alloc_cohere (m: mem) (phi: rmap) :=
+ forall loc,  (fst loc >= nextblock m)%positive -> phi @ loc = NO Share.bot bot_unreadable.
+
+Inductive juicy_mem: Type :=
+  mkJuicyMem: forall (m: mem) (phi: rmap)
+    (JMcontents: contents_cohere m phi)
+    (JMaccess: access_cohere m phi)
+    (JMmax_access: max_access_cohere m phi)
+    (JMalloc: alloc_cohere m phi),
+       juicy_mem.
+
+Section selectors.
+Variable (j: juicy_mem).
+Definition m_dry := match j with mkJuicyMem m _ _ _ _ _ => m end.
+Definition m_phi := match j with mkJuicyMem _ phi _ _ _ _ => phi end.
+Lemma juicy_mem_contents: contents_cohere m_dry m_phi.
+Lemma juicy_mem_access: access_cohere m_dry m_phi.
+Lemma juicy_mem_max_access: max_access_cohere m_dry m_phi.
+Lemma juicy_mem_alloc_cohere: alloc_cohere m_dry m_phi.
+End selectors.
+
+Definition juicy_mem_resource: forall jm m', resource_at m' = resource_at (m_phi jm) ->
+  {jm' | m_phi jm' = m' /\ m_dry jm' = m_dry jm}.
+
+Lemma perm_of_empty_inv {s} : perm_of_sh s = None -> s = Share.bot.
+
+Lemma writable_join_sub: forall loc phi1 phi2,
+  join_sub phi1 phi2 -> writable loc phi1 -> writable loc phi2.
+
+Lemma writable_inv: forall phi loc, writable loc phi ->
+  exists sh, exists rsh, exists k, exists pp, 
+       phi @ loc = YES sh rsh k pp /\ 
+       writable0_share sh /\
+       isVAL k.
+
+Lemma nreadable_inv: forall phi loc, ~readable loc phi 
+  -> (exists sh, exists nsh, phi @ loc = NO sh nsh)
+   \/ (exists sh, exists rsh, exists k, exists pp, phi @ loc = YES sh rsh k pp /\ ~isVAL k)
+   \/ (exists k, exists pp, phi @ loc = PURE k pp).
+
+Lemma age1_joinx {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall phi1 phi2 phi3 phi1' phi2' phi3',
+             age phi1 phi1' -> age phi2 phi2' -> age phi3 phi3' ->
+             join phi1 phi2 phi3 -> join phi1' phi2' phi3'.
+
+Lemma constructive_age1_join  {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall x y z x' : A,
+       join x y z ->
+       age x x' ->
+       { yz' : A*A | join x' (fst yz') (snd yz') /\ age y (fst yz') /\ age z (snd yz')}.
+
+Lemma age1_constructive_joins_eq : forall {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A}  {phi1 phi2},
+  constructive_joins phi1 phi2
+  -> forall {phi1'}, age1 phi1 = Some phi1'
+  -> forall {phi2'}, age1 phi2 = Some phi2'
+  -> constructive_joins phi1' phi2'.
+
+Program Definition age1_juicy_mem (j: juicy_mem): option juicy_mem :=
+      match age1 (m_phi j) with
+        | Some phi' => Some (mkJuicyMem (m_dry j) phi' _ _ _ _)
+        | None => None
+      end.
+
+Lemma age1_juicy_mem_unpack: forall j j',
+  age1_juicy_mem j = Some j' ->
+  age (m_phi j)  (m_phi j')
+  /\ m_dry j = m_dry j'.
+
+Lemma age1_juicy_mem_unpack': forall j j',
+  age (m_phi j)  (m_phi j')  /\ m_dry j = m_dry j' ->
+  age1_juicy_mem j = Some j'.
+
+Lemma age1_juicy_mem_unpack'': forall j j',
+  age (m_phi j)  (m_phi j')  -> m_dry j = m_dry j' ->
+  age1_juicy_mem j = Some j'.
+
+Lemma rmap_join_eq_level: forall phi1 phi2: rmap, joins phi1 phi2 -> level phi1 = level phi2.
+
+Lemma rmap_join_sub_eq_level: forall phi1 phi2: rmap,
+          join_sub phi1 phi2 -> level phi1 = level phi2.
+
+Lemma age1_juicy_mem_None1:
+  forall j, age1_juicy_mem j = None -> age1 (m_phi j) = None.
+
+Lemma age1_juicy_mem_None2:
+  forall j, age1 (m_phi j) = None -> age1_juicy_mem j = None.
+
+Lemma age1_juicy_mem_Some:
+  forall j j', age1_juicy_mem j = Some j' -> age1 (m_phi j) = Some (m_phi j').
+
+Lemma unage_juicy_mem: forall j' : juicy_mem,
+   exists j : juicy_mem, age1_juicy_mem j = Some j'.
+
+Lemma level1_juicy_mem: forall j: juicy_mem,
+  age1_juicy_mem j = None <-> level (m_phi j) = 0%nat.
+
+Lemma level2_juicy_mem: forall j1 j2: juicy_mem,
+   age1_juicy_mem j1 = Some j2 -> level (m_phi j1) = S (level (m_phi j2)).
+
+Lemma juicy_mem_ageable_facts: ageable_facts juicy_mem (fun j => level (m_phi j)) age1_juicy_mem.
+
+Instance juicy_mem_ageable: ageable juicy_mem :=
+  mkAgeable _ (fun j => level (m_phi j)) age1_juicy_mem juicy_mem_ageable_facts.
+
+Lemma level_juice_level_phi: forall (j: juicy_mem), level j = level (m_phi j).
+
+Lemma juicy_mem_ext: forall j1 j2,
+       m_dry j1 = m_dry j2  ->
+       m_phi j1 = m_phi j2 ->
+       j1=j2.
+
+Lemma unage_writable: forall (phi phi': rmap) loc,
+  age phi phi' -> writable loc phi' -> writable loc phi.
+
+Lemma unage_readable: forall (phi phi': rmap) loc,
+  age phi phi' -> readable loc phi' -> readable loc phi.
+
+Lemma readable_inv: forall phi loc, readable loc phi ->
+  exists rsh, exists sh, exists v, exists pp, phi @ loc = YES rsh sh (VAL v) pp.
+
+Definition fmap_option {A B} (v: option A) (m: B) (f: A -> B): B :=
+  match v with
+    | None => m
+    | Some v' => f v'
+  end.
+
+Lemma resource_at_make_rmap: forall f g lev H Hg, resource_at (proj1_sig (make_rmap f g lev H Hg)) = f.
+
+Lemma resource_at_remake_rmap: forall f g lev H Hg, resource_at (proj1_sig (remake_rmap f g lev H Hg)) = f.
+
+Lemma ghost_of_make_rmap: forall f g lev H Hg, ghost_of (proj1_sig (make_rmap f g lev H Hg)) = g.
+
+Lemma ghost_of_remake_rmap: forall f g lev H Hg, ghost_of (proj1_sig (remake_rmap f g lev H Hg)) = g.
+
+Lemma level_make_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (make_rmap f g lev H Hg)) = lev.
+
+Lemma level_remake_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (remake_rmap f g lev H Hg)) = lev.
+
+Section inflate.
+Variables (m: mem) (phi: rmap).
+
+Definition inflate_initial_mem' (w: rmap) (loc: address) :=
+   match access_at m loc Cur with
+           | Some Freeable => YES Share.top readable_share_top (VAL (contents_at m loc)) NoneP
+           | Some Writable => YES Ews (writable_readable writable_Ews) (VAL (contents_at m loc)) NoneP
+           | Some Readable => YES Ers readable_Ers (VAL (contents_at m loc)) NoneP
+           | Some Nonempty => 
+                         match w @ loc with PURE _ _ => w @ loc | _ => NO _ nonreadable_extern_retainer end
+           | None =>  NO Share.bot bot_unreadable
+         end.
+
+Lemma inflate_initial_mem'_fmap:
+ forall w, resource_fmap (approx (level w)) (approx (level w)) oo inflate_initial_mem' w =
+                inflate_initial_mem' w.
+
+Definition inflate_initial_mem (w: rmap): rmap :=
+    proj1_sig (make_rmap (inflate_initial_mem' w) (ghost_of w) _
+            (inflate_initial_mem'_fmap w) (ghost_of_approx w)).
+
+Lemma inflate_initial_mem_level: forall w, level (inflate_initial_mem w) = level w.
+
+Definition all_VALs (phi: rmap) :=
+  forall l, match phi @ l with
+              | YES _ _ k _ => isVAL k
+              | _ => True
+            end.
+
+Lemma inflate_initial_mem_all_VALs: forall lev, all_VALs (inflate_initial_mem lev).
+
+Definition inflate_alloc: rmap.
+
+Lemma approx_map_idem: forall n (lp: preds),
+  preds_fmap (approx n) (approx n) (preds_fmap (approx n) (approx n) lp) =
+  preds_fmap (approx n) (approx n) lp.
+
+Definition inflate_store: rmap. refine (
+
+End inflate.
+
+Lemma adr_inv0: forall (b b': block) (ofs ofs': Z) (sz: Z),
+  ~ adr_range (b, ofs) sz (b', ofs') ->
+  b <> b' \/ ~ ofs <= ofs' < ofs + sz.
+
+Lemma adr_inv: forall (b b': block) (ofs ofs': Z) ch,
+  ~ adr_range (b, ofs) (size_chunk ch) (b', ofs') ->
+  b <> b' \/ ~ ofs <= ofs' < ofs + size_chunk ch.
+
+Lemma range_inv0: forall ofs ofs' sz,
+  ~ ofs <= ofs' < ofs + sz ->
+  ofs' < ofs \/ ofs' >= ofs + sz.
+
+Lemma range_inv: forall ofs ofs' ch,
+  ~ ofs <= ofs' < ofs + size_chunk ch ->
+  ofs' < ofs \/ ofs' >= ofs + size_chunk ch.
+
+Lemma perm_of_sh_Freeable_top: forall sh, perm_of_sh sh = Some Freeable -> 
+     sh = Share.top.
+
+Lemma nextblock_access_empty: forall m b ofs k, (b >= nextblock m)%positive
+  -> access_at m (b, ofs) k = None.
+
+Section initial_mem.
+Variables (m: mem) (w: rmap).
+
+Definition initial_rmap_ok := 
+   forall loc, ((fst loc >= nextblock m)%positive -> core w @ loc = NO Share.bot bot_unreadable) /\
+                   (match w @ loc with 
+                    | PURE _ _ => (fst loc < nextblock m)%positive /\ 
+                                           access_at m loc Cur = Some Nonempty /\  
+                                            max_access_at m loc = Some Nonempty 
+                    | _ => True end).
+Hypothesis IOK: initial_rmap_ok.
+End initial_mem.
+
+Definition empty_retainer (loc: address) := Share.bot.
+
+Lemma perm_of_freeable: perm_of_sh Share.top = Some Freeable.
+
+Lemma perm_of_writable: 
+   forall sh, writable_share sh -> sh <> Share.top -> perm_of_sh sh = Some Writable.
+
+Lemma perm_of_readable:
+  forall sh (rsh: readable_share sh), ~writable0_share sh -> perm_of_sh sh = Some Readable.
+
+Lemma perm_of_nonempty:
+  forall sh, sh <> Share.bot -> ~readable_share sh -> perm_of_sh sh = Some Nonempty.
+
+Lemma perm_of_empty:
+    perm_of_sh Share.bot = None.
+
+Lemma perm_of_Ews: perm_of_sh Ews = Some Writable.
+
+Lemma perm_of_Ers: perm_of_sh Ers = Some Readable.
+
+Lemma extern_retainer_neq_bot: extern_retainer <> Share.bot.
+
+Lemma perm_order''_trans: forall a b c, Mem.perm_order'' a b ->  Mem.perm_order'' b c ->
+
+Definition initial_mem (m: mem) lev (IOK: initial_rmap_ok m lev) : juicy_mem.
+
+Definition juicy_mem_level (j: juicy_mem) (lev: nat) :=
+  level (m_phi j) = lev.
+
+Lemma initial_mem_level: forall lev m j IOK,
+  j = initial_mem m lev IOK -> juicy_mem_level j (level lev).
+
+Lemma initial_mem_all_VALs: forall lev m j IOK, j = initial_mem m lev IOK
+  -> all_VALs (m_phi j).
+
+Lemma perm_mem_access: forall m b ofs p,
+  perm m b ofs Cur p ->
+  exists p', (perm_order p' p /\ access_at m (b, ofs) Cur = Some p').
+
+Section store.
+Variables (jm: juicy_mem) (m': mem)
+          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
+          (STORE: store ch (m_dry jm) b ofs v = Some m').
+
+Lemma store_phi_elsewhere_eq: forall rsh sh mv loc',
+  ~ adr_range (b, ofs) (size_chunk ch) loc'
+  -> (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP -> contents_at m' loc' = mv.
+
+Definition store_juicy_mem: juicy_mem.
+
+End store.
+
+Section storebytes.
+Variables (jm: juicy_mem) (m': mem) (b: block) (ofs: Z) (bytes: list memval)
+  (STOREBYTES: storebytes (m_dry jm) b ofs bytes = Some m').
+
+Lemma storebytes_phi_elsewhere_eq: forall rsh sh mv loc',
+  ~ adr_range (b, ofs) (Zlength bytes) loc' ->
+  (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP ->
+  contents_at m' loc' = mv.
+
+Definition storebytes_juicy_mem: juicy_mem.
+
+End storebytes.
+
+Lemma free_smaller_None : forall m b b' ofs lo hi m',
+  access_at m (b, ofs) Cur = None
+  -> free m b' lo hi = Some m'
+  -> access_at m' (b, ofs) Cur = None.
+
+Lemma free_nadr_range_eq : forall m b b' ofs' lo hi m',
+  ~ adr_range (b, lo) (hi - lo) (b', ofs')
+  -> free m b lo hi = Some m'
+  -> access_at m (b', ofs') = access_at m' (b', ofs')
+  /\  contents_at m (b', ofs') = contents_at m' (b', ofs').
+
+Section free.
+Variables (jm :juicy_mem) (m': mem)
+          (b: block) (lo hi: Z)
+          (FREE: free (m_dry jm) b lo hi = Some m')
+          (PERM: forall ofs, lo <= ofs < hi ->
+                      perm_of_res (m_phi jm @ (b,ofs)) = Some Freeable).
+
+Definition inflate_free: rmap. refine (
+
+Definition free_juicy_mem: juicy_mem.
+
+End free.
+
+Lemma free_not_freeable_eq : forall m b lo hi m' b' ofs',
+  free m b lo hi = Some m'
+  -> access_at m (b', ofs') Cur <> Some Freeable
+  -> access_at m (b', ofs') Cur = access_at m' (b', ofs') Cur.
+
+Definition after_alloc' 
+  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable)
+  : address -> resource := fun loc =>
+    if adr_range_dec (b,lo) (hi-lo) loc 
+      then YES Share.top readable_share_top (VAL Undef) NoneP
+      else phi @ loc.
+
+Lemma adr_range_eq_block : forall b ofs n b' ofs',
+  adr_range (b,ofs) n (b',ofs') ->
+  b=b'.
+
+Lemma after_alloc'_ok : forall lo hi b phi H,
+  resource_fmap (approx (level phi)) (approx (level phi)) oo (after_alloc' lo hi b phi H)
+  = after_alloc' lo hi b phi H.
+
+Definition after_alloc
+  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable) : rmap :=
+  proj1_sig (make_rmap (after_alloc' lo hi b phi H) (ghost_of phi)
+    (level phi)
+    (after_alloc'_ok lo hi b phi H) (ghost_of_approx phi)).
+
+Definition mod_after_alloc' (phi: rmap) (lo hi: Z) (b: block)
+  : address -> resource := fun loc =>
+    if adr_range_dec (b,lo) (hi-lo) loc 
+      then YES Share.top readable_share_top (VAL Undef) NoneP
+      else core phi @ loc.
+
+Lemma mod_after_alloc'_ok : forall phi lo hi b,
+  resource_fmap (approx (level phi)) (approx (level phi)) oo (mod_after_alloc'  phi lo hi b)
+  = mod_after_alloc' phi lo hi b.
+
+Definition mod_after_alloc (phi: rmap) (lo hi: Z) (b: block) :=
+  proj1_sig (make_rmap (mod_after_alloc' phi lo hi b) (ghost_of phi)
+    _
+    (mod_after_alloc'_ok phi lo hi b) (ghost_of_approx phi)).
+
+Transparent alloc.
+
+Lemma adr_range_inv: forall loc loc' n,
+  ~ adr_range loc n loc' ->
+  fst loc <> fst loc' \/ (fst loc=fst loc' /\ ~snd loc <= snd loc' < snd loc + n).
+
+Lemma dry_noperm_juicy_nonreadable : forall m loc,
+  access_at (m_dry m) loc Cur = None ->   ~readable loc (m_phi m).
+
+Lemma fullempty_after_alloc : forall m1 m2 lo n b ofs,
+  alloc m1 lo n = (m2, b) ->
+  access_at m2 (b, ofs) Cur = None \/ access_at m2 (b, ofs) Cur = Some Freeable.
+
+Lemma alloc_dry_unchanged_on : forall m1 m2 loc lo hi b0,
+  alloc m1 lo hi = (m2, b0) ->
+  ~adr_range (b0,lo) (hi-lo) loc ->
+  access_at m1 loc = access_at m2 loc /\
+  (access_at m1 loc Cur <> None -> contents_at m1 loc= contents_at m2 loc).
+
+Lemma adr_range_zle_fact : forall b lo hi loc,
+  adr_range (b,lo) (hi-lo) loc ->
+  zle lo (snd loc) && zlt (snd loc) hi = true.
+
+Lemma alloc_dry_updated_on : forall m1 m2 lo hi b loc,
+  alloc m1 lo hi = (m2, b) ->
+  adr_range (b, lo) (hi - lo) loc ->
+  access_at m2 loc Cur=Some Freeable /\
+  contents_at m2 loc=Undef.
+
+Definition resource_decay (nextb: block) (phi1 phi2: rmap) :=
+  (level phi1 >= level phi2)%nat /\
+ forall l: address,
+  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
+  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
+  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
+       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = 
+                       YES sh (writable0_readable wsh) (VAL v) NoneP /\ 
+       phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)
+  \/ ((fst l >= nextb)%positive /\ exists v, phi2 @ l = YES Share.top readable_share_top (VAL v) NoneP)
+  \/ (exists v, exists pp, phi1 @ l = YES Share.top readable_share_top (VAL v) pp 
+                        /\ phi2 @ l = NO Share.bot bot_unreadable)).
+
+Definition resource_nodecay (nextb: block) (phi1 phi2: rmap) :=
+  (level phi1 >= level phi2)%nat /\
+  forall l: address,
+  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
+  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
+  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
+       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = YES sh (writable0_readable wsh) (VAL v) NoneP
+      /\ phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)).
+
+Lemma resource_nodecay_decay:
+   forall b phi1 phi2, resource_nodecay b phi1 phi2 -> resource_decay b phi1 phi2.
+
+Lemma resource_decay_refl: forall b phi, 
+  (forall l, (fst l >= b)%positive -> phi @ l = NO Share.bot bot_unreadable) ->
+
+Lemma resource_decay_trans: forall b b' m1 m2 m3,
+  (b <= b')%positive ->
+  resource_decay b m1 m2 -> resource_decay b' m2 m3 -> resource_decay b m1 m3.
+
+Lemma level_store_juicy_mem:
+ forall jm m ch b i v H, level (store_juicy_mem jm m ch b i v H) = level jm.
+
+Lemma level_storebytes_juicy_mem:
+ forall jm m b i bytes H, level (storebytes_juicy_mem jm m b i bytes H) = level jm.
+
+Lemma inflate_store_resource_nodecay:
+  forall (jm: juicy_mem) (m': mem)
+          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
+          (STORE: store ch (m_dry jm) b ofs v = Some m')
+          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
+                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable))
+          phi',
+  inflate_store m' (m_phi jm) = phi' -> resource_nodecay (nextblock (m_dry jm)) (m_phi jm) phi'.
+
+Lemma inflate_free_resource_decay:
+ forall (jm :juicy_mem) (m': mem)
+          (b: block) (lo hi: Z)
+          (FREE: free (m_dry jm) b lo hi = Some m')
+          (PERM: forall ofs : Z,
+             lo <= ofs < hi -> perm_of_res (m_phi jm @ (b, ofs)) = Some Freeable),
+   resource_decay (nextblock (m_dry jm)) (m_phi jm) (inflate_free jm b lo hi).
+
+Lemma juicy_store_nodecay:
+  forall jm m' ch b ofs v
+       (H: store ch (m_dry jm) b ofs v = Some m')
+          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
+                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable)),
+       resource_nodecay (nextblock (m_dry jm)) (m_phi jm) (m_phi (store_juicy_mem jm _ _ _ _ _ H)).
+
+Lemma can_age1_juicy_mem: forall j r,
+  age (m_phi j) r -> exists j', age1 j = Some j'.
+
+Lemma can_age_jm:
+  forall jm, age1 (m_phi jm) <> None -> exists jm', age jm jm'.
+
+Lemma age_jm_dry: forall {jm jm'}, age jm jm' -> m_dry jm = m_dry jm'.
+
+Lemma age_jm_phi: forall {jm jm'}, age jm jm' -> age (m_phi jm) (m_phi jm').
+
+Lemma age1_YES'_1 {phi phi' l rsh sh k P} :
+  age1 phi = Some phi' ->
+  phi @ l = YES rsh sh k P ->
+  (exists P, phi' @ l = YES rsh sh k P).
+
+Lemma age1_YES'_2 {phi phi' l rsh sh k P} :
+  age1 phi = Some phi' ->
+  phi' @ l = YES rsh sh k P ->
+  (exists P, phi @ l = YES rsh sh k P).
+
+Lemma age1_PURE_2 {phi phi' l k P} :
+  age1 phi = Some phi' ->
+  phi' @ l = PURE k P ->
+  (exists P, phi @ l = PURE k P).
+
+Lemma perm_of_res_age x y loc :
+  age x y -> perm_of_res (x @ loc) = perm_of_res (y @ loc).
+
+Lemma contents_cohere_age m : hereditary age (contents_cohere m).
+
+Lemma access_cohere_age m : hereditary age (access_cohere m).
+
+Lemma max_access_cohere_age m : hereditary age (max_access_cohere m).
+
+Lemma alloc_cohere_age m : hereditary age (alloc_cohere m).
+
+Definition unage {A} {_:ageable A} x y := age y x.
+
+Lemma unage_YES'_1 {phi phi' l rsh sh k P} :
+  age1 phi' = Some phi ->
+  phi @ l = YES rsh sh k P ->
+  (exists P, phi' @ l = YES rsh sh k P).
+
+Lemma unage_YES'_2 {phi phi' l rsh sh k P} :
+  age1 phi' = Some phi ->
+  phi' @ l = YES rsh sh k P ->
+  (exists P, phi @ l = YES rsh sh k P).
+
+Lemma unage_PURE_2 {phi phi' l k P} :
+  age1 phi' = Some phi ->
+  phi' @ l = PURE k P ->
+  (exists P, phi @ l = PURE k P).
+
+Lemma contents_cohere_unage m : hereditary unage (contents_cohere m).
+
+Lemma access_cohere_unage m : hereditary unage (access_cohere m).
+
+Lemma max_access_cohere_unage m : hereditary unage (max_access_cohere m).
+
+Lemma alloc_cohere_unage m : hereditary unage (alloc_cohere m).
+
+Lemma juicy_mem_unage jm' : { jm | age jm jm' }. *)
+
+Require Import VST.veric.compcert_rmaps.
+(* VST.veric.compcert_rmaps:
+Require Export VST.msl.msl_standard.
+Require Import VST.veric.base.
+Require Import compcert.cfrontend.Ctypes.
+Require Import VST.veric.shares.
+Require Import VST.veric.rmaps.
+Require Import VST.veric.rmaps_lemmas.
+Require Export VST.veric.Memory. 
+
+Instance EqDec_type: EqDec type := type_eq.
+
+Definition funsig := (list (ident*type) * type)%type. 
+
+Inductive kind : Type := VAL : memval -> kind
+                                   | LK : forall n i : Z, kind
+                                   | FUN: funsig -> calling_convention -> kind.
+
+Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
+Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
+
+Lemma isVAL_i: forall v, isVAL (VAL v).
+Hint Resolve isVAL_i.
+
+Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
+
+Module CompCert_AV <: ADR_VAL.
+
+Definition address := address.
+Definition some_address : address := (xH,0).
+Definition kind := kind.
+
+End CompCert_AV.
+
+Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
+
+Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
+
+Module R := Rmaps (CompCert_AV).
+Module RML := Rmaps_Lemmas(R).
+
+Export RML.
+Export R.
+
+Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
+Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
+
+Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
+  mk_rshare (rshare_sh p) H = p.
+
+Definition fixup_splitting
+  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
+  fun l => 
+    match z l with
+    | Some (sh, k) =>
+       match dec_readable (a l) with
+       | left p => Some (readable_part p,  k)
+       | right _ => None
+       end
+    | None => None
+    end.
+
+Definition share_of (x: option (rshare * kind)) : Share.t :=
+  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
+
+Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
+
+Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
+
+Lemma join_sub_same_k:
+ forall {a a' : rshare} {k k': AV.kind},
+
+Lemma pure_readable_glb_Rsh:
+ forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
+
+Lemma join_glb_Rsh:  
+  forall a b c : Share.t,
+
+Lemma pure_readable_share_glb:
+  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
+
+Lemma glb_Rsh_bot_unreadable:
+  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
+
+Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
+
+Lemma join_share_of: forall a b c,
+     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
+
+Lemma pure_readable_share_i:
+  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
+
+Obligation Tactic := Tactics.program_simpl.
+
+Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
+
+Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
+
+Program Definition writable (l: address): pred rmap :=
+ fun phi =>
+  match phi @ l with
+    | YES sh _ k lp => writable0_share sh /\ isVAL k
+    | _ => False
+  end.
+
+Program Definition readable (loc: address) : pred rmap :=
+   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
+
+Lemma readable_join:
+  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
+            readable loc phi1 -> readable loc phi3.
+
+Lemma readable_writable_join:
+forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
+
+Lemma writable0_join_sub:
+  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
+
+Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
+            writable loc phi1 -> writable loc phi2.
+
+Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
+
+Lemma writable_e: forall loc m, 
+   writable loc m -> 
+   exists sh, exists rsh, exists v, exists p, 
+     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
+Arguments writable_e [loc] [m] _.
+
+Lemma readable_e: forall loc m, 
+   readable loc m -> 
+  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
+Arguments readable_e [loc] [m] _.
+
+Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
+
+Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
+  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
+
+Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
+
+Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
+
+Lemma bytes_writable_dec:
+   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
+
+Lemma bytes_readable_dec:
+   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
+
+Lemma bytes_writable_readable:
+  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
+
+Hint Resolve bytes_writable_readable : mem.
+
+Lemma rmap_age_i:
+ forall w w' : rmap,
+    level w = S (level w') ->
+   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
+    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
+    age w w'. *)
+
+Require Import VST.veric.initial_world.
+(* VST.veric.initial_world:
+Require Import VST.msl.age_to.
+Require Import VST.veric.juicy_base.
+Require Import VST.veric.juicy_mem.
+Require Import VST.veric.juicy_mem_lemmas.
+Require Import VST.veric.juicy_mem_ops.
+Require Import VST.veric.res_predicates.
+
+Require Import VST.veric.shares.
+Require Import VST.veric.mpred.
+
+Require Import VST.veric.age_to_resource_at.
+
+Local Open Scope pred.
+
+Obligation Tactic := idtac.
+
+Lemma adr_range_divide:
+  forall b i p q loc,
+    p >= 0 -> q >= 0 -> (adr_range (b,i) (p+q) loc <-> (adr_range (b,i) p loc \/adr_range (b,i+p) q loc)).
+
+Lemma VALspec_range_e:
+  forall n sh base m loc, VALspec_range n sh base  m ->
+                                adr_range base n loc -> 
+                {x | m @ loc = YES sh (snd x) (VAL (fst x)) NoneP}.
+
+Lemma store_init_data_outside':
+  forall F V (ge: Genv.t F V)  b a m p m',
+
+Lemma store_init_data_list_outside':
+  forall F V (ge: Genv.t F V)  b il m p m',
+
+Ltac destruct_cjoin phi HH :=
+  match goal with
+   |   |- context [@proj1_sig rmap _ ?X] => destruct X as [phi HH]; simpl
+   |  H: context [@proj1_sig rmap _ ?X] |- _ => destruct X as [phi HH]; simpl in H
+  end.
+
+Lemma split_top_neq: fst (Share.split Share.top) <> Share.top.
+
+Lemma dec_pure: forall r, {exists k, exists pp, r = PURE k pp}+{core r = NO Share.bot bot_unreadable}.
+
+Lemma store_init_data_list_lem:
+  forall F V (ge: Genv.t F V) m b lo d m',
+
+Lemma fold_right_rev_left:
+  forall (A B: Type) (f: A -> B -> A) (l: list B) (i: A),
+  fold_left f l i = fold_right (fun x y => f y x) i (rev l).
+
+Definition initblocksize (V: Type)  (a: ident * globvar V)  : (ident * Z) :=
+ match a with (id,l) => (id , init_data_list_size (gvar_init l)) end.
+
+Lemma initblocksize_name: forall V a id n, initblocksize V a = (id,n) -> fst a = id.
+
+Fixpoint find_id (id: ident) (G: funspecs) : option funspec  :=
+ match G with
+ | (id', f)::G' => if eq_dec id id' then Some f else find_id id G'
+ | nil => None
+ end.
+
+Lemma in_map_fst: forall {A B: Type} (i: A) (j: B) (G: list (A*B)),
+  In (i,j) G -> In i (map (@fst _ _ ) G).
+
+Lemma find_id_i:
+  forall id fs G,
+            In (id,fs) G ->
+             list_norepet (map (@fst _ _) G) ->
+                  find_id id G = Some fs.
+
+Lemma find_id_e:
+   forall id G fs, find_id id G = Some fs -> In (id,fs) G.
+
+Definition initial_core' {F} (ge: Genv.t (fundef F) type) (G: funspecs) (n: nat) (loc: address) : resource :=
+   if Z.eq_dec (snd loc) 0
+   then match Genv.invert_symbol ge (fst loc) with
+           | Some id =>
+                  match find_id id G with
+                  | Some (mk_funspec fsig cc A P Q _ _) =>
+                           PURE (FUN fsig cc) (SomeP (SpecTT A) (fun ts => fmap _ (approx n) (approx n) (packPQ P Q ts)))
+                  | None => NO Share.bot bot_unreadable
+                  end
+           | None => NO Share.bot bot_unreadable
+          end
+   else NO Share.bot bot_unreadable.
+
+Program Definition initial_core {F} (ge: Genv.t (fundef F) type) (G: funspecs) (n: nat): rmap :=
+
+Require Import VST.veric.ghost_PCM.
+
+Program Definition initial_core_ext {F Z} (ora : Z) (ge: Genv.t (fundef F) type) (G: funspecs) (n: nat): rmap :=
+
+Lemma list_disjoint_rev2:
+   forall A (l1 l2: list A), list_disjoint l1 (rev l2) = list_disjoint l1 l2.
+
+Require Import VST.veric.mapsto_memory_block.
+ 
+Lemma writable_blocks_app:
+  forall bl bl' rho, writable_blocks (bl++bl') rho = writable_blocks bl rho * writable_blocks bl' rho.
+
+Fixpoint prog_funct' {F V} (l: list (ident * globdef F V)) : list (ident * F) :=
+ match l with nil => nil | (i,Gfun f)::r => (i,f):: prog_funct' r | _::r => prog_funct' r
+ end.
+
+Definition prog_funct {F} (p: program F) := prog_funct' (prog_defs p).
+
+Lemma find_symbol_add_globals_nil:
+  forall {F V} i g id p prog_pub,
+     (Genv.find_symbol
+
+Lemma find_symbol_add_globals_cons:
+  forall {F V} i g id dl prog_pub (HD: 0 < Zlength dl),
+   ~ In i (map fst dl) -> list_norepet (map fst dl) ->
+     (Genv.find_symbol
+
+Lemma find_symbol_add_globals:
+  forall {F V} i g id dl prog_pub,
+   ~ In i (map fst dl) -> list_norepet (map fst dl) ->
+  match dl with
+    nil => forall p,
+      (Genv.find_symbol
+
+Lemma find_symbol_add_globals':
+  forall {F V} i g id dl prog_pub,
+  match dl with
+    nil => forall p,
+      (Genv.find_symbol
+
+Lemma nth_error_app: forall {T} (al bl : list T) (j: nat),
+     nth_error (al++bl) (length al + j) = nth_error bl j.
+
+Lemma nth_error_app1: forall {T} (al bl : list T) (j: nat),
+     (j < length al)%nat ->
+     nth_error (al++bl) j = nth_error al j.
+
+Lemma nth_error_rev:
+  forall T (vl: list T) (n: nat),
+   (n < length vl)%nat ->
+  nth_error (rev vl) n = nth_error vl (length vl - n - 1).
+
+Lemma Zlength_app: forall T (al bl: list T),
+    Zlength (al++bl) = Zlength al + Zlength bl.
+Lemma Zlength_rev: forall T (vl: list T), Zlength (rev vl) = Zlength vl.
+
+Lemma Zlength_map: forall A B (f: A -> B) l, Zlength (map f l) = Zlength l.
+
+Lemma add_globals_hack_nil {F}:
+   forall gev prog_pub,
+    gev = Genv.add_globals (Genv.empty_genv (fundef F) type prog_pub) (rev nil) ->
+
+Lemma add_globals_hack_single {F}:
+   forall v gev prog_pub,
+    gev = Genv.add_globals (Genv.empty_genv (fundef F) type prog_pub) (cons v nil) ->
+
+Instance EqDec_Z : EqDec Z := zeq.
+
+Lemma advance_next_length:
+  forall F V vl n, @Genv.advance_next F V vl n = (Pos.of_nat (S (length vl)) + n - 1)%positive.
+
+Lemma Zpos_Posofnat: forall n, (n>0)%nat -> Z.pos (Pos.of_nat n) = Z.of_nat n.
+
+Lemma add_globals_hack {F}:
+   forall vl gev prog_pub,
+    list_norepet (map fst vl) ->
+    gev = Genv.add_globals (Genv.empty_genv (fundef F) type prog_pub) (rev vl) ->
+
+Lemma find_symbol_globalenv {F}:
+  forall (prog: program F) i b,
+   list_norepet (prog_defs_names prog) ->
+  Genv.find_symbol (Genv.globalenv prog) i = Some b ->
+
+Fixpoint alloc_globals_rev {F V} (ge: Genv.t F V) (m: mem) (vl: list (ident * globdef F V))
+                         {struct vl} : option mem :=
+  match vl with
+  | nil => Some m
+  | v :: vl' =>
+     match alloc_globals_rev ge m vl' with
+     | Some m' => Genv.alloc_global ge m' v
+     | None => None
+     end
+  end.
+
+Lemma alloc_globals_app:
+   forall F V (ge: Genv.t F V) m m2 vs vs',
+
+Lemma alloc_globals_rev_eq:
+     forall F V (ge: Genv.t F V) m vl,
+
+Lemma zlength_nonneg: forall A l, 0 <= @Zlength A l.
+
+Lemma alloc_globals_rev_nextblock:
+  forall {F V} (ge: Genv.t F V) vl m, alloc_globals_rev ge empty vl = Some m ->
+
+Lemma store_zeros_max_access:  forall m b z N m',
+      store_zeros m b z N = Some m' -> max_access_at m' = max_access_at m.
+
+Lemma store_zeros_access:  forall m b z N m',
+      store_zeros m b z N = Some m' -> access_at m' = access_at m.
+
+Lemma store_zeros_contents1: forall m b z N m' loc,
+      fst loc <> b ->
+      store_zeros m b z N = Some m' ->
+      contents_at m loc = contents_at m' loc.
+
+Lemma alloc_global_old:
+  forall {F V} (ge: Genv.t F V) m iv m', Genv.alloc_global ge m iv = Some m' ->
+
+Program Definition set_ghost (m : rmap) (g : ghost) (Hg : _) :=
+  proj1_sig (make_rmap (resource_at m) g (level m) _ Hg).
+
+Fixpoint prog_vars' {F V} (l: list (ident * globdef F V)) : list (ident * globvar V) :=
+ match l with nil => nil | (i,Gvar v)::r => (i,v):: prog_vars' r | _::r => prog_vars' r
+ end.
+
+Definition prog_vars {F} (p: program F) := prog_vars' (prog_defs p).
+
+Definition no_locks phi :=
+  forall addr sh sh' z z' P,
+    phi @ addr <> YES sh sh' (LK z z') P.
+
+Lemma make_tycontext_s_find_id i G : (make_tycontext_s G) ! i = find_id i G.
+
+Definition cond_approx_eq n A P1 P2 :=
+  (forall ts,
+      fmap (dependent_type_functor_rec ts (AssertTT A)) (approx n) (approx n) (P1 ts) =
+      fmap (dependent_type_functor_rec ts (AssertTT A)) (approx n) (approx n) (P2 ts)).
+
+Lemma cond_approx_eq_sym n A P1 P2 :
+  cond_approx_eq n A P1 P2 ->
+  cond_approx_eq n A P2 P1.
+
+Lemma cond_approx_eq_trans n A P1 P2 P3 :
+  cond_approx_eq n A P1 P2 ->
+  cond_approx_eq n A P2 P3 ->
+  cond_approx_eq n A P1 P3.
+
+Lemma cond_approx_eq_weakening n n' A P1 P2 :
+  (n' <= n)%nat ->
+  cond_approx_eq n A P1 P2 ->
+  cond_approx_eq n' A P1 P2.
+
+Lemma level_initial_core {F} ge G n : level (@initial_core F ge G n) = n.
+
+Definition func_at'' fsig cc A P Q :=
+  pureat (SomeP (SpecTT A) (packPQ P Q)) (FUN fsig cc). *)
+
+Require Import VST.veric.ghost_PCM.
+(* VST.veric.ghost_PCM:
+Require Export VST.msl.msl_standard.
+Require Export VST.veric.base.
+Require Export VST.veric.shares.
+Require Import VST.msl.ghost.
+
+Section Reference.
+
+Lemma join_Bot : forall a b, sepalg.join a b Share.bot -> a = Share.bot /\ b = Share.bot.
+
+Definition completable {P : Ghost} (a: @G (pos_PCM P)) r := exists x, join a x (Some (Tsh, r)).
+
+End Reference.
+
+Program Instance exclusive_PCM A : Ghost := { valid a := True; Join_G := Join_lower (Join_discrete A) }.
+
+Definition ext_PCM Z : Ghost := ref_PCM (exclusive_PCM Z).
+
+Lemma valid_ext : forall {Z} (ora : Z), @valid (ext_PCM _) (Some (Tsh, Some ora), None).
+
+Definition ext_ghost {Z} (ora : Z) : {g : ghost.Ghost & {a : ghost.G | ghost.valid a}} :=
+  existT _ (ext_PCM _) (exist _ _ (valid_ext ora)).
+
+Lemma valid_ext_ref : forall {Z} (ora : Z), @valid (ext_PCM _) (None, Some (Some ora)).
+
+Definition ext_ref {Z} (ora : Z) : {g : ghost.Ghost & {a : ghost.G | ghost.valid a}} :=
+  existT _ (ext_PCM _) (exist _ _ (valid_ext_ref ora)).
+
+Lemma valid_ext_both : forall {Z} (ora : Z), @valid (ext_PCM _) (Some (Tsh, Some ora), Some (Some ora)).
+
+Definition ext_both {Z} (ora : Z) : {g : ghost.Ghost & {a : ghost.G | ghost.valid a}} :=
+  existT _ (ext_PCM _) (exist _ _ (valid_ext_both ora)). *)
+
+Require Import VST.veric.SequentialClight.
+(* VST.veric.SequentialClight:
+Require Import VST.sepcomp.semantics.
+
+Require Import VST.veric.Clight_base.
+Require Import VST.veric.Clight_new.
+Require Import VST.veric.Clight_lemmas.
+Require Import VST.sepcomp.step_lemmas.
+Require Import VST.sepcomp.event_semantics.
+Require Import VST.veric.SeparationLogic.
+Require Import VST.veric.juicy_extspec.
+Require Import VST.veric.juicy_mem.
+Require VST.veric.NullExtension.
+Require Import VST.veric.Clight_sim.
+Require Import VST.veric.SeparationLogicSoundness.
+Require Import VST.sepcomp.extspec.
+Require Import VST.msl.msl_standard.
+
+Import VericSound.
+Import VericMinimumSeparationLogic.
+Import VericMinimumSeparationLogic.CSHL_Def.
+Import VericMinimumSeparationLogic.CSHL_Defs.
+
+Definition ignores_juice Z (J: external_specification juicy_mem external_function Z) : Prop :=
+  (forall e t b tl vl x jm jm',
+     m_dry jm = m_dry jm' ->
+    ext_spec_pre J e t b tl vl x jm ->
+    ext_spec_pre J e t b tl vl x jm') /\
+ (forall ef t b ot v x jm jm',
+     m_dry jm = m_dry jm' -> 
+    ext_spec_post J ef t b ot v x jm ->
+    ext_spec_post J ef t b ot v x jm') /\
+ (forall v x jm jm',
+     m_dry jm = m_dry jm' -> 
+     ext_spec_exit J v x jm ->
+     ext_spec_exit J v x jm').
+
+Import VST.veric.compcert_rmaps.R.
+
+Definition mem_evolve (m m': mem) : Prop :=
+   
+ forall loc,
+ match access_at m loc Cur, access_at m' loc Cur with
+ | None, None => True
+ | None, Some Freeable => True
+ | Some Freeable, None => True
+ | Some Writable, Some p' => p' = Writable
+ | Some p, Some p' => p=p' /\ access_at m loc Max = access_at m' loc Max
+ | _, _ => False
+ end.
+   
+Definition ext_spec_mem_evolve (Z: Type) 
+  (D: external_specification mem external_function Z) :=
+ forall ef w b tl vl ot v z m z' m',
+    ext_spec_pre D ef w b tl vl z m ->
+    ext_spec_post D ef w b ot v z' m' ->
+    mem_evolve m m'.
+
+Definition juicy_dry_ext_spec (Z: Type)
+   (J: external_specification juicy_mem external_function Z)
+   (D: external_specification mem external_function Z)
+   (dessicate: forall ef jm, ext_spec_type J ef -> ext_spec_type D ef) :=
+  (forall e t t' b tl vl x jm,
+    dessicate e jm t = t' ->
+    (ext_spec_pre J e t b tl vl x jm ->
+    ext_spec_pre D e t' b tl vl x (m_dry jm))) /\
+ (forall ef t t' b ot v x jm0 jm,
+    (exists tl vl x0, dessicate ef jm0 t = t' /\ ext_spec_pre J ef t b tl vl x0 jm0) ->
+    (level jm <= level jm0)%nat ->
+    resource_at (m_phi jm) = resource_fmap (approx (level jm)) (approx (level jm)) oo juicy_mem_lemmas.rebuild_juicy_mem_fmap jm0 (m_dry jm) ->
+    ghost_of (m_phi jm) = Some (ghost_PCM.ext_ghost x, compcert_rmaps.RML.R.NoneP) :: ghost_fmap (approx (level jm)) (approx (level jm)) (tl (ghost_of (m_phi jm0))) ->
+    (ext_spec_post D ef t' b ot v x (m_dry jm) ->
+     ext_spec_post J ef t b ot v x jm)) /\
+ (forall v x jm,
+     ext_spec_exit J v x jm <->
+     ext_spec_exit D v x (m_dry jm)).
+
+Definition juicy_dry_ext_spec_make (Z: Type) 
+   (J: external_specification juicy_mem external_function Z) :
+   external_specification mem external_function Z.
+
+Definition dessicate_id Z 
+   (J: external_specification juicy_mem external_function Z) :
+   forall ef (jm : juicy_mem), ext_spec_type J ef -> 
+       ext_spec_type (juicy_dry_ext_spec_make Z J) ef.
+
+Lemma jdes_make_lemma:
+  forall Z J, ignores_juice Z J ->
+    juicy_dry_ext_spec Z J (juicy_dry_ext_spec_make Z J)
+     (dessicate_id Z J).
+
+Definition mem_rmap_cohere m phi :=
+  contents_cohere m phi /\
+  access_cohere m phi /\
+  max_access_cohere m phi /\ alloc_cohere m phi.
+
+Lemma age_to_cohere:
+ forall m phi n,
+    mem_rmap_cohere m phi -> mem_rmap_cohere m (age_to.age_to n phi).
+
+Lemma set_ghost_cohere:
+ forall m phi g H,
+    mem_rmap_cohere m phi -> 
+   mem_rmap_cohere m (initial_world.set_ghost phi g H).
+
+Lemma mem_evolve_cohere:
+  forall jm m' phi',
+   mem_evolve (m_dry jm) m' ->
+   compcert_rmaps.RML.R.resource_at phi' =
+
+ Lemma whole_program_sequential_safety:
+   forall {CS: compspecs} {Espec: OracleKind} (initial_oracle: OK_ty) 
+     (dryspec: ext_spec OK_ty)
+     (dessicate : forall (ef : external_function) jm,
+               ext_spec_type OK_spec ef ->
+               ext_spec_type dryspec ef)
+     (JDE: juicy_dry_ext_spec _ (@JE_spec OK_ty OK_spec) dryspec dessicate)
+     (DME: ext_spec_mem_evolve _ dryspec)
+     prog V G m,
+     @semax_prog Espec  CS prog V G ->
+     Genv.init_mem prog = Some m ->
+
+Require Import VST.veric.juicy_safety.
+
+Definition fun_id (ext_link: Strings.String.string -> ident) (ef: external_function) : option ident :=
+  match ef with EF_external id sig => Some (ext_link id) | _ => None end.
+
+Print genv.
+
+Lemma module_sequential_safety : 
+   forall {CS: compspecs} (prog: program) (V: varspecs) (G: funspecs) ora m f f_id f_b f_body args,
+     let ge := Genv.globalenv prog in
+     let ext_link := ext_link_prog prog in
+     let spec := add_funspecs NullExtension.Espec ext_link G in
+     let tys := sig_args (ef_sig f) in
+     let rty := sig_res (ef_sig f) in
+     let sem := juicy_core_sem (cl_core_sem (Build_genv ge (prog_comp_env prog))) in
+     @semax_prog spec CS prog V G ->
+     fun_id ext_link f = Some f_id ->
+     Genv.find_symbol ge f_id = Some f_b ->
+     Genv.find_funct  ge (Vptr f_b Ptrofs.zero) = Some f_body ->
+     forall x : ext_spec_type (@OK_spec spec) f,
+     ext_spec_pre (@OK_spec spec) f x (genv_symb_injective ge) tys args ora m ->
+     exists q,
+       initial_core sem 
+         0 
+             m q m
+              (Vptr f_b Ptrofs.zero) args /\
+       forall n, safeN_(genv_symb := @genv_symb_injective _ _)(Hrel := juicy_extspec.Hrel) (coresem_extract_cenv sem (prog_comp_env prog))
+(upd_exit (@OK_spec spec) x (genv_symb_injective ge)) ge n ora q m.
+Abort. *)
+
+Require Import VST.progs.conclib.
+(* VST.progs.conclib:
+Require Import VST.veric.ghost_PCM.
+Require Export VST.msl.iter_sepcon.
+Require Export VST.concurrency.semax_conc_pred.
+Require Export VST.concurrency.semax_conc.
+Require Export VST.floyd.proofauto.
+Require Import VST.floyd.library.
+Require Export VST.floyd.sublist.
+
+Notation vint z := (Vint (Int.repr z)).
+Notation vptrofs z := (Vptrofs (Ptrofs.repr z)).
+
+Lemma app_cons_assoc : forall {A} l1 (x : A) l2, l1 ++ x :: l2 = (l1 ++ [x]) ++ l2.
+
+Lemma Forall_forall_Znth : forall {A}{d: Inhabitant A} (P : A -> Prop) l,
+  Forall P l <-> forall i, 0 <= i < Zlength l -> P (Znth i l).
+
+Lemma Zmod_smallish : forall x y, y <> 0 -> 0 <= x < 2 * y ->
+  x mod y = x \/ x mod y = x - y.
+
+Lemma Zmod_plus_inv : forall a b c d (Hc : c > 0) (Heq : (a + b) mod c = (d + b) mod c),
+  a mod c = d mod c.
+
+Lemma Znth_app : forall {A}{d: Inhabitant A} (l1 l2 : list A) i,
+      Zlength l1 = i -> Znth i (l1 ++ l2) = Znth 0 l2.
+
+Corollary Znth_app1 : forall {A}{d: Inhabitant A} l1 (x : A) l2 i,
+     Zlength l1 = i -> Znth i (l1 ++ x :: l2) = x.
+
+Lemma repable_0 : repable_signed 0.
+Hint Resolve repable_0.
+
+Definition complete MAX l := l ++ repeat (vptrofs 0) (Z.to_nat MAX - length l).
+
+Lemma upd_complete : forall l x MAX, Zlength l < MAX ->
+  upd_Znth (Zlength l) (complete MAX l) x = complete MAX (l ++ [x]).
+
+Lemma Znth_complete : forall n l MAX, n < Zlength l -> 
+     Znth n (complete MAX l) = Znth n l.
+
+Lemma remove_complete : forall l x MAX, Zlength l < MAX ->
+  upd_Znth (Zlength l) (complete MAX (l ++ [x])) (vptrofs 0) = complete MAX l.
+
+Lemma Forall_app : forall {A} (P : A -> Prop) l1 l2,
+  Forall P (l1 ++ l2) <-> Forall P l1 /\ Forall P l2.
+
+Lemma Forall_incl : forall {A} (P : A -> Prop) l1 l2 (Hall : Forall P l2) (Hincl : incl l1 l2),
+  Forall P l1.
+
+Lemma repeat_plus : forall {A} (x : A) i j, repeat x (i + j) = repeat x i ++ repeat x j.
+
+Lemma in_insert_iff : forall {A} (x y : A) l1 l2, In x (l1 ++ y :: l2) <-> x = y \/ In x (l1 ++ l2).
+
+Definition remove_at {A} i (l : list A) := firstn i l ++ skipn (S i) l.
+
+Lemma Forall_firstn : forall {A} (P : A -> Prop) l i, Forall P l ->
+  Forall P (firstn i l).
+
+Lemma Forall_skipn : forall {A} (P : A -> Prop) l i, Forall P l ->
+  Forall P (skipn i l).
+
+Lemma Forall_upd_Znth : forall {A} (P : A -> Prop) x l i, Forall P l -> P x ->
+  Forall P (upd_Znth i l x).
+
+Lemma last_cons : forall {A} (d : A) l x, l <> [] -> last (x :: l) d = last l d.
+
+Lemma nth_last : forall {A} (d : A) l, nth (length l - 1) l d = last l d.
+
+Lemma Znth_last : forall {A}{d: Inhabitant A} l, Znth (Zlength l - 1) l = last l default.
+
+Lemma last_app : forall {A} l1 l2 (d : A), l2 <> [] -> last (l1 ++ l2) d = last l2 d.
+
+Lemma nat_sorted_list_eq : forall d n l (Hl : forall i, (i < n)%nat <-> In i l) (Hlen : length l = n)
+  (Hsorted : forall i j, (i < j < n -> nth i l d < nth j l d)%nat) i (Hi : (i < n)%nat), nth i l d = i.
+
+Lemma Forall2_In_l : forall {A B} (P : A -> B -> Prop) x l1 l2, Forall2 P l1 l2 -> In x l1 ->
+  exists y, In y l2 /\ P x y.
+
+Lemma Forall2_In_r : forall {A B} (P : A -> B -> Prop) x l1 l2, Forall2 P l1 l2 -> In x l2 ->
+  exists y, In y l1 /\ P y x.
+
+Lemma last_snoc : forall {A} (d : A) x l, last (l ++ [x]) d = x.
+
+Lemma iter_sepcon_sepcon: forall {A} f g1 g2 l, (forall b : A, f b = g1 b * g2 b) ->
+  iter_sepcon f l = iter_sepcon g1 l * iter_sepcon g2 l.
+
+Lemma sepcon_app : forall l1 l2, fold_right sepcon emp (l1 ++ l2) =
+  fold_right sepcon emp l1 * fold_right sepcon emp l2.
+
+Definition rotate {A} (l : list A) n m := sublist (m - n) (Zlength l) l ++
+  sublist 0 (m - n) l.
+
+Lemma sublist_of_nil : forall {A} i j, sublist i j (@nil A) = [].
+
+Lemma sublist_0_cons : forall {A} j x (l : list A), j > 0 ->
+  sublist 0 j (x :: l) = x :: sublist 0 (j - 1) l.
+
+Lemma sublist_S_cons : forall {A} i j x (l : list A), i > 0 ->
+  sublist i j (x :: l) = sublist (i - 1) (j - 1) l.
+
+Lemma upd_rotate : forall {A} i (l : list A) n m x (Hl : Zlength l = m) (Hlt : 0 <= n <= m)
+  (Hi : 0 <= i < Zlength l),
+  upd_Znth i (rotate l n m) x = rotate (upd_Znth ((i - n) mod m) l x) n m.
+
+Lemma Znth_cons_eq : forall {A}{d : Inhabitant A} i x l, 
+   Znth i (x :: l) = if eq_dec i 0 then x else Znth (i - 1) l.
+
+Lemma Znth_rotate : forall {A} {d : Inhabitant A} i l n, 
+    0 <= n <= Zlength l -> 0 <= i < Zlength l ->
+  Znth i (rotate l n (Zlength l)) = Znth ((i - n) mod Zlength l) l.
+
+Lemma rotate_nil : forall {A} n m, rotate (@nil A) n m = [].
+
+Lemma Forall_sublist_le : forall {A} {d : Inhabitant A} (P : A -> Prop) i j l
+  (Hrangei : 0 <= i) (Hrangej : j <= Zlength l) (Hi : ~P (Znth i l)) (Hj : Forall P (sublist 0 j l)),
+  j <= i.
+
+Corollary Forall_sublist_first : forall {A} {d : Inhabitant A} (P : A -> Prop) i j l
+  (Hrangei : 0 <= i <= Zlength l) (Hi : Forall P (sublist 0 i l)) (Hi' : ~P (Znth i l))
+  (Hrangej : 0 <= j <= Zlength l) (Hj : Forall P (sublist 0 j l)) (Hj' : ~P (Znth j l)),
+  i = j.
+
+Lemma NoDup_Znth_inj : forall {A} {d : Inhabitant A} l i j (HNoDup : NoDup l)
+  (Hi : 0 <= i < Zlength l) (Hj : 0 <= j < Zlength l) (Heq : Znth i l = Znth j l ),
+  i = j.
+
+Lemma rotate_In : forall {A} (x : A) n m l, 0 <= m - n <= Zlength l -> In x (rotate l n m) <-> In x l.
+
+Lemma rotate_map : forall {A B} (f : A -> B) n m l, rotate (map f l) n m = map f (rotate l n m).
+
+Lemma combine_app : forall {A B} (l1 l2 : list A) (l1' l2' : list B), length l1 = length l1' ->
+  combine (l1 ++ l2) (l1' ++ l2') = combine l1 l1' ++ combine l2 l2'.
+
+Lemma combine_app' : forall {A B} (l1 l2 : list A) (l1' l2' : list B), Zlength l1 = Zlength l1' ->
+  combine (l1 ++ l2) (l1' ++ l2') = combine l1 l1' ++ combine l2 l2'.
+
+Lemma Forall_rotate : forall {A} P (l : list A) n m, Forall P l ->
+  Forall P (rotate l m n).
+
+Lemma Forall_repeat : forall {A} (P : A -> Prop) x n, P x -> Forall P (repeat x n).
+
+Lemma Forall_complete : forall P l m, Forall P l -> P (vptrofs 0) ->
+  Forall P (complete m l).
+
+Lemma app_eq_inv : forall {A} (l1 l2 l3 l4 : list A)
+  (Heq : l1 ++ l2 = l3 ++ l4) (Hlen : length l1 = length l3), l1 = l3 /\ l2 = l4.
+
+Lemma rotate_inj : forall {A} (l1 l2 : list A) n m, rotate l1 n m = rotate l2 n m ->
+  length l1 = length l2 -> 0 <= n <= m -> m <= Zlength l1 -> l1 = l2.
+
+Lemma complete_inj : forall l1 l2 m, complete m l1 = complete m l2 ->
+  length l1 = length l2 -> l1 = l2.
+
+Lemma length_complete : forall l m, Zlength l <= m -> length (complete m l) = Z.to_nat m.
+
+Lemma Zlength_rotate : forall {A} (l : list A) n m, 0 <= n <= m -> m <= Zlength l ->
+  Zlength (rotate l n m) = Zlength l.
+
+Lemma Zlength_repeat : forall {A} (x : A) n, Zlength (repeat x n) = Z.of_nat n.
+
+Lemma Zlength_complete : forall l m, Zlength l <= m -> Zlength (complete m l) = m.
+
+Lemma combine_eq : forall {A B} (l : list (A * B)), combine (map fst l) (map snd l) = l.
+
+Lemma signed_inj : forall i1 i2, Int.signed i1 = Int.signed i2 -> i1 = i2.
+
+Lemma mods_repr : forall a b, 0 <= a <= Int.max_signed -> 0 < b <= Int.max_signed ->
+
+Lemma repeat_list_repeat : forall {A} n (x : A), repeat x n = list_repeat n x.
+
+Lemma sublist_repeat : forall {A} i j k (v : A), 0 <= i -> i <= j <= k ->
+  sublist i j (repeat v (Z.to_nat k)) = repeat v (Z.to_nat (j - i)).
+
+Lemma Znth_head : forall reqs head m, Zlength reqs <= m -> 0 <= head < m ->
+  Zlength reqs > 0 ->
+  Znth head (rotate (complete m reqs) head m) = Znth 0 reqs.
+
+Lemma Znth_repeat : forall {A} {x : Inhabitant A} n i, Znth i (repeat default n) = default.
+
+Lemma Znth_repeat' : forall {A} {d: Inhabitant A} (x : A) n i, 
+    0 <= i < Z.of_nat n -> Znth i (repeat x n)  = x.
+
+Lemma rotate_1 : forall v l n m, 0 <= n < m -> Zlength l < m ->
+  rotate (upd_Znth 0 (complete m (v :: l)) (vptrofs 0)) n m =
+  rotate (complete m l) ((n + 1) mod m) m.
+
+Lemma upd_complete_gen : forall {A} (l : list A) x n y, Zlength l < n ->
+  upd_Znth (Zlength l) (l ++ repeat y (Z.to_nat (n - Zlength l))) x =
+
+Lemma upd_complete' : forall l x n, (length l < n)%nat ->
+  upd_Znth (Zlength l) (map Vint (map Int.repr l) ++ repeat Vundef (n - length l)) (Vint (Int.repr x)) =
+
+Fixpoint upto n :=
+  match n with
+  | O => []
+  | S n' => 0 :: map Z.succ (upto n')
+  end.
+
+Opaque Z.of_nat.
+
+Lemma upto_app : forall n m, upto (n + m) = upto n ++ map (fun i => Z.of_nat n + i) (upto m).
+
+Lemma upto_length : forall n, length (upto n) = n.
+
+Corollary Zlength_upto : forall n, Zlength (upto n) = Z.of_nat n.
+
+Lemma skipn_cons : forall {A}{d: Inhabitant A} n (l : list A), (length l > n)%nat ->
+  skipn n l = Znth (Z.of_nat n) l :: skipn (S n) l.
+
+Lemma Znth_upto : forall d m n, 
+  0 <= n < Z.of_nat m -> @Znth _ d n (upto m) = n.
+
+Transparent Z.of_nat.
+
+Lemma In_Znth : forall {A} {d: Inhabitant A} (l : list A) x,
+    In x l ->
+    exists i, 0 <= i < Zlength l /\ Znth i l = x.
+
+Lemma In_upd_Znth_old : forall {A}{d: Inhabitant A} i (x y : A) l, In x l -> x <> Znth i l -> 0 <= i <= Zlength l ->
+  In x (upd_Znth i l y).
+
+Lemma Znth_combine : forall {A B} {a: Inhabitant A} {b: Inhabitant B} i (l1: list A) (l2: list B), 
+   Zlength l1 = Zlength l2 ->
+  Znth i (combine l1 l2) = (Znth i l1, Znth i l2).
+
+Lemma Zlength_combine : forall {A B} (l : list A) (l' : list B),
+  Zlength (combine l l') = Z.min (Zlength l) (Zlength l').
+
+Lemma nth_Znth : forall {A}{d: Inhabitant A} i l, nth i l default = Znth (Z.of_nat i) l.
+
+Lemma upd_Znth_cons : forall {A} i a l (x : A), i > 0 ->
+  upd_Znth i (a :: l) x = a :: upd_Znth (i - 1) l x.
+
+Lemma upd_Znth_triv : forall {A}{d: Inhabitant A} i (l : list A) x (Hi : 0 <= i < Zlength l),
+  Znth i l = x -> upd_Znth i l x = l.
+
+Lemma combine_upd_Znth : forall {A B} (l1 : list A) (l2 : list B) i x1 x2, 0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 -> combine (upd_Znth i l1 x1) (upd_Znth i l2 x2) = upd_Znth i (combine l1 l2) (x1, x2).
+
+Corollary combine_upd_Znth1 : forall {A B}{d: Inhabitant B} (l1 : list A) (l2 : list B) i x,
+   0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 ->
+   combine (upd_Znth i l1 x) l2 = upd_Znth i (combine l1 l2) (x, Znth i l2).
+
+Corollary combine_upd_Znth2 : forall {A B}{d: Inhabitant A} (l1 : list A) (l2 : list B) i x, 0 <= i < Zlength l1 ->
+  Zlength l1 = Zlength l2 -> combine l1 (upd_Znth i l2 x) = upd_Znth i (combine l1 l2) (Znth i l1, x).
+
+Lemma in_concat : forall {A} (l : list (list A)) x, In x (concat l) <-> exists l1, In x l1 /\ In l1 l.
+
+Lemma length_concat : forall {A} (l : list (list A)), length (concat l) = fold_right plus O (map (@length A) l).
+
+Lemma length_concat_min : forall {A}{d: Inhabitant A} (l : list (list A)) i (Hi : 0 <= i < Zlength l),
+  (length (Znth i l) <= length (concat l))%nat.
+
+Lemma length_concat_upd : forall {A} {d: Inhabitant A} l i (l' : list A) (Hi : 0 <= i < Zlength l),
+  length (concat (upd_Znth i l l')) = (length (concat l) + length l' - length (Znth i l))%nat.
+
+Lemma sepcon_rev : forall l, fold_right sepcon emp (rev l) = fold_right sepcon emp l.
+
+Lemma incl_nil : forall {A} (l : list A), incl [] l.
+Hint Resolve incl_nil.
+
+Lemma incl_cons_out : forall {A} (a : A) l1 l2, incl l1 (a :: l2) -> ~In a l1 -> incl l1 l2.
+
+Lemma In_upto : forall n i, In i (upto n) <-> 0 <= i < Z.of_nat n.
+
+Lemma combine_fst : forall {A B} (l : list A) (l' : list B), length l = length l' ->
+  map fst (combine l l') = l.
+
+Lemma combine_snd : forall {A B} (l : list A) (l' : list B), length l = length l' ->
+  map snd (combine l l') = l'.
+
+Lemma rev_combine : forall {A B} (l1 : list A) (l2 : list B), length l1 = length l2 ->
+  rev (combine l1 l2) = combine (rev l1) (rev l2).
+
+Lemma combine_map_snd : forall {A B C} (l1 : list A) (l2 : list B) (f : B -> C),
+  combine l1 (map f l2) = map (fun x => let '(a, b) := x in (a, f b)) (combine l1 l2).
+
+Lemma combine_const1 : forall {A B} (l1 : list A) (x : B) n, Z.of_nat n >= Zlength l1 ->
+
+Lemma combine_const2 : forall {A B} (x : A) n (l2 : list B), Z.of_nat n >= Zlength l2 ->
+
+Lemma map_const: forall {A B} (c : A) (l : list B), map (fun _ => c) l = repeat c (length l).
+
+Lemma In_upd_Znth : forall {A} i l (x y : A), In x (upd_Znth i l y) -> x = y \/ In x l.
+
+Lemma upd_Znth_In : forall {A} i l (x : A), In x (upd_Znth i l x).
+
+Lemma NoDup_Znth_iff : forall {A}{d: Inhabitant A} (l : list A),
+  NoDup l <-> forall i j (Hi : 0 <= i < Zlength l)
+                            (Hj : 0 <= j < Zlength l), Znth i l = Znth j l -> i = j.
+
+Lemma concat_less_incl : forall {A} l i (l1 l2 : list A) (Hi : 0 <= i < Zlength l)
+  (Hless : Znth i l = l1 ++ l2), incl (concat (upd_Znth i l l1)) (concat l).
+
+Lemma NoDup_app : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) ->
+  NoDup l1 /\ NoDup l2 /\ forall x, In x l1 -> ~In x l2.
+
+Lemma NoDup_app_iff : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) <->
+  NoDup l1 /\ NoDup l2 /\ forall x, In x l1 -> ~In x l2.
+
+Corollary NoDup_app_swap : forall {A} (l1 l2 : list A), NoDup (l1 ++ l2) <-> NoDup (l2 ++ l1).
+
+Lemma NoDup_concat_less : forall {A} l i (l1 l2 : list A) (Hl : NoDup (concat l))
+  (Hi : 0 <= i < Zlength l) (Hless : Znth i l = l1 ++ l2),
+  NoDup (concat (upd_Znth i l l1)).
+
+Lemma Forall2_Znth : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B} (P : A -> B -> Prop) l1 l2 (Hall : Forall2 P l1 l2) i
+  (Hi : 0 <= i < Zlength l1), P (Znth i l1) (Znth i l2).
+
+Lemma Forall2_app_inv : forall {A B} (P : A -> B -> Prop) l1 l2 l3 l4 (Hlen : length l1 = length l3),
+  Forall2 P (l1 ++ l2) (l3 ++ l4) -> Forall2 P l1 l3 /\ Forall2 P l2 l4.
+
+Lemma Forall2_firstn : forall {A B} (P : A -> B -> Prop) l1 l2 n, Forall2 P l1 l2 ->
+  Forall2 P (firstn n l1) (firstn n l2).
+
+Lemma Forall2_upd_Znth : forall {A B} (P : A -> B -> Prop) l1 l2 i x1 x2, Forall2 P l1 l2 ->
+  P x1 x2 -> 0 <= i <= Zlength l1 -> Forall2 P (upd_Znth i l1 x1) (upd_Znth i l2 x2).
+
+Lemma Forall2_impl' : forall {A B} (P Q : A -> B -> Prop) l1 l2,
+  (forall a b, In a l1 -> In b l2 -> P a b -> Q a b) -> Forall2 P l1 l2 -> Forall2 Q l1 l2.
+
+Lemma Forall2_impl : forall {A B} (P Q : A -> B -> Prop), (forall a b, P a b -> Q a b) ->
+  forall l1 l2, Forall2 P l1 l2 -> Forall2 Q l1 l2.
+
+Lemma map_id_eq : forall {A} (l : list A), map (@id A) l = l.
+
+Lemma Forall2_map : forall {A B C D} (P : A -> B -> Prop) (f1 : C -> A) (f2 : D -> B) l1 l2,
+  Forall2 P (map f1 l1) (map f2 l2) <-> Forall2 (fun a b => P (f1 a) (f2 b)) l1 l2.
+
+Corollary Forall2_map1 : forall {A B C} (P : A -> B -> Prop) (f : C -> A) l1 l2, Forall2 P (map f l1) l2 <->
+  Forall2 (fun a b => P (f a) b) l1 l2.
+
+Corollary Forall2_map2 : forall {A B C} (P : A -> B -> Prop) (f : C -> B) l1 l2, Forall2 P l1 (map f l2) <->
+  Forall2 (fun a b => P a (f b)) l1 l2.
+
+Lemma sublist_max_length : forall {A} i j (al : list A), Zlength (sublist i j al) <= Zlength al.
+
+Lemma Forall2_sublist : forall {A B} (P : A -> B -> Prop) l1 l2 i j, Forall2 P l1 l2 -> 0 <= i ->
+  Forall2 P (sublist i j l1) (sublist i j l2).
+
+Lemma Forall_last : forall {A} (P : A -> Prop) d l, Forall P l -> P d -> P (last l d).
+
+Lemma last_map : forall {A B} (f : A -> B) d l, f (last l d) = last (map f l) (f d).
+
+Lemma In_removelast : forall {A} (l : list A) x, In x (removelast l) -> In x l.
+
+Definition nil_dec {A} (l : list A) : {l = []} + {l <> []}.
+
+Lemma Forall2_upd_Znth_l : forall {A B}{d: Inhabitant B} (P : A -> B -> Prop) l1 l2 i x, Forall2 P l1 l2 ->
+  P x (Znth i l2) -> 0 <= i < Zlength l1 -> Forall2 P (upd_Znth i l1 x) l2.
+
+Lemma Forall2_upd_Znth_r : forall {A B}{d: Inhabitant A} (P : A -> B -> Prop) l1 l2 i x, Forall2 P l1 l2 ->
+  P (Znth i l1) x -> 0 <= i < Zlength l1 -> Forall2 P l1 (upd_Znth i l2 x).
+
+Lemma Forall2_eq_upto : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B} (P : A -> B -> Prop) l1 l2, Forall2 P l1 l2 <->
+  Zlength l1 = Zlength l2 /\ Forall (fun i => P (Znth i l1) (Znth i l2)) (upto (Z.to_nat (Zlength l1))).
+
+Lemma Forall2_forall_Znth : forall {A B}{d1: Inhabitant A}{d2: Inhabitant B}  (P : A -> B -> Prop) l1 l2,
+  Forall2 P l1 l2 <->
+  Zlength l1 = Zlength l2 /\ (forall i, 0 <= i < Zlength l1 -> P (Znth i l1) (Znth i l2)).
+
+Lemma Znth_inbounds : forall {A}{d: Inhabitant A} i (l : list A), 
+    Znth i l <> default -> 0 <= i < Zlength l.
+
+Lemma sublist_next : forall {A}{d: Inhabitant A} i j l,
+      0 <= i < j -> j <= Zlength l ->
+  sublist i j l = Znth i l :: sublist (i + 1) j l.
+
+Lemma upd_init : forall {A} (l : list A) i b v v', i < b -> Zlength l = i ->
+  upd_Znth i (l ++ repeat v (Z.to_nat (b - i))) v' = l ++ v' :: repeat v (Z.to_nat (b - (i + 1))).
+
+Corollary upd_init_const : forall {A} i b (v v' : A), 0 <= i < b ->
+  upd_Znth i (repeat v' (Z.to_nat i) ++ repeat v (Z.to_nat (b - i))) v' =
+
+Lemma list_Znth_eq : forall {A}{d: Inhabitant A} (l : list A),
+    l = map (fun j => Znth j l) (upto (length l)).
+
+Arguments eq_dec _ _ _ _ : simpl never.
+
+Lemma upd_Znth_eq : forall {A} {EqDec : EqDec A} {d: Inhabitant A} (x : A) (l : list A) i, 0 <= i < Zlength l ->
+  upd_Znth i l x = map (fun j => if eq_dec j i then x else Znth j l) (upto (length l)).
+
+Lemma upd_Znth_diff' : forall {A}{d: Inhabitant A} i j l (u : A),
+    0 <= j < Zlength l -> i <> j ->
+  Znth i (upd_Znth j l u) = Znth i l.
+
+Lemma list_nth_error_eq : forall {A} (l1 l2 : list A)
+  (Heq : forall j, nth_error l1 j = nth_error l2 j), l1 = l2.
+
+Lemma list_Znth_eq' : forall {A} {d: Inhabitant A} (l1 l2 : list A)
+  (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall j, 0 <= j < Zlength l1 -> Znth j l1 = Znth j l2), l1 = l2.
+
+Corollary upd_Znth_eq' : forall {A}{d: Inhabitant A} x (l1 l2 : list A) i (Hi : 0 <= i < Zlength l1)
+  (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall j, 0 <= j < Zlength l1 -> j <> i -> Znth j l1 = Znth j l2),
+  upd_Znth i l1 x = upd_Znth i l2 x.
+
+Lemma upd_Znth_twice : forall {A} i l (x y : A), 0 <= i < Zlength l ->
+  upd_Znth i (upd_Znth i l x) y = upd_Znth i l y.
+
+Lemma hd_Znth : forall {A}{d: Inhabitant A} (l : list A), hd default l = Znth 0 l.
+
+Lemma NoDup_filter : forall {A} (f : A -> bool) l, NoDup l -> NoDup (filter f l).
+
+Lemma Permutation_Zlength : forall {A} (l1 l2 : list A), Permutation.Permutation l1 l2 ->
+
+Lemma Permutation_filter : forall {A} (f : A -> bool) l1 l2, Permutation.Permutation l1 l2 ->
+
+Lemma NoDup_add : forall {A} l1 l2 (x : A), NoDup (l1 ++ l2) -> ~In x (l1 ++ l2) -> NoDup (l1 ++ x :: l2).
+
+Lemma list_in_count : forall {A} {A_eq : EqDec A} (l l' : list A), NoDup l' ->
+  (length (filter (fun x => if in_dec eq_dec x l then true else false) l') <= length l)%nat.
+
+Lemma filter_length : forall {A} (f : A -> bool) l,
+  length l = (length (filter f l) + length (filter (fun x => negb (f x)) l))%nat.
+
+Lemma Zlength_filter : forall {A} f (l : list A), Zlength (filter f l) <= Zlength l.
+
+Lemma Zlength_concat : forall {A} (l : list (list A)),
+  Zlength (concat l) = fold_right Z.add 0 (map (@Zlength A) l).
+
+Lemma Zlength_concat_le : forall {A} (l : list (list A)) n,
+  Forall (fun l => Zlength l <= n) l -> Zlength (concat l) <= n * Zlength l.
+
+Lemma filter_app : forall {A} (f : A -> bool) l1 l2, filter f (l1 ++ l2) = filter f l1 ++ filter f l2.
+
+Lemma filter_concat : forall {A} f (l : list (list A)),
+  filter f (concat l) = concat (map (filter f) l).
+
+Lemma NoDup_upto : forall n, NoDup (upto n).
+
+Lemma In_remove : forall {A} {A_eq : EqDec A} (x y : A) l, In x (remove A_eq y l) <-> In x l /\ x <> y.
+
+Lemma remove_NoDup : forall {A} {A_eq : EqDec A} (x : A) l, NoDup l -> NoDup (remove A_eq x l).
+
+Lemma remove_out : forall {A} {A_eq : EqDec A} (x : A) l, ~In x l -> remove A_eq x l = l.
+
+Lemma remove_from_NoDup : forall {A} {A_eq : EqDec A} (x : A) l1 l2, NoDup (l1 ++ x :: l2) ->
+  remove A_eq x (l1 ++ x :: l2) = l1 ++ l2.
+
+Lemma incl_remove_add : forall {A} {A_eq : EqDec A} (x : A) l1 l2, incl l1 l2 -> incl l1 (x :: remove A_eq x l2).
+
+Lemma list_pigeonhole : forall l n, Zlength l < n -> exists a, 0 <= a < n /\ ~In a l.
+
+Lemma In_sublist_upto : forall n x i j, In x (sublist i j (upto n)) -> 0 <= i ->
+  i <= x < j /\ x < Z.of_nat n.
+
+Lemma incl_cons_iff : forall {A} (a : A) b c, incl (a :: b) c <-> In a c /\ incl b c.
+
+Lemma lt_le_1 : forall i j, i < j <-> i + 1 <= j.
+
+Lemma firstn_all : forall {A} n (l : list A), (length l <= n)%nat -> firstn n l = l.
+
+Lemma sublist_all : forall {A} i (l : list A), Zlength l <= i -> sublist 0 i l = l.
+
+Lemma sublist_prefix : forall {A} i j (l : list A), sublist 0 i (sublist 0 j l) = sublist 0 (Z.min i j) l.
+
+Lemma sublist_suffix : forall {A} i j (l : list A), 0 <= i -> 0 <= j ->
+  sublist i (Zlength l - j) (sublist j (Zlength l) l) = sublist (i + j) (Zlength l) l.
+
+Lemma sublist_parts1 : forall {A} i j (l : list A), 0 <= i -> sublist i j l = sublist i j (sublist 0 j l).
+
+Lemma sublist_parts2 : forall {A} i j (l : list A), 0 <= i -> j <= Zlength l ->
+  sublist i j l = sublist 0 (j - i) (sublist i (Zlength l) l).
+
+Lemma Forall_Forall2 : forall {A} (P : A -> Prop) Q l1 l2 (HP : Forall P l1) (HQ : Forall2 Q l1 l2)
+  (Htransfer : forall x y, P x -> Q x y -> P y), Forall P l2.
+
+Lemma Forall_suffix_max : forall {A} (P : A -> Prop) l1 l2 i j
+  (Hi : 0 <= i <= Zlength l1) (Hj : 0 <= j <= Zlength l1)
+  (Hl1 : Forall P (sublist j (Zlength l1) l1))
+  (Hl2 : sublist i (Zlength l1) l1 = sublist i (Zlength l2) l2),
+  Forall P (sublist (Z.max i j) (Zlength l2) l2).
+
+Fixpoint extend {A} (l : list A) ls :=
+  match l, ls with
+  | x :: xs, y :: ys => (x :: y) :: extend xs ys
+  | _, _ => ls
+  end.
+
+Lemma Zlength_extend : forall {A} (l : list A) ls, Zlength (extend l ls) = Zlength ls.
+
+Lemma Znth_extend_in : forall {A}{d: Inhabitant A}  (l : list A) ls i, 0 <= i < Zlength l -> Zlength l <= Zlength ls ->
+  Znth i (extend l ls) = Znth i l :: Znth i ls.
+
+Lemma Znth_extend_ge : forall {A}{d: Inhabitant A}  (l : list A) ls i, Zlength l <= i ->
+  Znth i (extend l ls) = Znth i ls.
+
+Fixpoint extendr {A} (l : list A) ls :=
+  match l, ls with
+  | x :: xs, y :: ys => (y ++ [x]) :: extendr xs ys
+  | _, _ => ls
+  end.
+
+Lemma Zlength_extendr : forall {A} (l : list A) ls, Zlength (extendr l ls) = Zlength ls.
+
+Lemma Znth_extendr_in : forall {A}{d: Inhabitant A}  (l : list A) ls i, 0 <= i < Zlength l -> Zlength l <= Zlength ls ->
+  Znth i (extendr l ls) = Znth i ls ++ [Znth i l].
+
+Lemma Znth_extendr_ge : forall {A}{d: Inhabitant A}  (l : list A) ls i, Zlength l <= i ->
+  Znth i (extendr l ls) = Znth i ls.
+
+Lemma list_join_eq : forall (b : list share) a c c'
+  (Hc : sepalg_list.list_join a b c) (Hc' : sepalg_list.list_join a b c'), c = c'.
+
+Lemma readable_share_list_join : forall sh shs sh', sepalg_list.list_join sh shs sh' ->
+
+Lemma sublist_0_cons' : forall {A} i j (x : A) l, i <= 0 -> j > i -> sublist i j (x :: l) =
+  x :: sublist i (j - 1) l.
+
+Lemma sublist_combine : forall {A B} (l1 : list A) (l2 : list B) i j,
+  sublist i j (combine l1 l2) = combine (sublist i j l1) (sublist i j l2).
+
+Lemma extend_nil : forall {A} (l : list A), extend l [] = [].
+
+Lemma extend_cons : forall {A} (l : list A) l1 ls, extend l (l1 :: ls) =
+  match l with [] => l1 :: ls | a :: l' => (a :: l1) :: extend l' ls end.
+
+Lemma sublist_extend : forall {A} (l : list A) ls i j,
+  sublist i j (extend l ls) = extend (sublist i j l) (sublist i j ls).
+
+Lemma extendr_nil : forall {A} (l : list A), extendr l [] = [].
+
+Lemma extendr_cons : forall {A} (l : list A) l1 ls, extendr l (l1 :: ls) =
+  match l with [] => l1 :: ls | a :: l' => (l1 ++ [a]) :: extendr l' ls end.
+
+Lemma sublist_extendr : forall {A} (l : list A) ls i j,
+  sublist i j (extendr l ls) = extendr (sublist i j l) (sublist i j ls).
+
+Lemma sublist_over : forall {A} (l : list A) i j, Zlength l <= i -> sublist i j l = [].
+
+Lemma make_tycontext_s_distinct : forall a l (Ha : In a l) (Hdistinct : NoDup (map fst l)),
+  (make_tycontext_s l) ! (fst a) = Some (snd a).
+
+Lemma lookup_distinct : forall {A B} (f : A -> B) a l t (Ha : In a l) (Hdistinct : NoDup (map fst l)),
+  (fold_right (fun v : ident * A => PTree.set (fst v) (f (snd v))) t l) ! (fst a) =
+
+Lemma lookup_out : forall {A B} (f : A -> B) a l t (Ha : ~In a (map fst l)),
+  (fold_right (fun v : ident * A => PTree.set (fst v) (f (snd v))) t l) ! a = t ! a.
+
+Lemma data_at__eq : forall {cs : compspecs} sh t p, data_at_ sh t p = data_at sh t (default_val t) p.
+
+Lemma func_tycontext_sub : forall f V G A V2 G2 (HV : incl V V2) (HG : incl G G2)
+  (Hdistinct : NoDup (map fst V2 ++ map fst G2)),
+  tycontext_sub (func_tycontext f V G A) (func_tycontext f V2 G2 A).
+
+Lemma semax_body_mono : forall V G {cs : compspecs} f s V2 G2
+  (HV : incl V V2) (HG : incl G G2) (Hdistinct : NoDup (map fst V2 ++ map fst G2)),
+  semax_body V G f s -> semax_body V2 G2 f s.
+
+Lemma weak_exclusive_conflict : forall P,
+  predicates_hered.derives ((weak_exclusive_mpred P && emp) * P * P) FF.
+
+Lemma exclusive_sepcon1 : forall (P Q : mpred) (HP : exclusive_mpred P), exclusive_mpred (P * Q).
+
+Lemma exclusive_sepcon2 : forall (P Q : mpred) (HP : exclusive_mpred Q), exclusive_mpred (P * Q).
+
+Lemma exclusive_andp1 : forall P Q (HP : exclusive_mpred P), exclusive_mpred (P && Q).
+
+Lemma exclusive_andp2 : forall P Q (HQ : exclusive_mpred Q), exclusive_mpred (P && Q).
+
+Lemma lock_inv_exclusive : forall v sh R, exclusive_mpred (lock_inv sh v R).
+
+Lemma selflock_exclusive : forall R sh v, exclusive_mpred R -> exclusive_mpred (selflock R v sh).
+
+Lemma exclusive_FF : exclusive_mpred FF.
+
+Lemma derives_exclusive : forall P Q (Hderives : P |-- Q) (HQ : exclusive_mpred Q),
+  exclusive_mpred P.
+
+Lemma mapsto_exclusive : forall (sh : Share.t) (t : type) (v : val),
+
+Lemma field_at__exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) (p : val),
+
+Lemma ex_field_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) (p : val),
+
+Corollary field_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (fld : list gfield) v (p : val),
+
+Lemma ex_data_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (p : val),
+
+Corollary data_at_exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) v (p : val),
+
+Corollary data_at__exclusive : forall (cs : compspecs) (sh : Share.t) (t : type) (p : val),
+
+Lemma cond_var_exclusive : forall {cs} sh p, sepalg.nonidentity sh ->
+
+Lemma lock_inv_isptr : forall sh v R, lock_inv sh v R = !!isptr v && lock_inv sh v R.
+
+Lemma cond_var_isptr : forall {cs} sh v, @cond_var cs sh v = !! isptr v && cond_var sh v.
+Hint Resolve lock_inv_isptr cond_var_isptr : saturate_local.
+
+Lemma cond_var_share_join : forall {cs} sh1 sh2 sh v (Hjoin : sepalg.join sh1 sh2 sh),
+
+Hint Resolve lock_inv_exclusive selflock_exclusive cond_var_exclusive data_at_exclusive
+  data_at__exclusive field_at_exclusive field_at__exclusive selflock_rec.
+
+Lemma eq_dec_refl : forall {A B} {A_eq : EqDec A} (a : A) (b c : B), (if eq_dec a a then b else c) = b.
+
+Lemma LKspec_readable lock_size :
+  0 < lock_size ->
+  forall R sh p, predicates_hered.derives (res_predicates.LKspec lock_size R sh p)
+
+Lemma lock_inv_share_join : forall sh1 sh2 sh v R (Hsh1 : readable_share sh1) (Hsh2 : readable_share sh2)
+  (Hjoin : sepalg.join sh1 sh2 sh),
+
+Lemma comp_join_top : forall sh, sepalg.join sh (Share.comp sh) Tsh.
+
+Lemma unreadable_bot : ~readable_share Share.bot.
+Hint Resolve unreadable_bot.
+
+Definition join_Bot := join_Bot.
+
+Lemma join_Tsh : forall a b, sepalg.join Tsh a b -> b = Tsh /\ a = Share.bot.
+
+Definition gsh1 := fst (slice.cleave Tsh).
+Definition gsh2 := snd (slice.cleave Tsh).
+
+Lemma readable_gsh1 : readable_share gsh1.
+
+Lemma readable_gsh2 : readable_share gsh2.
+
+Lemma gsh1_gsh2_join : sepalg.join gsh1 gsh2 Tsh.
+
+Hint Resolve readable_gsh1 readable_gsh2 gsh1_gsh2_join.
+
+Lemma gsh1_not_bot : gsh1 <> Share.bot.
+
+Lemma gsh2_not_bot : gsh2 <> Share.bot.
+Hint Resolve gsh1_not_bot gsh2_not_bot.
+
+Lemma split_readable_share sh :
+  readable_share sh ->
+  exists sh1, exists sh2,
+    readable_share sh1 /\
+    readable_share sh2 /\
+    sepalg.join sh1 sh2 sh.
+
+Lemma split_Ews :
+  exists sh1, exists sh2,
+    readable_share sh1 /\
+    readable_share sh2 /\
+    sepalg.join sh1 sh2 Ews.
+
+Definition remove_Znth {A} i (al : list A) := sublist 0 i al ++ sublist (i + 1) (Zlength al) al.
+
+Lemma remove_Znth0 : forall {A} (l : list A), remove_Znth 0 l = sublist 1 (Zlength l) l.
+
+Lemma remove_Znth_cons : forall {A} i a (l : list A), i > 0 ->
+  remove_Znth i (a :: l) = a :: remove_Znth (i - 1) l.
+
+Lemma Zlength_remove_Znth : forall {A} i (l : list A), 0 <= i < Zlength l ->
+  Zlength (remove_Znth i l) = Zlength l - 1.
+
+Lemma remove_upd_Znth: forall {A} i l (a : A), 0 <= i < Zlength l ->
+  remove_Znth i (upd_Znth i l a) = remove_Znth i l.
+
+Lemma remove_Znth_map: forall {A B} (f : A -> B) i l,
+  remove_Znth i (map f l) = map f (remove_Znth i l).
+
+Lemma remove_Znth_combine: forall {A B} i (l1 : list A) (l2 : list B),
+  0 <= i < Zlength l1 -> Zlength l1 = Zlength l2 ->
+  remove_Znth i (combine l1 l2) = combine (remove_Znth i l1) (remove_Znth i l2).
+
+Lemma iter_sepcon_Znth: forall {A} {d : Inhabitant A} f (l : list A) i, 0 <= i < Zlength l ->
+  iter_sepcon f l = f (Znth i l) * iter_sepcon f (remove_Znth i l).
+
+Lemma iter_sepcon2_Znth: forall {A B} {d1 : Inhabitant A} {d2 : Inhabitant B}
+  f (l1 : list A) (l2 : list B) i, 0 <= i < Zlength l1 -> Zlength l1 = Zlength l2 ->
+  iter_sepcon2 f l1 l2 =
+  f (Znth i l1) (Znth i l2) * iter_sepcon2 f (remove_Znth i l1) (remove_Znth i l2).
+
+Instance Inhabitant_share : Inhabitant share := Share.bot.  
+Instance Inhabitant_mpred : Inhabitant mpred := @FF mpred Nveric.  
+
+Lemma join_shares_nth : forall shs sh1 sh i, sepalg_list.list_join sh1 shs sh -> 0 <= i < Zlength shs ->
+
+Lemma list_join_comm : forall (l1 l2 : list share) a b, sepalg_list.list_join a (l1 ++ l2) b ->
+
+Lemma split_shares : forall n sh, readable_share sh ->
+  exists sh1 shs, Zlength shs = Z.of_nat n /\ readable_share sh1 /\ Forall readable_share shs /\
+
+Lemma data_at_shares_join : forall {cs} sh t v p shs sh1 (Hsplit : sepalg_list.list_join sh1 shs sh),
+
+Lemma exp_comm : forall {A B} P,
+  (EX x : A, EX y : B, P x y) = EX y : B, EX x : A, P x y.
+
+Lemma mapsto_value_eq: forall sh1 sh2 t p v1 v2, readable_share sh1 -> readable_share sh2 ->
+  v1 <> Vundef -> v2 <> Vundef -> mapsto sh1 t p v1 * mapsto sh2 t p v2 |-- !!(v1 = v2).
+
+Lemma mapsto_value_cohere: forall sh1 sh2 t p v1 v2, readable_share sh1 ->
+  mapsto sh1 t p v1 * mapsto sh2 t p v2 |-- mapsto sh1 t p v1 * mapsto sh2 t p v1.
+
+Lemma struct_pred_value_cohere : forall {cs : compspecs} m sh1 sh2 p t f off v1 v2
+  (Hsh1 : readable_share sh1) (Hsh2 : readable_share sh2)
+  (IH : Forall (fun it : ident * type => forall v1 v2 (p : val),
+        readable_share sh1 -> readable_share sh2 ->
+        data_at_rec sh1 (t it) v1 p * data_at_rec sh2 (t it) v2 p |--
+        data_at_rec sh1 (t it) v1 p * data_at_rec sh2 (t it) v1 p) m),
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh1 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh1 (t it) v) (f it))) v1 p *
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh2 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh2 (t it) v) (f it))) v2 p |--
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh1 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh1 (t it) v) (f it))) v1 p *
+  struct_pred m (fun (it : ident * type) v =>
+    withspacer sh2 (f it + sizeof (t it)) (off it) (at_offset (data_at_rec sh2 (t it) v) (f it))) v1 p.
+
+Lemma data_at_value_cohere : forall {cs : compspecs} sh1 sh2 t v1 v2 p, readable_share sh1 ->
+  type_is_by_value t = true -> type_is_volatile t = false ->
+  data_at sh1 t v1 p * data_at sh2 t v2 p |--
+  data_at sh1 t v1 p * data_at sh2 t v1 p.
+
+Lemma data_at_array_value_cohere : forall {cs : compspecs} sh1 sh2 t z a v1 v2 p, readable_share sh1 ->
+  type_is_by_value t = true -> type_is_volatile t = false ->
+  data_at sh1 (Tarray t z a) v1 p * data_at sh2 (Tarray t z a) v2 p |--
+  data_at sh1 (Tarray t z a) v1 p * data_at sh2 (Tarray t z a) v1 p.
+
+Lemma extract_nth_sepcon : forall l i, 0 <= i < Zlength l ->
+  fold_right sepcon emp l = Znth i l * fold_right sepcon emp (upd_Znth i l emp).
+
+Lemma replace_nth_sepcon : forall P l i, P * fold_right sepcon emp (upd_Znth i l emp) =
+  fold_right sepcon emp (upd_Znth i l P).
+
+Lemma sepcon_derives_prop : forall P Q R, P |-- !!R -> P * Q |-- !!R.
+
+Lemma sepcon_map : forall {A} P Q (l : list A), fold_right sepcon emp (map (fun x => P x * Q x) l) =
+  fold_right sepcon emp (map P l) * fold_right sepcon emp (map Q l).
+
+Lemma sepcon_list_derives : forall l1 l2 (Hlen : Zlength l1 = Zlength l2)
+  (Heq : forall i, 0 <= i < Zlength l1 -> Znth i l1 |-- Znth i l2),
+  fold_right sepcon emp l1 |-- fold_right sepcon emp l2.
+
+Lemma sepcon_rotate : forall lP m n, 0 <= n - m < Zlength lP ->
+  fold_right sepcon emp lP = fold_right sepcon emp (rotate lP m n).
+
+Lemma wand_eq : forall P Q R, P = Q * R -> P = Q * (Q -* P).
+
+Lemma wand_twice : forall P Q R, P -* Q -* R = P * Q -* R.
+
+Lemma sepcon_In : forall l P, In P l -> exists Q, fold_right sepcon emp l = P * Q.
+
+Lemma extract_wand_sepcon : forall l P, In P l ->
+  fold_right sepcon emp l = P * (P -* fold_right sepcon emp l).
+
+Lemma wand_sepcon_map : forall {A} (R : A -> mpred) l P Q
+  (HR : forall i, In i l -> R i = P i * Q i),
+  fold_right sepcon emp (map R l) = fold_right sepcon emp (map P l) *
+    (fold_right sepcon emp (map P l) -* fold_right sepcon emp (map R l)).
+
+Lemma wand_frame : forall P Q R, P -* Q |-- P * R -* Q * R.
+
+Lemma semax_extract_later_prop'':
+  forall {CS : compspecs} {Espec: OracleKind},
+    forall (Delta : tycontext) (PP : Prop) P Q R c post P1 P2,
+      P2 |-- !!PP ->
+      (PP -> semax Delta (PROPx P (LOCALx Q (SEPx (P1 && |>P2 :: R)))) c post) ->
+      semax Delta (PROPx P (LOCALx Q (SEPx (P1 && |>P2 :: R)))) c post.
+
+Lemma field_at_array_inbounds : forall {cs : compspecs} sh t z a i v p,
+  field_at sh (Tarray t z a) [ArraySubsc i] v p |-- !!(0 <= i < z).
+
+Lemma valid_pointer_isptr : forall v, valid_pointer v |-- !!(is_pointer_or_null v).
+
+Hint Resolve valid_pointer_isptr : saturate_local.
+
+Lemma approx_imp : forall n P Q, compcert_rmaps.RML.R.approx n (predicates_hered.imp P Q) =
+
+Definition super_non_expansive' {A} P := forall n ts x, compcert_rmaps.RML.R.approx n (P ts x) =
+  compcert_rmaps.RML.R.approx n (P ts (functors.MixVariantFunctor.fmap (rmaps.dependent_type_functor_rec ts A)
+        (compcert_rmaps.RML.R.approx n) (compcert_rmaps.RML.R.approx n) x)).
+
+Lemma approx_sepcon_list: forall n lP, lP <> [] ->
+  compcert_rmaps.RML.R.approx n (fold_right sepcon emp lP) =
+
+Corollary approx_sepcon_list' : forall n lP P,
+  compcert_rmaps.RML.R.approx n (fold_right sepcon emp lP)  * compcert_rmaps.RML.R.approx n P =
+
+Lemma approx_FF : forall n, compcert_rmaps.RML.R.approx n FF = FF.
+
+Lemma later_nonexpansive : nonexpansive (@later mpred _ _).
+
+Lemma eqp_refl : forall (G : Triv) P, G |-- P <=> P.
+
+Lemma eqp_sepcon : forall (G : Triv) (P P' Q Q' : mpred)
+  (HP : G |-- P <=> P') (HQ : G |-- Q <=> Q'), G |-- P * Q <=> P' * Q'.
+
+Lemma eqp_andp : forall (G : Triv) (P P' Q Q' : mpred)
+  (HP : G |-- P <=> P') (HQ : G |-- Q <=> Q'), G |-- P && Q <=> P' && Q'.
+
+Lemma eqp_exp : forall (A : Type) (NA : NatDed A) (IA : Indir A) (RecIndir : RecIndir A)
+    (G : Triv) (B : Type) (X Y : B -> A),
+  (forall x : B, G |-- X x <=> Y x) ->
+  G |-- (EX x : _, X x) <=> (EX x : _, Y x).
+
+Lemma fold_right_sepcon_nonexpansive : forall lP1 lP2, Zlength lP1 = Zlength lP2 ->
+  (ALL i : Z, Znth i lP1 <=> Znth i lP2) |--
+  fold_right sepcon emp lP1 <=> fold_right sepcon emp lP2.
+
+Lemma void_ret : ifvoid tvoid (` (PROP ( )  LOCAL ()  SEP ()) (make_args [] []))
+  (EX v : val, ` (PROP ( )  LOCAL ()  SEP ()) (make_args [ret_temp] [v])) = emp.
+
+Ltac lock_props := rewrite ?sepcon_assoc; rewrite <- sepcon_emp at 1; rewrite sepcon_comm; apply sepcon_derives;
+  [repeat apply andp_right; auto; eapply derives_trans;
+   try (apply exclusive_weak_exclusive || (apply rec_inv_weak_rec_inv; try apply selflock_rec)); auto |
+   try timeout 20 cancel].
+
+Ltac join_sub := repeat (eapply sepalg.join_sub_trans;
+  [eexists; first [eassumption | simple eapply sepalg.join_comm; eassumption]|]); eassumption.
+
+Ltac join_inj := repeat match goal with H1 : sepalg.join ?a ?b ?c, H2 : sepalg.join ?a ?b ?d |- _ =>
+    pose proof (sepalg.join_eq H1 H2); clear H1 H2; subst; auto end.
+
+Ltac fast_cancel := rewrite ?sepcon_emp, ?emp_sepcon; rewrite ?sepcon_assoc;
+  repeat match goal with
+    | |- ?P |-- ?P => apply derives_refl
+    | |- ?P * _ |-- ?P * _ => apply sepcon_derives; [apply derives_refl|]
+    | |- _ |-- ?P * _ => rewrite <- !sepcon_assoc, (sepcon_comm _ P), !sepcon_assoc end;
+  try cancel_frame.
+
+Lemma semax_fun_id'' id f gv Espec {cs} Delta P Q R Post c :
+  (var_types Delta) ! id = None ->
+  (glob_specs Delta) ! id = Some f ->
+  (glob_types Delta) ! id = Some (type_of_funspec f) ->
+  snd (local2ptree Q) = Some gv ->
+  @semax cs Espec Delta
+    (PROPx P
+      (LOCALx Q
+      (SEPx ((func_ptr' f (gv id)) :: R)))) c Post ->
+  @semax cs Espec Delta (PROPx P (LOCALx Q (SEPx R))) c Post.
+
+Ltac get_global_function'' _f :=
+eapply (semax_fun_id'' _f); try reflexivity.
+
+Ltac start_dep_function := 
+  match goal with |- semax_body ?V ?G ?F ?spec =>
+    let s := fresh "spec" in
+    pose (s:=spec); hnf in s;
+    match goal with
+    | s :=  (DECLARE _ WITH _ : globals
+               PRE  [] main_pre _ nil _
+               POST [ tint ] main_post _ nil _) |- _ => idtac
+    | s := ?spec' |- _ => check_canonical_funspec spec'
+   end;
+   change (semax_body V G F s); subst s
+ end;
+ let DependedTypeList := fresh "DependedTypeList" in
+ match goal with |- semax_body _ _ _ (pair _ (mk_funspec _ _ _ ?Pre _ _ _)) =>
+   match Pre with 
+   | (fun x => match _ with (a,b) => _ end) => intros Espec DependedTypeList [a b] 
+   | (fun i => _) => intros Espec DependedTypeList i
+   end;
+   simpl fn_body; simpl fn_params; simpl fn_return
+ end;
+ simpl functors.MixVariantFunctor._functor in *;
+ simpl rmaps.dependent_type_functor_rec;
+ repeat match goal with |- @semax _ _ _ (match ?p with (a,b) => _ end * _) _ _ =>
+             destruct p as [a b]
+           end;
+ simplify_func_tycontext;
+ repeat match goal with 
+ | |- context [Sloop (Ssequence (Sifthenelse ?e Sskip Sbreak) ?s) Sskip] =>
+       fold (Swhile e s)
+ | |- context [Ssequence ?s1 (Sloop (Ssequence (Sifthenelse ?e Sskip Sbreak) ?s2) ?s3) ] =>
+      match s3 with
+      | Sset ?i _ => match s1 with Sset ?i' _ => unify i i' | Sskip => idtac end
+      end;
+      fold (Sfor s1 e s2 s3)
+ end;
+ try expand_main_pre;
+ process_stackframe_of;
+ repeat change_mapsto_gvar_to_data_at;  
+ repeat rewrite <- data_at__offset_zero;
+ try apply start_function_aux1;
+ repeat (apply semax_extract_PROP; 
+              match goal with
+              | |- _ ?sh -> _ =>
+                 match type of sh with
+                 | share => intros ?SH 
+                 | Share.t => intros ?SH 
+                 | _ => intro
+                 end
+               | |- _ => intro
+               end);
+ first [ eapply eliminate_extra_return'; [ reflexivity | reflexivity | ]
+        | eapply eliminate_extra_return; [ reflexivity | reflexivity | ]
+        | idtac];
+ abbreviate_semax.
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2) =>
+     match x with (x1,x2) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2) =>
+     match x with (x1,x2) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3) =>
+     match x with (x1,x2,x3) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3) =>
+     match x with (x1,x2,x3) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4) =>
+     match x with (x1,x2,x3,x4) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4) =>
+     match x with (x1,x2,x3,x4) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5) =>
+     match x with (x1,x2,x3,x4,x5) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5) =>
+     match x with (x1,x2,x3,x4,x5) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6) =>
+     match x with (x1,x2,x3,x4,x5,x6) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6) =>
+     match x with (x1,x2,x3,x4,x5,x6) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, 
+             x5 at level 0, x6 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0, x10 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0, x10 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0,
+             P at level 100, Q at level 100).
+
+Notation "'TYPE' A 'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
+     (mk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default A
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => P%assert end)
+  (fun (ts: list Type) (x: t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14) =>
+     match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => Q%assert end) _ _)
+            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
+             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
+              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
+             P at level 100, Q at level 100).
+
+Definition call_setup2'
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+  (bl: list expr) (vl : list val)
+  (Qactuals : PTree.t _)
+  (witness: functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts A) mpred)
+  (Frame: list mpred)
+  (Ppre: list Prop) (Qpre : list localdef) (Rpre: list mpred)
+  (Qpre_temp : PTree.t _) GV' :=
+ call_setup1 cs Qtemp Qvar GV a Delta P Q R R' fs argsig retty cc A Pre Post NEPre NEPost bl vl Qactuals /\
+  Pre ts witness = PROPx Ppre (LOCALx Qpre (SEPx Rpre)) /\
+  local2ptree Qpre = (Qpre_temp, PTree.empty _, nil, GV') /\
+  ENTAIL Delta, PROPx P (LOCALx Q (SEPx R))
+           |-- !! Forall (check_one_temp_spec Qactuals) (PTree.elements Qpre_temp) /\
+  check_gvars_spec GV GV' /\
+  fold_right_sepcon R |-- fold_right_sepcon Rpre * fold_right_sepcon Frame.
+
+Lemma call_setup2'_i:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree) Pre Post NEPre NEPost
+
+Ltac check_witness_type' ts A witness :=
+  (unify A (rmaps.ConstType Ridiculous); 
+             elimtype False)
+ ||
+ let TA := constr:(functors.MixVariantFunctor._functor
+     (rmaps.dependent_type_functor_rec ts A) mpred) in
+  let TA' := eval cbv 
+     [functors.MixVariantFunctor._functor
+      functors.MixVariantFunctorGenerator.fpair
+      functors.MixVariantFunctorGenerator.fconst
+      functors.MixVariantFunctorGenerator.fidentity
+      rmaps.dependent_type_functor_rec
+      functors.GeneralFunctorGenerator.CovariantBiFunctor_MixVariantFunctor_compose
+      functors.CovariantFunctorGenerator.fconst
+      functors.CovariantFunctorGenerator.fidentity
+      functors.CovariantBiFunctor._functor
+      functors.CovariantBiFunctorGenerator.Fpair
+      functors.GeneralFunctorGenerator.CovariantFunctor_MixVariantFunctor
+      functors.CovariantFunctor._functor
+      functors.MixVariantFunctor.fmap
+      ] in TA
+ in let TA'' := eval simpl in TA'
+  in match type of witness with ?T => 
+       unify T TA''
+      + (fail "Type of witness does not match type required by funspec WITH clause.
+Witness value: " witness "
+Witness type: " T "
+Funspec type: " TA'')
+     end.
+
+Ltac prove_call_setup' ts witness :=
+ prove_call_setup1 subsume_funspec_refl;
+ [ .. | 
+ match goal with |- call_setup1  _ _ _ _ _ _ _ _ _ _ _ _ _ _ ?A _ _ _ _ _ _ _ -> _ =>
+      check_witness_type' ts A witness
+ end;
+ let H := fresh in
+ intro H;
+ match goal with | |- @semax ?CS _ _ _ _ _ =>
+ let Frame := fresh "Frame" in evar (Frame: list mpred);
+ exploit (call_setup2'_i _ _ _ _ _ _ _ _ _ _ _ _ _ _ ts _ _ _ _ _ _ _ _ H witness Frame); clear H;
+ simpl functors.MixVariantFunctor._functor;
+ [ reflexivity
+ | check_prove_local2ptree
+ | Forall_pTree_from_elements
+ | unfold check_gvars_spec; solve [exact I | reflexivity]
+ | try change_compspecs CS; cancel_for_forward_call
+ | 
+ ]
+ end].
+
+Lemma semax_call_aux55:
+ forall (cs: compspecs) (Qtemp: PTree.t val) (Qvar: PTree.t (type * val)) GV (a: expr)
+
+Lemma semax_call_id00_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar a GV Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_x_wow:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty' cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id1_y_wow:
+ forall  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty' cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Lemma semax_call_id01_wow:
+ forall  
+  (cs: compspecs) Qtemp Qvar GV a Delta P Q R R'
+   fs argsig retty cc ts (A: rmaps.TypeTree)  Pre Post NEPre NEPost
+
+Ltac  forward_call_id1_wow' := 
+let H := fresh in intro H;
+eapply (semax_call_id1_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H);
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [check_result_type
+ |apply Logic.I
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id1_x_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id1_x_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type | check_result_type
+ | apply Coq.Init.Logic.I | apply Coq.Init.Logic.I | reflexivity
+ | (clear; let H := fresh in intro H; inversion H)
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id1_y_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id1_y_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type | check_result_type
+ | apply Coq.Init.Logic.I | apply Coq.Init.Logic.I | reflexivity
+ | (clear; let H := fresh in intro H; inversion H)
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | prove_delete_temp
+ | prove_delete_temp
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id01_wow' :=
+let H := fresh in intro H;
+eapply (semax_call_id01_wow 
+             _ _ _ _ _ _ _ _ _ _
+             _ _ _ _ _ _ _ _ _ _ 
+             _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ apply Coq.Init.Logic.I 
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+   repeat rewrite exp_uncurry;
+   try rewrite no_post_exists; repeat rewrite exp_unfold;
+   first [apply exp_congr; intros ?vret; reflexivity
+           | give_EX_warning
+           ]
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac forward_call_id00_wow'  :=
+let H := fresh in intro H;
+eapply (semax_call_id00_wow _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ H); 
+ clear H;
+ lazymatch goal with Frame := _ : list mpred |- _ => try clear Frame end;
+ [ check_result_type 
+ | cbv beta iota zeta; unfold_post; extensionality rho;
+    repeat rewrite exp_uncurry;
+    try rewrite no_post_exists0;
+    repeat rewrite exp_unfold;
+    first [reflexivity | extensionality; simpl; reflexivity | give_EX_warning]
+ | unify_postcondition_exps
+ | unfold fold_right_and; repeat rewrite and_True; auto
+ ].
+
+Ltac fwd_call'_dep ts witness :=
+lazymatch goal with
+| |- semax _ _ (Ssequence (Scall _ _ _) _) _ =>
+  eapply semax_seq';
+    [prove_call_setup' ts witness;
+     clear_Delta_specs; clear_MORE_POST;
+     [ .. |
+      lazymatch goal with
+      | |- _ -> semax _ _ (Scall (Some _) _ _) _ =>
+         forward_call_id1_wow'
+      | |- call_setup2' _ _ _ _ _ _ _ _ _ _ _ _ ?retty _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ -> 
+                semax _ _ (Scall None _ _) _ =>
+        tryif (unify retty Tvoid)
+        then forward_call_id00_wow'
+        else forward_call_id01_wow'
+     end]
+   | after_forward_call ]
+| |- semax _ _ (Ssequence (Ssequence (Scall (Some ?ret') _ _)
+                                       (Sset _ (Ecast (Etempvar ?ret'2 _) _))) _) _ =>
+       unify ret' ret'2;
+       eapply semax_seq';
+         [prove_call_setup' ts witness;
+          clear_Delta_specs; clear_MORE_POST;
+             [ .. | forward_call_id1_x_wow' ]
+         |  after_forward_call ]
+| |- semax _ _ (Ssequence (Ssequence (Scall (Some ?ret') _ _)
+                                       (Sset _ (Etempvar ?ret'2 _))) _) _ =>
+       unify ret' ret'2;
+       eapply semax_seq';
+         [prove_call_setup' ts witness;
+          clear_Delta_specs; clear_MORE_POST;
+             [ .. | forward_call_id1_y_wow' ]
+         |  after_forward_call ]
+| |- _ => rewrite <- seq_assoc; fwd_call'_dep ts witness
+end.
+
+Ltac fwd_call_dep ts witness :=
+ try lazymatch goal with
+      | |- semax _ _ (Scall _ _ _) _ => rewrite -> semax_seq_skip
+      end;
+ repeat lazymatch goal with
+  | |- semax _ _ (Ssequence (Ssequence (Ssequence _ _) _) _) _ =>
+      rewrite <- seq_assoc
+ end;
+lazymatch goal with |- @semax ?CS _ ?Delta _ (Ssequence ?C _) _ =>
+  lazymatch C with context [Scall _ _ _] =>
+         fwd_call'_dep ts witness
+    end
+end.
+
+Tactic Notation "forward_call_dep" constr(ts) constr(witness) := fwd_call_dep ts witness.
+
+Lemma PROP_into_SEP : forall P Q R, PROPx P (LOCALx Q (SEPx R)) =
+  PROPx [] (LOCALx Q (SEPx (!!fold_right and True P && emp :: R))).
+
+Ltac cancel_for_forward_spawn :=
+  eapply symbolic_cancel_setup;
+   [ construct_fold_right_sepcon
+   | construct_fold_right_sepcon
+   | fold_abnormal_mpred
+   | cbv beta iota delta [before_symbol_cancel]; cancel_for_forward_call].
+
+Ltac forward_spawn id arg wit :=
+  match goal with gv : globals |- _ =>
+  make_func_ptr id; let f := fresh "f_" in set (f := gv id);
+  match goal with |- context[func_ptr' (NDmk_funspec _ _ (val * ?A) ?Pre _) f] =>
+    let y := fresh "y" in let Q := fresh "Q" in let R := fresh "R" in
+    evar (y : ident); evar (Q : A -> globals); evar (R : A -> val -> mpred);
+    replace Pre with (fun '(a, w) => PROPx [] (LOCALx (temp y a :: gvars (Q w) :: nil) (SEPx [R w a])));
+    [|let x := fresh "x" in extensionality x; destruct x as (?, x);
+      instantiate (1 := fun w a => _ w) in (Value of R);
+      repeat (destruct x as (x, ?);
+        instantiate (1 := fun '(a, b) => _ a) in (Value of Q);
+        instantiate (1 := fun '(a, b) => _ a) in (Value of R));
+      etransitivity; [|symmetry; apply PROP_into_SEP]; f_equal; f_equal ; [instantiate (1 := fun _ => _) in (Value of Q); subst y Q; f_equal; simpl; f_equal |
+       unfold SEPx; extensionality; simpl; rewrite sepcon_emp; instantiate (1 := fun _ => _); reflexivity]];
+  forward_call_dep [A] (f, arg, Q, wit, R); subst Q R; [ .. | subst y f]; try (Exists y; subst y f; simpl; cancel_for_forward_spawn) end end. *)
+
+
+
+Definition io_specs :=
+
+  [(_getchar, getchar_spec); (_putchar, putchar_spec)].
+
+
+
+Definition ext_link := ext_link_prog prog.
+
+
+
+Definition io_ext_spec
+
+  :=
+
+  add_funspecs_rec
+
+    ext_link
+
+    (ok_void_spec IO_itree).(@OK_ty)
+
+    (ok_void_spec IO_itree).(@OK_spec)
+
+    io_specs.
+
+
+
+Definition getchar_pre (m : mem) (k : int -> IO_itree) (z : IO_itree) :=
+
+  (z = (r <- read;; k r))%eq_utt.
+
+
+
+Definition getchar_post (m0 m : mem) r (k : int -> IO_itree) (z : IO_itree) :=
+
+  m0 = m /\ - two_p 7 <= Int.signed r <= two_p 7 - 1 /\ z = k r.
+
+
+
+Definition putchar_pre (m : mem) c (k : IO_itree) (z : IO_itree) :=
+
+  (z = (write c;; k))%eq_utt.
+
+
+
+Definition putchar_post (m0 m : mem) r (c : int) (k : IO_itree) (z : IO_itree) :=
+
+  m0 = m /\ r = c /\ z = k.
+
+
+
+Program Definition io_dry_spec : external_specification mem external_function IO_itree.
+
+Proof.
+
+  unshelve econstructor.
+
+  - intro e.
+
+    pose (ext_spec_type io_ext_spec e) as T; simpl in T.
+
+    destruct (oi_eq_dec _ _); [|destruct (oi_eq_dec _ _); [|exact False]].
+
+    + exact (mem * {_ : list Type & int -> IO_itree})%type.
+
+    + exact (mem * {_ : list Type & int * IO_itree})%type.
+
+  - simpl; intros.
+
+    destruct (oi_eq_dec _ _); [|destruct (oi_eq_dec _ _); [|contradiction]].
+
+    + destruct X as (m0 & _ & k).
+
+      exact (Val.has_type_list X1 (sig_args (ef_sig e)) /\ m0 = X3 /\ getchar_pre X3 k X2).
+
+    + destruct X as (m0 & _ & c & k).
+
+      exact (Val.has_type_list X1 (sig_args (ef_sig e)) /\ m0 = X3 /\ putchar_pre X3 c k X2).
+
+  - simpl; intros.
+
+    destruct (oi_eq_dec _ _); [|destruct (oi_eq_dec _ _); [|contradiction]].
+
+    + destruct X as (m0 & _ & k).
+
+      destruct X1; [|exact False].
+
+      destruct v; [exact False | | exact False | exact False | exact False | exact False].
+
+      exact (getchar_post m0 X3 i k X2).
+
+    + destruct X as (m0 & _ & c & k).
+
+      destruct X1; [|exact False].
+
+      destruct v; [exact False | | exact False | exact False | exact False | exact False].
+
+      exact (putchar_post m0 X3 i c k X2).
+
+  - intros; exact False.
+
+Defined.
+
+
+
+Definition dessicate : forall ef (jm : juicy_mem), ext_spec_type io_ext_spec ef -> ext_spec_type io_dry_spec ef.
+
+Proof.
+
+  simpl; intros.
+
+  destruct (oi_eq_dec _ _); [|destruct (oi_eq_dec _ _); [|assumption]].
+
+  - destruct X as [_ X]; exact (m_dry jm, X).
+
+  - destruct X as [_ X]; exact (m_dry jm, X).
+
+Defined.
+
+
+
+Lemma has_ext_eq : forall {Z} (z : Z) phi, app_pred (has_ext z) phi ->
+
+  ghost_of phi = [Some (ext_ghost z, NoneP)].
+
+Proof.
+
+  intros ??? (? & _ & ->); simpl.
+
+  unfold ext_ghost; simpl; repeat f_equal.
+
+  apply proof_irr.
+
+Qed.
+
+
+
+Lemma nth_nil : forall {A} n (d : A), nth n nil d = d.
+
+Proof.
+
+  destruct n; auto.
+
+Qed.
+
+
+
+Lemma ghost_join_nth : forall (a b c : ghost) n, join a b c ->
+
+  join (nth n a None) (nth n b None) (nth n c None).
+
+Proof.
+
+  intros; revert n; induction H; intro; rewrite ?nth_nil; try constructor.
+
+  destruct n; eauto.
+
+Qed.
+
+
+
+Lemma has_ext_join : forall {Z} phi1 phi2 phi3 (z1 z2 : Z) (Hext : nth O (ghost_of phi1) None = Some (ext_ghost z1, NoneP))
+
+  (Hj : join phi1 phi2 phi3) (Hrest : joins (ghost_of phi3) [Some (ext_ref z2, NoneP)]),
+
+  z1 = z2 /\ nth O (ghost_of phi3) None = Some (ext_ghost z1, NoneP).
+
+Proof.
+
+  simpl; intros.
+
+  apply ghost_of_join, ghost_join_nth with (n := O) in Hj.
+
+  rewrite Hext in Hj.
+
+  destruct Hrest as [? Hrest].
+
+  apply ghost_join_nth with (n := O) in Hrest.
+
+  inv Hj.
+
+  - split; auto.
+
+    rewrite <- H2 in Hrest; inv Hrest.
+
+    destruct a3; inv H4; simpl in *.
+
+    inv H; repeat inj_pair_tac.
+
+    destruct c0; inv H8; simpl in *.
+
+    inv H4.
+
+    destruct g as [[]|]; try contradiction.
+
+    inv H.
+
+    destruct vc as (? & [[]|] & vc); hnf in vc; try congruence.
+
+    clear - vc; destruct vc as (? & ? & ?%join_Tsh & ?); tauto.
+
+  - rewrite <- H1 in Hrest; inv Hrest.
+
+    destruct a3, a4; inv H5; simpl in *.
+
+    inv H3.
+
+    destruct a2; inv H2; simpl in *.
+
+    inv H3; inj_pair_tac.
+
+    inv H; repeat inj_pair_tac.
+
+    destruct b0, c0; inv H9; simpl in *.
+
+    destruct c1; inv H8; simpl in *.
+
+    destruct g as [[]|], g0 as [[]|]; try contradiction.
+
+    { destruct H as (? & ? & ?%join_Tsh & ?); tauto. }
+
+    inv H.
+
+    inv H6; [|inv H8].
+
+    assert (o = None) by (inv H2; auto); subst.
+
+    destruct o1 as [[]|]; inv H3.
+
+    split.
+
+    + destruct vc0 as (? & [[]|] & vc0); hnf in vc0; try congruence.
+
+      clear - vc0; destruct vc0 as (? & ? & ?%join_Tsh & ?); tauto.
+
+    + unfold ext_ghost; simpl; repeat f_equal; apply proof_irr.
+
+Qed.
+
+
+
+Lemma rebuild_same : forall jm,
+
+  juicy_mem_lemmas.rebuild_juicy_mem_fmap jm (m_dry jm) = resource_at (m_phi jm).
+
+Proof.
+
+  intros; extensionality l.
+
+  unfold juicy_mem_lemmas.rebuild_juicy_mem_fmap.
+
+  destruct (m_phi jm @ l) eqn: Hl; auto.
+
+  - if_tac; auto.
+
+    destruct jm; simpl in *.
+
+    rewrite (JMaccess l) in H.
+
+    rewrite Hl in H; simpl in H.
+
+    if_tac in H; inv H.
+
+  - destruct k; auto.
+
+    destruct jm; simpl in *.
+
+    if_tac.
+
+    + apply JMcontents in Hl as [-> ?]; subst; auto.
+
+    + contradiction H.
+
+      rewrite (JMaccess l), Hl; simpl.
+
+      unfold perm_of_sh.
+
+      if_tac; if_tac; try contradiction; constructor.
+
+Qed.
+
+
+
+Lemma change_ext : forall {Z} (a a' z : Z) (b c : ghost),
+
+  join [Some (ext_ghost a, NoneP)] b c ->
+
+  joins c [Some (ext_ref z, NoneP)] ->
+
+  join [Some (ext_ghost a', NoneP)] b (Some (ext_ghost a', NoneP) :: tl c).
+
+Proof.
+
+  intros.
+
+  inv H; [constructor|].
+
+  constructor; [|inv H6; constructor].
+
+  inv H3; [constructor|].
+
+  inv H1.
+
+  destruct a0, a4; simpl in *.
+
+  inv H.
+
+  inj_pair_tac.
+
+  inv H7.
+
+  constructor.
+
+  destruct H0 as [? J]; inv J.
+
+  inv H8.
+
+  inv H4; simpl in *.
+
+  destruct a4; simpl in *.
+
+  inv H3.
+
+  inv H2.
+
+  constructor; constructor; auto.
+
+  destruct b0, c0; simpl in *; inv H0; repeat constructor; simpl.
+
+  - repeat inj_pair_tac.
+
+    destruct o as [[]|]; auto.
+
+    destruct o1 as [[]|]; [|contradiction].
+
+    destruct H as (? & ? & ? & ?).
+
+    apply join_Tsh in H2 as []; contradiction.
+
+  - repeat inj_pair_tac.
+
+    inv H1; [|constructor].
+
+    inv H8; simpl in *.
+
+    inv H1; [constructor|].
+
+    inv H7.
+
+Qed.
+
+
+
+Lemma change_has_ext : forall {Z} (a a' : Z) r H, has_ext a r ->
+
+  has_ext a' (set_ghost r [Some (ext_ghost a', NoneP)] H).
+
+Proof.
+
+  intros; simpl in *.
+
+  destruct H0 as (p & ? & ?); exists p.
+
+  unfold set_ghost; rewrite resource_at_make_rmap, ghost_of_make_rmap.
+
+  split; auto.
+
+  unfold ext_ghost; repeat f_equal.
+
+  apply proof_irr.
+
+Qed.
+
+
+
+Lemma ext_ref_join : forall {Z} (z : Z), join (ext_ghost z) (ext_ref z) (ext_both z).
+
+Proof.
+
+  intros; repeat constructor.
+
+Qed.
+
+
+
+Lemma age_rejoin : forall {Z} w1 w2 w w' (a a' z : Z) H (J : join w1 w2 w)
+
+  (Hc : joins (ghost_of w) [Some (ext_ref z, NoneP)])
+
+  (Hg1 : ghost_of w1 = [Some (ext_ghost a, NoneP)])
+
+  (Hl' : (level w' <= level w)%nat)
+
+  (Hr' : forall l, w' @ l = resource_fmap (approx (level w')) (approx (level w')) (w @ l))
+
+  (Hg' : ghost_of w' = Some (ext_ghost a', NoneP) :: own.ghost_approx (level w') (tl (ghost_of w))),
+
+  join (age_to.age_to (level w') (set_ghost w1 [Some (ext_ghost a', NoneP)] H)) (age_to.age_to (level w') w2) w'.
+
+Proof.
+
+  intros.
+
+  destruct (join_level _ _ _ J).
+
+  apply resource_at_join2.
+
+  - rewrite age_to.level_age_to; auto.
+
+    unfold set_ghost; rewrite level_make_rmap; omega.
+
+  - rewrite age_to.level_age_to; auto; omega.
+
+  - eapply age_to.age_to_join_eq in J; eauto.
+
+    intro loc; apply (resource_at_join _ _ _ loc) in J.
+
+    rewrite !age_to_resource_at.age_to_resource_at in *.
+
+    unfold set_ghost; rewrite resource_at_make_rmap.
+
+    rewrite Hr'; auto.
+
+  - rewrite !age_to_resource_at.age_to_ghost_of.
+
+    unfold set_ghost; rewrite ghost_of_make_rmap, Hg'.
+
+    apply ghost_of_join in J; rewrite Hg1 in J.
+
+    eapply change_ext in J; eauto.
+
+    apply ghost_fmap_join with (f := approx (level w'))(g := approx (level w')) in J.
+
+    apply J.
+
+Qed.
+
+
+
+Theorem juicy_dry_specs : juicy_dry_ext_spec _ io_ext_spec io_dry_spec dessicate.
+
+Proof.
+
+  split; [|split]; try reflexivity; simpl.
+
+  - unfold funspec2pre, dessicate; simpl.
+
+    intros ?; if_tac.
+
+    + intros; subst.
+
+      destruct t as (? & ? & k); simpl in *.
+
+      destruct H1 as (? & phi0 & phi1 & J & Hpre & Hr & Hext).
+
+      unfold getchar_pre; split; auto; split; auto.
+
+      unfold SEPx in Hpre; simpl in Hpre.
+
+      rewrite seplog.sepcon_emp in Hpre.
+
+      destruct Hpre as (_ & _ & ? & ? & Htrace).
+
+      apply has_ext_eq in Htrace.
+
+      eapply join_sub_joins_trans in Hext; [|eexists; apply ghost_of_join; eauto].
+
+      symmetry.
+
+      eapply has_ext_join in Hext as []; [| rewrite Htrace; reflexivity | apply join_comm, core_unit]; subst; auto.
+
+    + unfold funspec2pre; simpl.
+
+      if_tac; [|contradiction].
+
+      intros; subst.
+
+      destruct t as (? & ? & c & k); simpl in *.
+
+      destruct H2 as (? & phi0 & phi1 & J & Hpre & Hr & Hext).
+
+      unfold putchar_pre; split; auto; split; auto.
+
+      unfold SEPx in Hpre; simpl in Hpre.
+
+      rewrite seplog.sepcon_emp in Hpre.
+
+      destruct Hpre as (_ & _ & ? & ? & Htrace).
+
+      apply has_ext_eq in Htrace.
+
+      eapply join_sub_joins_trans in Hext; [|eexists; apply ghost_of_join; eauto].
+
+      symmetry.
+
+      eapply has_ext_join in Hext as []; [| rewrite Htrace; reflexivity | apply join_comm, core_unit]; subst; auto.
+
+  - unfold funspec2pre, funspec2post, dessicate; simpl.
+
+    intros ?; if_tac.
+
+    + intros; subst.
+
+      destruct H0 as (_ & vl& z0 & ? & _ & phi0 & phi1' & J & Hpre & ? & ?).
+
+      destruct t as (phi1 & t); subst; simpl in *.
+
+      destruct t as (? & k); simpl in *.
+
+      unfold SEPx in Hpre; simpl in Hpre.
+
+      rewrite seplog.sepcon_emp in Hpre.
+
+      destruct Hpre as (_ & _ & ? & ? & Htrace).
+
+      pose proof (has_ext_eq _ _ Htrace) as Hgx.
+
+      destruct v; try contradiction.
+
+      destruct v; try contradiction.
+
+      destruct H4 as (Hmem & ? & ?); subst.
+
+      rewrite <- Hmem in *.
+
+      rewrite rebuild_same in H2.
+
+      unshelve eexists (age_to.age_to (level jm) (set_ghost phi0 [Some (ext_ghost (k i), NoneP)] _)), (age_to.age_to (level jm) phi1'); auto.
+
+      split; [|split3].
+
+      * eapply age_rejoin; eauto.
+
+        intro; rewrite H2; auto.
+
+      * exists i.
+
+        split3; simpl.
+
+        -- split; auto.
+
+        -- split; auto; split; unfold liftx; simpl; unfold lift; auto; discriminate.
+
+        -- unfold SEPx; simpl.
+
+             rewrite seplog.sepcon_emp.
+
+             unfold ITREE; exists (k i); split; [apply Reflexive_eq_utt|].
+
+             eapply age_to.age_to_pred, change_has_ext; eauto.
+
+      * eapply necR_trans; eauto; apply age_to.age_to_necR.
+
+      * rewrite H3; eexists; constructor; constructor.
+
+        instantiate (1 := (_, _)).
+
+        constructor; simpl; [|constructor; auto].
+
+        apply ext_ref_join.
+
+    + unfold funspec2pre, funspec2post, dessicate; simpl.
+
+      if_tac; [|contradiction].
+
+      intros; subst.
+
+      destruct H1 as (_ & vl& z0 & ? & _ & phi0 & phi1' & J & Hpre & ? & ?).
+
+      destruct t as (phi1 & t); subst; simpl in *.
+
+      destruct t as (? & c & k); simpl in *.
+
+      unfold SEPx in Hpre; simpl in Hpre.
+
+      rewrite seplog.sepcon_emp in Hpre.
+
+      destruct Hpre as (_ & _ & ? & ? & Htrace).
+
+      pose proof (has_ext_eq _ _ Htrace) as Hgx.
+
+      destruct v; try contradiction.
+
+      destruct v; try contradiction.
+
+      destruct H5 as (Hmem & ? & ?); subst.
+
+      rewrite <- Hmem in *.
+
+      rewrite rebuild_same in H3.
+
+      unshelve eexists (age_to.age_to (level jm) (set_ghost phi0 [Some (ext_ghost k, NoneP)] _)), (age_to.age_to (level jm) phi1'); auto.
+
+      split; [|split3].
+
+      * eapply age_rejoin; eauto.
+
+        intro; rewrite H3; auto.
+
+      * split3; simpl.
+
+        -- split; auto.
+
+        -- split; auto; split; unfold liftx; simpl; unfold lift; auto; discriminate.
+
+        -- unfold SEPx; simpl.
+
+             rewrite seplog.sepcon_emp.
+
+             unfold ITREE; exists k; split; [apply Reflexive_eq_utt|].
+
+             eapply age_to.age_to_pred, change_has_ext; eauto.
+
+      * eapply necR_trans; eauto; apply age_to.age_to_necR.
+
+      * rewrite H4; eexists; constructor; constructor.
+
+        instantiate (1 := (_, _)).
+
+        constructor; simpl; [|constructor; auto].
+
+        apply ext_ref_join.
+
+Qed.
+
+
+
+Instance mem_evolve_refl : Reflexive mem_evolve.
+
+Proof.
+
+  repeat intro.
+
+  destruct (access_at x loc Cur); auto.
+
+  destruct p; auto.
+
+Qed.
+
+
+
+Lemma dry_spec_mem : ext_spec_mem_evolve _ io_dry_spec.
+
+Proof.
+
+  intros ??????????? Hpre Hpost.
+
+  simpl in Hpre, Hpost.
+
+  simpl in *.
+
+  if_tac in Hpre.
+
+  - destruct w as (m0 & _ & k).
+
+    destruct Hpre as (_ & ? & Hpre); subst.
+
+    destruct v; try contradiction.
+
+    destruct v; try contradiction.
+
+    destruct Hpost; subst.
+
+    reflexivity.
+
+  - if_tac in Hpre; [|contradiction].
+
+    destruct w as (m0 & _ & c & k).
+
+    destruct Hpre as (_ & ? & Hpre); subst.
+
+    destruct v; try contradiction.
+
+    destruct v; try contradiction.
+
+    destruct Hpost; subst.
+
+    reflexivity.
+
+Qed.
+

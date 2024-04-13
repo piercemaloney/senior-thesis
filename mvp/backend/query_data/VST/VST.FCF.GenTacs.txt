@@ -1,0 +1,694 @@
+
+
+Require Import FCF.DistTacs.
+(* FCF.DistTacs:
+Set Implicit Arguments.
+
+Require Import FCF.Rat.
+Require Import FCF.Comp.
+Require Import FCF.DistRules.
+Require Import FCF.DistSem.
+Require Import FCF.StdNat.
+Require Import FCF.Fold.
+Require Import FCF.NotationV1.
+
+Local Open Scope rat_scope.
+Local Open Scope comp_scope.
+
+Definition leftc := false.
+Definition rightc := true.
+
+Hint Resolve posnat_pos : wftac.
+
+Ltac pairInv := 
+  match goal with
+    | [H : (_, _) = (_, _) |- _] => 
+      inversion H; clear H; subst
+  end.
+
+Ltac simp_ret := 
+  match goal with
+    | [H : In _ (getSupport (ret _)) |- _] => 
+      simpl in H; intuition; pairInv
+  end.
+
+Ltac wftac_one :=
+  match goal with
+    | [|- well_formed_comp (Bind _ _) ] => eapply well_formed_Bind
+    | [|- well_formed_comp (Ret _ _ ) ] => eapply well_formed_Ret
+    | [|- well_formed_comp (Rnd _) ] => eapply well_formed_Rnd
+    | [|- well_formed_comp (let (_,_) := ?y in _ ) ] => destruct y
+    | [|- well_formed_comp (if ?x then _ else _) ] => destruct x
+    | [|- @well_formed_oc _ _ _ _ ] => econstructor
+  end.
+  
+Ltac wftac :=
+  repeat (unfold setLet; intuition; eauto with wftac; try simp_ret; wftac_one).
+
+Ltac destructLet_1 :=
+  match goal with
+    | [|- context[match ?x with | pair _ _ => _ end]] => destruct x
+  end.
+
+Ltac destructLet := repeat destructLet_1.
+
+Ltac dist_ret_l :=
+  match goal with
+      | [ |- ?rel (evalDist (Bind (Ret _ _) ?f) _) _ ] => 
+        eapply trans; [eapply (@evalDist_left_ident rel _ _ _ _ f); eauto with typeclass_instances | idtac]
+  end.
+
+Ltac dist_ret_r :=
+  match goal with
+      | [ |- ?rel _ (evalDist (Bind (Ret _ _) ?f) _) ] => 
+        eapply trans; [idtac | eapply (@evalDist_left_ident (Basics.flip rel) _ _ _ _ f);  eauto with typeclass_instances]
+  end.
+
+Ltac dist_simp_1 := unfold setLet; try dist_ret_l; try dist_ret_r; cbv beta iota; destructLet. 
+
+Ltac dist_simp := repeat dist_simp_1.
+
+Ltac dist_simp_weak_1 := unfold setLet; try dist_ret_l.
+
+Ltac dist_simp_weak := repeat dist_simp_weak_1.
+    
+Ltac dist_inline_l :=
+  match goal with
+      | [ |- ?rel _ _ ] => 
+        eapply trans; [ eapply (@evalDist_assoc rel);  eauto with typeclass_instances | idtac]
+  end; dist_simp_weak.
+
+Ltac dist_inline_r :=
+  match goal with
+      | [ |- ?rel _ _ ] => 
+        eapply trans; [ idtac | eapply (@evalDist_assoc (Basics.flip rel));  eauto with typeclass_instances]
+  end; dist_simp_weak.
+
+Ltac dist_inline s :=
+  match s with
+    | leftc => dist_inline_l
+    | rightc => dist_inline_r
+  end.
+
+Ltac dist_ret s :=
+  match s with
+      | leftc => dist_ret_l
+      | rightc => dist_ret_r
+  end.
+
+Ltac dist_inline_first_1 := try dist_inline_l; try dist_inline_r.
+Ltac dist_inline_first := repeat (dist_simp_weak_1; dist_inline_first_1).
+
+Ltac dist_swap_l :=
+  match goal with
+    | [ |- ?rel (evalDist (Bind ?c1 (fun x => (Bind ?c2 _))) _) _ ] => 
+      eapply trans; [eapply (@evalDist_commute rel _ _ c1 c2); eauto with typeclass_instances | idtac]
+  end.
+
+Ltac dist_swap_r :=
+  match goal with
+    | [ |- ?rel _ (evalDist (Bind ?c1 (fun x => (Bind ?c2 _))) _) ] => 
+      eapply trans; [ idtac | eapply (@evalDist_commute (Basics.flip rel) _ _ c1 c2);  eauto with typeclass_instances]
+  end; dist_simp_weak.
+
+Ltac dist_swap side :=
+  match side with
+    | leftc => dist_swap_l
+    | rightc => dist_swap_r
+  end.
+
+Ltac dist_at_l tac line :=
+  match line with
+    | O => tac leftc
+    | S ?line' => eapply trans; [ eapply rel_seq; intuition; dist_at_l tac line'; eapply refl; eapply eqRat_refl | idtac]
+  end; dist_simp_weak.
+
+Ltac dist_at_r tac line :=
+  match line with
+    | O => tac rightc
+    | S ?line' =>
+      eapply trans; [idtac |
+                     eapply rel_seq; [ intuition | intuition; (dist_at_r tac line'); eapply refl; eapply eqRat_refl] ] 
+  end; dist_simp.
+
+Ltac dist_at tac side line :=
+  match side with
+    | leftc => dist_at_l tac (line)%nat
+    | rightc => dist_at_r tac (line)%nat
+  end.
+
+Ltac dist_skip :=
+  eapply evalDist_seq; [ idtac | eauto with typeclass_instances | idtac] ; intuition; subst; dist_simp_weak; intuition.
+
+Ltac dist_irr_l :=
+  eapply evalDist_irr_l; [  eauto with typeclass_instances | simpl | idtac] ; intuition; dist_simp_weak.
+
+Ltac dist_irr_r :=
+  eapply evalDist_irr_r; [  eauto with typeclass_instances | simpl | idtac] ; intuition; dist_simp_weak.
+
+Lemma eqb_true_False : 
+  forall (A : Set)(eqd : EqDec A) (a1 a2 : A),
+    (eqb a1 a2 = true -> False) ->
+    a1 <> a2.
+
+Ltac dist_compute_1 := 
+  match goal with
+    | [H : RatRel ?rel |- ?rel ?x ?x ] => eapply refl
+    | [|- context[if ?a then _ else _ ]] => destruct a
+    | [H : context[if ?a then _ else _ ] |- _] => destruct a
+    | [H : eqb _ _ = true |- _ ] => rewrite eqb_leibniz in H; subst
+    | [H : eqb _ _ = true -> False |- _] => apply eqb_true_False in H
+    | [H1 : true = ?b -> False, H2 : false = ?b -> False |- _] => destruct b   
+  end.
+
+Ltac dist_compute_simp := simpl; unfold Fold.sumList; try rewrite <- ratAdd_0_l; try rewrite <- ratAdd_0_r; try rewrite ratMult_1_l; try rewrite ratMult_1_r; try rewrite ratMult_0_r; try rewrite ratMult_0_l.
+
+Ltac dist_compute := repeat
+  (dist_compute_simp; try dist_compute_1; try congruence; intuition).
+
+Ltac dist_transitivity :=
+  match goal with
+    | [|- _ == _] => eapply eqRat_trans
+    | [|- _ <= _] => eapply leRat_trans
+  end.
+
+Ltac dist_ident_expand_l :=
+   dist_transitivity; [try apply eqRat_impl_leRat; symmetry; eapply evalDist_right_ident | idtac].
+
+Ltac dist_ident_expand_r :=
+   dist_transitivity; [idtac | eapply evalDist_right_ident]. *)
+
+Require Import FCF.ProgTacs.
+(* FCF.ProgTacs:
+Set Implicit Arguments.
+
+Require Import FCF.Rat.
+Require Import FCF.Comp.
+Require Import FCF.DistRules.
+Require Import FCF.DistSem.
+Require Import FCF.StdNat.
+Require Import FCF.Fold.
+Require Import FCF.ProgramLogic.
+Require Import FCF.DistTacs.
+Require Import FCF.NotationV1.
+
+Local Open Scope rat_scope.
+Local Open Scope comp_scope.
+
+Hint Resolve true : inhabited.
+
+Ltac prog_ret_l :=
+  eapply comp_spec_eq_trans_l; [eapply comp_spec_left_ident | idtac].
+
+Ltac prog_ret_r :=
+  eapply comp_spec_eq_trans_r; [idtac | eapply comp_spec_symm; eapply comp_spec_consequence; [eapply comp_spec_left_ident | intuition] ].
+
+Ltac prog_ret s :=
+  match s with
+    | leftc => prog_ret_l
+    | rightc => prog_ret_r
+  end.
+
+Ltac prog_irr_l := 
+  eapply comp_spec_irr_l; 
+  [ intuition | wftac | intuition].
+  
+Ltac prog_irr_r := 
+  eapply comp_spec_irr_r; 
+    [ intuition | wftac | intuition].
+
+Ltac prog_simp_1 := unfold setLet; try prog_ret_l; try prog_ret_r; cbv beta iota; destructLet. 
+
+Ltac prog_simp := repeat prog_simp_1.
+
+Ltac prog_simp_weak_1 := unfold setLet; try prog_ret_l.
+
+Ltac prog_simp_weak := repeat prog_simp_weak_1.
+
+Ltac prog_skip :=
+      eapply comp_spec_seq; [eauto with inhabited | eauto with inhabited | (try eapply comp_spec_eq_refl; intuition) | intuition]; intuition; subst; prog_simp_weak; intuition.
+
+Ltac prog_skip_pred p :=
+      eapply (@comp_spec_seq _ _ p); [eauto with inhabited | eauto with inhabited | (eauto; try eapply comp_spec_eq_refl; intuition) | intuition]; intuition; subst; prog_simp_weak; intuition.
+
+Ltac prog_skip_eq :=
+  eapply comp_spec_seq_eq; [eauto with inhabited | eauto with inhabited | (eauto; try eapply comp_spec_eq_refl; intuition) | intuition]; intuition; subst; prog_simp_weak; intuition.
+
+Ltac prog_inline_l :=
+  match goal with
+    | [ |- comp_spec _ (Bind (Bind ?c1 _ ) _) _] =>
+      eapply comp_spec_eq_trans_l; 
+        [eapply eq_impl_comp_spec_eq; intros ;
+          [eapply (evalDist_assoc c1); intuition ]
+          | idtac]
+  end.
+
+Ltac prog_inline_r :=
+  match goal with 
+    | [ |- comp_spec _ _ (Bind (Bind ?c1 _ ) _)] =>
+      eapply comp_spec_eq_trans_r; 
+        [idtac |
+          eapply eq_impl_comp_spec_eq; intros ;
+            [symmetry;  eapply (evalDist_assoc c1); intuition ]
+        ] 
+        end.
+
+Ltac prog_inline s :=
+  match s with
+    | leftc => prog_inline_l
+    | rightc => prog_inline_r
+  end.
+
+Ltac prog_inline_first_1 := try prog_inline_l; try prog_inline_r.
+Ltac prog_inline_first := repeat (prog_simp_weak_1; prog_inline_first_1).
+
+Ltac prog_swap_l :=
+  match goal with
+    | [ |- comp_spec _ (Bind ?c1 (fun x => (Bind ?c2 _))) _ ] => 
+      eapply comp_spec_eq_trans_l; 
+        [eapply comp_spec_eq_swap | idtac]
+  end.
+
+Ltac prog_swap_r :=
+  match goal with
+    | [ |- comp_spec _ _ (Bind ?c1 (fun x => (Bind ?c2 _))) ] => 
+      eapply comp_spec_eq_trans_r; 
+        [idtac | eapply comp_spec_eq_swap]
+  end.
+
+Ltac prog_swap side :=
+  match side with
+    | leftc => prog_swap_l
+    | rightc => prog_swap_r
+  end.
+
+Ltac prog_at_l tac line :=
+  match line with
+    | O => tac rightc
+    | S ?line' =>
+      eapply comp_spec_eq_trans_l; [
+        eapply comp_spec_seq_eq; eauto with inhabited; [eapply comp_spec_eq_refl | idtac]; intros; prog_at_l tac line'; eapply comp_spec_eq_refl | 
+        idtac ]
+  end.
+
+Ltac prog_at_r tac line :=
+  match line with
+      | O => tac rightc
+    | S ?line' =>
+      eapply comp_spec_eq_trans_r; [idtac | 
+        eapply comp_spec_seq_eq; eauto with inhabited; [eapply comp_spec_eq_refl | idtac]; intros; prog_at_r tac line'; eapply comp_spec_eq_refl]
+  end.
+
+Ltac prog_at tac side line :=
+  match side with
+    | leftc => prog_at_l tac (line)%nat
+    | rightc => prog_at_r tac (line)%nat
+  end.
+
+Ltac prog_transitivity := eapply comp_spec_eq_trans_l.
+
+Ltac prog_transitivity_r := eapply comp_spec_eq_trans_r.
+
+Ltac prog_symmetry :=
+  match goal with
+    | [|- comp_spec eq _ _ ] => eapply comp_spec_eq_symm
+  end.
+
+Ltac prog_ident_expand_l :=
+  prog_transitivity; [prog_symmetry; eapply comp_spec_right_ident | idtac].
+
+Ltac prog_ident_expand_r :=
+  prog_transitivity; [idtac | eapply comp_spec_right_ident]. *)
+
+Require Import FCF.ProgramLogic.
+(* FCF.ProgramLogic:
+Set Implicit Arguments.
+
+Require Import FCF.Crypto.
+Require Import FCF.Bernoulli.
+Require Import FCF.NotationV1.
+
+Theorem ratSubtract_leRat_same_r : 
+  forall r1 r2 r3,
+    r3 <= r1 ->
+    r3 <= r2 ->
+    ratSubtract r1 r3 <= ratSubtract r2 r3 ->
+    r1 <= r2.
+
+Theorem sumList_filter_complement : 
+  forall (A : Set){eqd : EqDec A}(c : Comp A)(a : A),
+    well_formed_comp c ->
+    sumList (filter (fun x => negb (eqb a x)) (getSupport c)) (evalDist c) ==
+    ratSubtract 1 (evalDist c a).
+
+Theorem evalDist_Repeat_0 : 
+  forall (A : Set)(c : Comp A)(P : A -> bool) a,
+    (forall x, In x (getSupport c) -> P x = true -> x <> a) ->
+    evalDist (Repeat c P) a == 0.
+
+Theorem evalDist_event_equiv : 
+  forall (A : Set){eqd : EqDec A}(c : Comp A) a,
+    evalDist c a == Pr[x <-$ c; ret (eqb a x)].
+
+Theorem filter_ext : forall (A : Set)(ls : list A)(f1 f2 : A -> bool),
+  (forall a, f1 a = f2 a) ->
+  filter f1 ls = filter f2 ls.
+
+Definition marginal_l(A B : Set){eqd : EqDec A}(c : Comp (A * B))(a : A) :=
+  Pr[x <-$ c; ret eqb (fst x) a].
+
+Definition marginal_r(A B : Set){eqd : EqDec B}(c : Comp (A * B))(b : B) :=
+  Pr[x <-$ c; ret eqb (snd x) b].
+
+Theorem in_support_marginal_l : 
+  forall (A B : Set){eqd: EqDec A}(c1 : Comp (A * B))(c2 : Comp A),
+    (forall a, evalDist c2 a == marginal_l c1 a) ->
+    forall p,
+      In p (getSupport c1) ->
+      In (fst p) (getSupport c2).
+
+Theorem in_support_marginal_r : 
+  forall (A B : Set){eqd: EqDec B}(c1 : Comp (A * B))(c2 : Comp B),
+    (forall b, evalDist c2 b == marginal_r c1 b) ->
+    forall p,
+      In p (getSupport c1) ->
+      In (snd p) (getSupport c2).
+
+Definition comp_spec (R1 R2 : Set)
+  {eqd1 : EqDec R1}{eqd2 : EqDec R2}
+  (post : R1 -> R2 -> Prop)(c1 : Comp R1)(c2 : Comp R2) :=
+  exists c : Comp (R1 * R2),
+    (forall r1, evalDist c1 r1 == marginal_l c r1) /\
+    (forall r2, evalDist c2 r2 == marginal_r c r2) /\
+    (forall p, In p (getSupport c) -> post (fst p) (snd p)).
+
+Theorem list_choice : 
+  forall (A B : Type)(eqd : forall (a1 a2 : A), {a1 = a2} + {a1 <> a2}) P (ls : list A) (b : B),
+    (forall a, In a ls -> exists (b : B), P a b) -> 
+    exists (f : A -> B), (forall a, In a ls -> P a (f a)).
+
+Theorem comp_spec_seq : 
+  forall {A B : Set} P' {C D : Set} P{eqda : EqDec A}{eqdb : EqDec B}{eqdc : EqDec C}{eqdd : EqDec D}(c1 : Comp A)(c2 : Comp B) (c : C) (d : D)
+    (f1 : A -> Comp C)(f2 : B -> Comp D),
+    comp_spec P' c1 c2 ->
+    (forall a b, In a (getSupport c1) -> In b (getSupport c2) -> P' a b -> comp_spec P (f1 a) (f2 b)) ->
+    comp_spec P (Bind c1 f1) (Bind c2 f2).
+
+Ltac despec := 
+  match goal with
+    | [H : comp_spec _ _ _  |- _] => destruct H
+  end.
+
+Theorem comp_spec_consequence : 
+  forall (A B : Set){eqda1 eqda2 : EqDec A}{eqdb1 eqdb2 : EqDec B}(p1 p2 : A -> B -> Prop) c1 c2,
+    (@comp_spec _ _ eqda1 eqdb1 p1 c1 c2) ->
+    (forall a b, p1 a b -> p2 a b) ->
+    (@comp_spec  _ _ eqda2 eqdb2 p2 c1 c2).
+
+Theorem comp_spec_symm : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(p : A -> B -> Prop) c1 c2,
+    comp_spec p c1 c2 ->
+    comp_spec (fun b a => p a b) c2 c1.
+
+Theorem eq_impl_comp_spec : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B) x y,
+    well_formed_comp c1 ->
+    well_formed_comp c2 ->
+    evalDist c1 x == evalDist c2 y ->
+    comp_spec (fun a b => a = x <-> b = y) c1 c2.
+
+Theorem le_impl_comp_spec : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B),
+    well_formed_comp c1 ->
+    well_formed_comp c2 ->
+    forall x y, 
+      evalDist c1 x <= evalDist c2 y ->
+      comp_spec (fun a b => a = x -> b = y) c1 c2.
+
+Theorem comp_spec_impl_le : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B),
+    forall x y, 
+      comp_spec (fun a b => a = x -> b = y) c1 c2 ->
+      evalDist c1 x <= evalDist c2 y.
+
+Theorem comp_spec_eq_symm: 
+  forall (A : Set){eqda : EqDec A}(c1 c2 : Comp A),
+      comp_spec eq c1 c2 ->
+      comp_spec eq c2 c1.
+
+Theorem comp_spec_impl_eq : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B),
+    forall x y, 
+      comp_spec (fun a b => a = x <-> b = y) c1 c2 ->
+      evalDist c1 x == evalDist c2 y.
+
+Theorem comp_spec_ret : 
+  forall (A B : Set){eqda1 : EqDec A}{eqdb1 : EqDec B}(eqda2 : eq_dec A)(eqdb2 : eq_dec B)(P : A -> B -> Prop) a b,
+    P a b ->
+    @comp_spec _ _ eqda1 eqdb1 P (Ret eqda2 a) (Ret eqdb2 b).
+
+Theorem comp_spec_rnd : 
+  forall n x y,
+  comp_spec (fun a b : Vector.t bool n => a = x <-> b = y) 
+
+Theorem eq_impl_comp_spec_eq : 
+  forall (A : Set){eqd1 eqd2 : EqDec A}(c1 c2 : Comp A),
+    (forall x, evalDist c1 x == evalDist c2 x) ->
+    @comp_spec _ _ eqd1 eqd2 eq c1 c2.
+
+Theorem comp_spec_eq_refl : 
+  forall (A : Set){eqd : EqDec A}(c : Comp A),
+    comp_spec eq c c.
+
+Theorem comp_spec_eq_impl_eq : 
+  forall (A : Set){eqd1 eqd2 : EqDec A}(c1 c2 : Comp A),
+    @comp_spec _ _ eqd1 eqd2 eq c1 c2 ->
+    (forall x, evalDist c1 x == evalDist c2 x).
+  
+Theorem comp_spec_eq_trans_l : 
+  forall (A B : Set){eqd : EqDec A}{eqd : EqDec B}(c1 c2 : Comp A)(c3 : Comp B) P,
+    comp_spec eq c1 c2 ->
+    comp_spec P c2 c3 ->
+    comp_spec P c1 c3.
+
+Theorem comp_spec_eq_trans : 
+  forall (A : Set){eqd : EqDec A}(c1 c2 c3 : Comp A),
+    comp_spec eq c1 c2 ->
+    comp_spec eq c2 c3 ->
+    comp_spec eq c1 c3.
+
+Theorem comp_spec_eq_trans_r : 
+  forall (A B : Set){eqd : EqDec A}{eqd : EqDec B}(c1 : Comp A)(c2 c3 : Comp B) P,
+    comp_spec P c1 c2 ->
+    comp_spec eq c2 c3 ->
+    comp_spec P c1 c3.
+
+Theorem comp_spec_seq_eq : 
+  forall (A B C : Set){eqda : EqDec A}{eqdb : EqDec B}{eqdc : EqDec C}(c1 c2 : Comp A)(f1 : A -> Comp B)(f2 : A -> Comp C) P (b : B) (c : C),
+    comp_spec eq c1 c2 ->
+    (forall a, comp_spec P (f1 a) (f2 a)) ->
+    comp_spec P (Bind c1 f1) (Bind c2 f2).
+
+Theorem comp_spec_eq_swap : 
+  forall (A B C : Set){eqdc : EqDec C}(c1 : Comp A)(c2 : Comp B)(f : A -> B -> Comp C),
+    comp_spec eq (x <-$ c1; y <-$ c2; f x y) (y <-$ c2; x <-$ c1; f x y).
+
+Theorem comp_spec_right_ident : 
+  forall (A : Set){eqd : EqDec A}(c1 : Comp A), 
+    comp_spec eq (x <-$ c1; ret x) c1.
+
+Theorem comp_spec_left_ident : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : A -> Comp B) a, 
+    comp_spec eq (x <-$ ret a; c1 x) (c1 a).
+
+Theorem comp_spec_assoc : 
+  forall (A B C : Set){eqd : EqDec C}(c1 : Comp A)(c2 : A -> Comp B)(c3 : B -> Comp C), 
+    comp_spec eq (x <-$ (y <-$ c1; c2 y); c3 x) (y <-$ c1; x <-$ c2 y; c3 x).
+
+Theorem comp_spec_event_equiv : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B)(f1 : A -> bool)(f2 : B -> bool)(P : bool -> bool -> Prop),
+    comp_spec (fun a b => P (f1 a) (f2 b)) c1 c2 ->
+    comp_spec P (x <-$ c1; ret (f1 x)) (x <-$ c2; ret (f2 x)).
+
+Theorem comp_spec_iso : 
+  forall (A B : Set){eqda : EqDec A}{eqdb : EqDec B}(c1 : Comp A)(c2 : Comp B)(f : A -> B)(f_inv : B -> A),
+    (forall x : B, In x (getSupport c2) -> f (f_inv x) = x) ->
+    (forall x : A, In x (getSupport c1) -> f_inv (f x) = x) ->
+    (forall x : B, In x (getSupport c2) -> In (f_inv x) (getSupport c1)) ->
+    (forall x : A, In x (getSupport c1) -> comp_spec (fun a b => a = (f x) <-> b = x) c2 c1) -> 
+    comp_spec (fun a b => f a = b) c1 c2.
+
+Theorem comp_spec_irr_r : 
+  forall (A B C : Set){eqda : EqDec A}{eqdb : EqDec B}{eqdc : EqDec C}(c1 : Comp A)(c2 : Comp B)(f2 : B -> Comp C) P,
+    well_formed_comp c2 ->
+    (forall b, In b (getSupport c2) -> comp_spec P c1 (f2 b)) ->
+    comp_spec P c1 (Bind c2 f2).
+
+Theorem comp_spec_irr_l : 
+  forall (A B C : Set){eqda : EqDec A}{eqdb : EqDec B}{eqdc : EqDec C}(c1 : Comp A)(c2 : Comp B)(f1 : A -> Comp C) P,
+    well_formed_comp c1 ->
+    (forall a, In a (getSupport c1) -> comp_spec P (f1 a) c2) ->
+    comp_spec P (Bind c1 f1) c2.
+
+Transparent evalDist.
+Transparent getSupport.
+
+Theorem oc_comp_spec_eq : 
+  forall (A B C : Set)(c : OracleComp A B C), forall  (eqdb : EqDec B) (eqdc : EqDec C)(S1 S2 : Set)(o1 : S1 -> A -> Comp (B * S1))(o2 : S2 -> A -> Comp (B * S2)) eqds1 eqds2 s1 s2 (P : S1 -> S2 -> Prop),
+    P s1 s2 ->
+    (forall a x1 x2, P x1 x2 -> comp_spec (fun y1 y2 => fst y1 = fst y2 /\ P (snd y1) (snd y2)) (o1 x1 a) (o2 x2 a)) ->
+    comp_spec (fun a b => fst a = fst b /\ P (snd a) (snd b))
+    (c _ eqds1 o1 s1)
+    (c _ eqds2 o2 s2).
+
+Opaque evalDist.
+
+Theorem oc_comp_wf_inv
+   : forall (A B C : Set) (c : OracleComp A B C),
+     well_formed_oc c ->
+     forall (S : Set) (P : S -> Prop)(eqds : EqDec S) (o : S -> A -> Comp (B * S)) (s : S),
+     (forall (a : S) (b : A), P a -> well_formed_comp (o a b)) ->
+     (forall a b s s', P s -> In (b, s') (getSupport (o s a)) -> P s') ->
+     P s -> 
+     well_formed_comp (c S eqds o s).
+
+Theorem oc_comp_spec_eq_until_bad : 
+  forall (A B C : Set)(c : OracleComp A B C), 
+    well_formed_oc c ->
+    forall (eqdb : EqDec B) (eqdc : EqDec C)(S1 S2 : Set)(o1 : S1 -> A -> Comp (B * S1))(o2 : S2 -> A -> Comp (B * S2)) eqds1 eqds2 
+    (bad1 : S1 -> bool)(bad2 : S2 -> bool)(inv : S1 -> S2 -> Prop),
+    (forall a b, bad1 a = true -> well_formed_comp (o1 a b)) ->
+    (forall a b, bad2 a = true -> well_formed_comp (o2 a b)) ->
+    (forall x1 x2 a,
+      inv x1 x2 ->
+      bad1 x1 = bad2 x2 ->
+      comp_spec 
+      (fun y1 y2 => (bad1 (snd y1) = bad2 (snd y2)) /\ (bad1 (snd y1) = false -> (inv (snd y1) (snd y2) /\ fst y1 = fst y2)))
+      (o1 x1 a) (o2 x2 a)) ->
+    (forall a b c d,
+      bad1 c = true ->
+      In (a, b) (getSupport (o1 c d)) -> bad1 b = true) ->
+    (forall a b c d,
+      bad2 c = true ->
+      In (a, b) (getSupport (o2 c d)) -> bad2 b = true) ->
+    ((forall s1 s2, 
+      inv s1 s2 ->
+      bad1 s1 = bad2 s2 ->
+      comp_spec
+      (fun y1 y2 => (bad1 (snd y1) = bad2 (snd y2)) /\ (bad1 (snd y1) = false -> inv (snd y1) (snd y2) /\ (fst y1 = fst y2)))
+      (c _ eqds1 o1 s1)
+      (c _ eqds2 o2 s2))).
+
+Theorem rnd_swap : forall eta a b,
+  comp_spec (fun x y=> (x = y /\ x <> a /\ x <> b) \/ (a = x /\ b = y) \/ (b = x /\ a = y))
+            ({0,1}^eta) ({0,1}^eta).
+
+Require Import Setoid.
+
+Add Parametric Relation (A : Set){eqd : EqDec A} : (Comp A) (@comp_spec A A eqd eqd eq)
+  as comp_spec_eq_rel.
+
+Global Instance comp_spec_eq_rel_Reflexive (A : Set) (eqd : EqDec A) : Reflexive (comp_spec eq)
+  | 10 := @comp_spec_eq_refl A eqd.
+Global Instance comp_spec_eq_rel_Symmetric (A : Set) (eqd : EqDec A) : Symmetric (comp_spec eq)
+  | 10 := @comp_spec_eq_symm A eqd.
+Global Instance comp_spec_eq_rel_Transitive (A : Set) (eqd : EqDec A) : Transitive (comp_spec eq)
+  | 10 := @comp_spec_eq_trans A eqd.
+Global Instance comp_spec_eq_rel (A : Set) (eqd : EqDec A) : Equivalence (comp_spec eq)
+  | 10 := {}. *)
+
+
+
+Ltac inline_first :=
+
+  repeat (dist_inline_first; prog_inline_first).
+
+
+
+Ltac comp_skip :=
+
+  dist_skip || prog_skip.
+
+
+
+Ltac comp_irr_l :=
+
+  dist_irr_l || prog_irr_l.
+
+
+
+Ltac comp_irr_r :=
+
+  dist_irr_r || prog_irr_r.
+
+
+
+Ltac comp_swap s :=
+
+  dist_swap s || prog_swap s.
+
+
+
+Ltac comp_swap_r :=
+
+  dist_swap_r || prog_swap_r.
+
+
+
+Ltac comp_swap_l :=
+
+  dist_swap_l || prog_swap_l.
+
+
+
+Ltac comp_inline s :=
+
+  dist_inline s || prog_inline s.
+
+
+
+Ltac comp_inline_r :=
+
+  dist_inline_r || prog_inline_r.
+
+
+
+Ltac comp_inline_l :=
+
+  dist_inline_l || prog_inline_l.
+
+
+
+Ltac comp_ret_l :=
+
+  dist_ret_l || prog_ret_l.
+
+
+
+Ltac comp_ret_r :=
+
+  dist_ret_r || prog_ret_r.
+
+
+
+Ltac comp_ret s :=
+
+  dist_ret s || prog_ret s.
+
+
+
+Ltac comp_simp :=
+
+  repeat (dist_simp; prog_simp).
+
+
+
+Ltac comp_at t s l :=
+
+  match goal with
+
+    | [|- comp_spec _ _ _ ] => idtac
+
+    | _ => dist_at t s l
+
+  end.

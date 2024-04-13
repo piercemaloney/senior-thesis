@@ -1,0 +1,740 @@
+Set Warnings "-extraction-opaque-accessed,-extraction".
+
+Set Warnings "-notation-overridden,-parsing".
+
+
+
+From QuickChick Require Import QuickChick Tactics.
+
+Require Import String. Open Scope string.
+
+
+
+From mathcomp Require Import ssreflect ssrfun ssrbool ssrnat eqtype seq.
+
+
+
+Import GenLow GenHigh.
+
+Require Import List.
+
+Import ListNotations.
+
+Import QcDefaultNotation. Open Scope qc_scope.
+
+
+
+Require Export ExtLib.Structures.Monads.
+
+Import MonadNotation.
+
+Open Scope monad_scope.
+
+
+
+Set Bullet Behavior "Strict Subproofs".
+
+
+
+Derive ArbitrarySizedSuchThat for (fun x => eq x y).
+
+
+
+Definition GenSizedSuchThateq_manual {A} (y_ : A) :=
+
+  let fix aux_arb (size : nat) (y_0 : A) {struct size} : G (option A) :=
+
+      match size with
+
+      | 0   => backtrack [(1, returnGen (Some y_0))]
+
+      | S _ => backtrack [(1, returnGen (Some y_0))]
+
+      end
+
+  in aux_arb^~ y_.
+
+
+
+Theorem GenSizedSuchThateq_proof A (n : A) :
+
+  GenSizedSuchThateq_manual n = @arbitrarySizeST _ (fun x => eq x n) _.
+
+Proof. reflexivity. Qed.
+
+
+
+Inductive Foo :=
+
+| Foo1 : Foo 
+
+| Foo2 : Foo -> Foo
+
+| Foo3 : nat -> Foo -> Foo.
+
+
+
+QuickChickWeights [(Foo1, 1); (Foo2, size); (Foo3, size)].
+
+Derive (Arbitrary, Show) for Foo.
+
+
+
+Fixpoint showFoo' (x : Foo) := 
+
+  match x with 
+
+  | Foo1 => "Foo1"
+
+  | Foo2 f => "Foo2 " ++ smart_paren (showFoo' f)
+
+  | Foo3 n f => "Foo3 " ++ smart_paren (show n) ++
+
+                        " " ++ smart_paren (showFoo' f)
+
+  end%string.
+
+
+
+Lemma show_foo_equality : showFoo' = (@show Foo _).
+
+Proof. reflexivity. Qed.
+
+
+
+Fixpoint genFooSized (size : nat) := 
+
+  match size with 
+
+  | O => returnGen Foo1
+
+  | S size' => freq [ (1, returnGen Foo1) 
+
+                    ; (S size', f <- genFooSized size';;
+
+                                  ret (Foo2 f))
+
+                    ; (S size', n <- arbitrary ;;
+
+                                f <- genFooSized size' ;;
+
+                                ret (Foo3 n f)) 
+
+                    ]
+
+  end.                 
+
+                                           
+
+Fixpoint shrink_foo x := 
+
+  match x with
+
+  | Foo1 => []
+
+  | Foo2 f => ([f] ++ map (fun f' => Foo2 f') (shrink_foo f) ++ []) ++ []
+
+  | Foo3 n f => (map (fun n' => Foo3 n' f) (shrink n) ++ []) ++
+
+                ([f] ++ map (fun f' => Foo3 n f') (shrink_foo f) ++ []) ++ []
+
+  end.
+
+
+
+Lemma genFooSizedNotation : genFooSized = @arbitrarySized Foo _.
+
+Proof. reflexivity. Qed.
+
+
+
+Lemma shrinkFoo_equality : shrink_foo = @shrink Foo _.
+
+Proof. reflexivity. Qed.
+
+
+
+Inductive goodFoo : nat -> Foo -> Prop :=
+
+| GoodFoo : forall n foo,  goodFoo n foo.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFoo n foo).
+
+
+
+Definition g : G (option Foo) := @arbitrarySizeST _ (fun x => goodFoo 0 x) _ 4.
+
+
+
+Definition genGoodFoo `{_ : Arbitrary Foo} (n : nat)  :=
+
+  let fix aux_arb size n := 
+
+    match size with 
+
+    | 0   => backtrack [(1, foo <- arbitrary ;; ret (Some foo))]
+
+    | S _ => backtrack [(1, foo <- arbitrary ;; ret (Some foo))]
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodFoo_equality n : 
+
+  genGoodFoo n = @arbitrarySizeST _ (fun foo => goodFoo n foo) _.
+
+Proof. reflexivity. Qed.
+
+
+
+Definition genGoodFoo'' `{_ : Arbitrary Foo} (n : nat) :=
+
+  let fix aux_arb size n := 
+
+    match size with 
+
+    | 0   => backtrack [(1, 
+
+
+
+      foo <- arbitrary;; ret (Some foo)
+
+
+
+                        )]
+
+    | S _ => backtrack [(1, foo <- arbitrary;; ret (Some foo))]
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodFoo_equality' : genGoodFoo = genGoodFoo''.
+
+Proof. reflexivity. Qed.
+
+ 
+
+Inductive goodFooUnif : nat -> Foo -> Prop := 
+
+| GoodUnif : forall n, goodFooUnif n Foo1.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooUnif n foo).
+
+
+
+Definition genGoodUnif (n : nat) :=
+
+  let fix aux_arb size n := 
+
+    match size with 
+
+    | 0   => backtrack [(1, 
+
+
+
+  ret (Some Foo1)
+
+
+
+                        )] 
+
+    | S _ => backtrack [(1, ret (Some Foo1))] 
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodUnif_equality n : 
+
+  genGoodUnif n = @arbitrarySizeST _ (fun foo => goodFooUnif n foo) _. 
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooCombo : nat -> Foo -> Prop :=
+
+| GoodCombo : forall n foo, goodFooCombo n (Foo2 foo).
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooCombo n foo).
+
+
+
+Definition genGoodCombo `{_ : Arbitrary Foo} (n : nat) :=
+
+  let fix aux_arb size n := 
+
+    match size with 
+
+    | 0   => backtrack [(1, 
+
+
+
+   foo <- arbitrary;; ret (Some (Foo2 foo))
+
+
+
+                        )] 
+
+    | S _ => backtrack [(1, foo <- arbitrary;; ret (Some (Foo2 foo)))]
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodCombo_equality n : 
+
+  genGoodCombo n = @arbitrarySizeST _ (fun foo => goodFooCombo n foo) _.
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooMatch : nat -> Foo -> Prop := 
+
+| GoodMatch : goodFooMatch 0 Foo1.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooMatch n foo).
+
+
+
+Definition genGoodMatch (n : nat) :=
+
+  let fix aux_arb size n := 
+
+    match size with 
+
+    | 0   => backtrack [(1, 
+
+
+
+  match n with
+
+  | 0 => ret (Some Foo1)
+
+  | _.+1 => ret None
+
+  end
+
+
+
+                        )]
+
+    | S _ => backtrack [(1,
+
+           match n with
+
+           | 0 => ret (Some Foo1)
+
+           | _.+1 => ret None
+
+           end)]
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodMatch_equality n : 
+
+  genGoodMatch n = @arbitrarySizeST _ (fun foo => goodFooMatch n foo) _.
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooRec : nat -> Foo -> Prop :=
+
+| GoodRecBase : forall n, goodFooRec n Foo1
+
+| GoodRec : forall n foo, goodFooRec 0 foo -> goodFooRec n (Foo2 foo).
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooRec n foo).
+
+
+
+Definition genGoodRec (n : nat) :=
+
+  let fix aux_arb size n : G (option Foo) := 
+
+    match size with 
+
+    | 0 => backtrack [(1, ret (Some Foo1))]
+
+    | S size' => backtrack [ (1, ret (Some Foo1))
+
+                           ; (1, bindGenOpt (aux_arb size' 0) (fun foo => 
+
+                                 ret (Some (Foo2 foo)))) ]
+
+    end
+
+  in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodRec_equality n :
+
+  genGoodRec n = @arbitrarySizeST _ (fun foo => goodFooRec n foo) _. 
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooPrec : nat -> Foo -> Prop :=
+
+| GoodPrecBase : forall n, goodFooPrec n Foo1
+
+| GoodPrec : forall n foo, goodFooPrec 0 Foo1 -> goodFooPrec n foo.
+
+
+
+Derive DecOpt for (goodFooPrec n foo).
+
+
+
+Definition DecOptgoodFooPrec_manual (n_ : nat) (foo_ : Foo) := 
+
+ let fix aux_arb (size0 n_0 : nat) (foo_0 : Foo) {struct size0} : option bool :=
+
+     match size0 with
+
+     | 0 =>
+
+       checker_backtrack
+
+         [(fun u:unit =>
+
+          match foo_0 with
+
+          | Foo1 => Some true
+
+          | Foo2 _ => None
+
+          | Foo3 _ _ => None
+
+          end
+
+         )]
+
+     | size'.+1 =>
+
+       checker_backtrack
+
+         [(fun _ =>
+
+          match foo_0 with
+
+          | Foo1 => Some true
+
+          | Foo2 _ => None
+
+          | Foo3 _ _ => None
+
+          end)
+
+        ;(fun _ =>
+
+          match aux_arb size' 0 Foo1 with
+
+          | Some _ => Some true
+
+          | None => None
+
+          end)
+
+         ]
+
+     end in
+
+ fun size0 : nat => aux_arb size0 n_ foo_.
+
+Theorem DecOptgoodFooPrec_proof n foo :
+
+  DecOptgoodFooPrec_manual n foo = @decOpt (goodFooPrec n foo) _.
+
+Proof. Admitted. 
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooPrec n foo).
+
+
+
+Definition genGoodPrec (n : nat) : nat -> G (option (Foo)):=
+
+ let
+
+   fix aux_arb size (n : nat) : G (option (Foo)) :=
+
+     match size with
+
+     | O => 
+
+                      backtrack [ (1, ret (Some Foo1))
+
+                     ; (1, match @decOpt (goodFooPrec O Foo1) _ 42 with
+
+                           | Some true => foo <- arbitrary;;
+
+                                          ret (Some foo)
+
+                           | _ => ret None
+
+                           end
+
+                     )]
+
+
+
+     | S size' =>
+
+         backtrack [ (1, ret (Some Foo1))
+
+                     ; (1, match @decOpt (goodFooPrec O Foo1) _ 42 with
+
+                           | Some true => foo <- arbitrary;;
+
+                                          ret (Some foo)
+
+                           | _ => ret None
+
+                           end
+
+                     )]
+
+     end in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodPrec_equality n : 
+
+  genGoodPrec n = @arbitrarySizeST _ (fun foo => goodFooPrec n foo) _.
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooNarrow : nat -> Foo -> Prop :=
+
+| GoodNarrowBase : forall n, goodFooNarrow n Foo1
+
+| GoodNarrow : forall n foo, goodFooNarrow 0 foo -> 
+
+                        goodFooNarrow 1 foo -> 
+
+                        goodFooNarrow n foo.
+
+
+
+Derive DecOpt for (goodFooNarrow n foo).
+
+
+
+Definition goodFooNarrow_decOpt (n_ : nat) (foo_ : Foo) :=
+
+  let fix aux_arb (size0 n_0 : nat) (foo_0 : Foo) : option bool :=
+
+      match size0 with
+
+      | 0 =>
+
+        checker_backtrack
+
+          [(fun _ : unit =>
+
+             match foo_0 with
+
+             | Foo1 => Some true
+
+             | Foo2 _ => None
+
+             | Foo3 _ _ => None
+
+             end)]
+
+      | size'.+1 =>
+
+        checker_backtrack
+
+          [(fun _ : unit =>
+
+             match foo_0 with
+
+             | Foo1 => Some true
+
+             | Foo2 _ => None
+
+             | Foo3 _ _ => None
+
+             end) ;
+
+           (fun _ : unit =>
+
+                 match aux_arb size' 0 foo_0 with
+
+                 | Some _ =>
+
+                   match aux_arb size' 1 foo_0 with
+
+                   | Some _ => Some true
+
+                   | None => None
+
+                   end
+
+                 | None => None
+
+                 end)]
+
+      end in
+
+  fun size0 : nat => aux_arb size0 n_ foo_.
+
+Lemma goodFooNarrow_decOpt_correct n foo :
+
+  goodFooNarrow_decOpt n foo = @decOpt (goodFooNarrow n foo) _.
+
+Proof. Admitted.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooNarrow n foo).
+
+
+
+Definition genGoodNarrow (n : nat) : nat -> G (option (Foo)) :=
+
+ let
+
+   fix aux_arb size (n : nat) : G (option (Foo)) :=
+
+     match size with
+
+     | O => backtrack [(1, ret (Some Foo1))]
+
+     | S size' =>
+
+         backtrack [ (1, ret (Some Foo1))
+
+                   ; (1, bindGenOpt (aux_arb size' 0) (fun foo =>
+
+                         match @decOpt (goodFooNarrow 1 foo) _  42 with
+
+                         | Some true => ret (Some foo)
+
+                         | _ => ret None
+
+                         end
+
+                     ))]
+
+     end in fun sz => aux_arb sz n.
+
+
+
+Lemma genGoodNarrow_equality n : 
+
+  genGoodNarrow n = @arbitrarySizeST _ (fun foo => goodFooNarrow n foo) _. 
+
+Proof. reflexivity. Qed. 
+
+
+
+Inductive goodFooNL : nat -> Foo -> Foo -> Prop :=
+
+| GoodNL : forall n foo, goodFooNL n (Foo2 foo) foo.
+
+
+
+Instance EqDecFoo (f1 f2 : Foo) : Dec (f1 = f2).
+
+dec_eq. Defined.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun foo => goodFooNL n m foo).
+
+Derive DecOpt for (goodFooNL n m foo).
+
+
+
+Inductive goodFooFalse : Foo -> Prop :=
+
+| GoodFalse : forall (x : False), goodFooFalse Foo1.
+
+
+
+Instance arbFalse : Gen False. Admitted.
+
+
+
+Set Warnings "+quickchick-uninstantiated-variables".
+
+Fail Derive ArbitrarySizedSuchThat for (fun foo => goodFooFalse foo).
+
+Set Warnings "quickchick-uninstantiated-variables".
+
+
+
+Definition addFoo2 (x : Foo) := Foo2 x.
+
+
+
+Fixpoint foo_depth f := 
+
+  match f with
+
+  | Foo1 => 0
+
+  | Foo2 f => 1 + foo_depth f
+
+  | Foo3 n f => 1 + foo_depth f
+
+  end.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun n => goodFooPrec n x).
+
+
+
+Inductive goodFun : Foo -> Prop :=
+
+| GoodFun : forall (n : nat) (a : Foo), goodFooPrec n (addFoo2 a) ->
+
+                                        goodFun a.
+
+
+
+Derive ArbitrarySizedSuchThat for (fun a => goodFun a).
+
+
+
+Definition success := "success".
+
+Print success.
+
+
+

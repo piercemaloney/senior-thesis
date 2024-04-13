@@ -1,0 +1,376 @@
+
+
+Require Import lam_ref_tcb.
+(* lam_ref_tcb:
+Require Export EqNat.
+
+Require Import msl.Extensionality.
+
+Definition var_t : Type := nat.
+
+Definition addr : Type := nat.
+
+Inductive expr : Type :=
+ | Nat : forall n : nat, expr
+ | Prim : forall (f:nat -> expr) (e:expr), expr
+ | Var : forall n : var_t, expr
+ | Loc : forall l : addr, expr
+ | Lam : forall e : expr, expr 
+ | App : forall e1 e2 : expr, expr
+ | New : forall e : expr, expr
+ | Deref : forall e : expr, expr
+ | Update : forall e1 e2 e3 : expr, expr. 
+
+Fixpoint closed' (n : nat) (e : expr) : Prop :=
+  match e with
+   | Var n' => n' < n
+   | Prim f e => closed' n e
+   | Lam e => closed' (n + 1) e
+   | Nat _ => True
+   | Loc _ => True
+   | App e1 e2 => closed' n e1 /\ closed' n e2
+   | New e => closed' n e
+   | Deref e => closed' n e
+   | Update e1 e2 e3 => closed' n e1 /\ closed' n e2 /\ closed' n e3
+  end.
+
+Definition closed (e : expr) : Prop :=
+  closed' 0 e.
+
+Definition openValue (e:expr) : Prop :=
+  match e with
+   | Nat _ => True
+   | Loc _ => True
+   | Lam _ => True
+   | _ => False
+  end.
+
+Definition isValue (e : expr) : Prop :=
+  closed e /\ openValue e.
+
+Definition value : Type :=
+  {v : expr | isValue v}.
+
+Definition val_to_exp : value -> expr :=
+  @projT1 expr isValue.
+Definition exp_to_val (e : expr) (H : isValue e) : value :=
+  existT isValue e H.
+
+Definition mem : Type :=
+  (nat * (addr -> value))%type.
+
+Definition new (m : mem) (v : value) : (mem * addr) :=
+  match m with (n, m') =>
+    ((S n, fun a => if beq_nat a n then v else m' a), n)
+  end.
+
+Definition deref (m : mem) (a : addr) : value :=
+  (snd m) a.
+
+Definition update (m : mem) (a : addr) (v : value) : mem :=
+  match m with (n, m') =>
+    (n, fun a' => if beq_nat a a' then v else m' a')
+  end.
+
+Definition state : Type :=
+  (mem * expr)%type.
+
+Fixpoint subst (var : var_t) (v : value) (e : expr) : expr :=
+  match e with
+   | Nat n => Nat n
+   | Prim f e => Prim f (subst var v e)
+   | Loc l => Loc l
+   | Var var' => if (beq_nat var var') then val_to_exp v else Var var'
+   | Lam e => Lam (subst (var + 1) v e)
+   | App e1 e2 => App (subst var v e1) (subst var v e2)
+   | New e => New (subst var v e)
+   | Deref e => Deref (subst var v e)
+   | Update e1 e2 e3 => Update (subst var v e1) (subst var v e2) (subst var v e3)
+  end.
+
+Inductive step : state -> state -> Prop :=
+
+ | st_App1 : forall m e1 e2 m' e1',
+     step (m, e1) (m', e1') ->
+     step (m, App e1 e2) (m', App e1' e2)
+ | st_App2 : forall m e1 e2 m' e2',
+     step (m, e2) (m', e2') ->
+     step (m, App (Lam e1) e2) (m', App (Lam e1) e2')
+ | st_App3 : forall m e1 e2,
+     forall (H : isValue e2),
+     step (m, App (Lam e1) e2) (m, subst 0 (exp_to_val e2 H) e1)
+
+ | st_New1 : forall m e m' e',
+     step (m, e) (m', e') ->
+     step (m, New e) (m', New e')
+ | st_New2 : forall m e m' l,
+     forall (H : isValue e),
+     new m (exp_to_val e H) = (m', l) ->
+     step (m, New e) (m', Loc l)
+
+ | st_Deref1 : forall m e m' e',
+     step (m, e) (m', e') ->
+     step (m, Deref e) (m', Deref e')
+ | st_Deref2 : forall m l v,
+     deref m l = v ->
+     step (m, Deref (Loc l)) (m, val_to_exp v)
+
+ | st_Upd1 : forall m e1 e2 e3 m' e1',
+     step (m, e1) (m', e1') ->
+     step (m, Update e1 e2 e3) (m', Update e1' e2 e3)
+ | st_Upd2 : forall m l e2 e3 m' e2',
+     step (m, e2) (m', e2') ->
+     step (m, Update (Loc l) e2 e3) (m', Update (Loc l) e2' e3)
+ | st_Upd3 : forall m l e2 e3 m',
+     forall (H : isValue e2),
+     update m l (exp_to_val e2 H) = m' ->
+     step (m, Update (Loc l) e2 e3) (m', e3)
+
+ | st_Prim1 : forall m m' e e' f,
+     step (m, e) (m', e') ->
+     step (m, Prim f e) (m', Prim f e')
+ | st_Prim2 : forall m n f,
+     isValue (f n) ->
+     step (m, Prim f (Nat n)) (m, f n).
+
+Inductive stepstar : state -> state -> Prop :=
+  | step_refl : forall st, stepstar st st
+  | step_trans: forall st1 st2 st3,
+       stepstar st1 st2 ->
+       stepstar st2 st3 ->
+       stepstar st1 st3
+  | step1 : forall st st',
+       step st st' ->
+       stepstar st st'.
+
+Definition can_step (st : state) : Prop :=
+  exists st', step st st'.
+
+Definition at_value (st : state) : Prop :=
+  isValue (snd st).
+
+Definition safe (st : state) : Prop :=
+  forall st',
+    stepstar st st' ->
+    can_step st' \/ at_value st'.
+
+Definition safe_prog (e:expr) : Prop :=
+  forall m, safe (m, e). *)
+
+Require Import msl.msl_standard.
+(* msl.msl_standard:
+Require Export VST.msl.Extensionality.
+Require Export VST.msl.ageable.
+Require Export VST.msl.age_sepalg.
+Require Export VST.msl.base.
+Require Export VST.msl.boolean_alg.
+Require Export VST.msl.knot_full_variant.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.knot_full_sa.
+Require Export VST.msl.knot_shims.
+Require Export VST.msl.predicates_hered.
+Require Export VST.msl.predicates_sl.
+Require Export VST.msl.corable.
+Require Export VST.msl.subtypes.
+Require Export VST.msl.subtypes_sl.
+Require Export VST.msl.predicates_rec.
+Require Export VST.msl.contractive.
+Require Export VST.msl.sepalg.
+Require Export VST.msl.functors.
+Require Export VST.msl.sepalg_functors.
+Require Export VST.msl.sepalg_generators.
+Require Export VST.msl.combiner_sa.
+Require Export VST.msl.shares.
+Require Export VST.msl.cross_split.
+Require Export VST.msl.psepalg.
+Require Export VST.msl.pshares.
+Require Export VST.msl.eq_dec.
+
+Export MixVariantFunctor.
+Export MixVariantFunctorLemmas.
+Export MixVariantFunctorGenerator. *)
+
+
+
+Tactic Notation "omegac" :=
+
+  (elimtype False; omega).
+
+
+
+Lemma IF_then_else_True:
+
+  forall a b c : Prop, a -> (IF a then b else c) = b.
+
+Proof.
+
+  unfold IF_then_else.
+
+  intros.
+
+  apply prop_ext; split; tauto.
+
+Qed.
+
+Lemma IF_then_else_False:
+
+  forall a b c : Prop, ~a -> (IF a then b else c) = c.
+
+Proof.
+
+  unfold IF_then_else.
+
+  intros.
+
+  apply prop_ext; split; tauto.
+
+Qed.
+
+
+
+Ltac IF_tac :=
+
+match goal with |- context [IF ?a then _ else _] =>
+
+   cut (a \/ ~a);
+
+   [ let H := fresh "H" in intro H; destruct H;
+
+     [try (rewrite IF_then_else_True;[|auto]) | try (rewrite IF_then_else_False; [|auto])]
+
+   | ]
+
+end.
+
+
+
+Ltac IF_tac_in H :=
+
+match type of H with context [IF ?a then _ else _] =>
+
+   cut (a \/ ~a);
+
+   [ let H' := fresh "H" in intro H'; destruct H';
+
+     [try (rewrite IF_then_else_True in H ;[|auto]) | try (rewrite IF_then_else_False in H; [|auto])]
+
+   | ]
+
+end.
+
+
+
+Lemma isvNat: forall n,
+
+  isValue (Nat n).
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Lemma isvLoc: forall l,
+
+  isValue (Loc l).
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Lemma isvLam: forall e,
+
+  closed' 1 e ->
+
+  isValue (Lam e).
+
+Proof.
+
+  firstorder.
+
+Qed.
+
+
+
+Definition v_Nat (n : nat) : value :=
+
+  exp_to_val (Nat n) (isvNat n).
+
+
+
+Definition v_Loc (l : addr) : value :=
+
+  exp_to_val (Loc l) (isvLoc l).
+
+
+
+Definition v_Lam (e : expr) (H: closed' 1 e) : value :=
+
+  exp_to_val (Lam e) (isvLam e H).
+
+
+
+Definition stopped (m : mem) (e : expr) : Prop :=
+
+  ~ exists m', exists e', step (m, e) (m', e').
+
+
+
+Definition env : Type := list value.
+
+
+
+Fixpoint subst_env' (n : nat) (rho : env) (exp : expr) : expr :=
+
+  match rho with
+
+   | nil => exp
+
+   | v :: vx => subst n v (subst_env' (n + 1) vx exp)
+
+  end.
+
+
+
+Definition subst_env (rho : env) (exp : expr) : expr :=
+
+  subst_env' 0 rho exp.
+
+
+
+Definition empty_mem : mem := (0, fun _ => v_Nat 0).
+
+
+
+Inductive stepn : nat -> state -> state -> Prop :=
+
+ | step0 : forall st,
+
+   stepn 0 st st
+
+ | stepS : forall n st st' st'',
+
+   step st st' ->
+
+   stepn n st' st'' ->
+
+   stepn (S n) st st''.
+
+
+
+Definition safen (n : nat) (st : state) : Prop :=
+
+  forall n', n' < n ->
+
+    forall st',
+
+      stepn n' st st' ->
+
+        can_step st' \/ at_value st'.
+
