@@ -17,7 +17,7 @@ tokenizer_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/bac
 # Load model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_save_path)
 tokenizer.pad_token = "</s>"
-for t in [4920, 441, 2178, 29889]:
+for t in [2087, 29885, 4430, 29889]:
     print(t, tokenizer.decode([t]))
 
 # print(tokenizer.decode([10456]))

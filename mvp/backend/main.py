@@ -134,7 +134,9 @@ async def generate_tactic_llemma_base(input_data: GenerateTacticsInput, addition
         "Content-Type": "application/json",
     }
 
-    # print(proof_step_generate_txt[-500:])
+    # print('-----------')
+    # print(proof_step_generate_txt)
+    # print('-----------')
     
     data = json.dumps({
         "inputs": proof_step_generate_txt,
@@ -168,18 +170,18 @@ async def generate_tactic_llemma_base(input_data: GenerateTacticsInput, addition
 
 # --- Test ---
 
-input_proof = """
-Lemma mult_is_zero : forall n m : nat, n * m = 0 <-> n = 0 \/ m = 0.
-Proof.
-  intros n m.
-  split.
-  - (* Forward direction: n * m = 0 implies n = 0 \/ m = 0 *)
-    intros H."""
+# input_proof = """
+# Lemma mult_is_zero : forall n m : nat, n * m = 0 <-> n = 0 \/ m = 0.
+# Proof.
+#   intros n m.
+#   split.
+#   - (* Forward direction: n * m = 0 implies n = 0 \/ m = 0 *)
+#     intros H."""
 
-@app.get("/run")
-async def run():
-    proposed = await generate(input_proof)
-    print(proposed)
-    voted = await vote(input_proof, proposed)
-    print(voted)
-    return voted
+# @app.get("/run")
+# async def run():
+#     proposed = await generate(input_proof)
+#     print(proposed)
+#     voted = await vote(input_proof, proposed)
+#     print(voted)
+#     return voted
