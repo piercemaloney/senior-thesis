@@ -1,6 +1,7 @@
 import requests, json
 import os
 from dotenv import load_dotenv
+import time
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -16,6 +17,10 @@ def query(prompt: str):
     response = requests.request("POST", API_URL, headers=headers, data=data)
     return response.json()
 
-output = query("(* Goal: )")
+output = query("Theorem test_theorem: forall (n : nat), n =")
 
-print(output)
+for _ in range(10):  # Loop to run the query 10 times
+    output = query("Theorem test_theorem: forall (n : nat), n =")
+    print(output)
+    time.sleep(1)
+  
