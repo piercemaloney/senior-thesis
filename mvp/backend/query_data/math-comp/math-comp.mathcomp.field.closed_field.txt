@@ -1,14 +1,11 @@
 
-
 Require Import mathcomp.ssreflect.ssreflect.
 (* mathcomp.ssreflect.ssreflect:
 From Coq Require Export ssreflect.
 Global Set SsrOldRewriteGoalsOrder.
 Global Set Asymmetric Patterns.
 Global Set Bullet Behavior "None". *)
-
 From mathcomp
-
 Require Import ssrfun ssrbool eqtype choice ssrnat seq fintype generic_quotient.
 (* eqtype:
 Require Import mathcomp.ssreflect.ssreflect.
@@ -5469,9 +5466,7 @@ Lemma eqquotP x y : reflect (x = y %[mod Q]) (e x y).
 End EqQuotTheory.
 
 Prenex Implicits eqquotE eqquotP. *)
-
 From mathcomp
-
 Require Import bigop ssralg poly polydiv matrix mxpoly countalg ring_quotient.
 (* bigop:
 Require Import mathcomp.ssreflect.ssreflect.
@@ -10889,6 +10884,1390 @@ Canonical pair_comUnitRingType (R1 R2 : comUnitRingType) :=
 
 Canonical pair_unitAlgType (R : comUnitRingType) (A1 A2 : unitAlgType R) :=
   Eval hnf in [unitAlgType R of A1 * A2]. *)
+(* poly:
+Require Import mathcomp.ssreflect.ssreflect.
+From mathcomp
+Require Import ssrbool ssrfun eqtype ssrnat seq div choice fintype.
+From mathcomp
+Require Import bigop ssralg countalg binomial tuple.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Import GRing.Theory.
+Local Open Scope ring_scope.
+
+Reserved Notation "{ 'poly' T }" (at level 0, format "{ 'poly'  T }").
+Reserved Notation "c %:P" (at level 2, format "c %:P").
+Reserved Notation "p ^:P" (at level 2, format "p ^:P").
+Reserved Notation "'X" (at level 0).
+Reserved Notation "''X^' n" (at level 3, n at level 2, format "''X^' n").
+Reserved Notation "\poly_ ( i < n ) E"
+  (at level 36, E at level 36, i, n at level 50,
+   format "\poly_ ( i  <  n )  E").
+Reserved Notation "p \Po q" (at level 50).
+Reserved Notation "p ^`N ( n )" (at level 8, format "p ^`N ( n )").
+Reserved Notation "n .-unity_root" (at level 2, format "n .-unity_root").
+Reserved Notation "n .-primitive_root"
+  (at level 2, format "n .-primitive_root").
+
+Local Notation simp := Monoid.simpm.
+
+Section Polynomial.
+
+Variable R : ringType.
+
+Record polynomial := Polynomial {polyseq :> seq R; _ : last 1 polyseq != 0}.
+
+Canonical polynomial_subType := Eval hnf in [subType for polyseq].
+Definition polynomial_eqMixin := Eval hnf in [eqMixin of polynomial by <:].
+Canonical polynomial_eqType := Eval hnf in EqType polynomial polynomial_eqMixin.
+Definition polynomial_choiceMixin := [choiceMixin of polynomial by <:].
+
+Definition poly_of of phant R := polynomial.
+Identity Coercion type_poly_of : poly_of >-> polynomial.
+
+Definition coefp_head h i (p : poly_of (Phant R)) := let: tt := h in p`_i.
+
+End Polynomial.
+
+Bind Scope ring_scope with poly_of.
+Bind Scope ring_scope with polynomial.
+Arguments polyseq {R} p%R.
+Arguments poly_inj {R} [p1%R p2%R] : rename.
+Arguments coefp_head {R} h i%N p%R.
+Notation "{ 'poly' T }" := (poly_of (Phant T)).
+Notation coefp i := (coefp_head tt i).
+
+Definition poly_countMixin (R : countRingType) :=
+  [countMixin of polynomial R by <:].
+Canonical polynomial_countType R := CountType _ (poly_countMixin R).
+Canonical poly_countType (R : countRingType) := [countType of {poly R}].
+
+Section PolynomialTheory.
+
+Variable R : ringType.
+Implicit Types (a b c x y z : R) (p q r d : {poly R}).
+
+Canonical poly_subType := Eval hnf in [subType of {poly R}].
+Canonical poly_eqType := Eval hnf in [eqType of {poly R}].
+Canonical poly_choiceType := Eval hnf in [choiceType of {poly R}].
+
+Definition lead_coef p := p`_(size p).-1.
+
+Definition poly_nil := @Polynomial R [::] (oner_neq0 R).
+Definition polyC c : {poly R} := insubd poly_nil [:: c].
+
+Local Notation "c %:P" := (polyC c).
+
+Lemma polyseqC c : c%:P = nseq (c != 0) c :> seq R.
+
+Lemma size_polyC c : size c%:P = (c != 0).
+
+Lemma coefC c i : c%:P`_i = if i == 0%N then c else 0.
+
+Lemma polyCK : cancel polyC (coefp 0).
+
+Lemma polyC_inj : injective polyC.
+
+Lemma lead_coefC c : lead_coef c%:P = c.
+
+Lemma polyP p q : nth 0 p =1 nth 0 q <-> p = q.
+
+Lemma size1_polyC p : size p <= 1 -> p = (p`_0)%:P.
+
+Definition cons_poly c p : {poly R} :=
+  if p is Polynomial ((_ :: _) as s) ns then
+    @Polynomial R (c :: s) ns
+  else c%:P.
+
+Lemma polyseq_cons c p :
+  cons_poly c p = (if ~~ nilp p then c :: p else c%:P) :> seq R.
+
+Lemma size_cons_poly c p :
+  size (cons_poly c p) = (if nilp p && (c == 0) then 0%N else (size p).+1).
+
+Lemma coef_cons c p i : (cons_poly c p)`_i = if i == 0%N then c else p`_i.-1.
+
+Definition Poly := foldr cons_poly 0%:P.
+
+Lemma PolyK c s : last c s != 0 -> Poly s = s :> seq R.
+
+Lemma polyseqK p : Poly p = p.
+
+Lemma size_Poly s : size (Poly s) <= size s.
+
+Lemma coef_Poly s i : (Poly s)`_i = s`_i.
+
+Definition poly_expanded_def n E := Poly (mkseq E n).
+Definition poly := locked_with poly_key poly_expanded_def.
+Canonical poly_unlockable := [unlockable fun poly].
+Local Notation "\poly_ ( i < n ) E" := (poly n (fun i : nat => E)).
+
+Lemma polyseq_poly n E :
+  E n.-1 != 0 -> \poly_(i < n) E i = mkseq [eta E] n :> seq R.
+
+Lemma size_poly n E : size (\poly_(i < n) E i) <= n.
+
+Lemma size_poly_eq n E : E n.-1 != 0 -> size (\poly_(i < n) E i) = n.
+
+Lemma coef_poly n E k : (\poly_(i < n) E i)`_k = (if k < n then E k else 0).
+
+Lemma lead_coef_poly n E :
+  n > 0 -> E n.-1 != 0 -> lead_coef (\poly_(i < n) E i) = E n.-1.
+
+Lemma coefK p : \poly_(i < size p) p`_i = p.
+
+Definition add_poly_def p q := \poly_(i < maxn (size p) (size q)) (p`_i + q`_i).
+Definition add_poly := locked_with add_poly_key add_poly_def.
+Canonical add_poly_unlockable := [unlockable fun add_poly].
+
+Definition opp_poly_def p := \poly_(i < size p) - p`_i.
+Definition opp_poly := locked_with opp_poly_key opp_poly_def.
+Canonical opp_poly_unlockable := [unlockable fun opp_poly].
+
+Fact coef_add_poly p q i : (add_poly p q)`_i = p`_i + q`_i.
+
+Fact coef_opp_poly p i : (opp_poly p)`_i = - p`_i.
+
+Fact add_polyA : associative add_poly.
+
+Fact add_polyC : commutative add_poly.
+
+Fact add_poly0 : left_id 0%:P add_poly.
+
+Fact add_polyN : left_inverse 0%:P opp_poly add_poly.
+
+Definition poly_zmodMixin :=
+  ZmodMixin add_polyA add_polyC add_poly0 add_polyN.
+
+Lemma polyseq0 : (0 : {poly R}) = [::] :> seq R.
+
+Lemma size_poly0 : size (0 : {poly R}) = 0%N.
+
+Lemma coef0 i : (0 : {poly R})`_i = 0.
+
+Lemma size_poly_eq0 p : (size p == 0%N) = (p == 0).
+
+Lemma size_poly_leq0 p : (size p <= 0) = (p == 0).
+
+Lemma size_poly_leq0P p : reflect (p = 0) (size p <= 0%N).
+
+Lemma size_poly_gt0 p : (0 < size p) = (p != 0).
+
+Lemma gt_size_poly_neq0 p n : (size p > n)%N -> p != 0.
+
+Lemma nil_poly p : nilp p = (p == 0).
+
+Lemma poly0Vpos p : {p = 0} + {size p > 0}.
+
+Lemma polySpred p : p != 0 -> size p = (size p).-1.+1.
+
+Lemma lead_coef_eq0 p : (lead_coef p == 0) = (p == 0).
+
+Lemma polyC_eq0 (c : R) : (c%:P == 0) = (c == 0).
+
+Lemma size_poly1P p : reflect (exists2 c, c != 0 & p = c%:P) (size p == 1%N).
+
+Lemma size_polyC_leq1 (c : R) : (size c%:P <= 1)%N.
+
+Lemma leq_sizeP p i : reflect (forall j, i <= j -> p`_j = 0) (size p <= i).
+
+Lemma coefD p q i : (p + q)`_i = p`_i + q`_i.
+
+Lemma coefN p i : (- p)`_i = - p`_i.
+
+Lemma coefB p q i : (p - q)`_i = p`_i - q`_i.
+
+Canonical coefp_additive i :=
+  Additive ((fun p => (coefB p)^~ i) : additive (coefp i)).
+
+Lemma coefMn p n i : (p *+ n)`_i = p`_i *+ n.
+
+Lemma coefMNn p n i : (p *- n)`_i = p`_i *- n.
+
+Lemma coef_sum I (r : seq I) (P : pred I) (F : I -> {poly R}) k :
+  (\sum_(i <- r | P i) F i)`_k = \sum_(i <- r | P i) (F i)`_k.
+
+Lemma polyC_add : {morph polyC : a b / a + b}.
+
+Lemma polyC_opp : {morph polyC : c / - c}.
+
+Lemma polyC_sub : {morph polyC : a b / a - b}.
+
+Canonical polyC_additive := Additive polyC_sub.
+
+Lemma polyC_muln n : {morph polyC : c / c *+ n}.
+
+Lemma size_opp p : size (- p) = size p.
+
+Lemma lead_coef_opp p : lead_coef (- p) = - lead_coef p.
+
+Lemma size_add p q : size (p + q) <= maxn (size p) (size q).
+
+Lemma size_addl p q : size p > size q -> size (p + q) = size p.
+
+Lemma size_sum I (r : seq I) (P : pred I) (F : I -> {poly R}) :
+  size (\sum_(i <- r | P i) F i) <= \max_(i <- r | P i) size (F i).
+
+Lemma lead_coefDl p q : size p > size q -> lead_coef (p + q) = lead_coef p.
+
+Lemma lead_coefDr p q : size q > size p -> lead_coef (p + q) = lead_coef q.
+
+Definition mul_poly_def p q :=
+  \poly_(i < (size p + size q).-1) (\sum_(j < i.+1) p`_j * q`_(i - j)).
+Definition mul_poly := locked_with mul_poly_key mul_poly_def.
+Canonical mul_poly_unlockable := [unlockable fun mul_poly].
+
+Fact coef_mul_poly p q i :
+  (mul_poly p q)`_i = \sum_(j < i.+1) p`_j * q`_(i - j)%N.
+
+Fact coef_mul_poly_rev p q i :
+  (mul_poly p q)`_i = \sum_(j < i.+1) p`_(i - j)%N * q`_j.
+
+Fact mul_polyA : associative mul_poly.
+
+Fact mul_1poly : left_id 1%:P mul_poly.
+
+Fact mul_poly1 : right_id 1%:P mul_poly.
+
+Fact mul_polyDl : left_distributive mul_poly +%R.
+
+Fact mul_polyDr : right_distributive mul_poly +%R.
+
+Fact poly1_neq0 : 1%:P != 0 :> {poly R}.
+
+Definition poly_ringMixin :=
+  RingMixin mul_polyA mul_1poly mul_poly1 mul_polyDl mul_polyDr poly1_neq0.
+
+Lemma polyseq1 : (1 : {poly R}) = [:: 1] :> seq R.
+
+Lemma size_poly1 : size (1 : {poly R}) = 1%N.
+
+Lemma coef1 i : (1 : {poly R})`_i = (i == 0%N)%:R.
+
+Lemma coefM p q i : (p * q)`_i = \sum_(j < i.+1) p`_j * q`_(i - j)%N.
+
+Lemma coefMr p q i : (p * q)`_i = \sum_(j < i.+1) p`_(i - j)%N * q`_j.
+
+Lemma size_mul_leq p q : size (p * q) <= (size p + size q).-1.
+
+Lemma mul_lead_coef p q :
+  lead_coef p * lead_coef q = (p * q)`_(size p + size q).-2.
+
+Lemma size_proper_mul p q :
+  lead_coef p * lead_coef q != 0 -> size (p * q) = (size p + size q).-1.
+
+Lemma lead_coef_proper_mul p q :
+  let c := lead_coef p * lead_coef q in c != 0 -> lead_coef (p * q) = c.
+
+Lemma size_prod_leq (I : finType) (P : pred I) (F : I -> {poly R}) :
+  size (\prod_(i | P i) F i) <= (\sum_(i | P i) size (F i)).+1 - #|P|.
+
+Lemma coefCM c p i : (c%:P * p)`_i = c * p`_i.
+
+Lemma coefMC c p i : (p * c%:P)`_i = p`_i * c.
+
+Lemma polyC_mul : {morph polyC : a b / a * b}.
+
+Fact polyC_multiplicative : multiplicative polyC.
+Canonical polyC_rmorphism := AddRMorphism polyC_multiplicative.
+
+Lemma polyC_exp n : {morph polyC : c / c ^+ n}.
+
+Lemma size_exp_leq p n : size (p ^+ n) <= ((size p).-1 * n).+1.
+
+Lemma size_Msign p n : size ((-1) ^+ n * p) = size p.
+
+Fact coefp0_multiplicative : multiplicative (coefp 0 : {poly R} -> R).
+
+Canonical coefp0_rmorphism := AddRMorphism coefp0_multiplicative.
+
+Definition scale_poly_def a (p : {poly R}) := \poly_(i < size p) (a * p`_i).
+Definition scale_poly := locked_with scale_poly_key scale_poly_def.
+Canonical scale_poly_unlockable := [unlockable fun scale_poly].
+
+Fact scale_polyE a p : scale_poly a p = a%:P * p.
+
+Fact scale_polyA a b p : scale_poly a (scale_poly b p) = scale_poly (a * b) p.
+
+Fact scale_1poly : left_id 1 scale_poly.
+
+Fact scale_polyDr a : {morph scale_poly a : p q / p + q}.
+
+Fact scale_polyDl p : {morph scale_poly^~ p : a b / a + b}.
+
+Fact scale_polyAl a p q : scale_poly a (p * q) = scale_poly a p * q.
+
+Definition poly_lmodMixin :=
+  LmodMixin scale_polyA scale_1poly scale_polyDr scale_polyDl.
+
+Canonical poly_lmodType :=
+  Eval hnf in LmodType R {poly R} poly_lmodMixin.
+Canonical polynomial_lmodType :=
+  Eval hnf in LmodType R (polynomial R) poly_lmodMixin.
+Canonical poly_lalgType :=
+  Eval hnf in LalgType R {poly R} scale_polyAl.
+Canonical polynomial_lalgType :=
+  Eval hnf in LalgType R (polynomial R) scale_polyAl.
+
+Lemma mul_polyC a p : a%:P * p = a *: p.
+
+Lemma alg_polyC a : a%:A = a%:P :> {poly R}.
+
+Lemma coefZ a p i : (a *: p)`_i = a * p`_i.
+
+Lemma size_scale_leq a p : size (a *: p) <= size p.
+
+Canonical coefp_linear i : {scalar {poly R}} :=
+  AddLinear ((fun a => (coefZ a) ^~ i) : scalable_for *%R (coefp i)).
+Canonical coefp0_lrmorphism := [lrmorphism of coefp 0].
+
+Definition polyX_def := Poly [:: 0; 1].
+Definition polyX : {poly R} := locked_with polyX_key polyX_def.
+Canonical polyX_unlockable := [unlockable of polyX].
+Local Notation "'X" := polyX.
+
+Lemma polyseqX : 'X = [:: 0; 1] :> seq R.
+
+Lemma polyX_eq0 : ('X == 0) = false.
+
+Lemma coefX i : 'X`_i = (i == 1%N)%:R.
+
+Lemma lead_coefX : lead_coef 'X = 1.
+
+Lemma commr_polyX p : GRing.comm p 'X.
+
+Lemma coefMX p i : (p * 'X)`_i = (if (i == 0)%N then 0 else p`_i.-1).
+
+Lemma coefXM p i : ('X * p)`_i = (if (i == 0)%N then 0 else p`_i.-1).
+
+Lemma cons_poly_def p a : cons_poly a p = p * 'X + a%:P.
+
+Lemma poly_ind (K : {poly R} -> Type) :
+  K 0 -> (forall p c, K p -> K (p * 'X + c%:P)) -> (forall p, K p).
+
+Lemma polyseqXsubC a : 'X - a%:P = [:: - a; 1] :> seq R.
+
+Lemma size_XsubC a : size ('X - a%:P) = 2%N.
+
+Lemma size_XaddC b : size ('X + b%:P) = 2.
+
+Lemma lead_coefXsubC a : lead_coef ('X - a%:P) = 1.
+
+Lemma polyXsubC_eq0 a : ('X - a%:P == 0) = false.
+
+Lemma size_MXaddC p c :
+  size (p * 'X + c%:P) = (if (p == 0) && (c == 0) then 0%N else (size p).+1).
+
+Lemma polyseqMX p : p != 0 -> p * 'X = 0 :: p :> seq R.
+
+Lemma size_mulX p : p != 0 -> size (p * 'X) = (size p).+1.
+
+Lemma lead_coefMX p : lead_coef (p * 'X) = lead_coef p.
+
+Lemma size_XmulC a : a != 0 -> size ('X * a%:P) = 2.
+
+Local Notation "''X^' n" := ('X ^+ n).
+
+Lemma coefXn n i : 'X^n`_i = (i == n)%:R.
+
+Lemma polyseqXn n : 'X^n = rcons (nseq n 0) 1 :> seq R.
+
+Lemma size_polyXn n : size 'X^n = n.+1.
+
+Lemma commr_polyXn p n : GRing.comm p 'X^n.
+
+Lemma lead_coefXn n : lead_coef 'X^n = 1.
+
+Lemma polyseqMXn n p : p != 0 -> p * 'X^n = ncons n 0 p :> seq R.
+
+Lemma coefMXn n p i : (p * 'X^n)`_i = if i < n then 0 else p`_(i - n).
+
+Lemma coefXnM n p i : ('X^n * p)`_i = if i < n then 0 else p`_(i - n).
+
+Lemma poly_def n E : \poly_(i < n) E i = \sum_(i < n) E i *: 'X^i.
+
+Definition monic := [qualify p | lead_coef p == 1].
+Fact monic_key : pred_key monic. Proof. by []. Qed.
+Lemma monicP p : reflect (lead_coef p = 1) (p \is monic).
+Lemma monicX : 'X \is monic. Proof. exact/eqP/lead_coefX. Qed.
+
+Lemma monic_neq0 p : p \is monic -> p != 0.
+
+Lemma lead_coef_monicM p q : p \is monic -> lead_coef (p * q) = lead_coef q.
+
+Lemma lead_coef_Mmonic p q : q \is monic -> lead_coef (p * q) = lead_coef p.
+
+Lemma size_monicM p q :
+  p \is monic -> q != 0 -> size (p * q) = (size p + size q).-1.
+
+Lemma size_Mmonic p q :
+  p != 0 -> q \is monic -> size (p * q) = (size p + size q).-1.
+
+Lemma monicMl p q : p \is monic -> (p * q \is monic) = (q \is monic).
+
+Lemma monicMr p q : q \is monic -> (p * q \is monic) = (p \is monic).
+
+Fact monic_mulr_closed : mulr_closed monic.
+Canonical monic_mulrPred := MulrPred monic_mulr_closed.
+
+Lemma monic_exp p n : p \is monic -> p ^+ n \is monic.
+
+Lemma monic_prod I rI (P : pred I) (F : I -> {poly R}):
+  (forall i, P i -> F i \is monic) -> \prod_(i <- rI | P i) F i \is monic.
+
+Lemma monicXsubC c : 'X - c%:P \is monic.
+
+Lemma monic_prod_XsubC I rI (P : pred I) (F : I -> R) :
+  \prod_(i <- rI | P i) ('X - (F i)%:P) \is monic.
+
+Lemma size_prod_XsubC I rI (F : I -> R) :
+  size (\prod_(i <- rI) ('X - (F i)%:P)) = (size rI).+1.
+
+Lemma size_exp_XsubC n a : size (('X - a%:P) ^+ n) = n.+1.
+
+Lemma lreg_lead p : GRing.lreg (lead_coef p) -> GRing.lreg p.
+
+Lemma rreg_lead p : GRing.rreg (lead_coef p) -> GRing.rreg p.
+
+Lemma lreg_lead0 p : GRing.lreg (lead_coef p) -> p != 0.
+
+Lemma rreg_lead0 p : GRing.rreg (lead_coef p) -> p != 0.
+
+Lemma lreg_size c p : GRing.lreg c -> size (c *: p) = size p.
+
+Lemma lreg_polyZ_eq0 c p : GRing.lreg c -> (c *: p == 0) = (p == 0).
+
+Lemma lead_coef_lreg c p :
+  GRing.lreg c -> lead_coef (c *: p) = c * lead_coef p.
+
+Lemma rreg_size c p : GRing.rreg c -> size (p * c%:P) =  size p.
+
+Lemma rreg_polyMC_eq0 c p : GRing.rreg c -> (p * c%:P == 0) = (p == 0).
+
+Lemma rreg_div0 q r d :
+    GRing.rreg (lead_coef d) -> size r < size d ->
+
+Lemma monic_comreg p :
+  p \is monic -> GRing.comm p (lead_coef p)%:P /\ GRing.rreg (lead_coef p).
+
+Implicit Types s rs : seq R.
+Fixpoint horner_rec s x := if s is a :: s' then horner_rec s' x * x + a else 0.
+Definition horner p := horner_rec p.
+
+Local Notation "p .[ x ]" := (horner p x) : ring_scope.
+
+Lemma horner0 x : (0 : {poly R}).[x] = 0.
+
+Lemma hornerC c x : (c%:P).[x] = c.
+
+Lemma hornerX x : 'X.[x] = x.
+
+Lemma horner_cons p c x : (cons_poly c p).[x] = p.[x] * x + c.
+
+Lemma horner_coef0 p : p.[0] = p`_0.
+
+Lemma hornerMXaddC p c x : (p * 'X + c%:P).[x] = p.[x] * x + c.
+
+Lemma hornerMX p x : (p * 'X).[x] = p.[x] * x.
+
+Lemma horner_Poly s x : (Poly s).[x] = horner_rec s x.
+
+Lemma horner_coef p x : p.[x] = \sum_(i < size p) p`_i * x ^+ i.
+
+Lemma horner_coef_wide n p x :
+  size p <= n -> p.[x] = \sum_(i < n) p`_i * x ^+ i.
+
+Lemma horner_poly n E x : (\poly_(i < n) E i).[x] = \sum_(i < n) E i * x ^+ i.
+
+Lemma hornerN p x : (- p).[x] = - p.[x].
+
+Lemma hornerD p q x : (p + q).[x] = p.[x] + q.[x].
+
+Lemma hornerXsubC a x : ('X - a%:P).[x] = x - a.
+
+Lemma horner_sum I (r : seq I) (P : pred I) F x :
+  (\sum_(i <- r | P i) F i).[x] = \sum_(i <- r | P i) (F i).[x].
+
+Lemma hornerCM a p x : (a%:P * p).[x] = a * p.[x].
+
+Lemma hornerZ c p x : (c *: p).[x] = c * p.[x].
+
+Lemma hornerMn n p x : (p *+ n).[x] = p.[x] *+ n.
+
+Definition comm_coef p x := forall i, p`_i * x = x * p`_i.
+
+Definition comm_poly p x := x * p.[x] = p.[x] * x.
+
+Lemma comm_coef_poly p x : comm_coef p x -> comm_poly p x.
+
+Lemma comm_poly0 x : comm_poly 0 x.
+
+Lemma comm_poly1 x : comm_poly 1 x.
+
+Lemma comm_polyX x : comm_poly 'X x.
+
+Lemma hornerM_comm p q x : comm_poly q x -> (p * q).[x] = p.[x] * q.[x].
+
+Lemma horner_exp_comm p x n : comm_poly p x -> (p ^+ n).[x] = p.[x] ^+ n.
+
+Lemma hornerXn x n : ('X^n).[x] = x ^+ n.
+
+Definition hornerE_comm :=
+  (hornerD, hornerN, hornerX, hornerC, horner_cons,
+   simp, hornerCM, hornerZ,
+   (fun p x => hornerM_comm p (comm_polyX x))).
+
+Definition root p : pred R := fun x => p.[x] == 0.
+
+Lemma mem_root p x : x \in root p = (p.[x] == 0).
+
+Lemma rootE p x : (root p x = (p.[x] == 0)) * ((x \in root p) = (p.[x] == 0)).
+
+Lemma rootP p x : reflect (p.[x] = 0) (root p x).
+
+Lemma rootPt p x : reflect (p.[x] == 0) (root p x).
+
+Lemma rootPf p x : reflect ((p.[x] == 0) = false) (~~ root p x).
+
+Lemma rootC a x : root a%:P x = (a == 0).
+
+Lemma root0 x : root 0 x.
+
+Lemma root1 x : ~~ root 1 x.
+
+Lemma rootX x : root 'X x = (x == 0).
+
+Lemma rootN p x : root (- p) x = root p x.
+
+Lemma root_size_gt1 a p : p != 0 -> root p a -> 1 < size p.
+
+Lemma root_XsubC a x : root ('X - a%:P) x = (x == a).
+
+Lemma root_XaddC a x : root ('X + a%:P) x = (x == - a).
+
+Theorem factor_theorem p a : reflect (exists q, p = q * ('X - a%:P)) (root p a).
+
+Lemma multiplicity_XsubC p a :
+  {m | exists2 q, (p != 0) ==> ~~ root q a & p = q * ('X - a%:P) ^+ m}.
+
+Lemma size_Xn_sub_1 n : n > 0 -> size ('X^n - 1 : {poly R}) = n.+1.
+
+Lemma monic_Xn_sub_1 n : n > 0 -> 'X^n - 1 \is monic.
+
+Definition root_of_unity n : pred R := root ('X^n - 1).
+Local Notation "n .-unity_root" := (root_of_unity n) : ring_scope.
+
+Lemma unity_rootE n z : n.-unity_root z = (z ^+ n == 1).
+
+Lemma unity_rootP n z : reflect (z ^+ n = 1) (n.-unity_root z).
+
+Definition primitive_root_of_unity n z :=
+  (n > 0) && [forall i : 'I_n, i.+1.-unity_root z == (i.+1 == n)].
+Local Notation "n .-primitive_root" := (primitive_root_of_unity n) : ring_scope.
+
+Lemma prim_order_exists n z :
+  n > 0 -> z ^+ n = 1 -> {m | m.-primitive_root z & (m %| n)}.
+Let n_gt0 := prim_order_gt0.
+
+Lemma prim_expr_order : z ^+ n = 1.
+
+Lemma prim_expr_mod i : z ^+ (i %% n) = z ^+ i.
+
+Lemma prim_order_dvd i : (n %| i) = (z ^+ i == 1).
+
+Lemma eq_prim_root_expr i j : (z ^+ i == z ^+ j) = (i == j %[mod n]).
+
+Lemma exp_prim_root k : (n %/ gcdn k n).-primitive_root (z ^+ k).
+
+Lemma dvdn_prim_root m : (m %| n)%N -> m.-primitive_root (z ^+ (n %/ m)).
+
+End OnePrimitive.
+
+Lemma prim_root_exp_coprime n z k :
+  n.-primitive_root z -> n.-primitive_root (z ^+ k) = coprime k n.
+
+Definition polyOver (S : pred_class) :=
+  [qualify a p : {poly R} | all (mem S) p].
+Canonical polyOver_keyed S := KeyedQualifier (polyOver_key S).
+
+Lemma polyOverS (S1 S2 : pred_class) :
+  {subset S1 <= S2} -> {subset polyOver S1 <= polyOver S2}.
+
+Lemma polyOver0 S : 0 \is a polyOver S.
+
+Lemma polyOver_poly (S : pred_class) n E :
+  (forall i, i < n -> E i \in S) -> \poly_(i < n) E i \is a polyOver S.
+
+Section PolyOverAdd.
+
+Variables (S : predPredType R) (addS : addrPred S) (kS : keyed_pred addS).
+
+Lemma polyOverP {p} : reflect (forall i, p`_i \in kS) (p \in polyOver kS).
+
+Lemma polyOverC c : (c%:P \in polyOver kS) = (c \in kS).
+
+Fact polyOver_addr_closed : addr_closed (polyOver kS).
+Canonical polyOver_addrPred := AddrPred polyOver_addr_closed.
+
+End PolyOverAdd.
+
+Fact polyOverNr S (addS : zmodPred S) (kS : keyed_pred addS) :
+  oppr_closed (polyOver kS).
+Canonical polyOver_opprPred S addS kS := OpprPred (@polyOverNr S addS kS).
+Canonical polyOver_zmodPred S addS kS := ZmodPred (@polyOverNr S addS kS).
+
+Section PolyOverSemiring.
+
+Context (S : pred_class) (ringS : @semiringPred R S) (kS : keyed_pred ringS).
+
+Fact polyOver_mulr_closed : mulr_closed (polyOver kS).
+Canonical polyOver_mulrPred := MulrPred polyOver_mulr_closed.
+Canonical polyOver_semiringPred := SemiringPred polyOver_mulr_closed.
+
+Lemma polyOverZ : {in kS & polyOver kS, forall c p, c *: p \is a polyOver kS}.
+
+Lemma polyOverX : 'X \in polyOver kS.
+
+Lemma rpred_horner : {in polyOver kS & kS, forall p x, p.[x] \in kS}.
+
+End PolyOverSemiring.
+
+Section PolyOverRing.
+
+Context (S : pred_class) (ringS : @subringPred R S) (kS : keyed_pred ringS).
+Canonical polyOver_smulrPred := SmulrPred (polyOver_mulr_closed kS).
+Canonical polyOver_subringPred := SubringPred (polyOver_mulr_closed kS).
+
+Lemma polyOverXsubC c : ('X - c%:P \in polyOver kS) = (c \in kS).
+
+End PolyOverRing.
+
+Definition deriv p := \poly_(i < (size p).-1) (p`_i.+1 *+ i.+1).
+
+Local Notation "a ^` ()" := (deriv a).
+
+Lemma coef_deriv p i : p^`()`_i = p`_i.+1 *+ i.+1.
+
+Lemma polyOver_deriv S (ringS : semiringPred S) (kS : keyed_pred ringS) :
+  {in polyOver kS, forall p, p^`() \is a polyOver kS}.
+
+Lemma derivC c : c%:P^`() = 0.
+
+Lemma derivX : ('X)^`() = 1.
+
+Lemma derivXn n : 'X^n^`() = 'X^n.-1 *+ n.
+
+Fact deriv_is_linear : linear deriv.
+Canonical deriv_additive := Additive deriv_is_linear.
+Canonical deriv_linear := Linear deriv_is_linear.
+
+Lemma deriv0 : 0^`() = 0.
+
+Lemma derivD : {morph deriv : p q / p + q}.
+
+Lemma derivN : {morph deriv : p / - p}.
+
+Lemma derivB : {morph deriv : p q / p - q}.
+
+Lemma derivXsubC (a : R) : ('X - a%:P)^`() = 1.
+
+Lemma derivMn n p : (p *+ n)^`() = p^`() *+ n.
+
+Lemma derivMNn n p : (p *- n)^`() = p^`() *- n.
+
+Lemma derivZ c p : (c *: p)^`() = c *: p^`().
+
+Lemma deriv_mulC c p : (c%:P * p)^`() = c%:P * p^`().
+
+Lemma derivMXaddC p c : (p * 'X + c%:P)^`() = p + p^`() * 'X.
+
+Lemma derivM p q : (p * q)^`() = p^`() * q + p * q^`().
+
+Definition derivE := Eval lazy beta delta [morphism_2 morphism_1] in
+  (derivZ, deriv_mulC, derivC, derivX, derivMXaddC, derivXsubC, derivM, derivB,
+   derivD, derivN, derivXn, derivM, derivMn).
+
+Definition derivn n p := iter n deriv p.
+
+Local Notation "a ^` ( n )" := (derivn n a) : ring_scope.
+
+Lemma derivn0 p : p^`(0) = p.
+
+Lemma derivn1 p : p^`(1) = p^`().
+
+Lemma derivnS p n : p^`(n.+1) = p^`(n)^`().
+
+Lemma derivSn p n : p^`(n.+1) = p^`()^`(n).
+
+Lemma coef_derivn n p i : p^`(n)`_i = p`_(n + i) *+ (n + i) ^_ n.
+
+Lemma polyOver_derivn S (ringS : semiringPred S) (kS : keyed_pred ringS) :
+  {in polyOver kS, forall p n, p^`(n) \is a polyOver kS}.
+
+Fact derivn_is_linear n : linear (derivn n).
+Canonical derivn_additive n :=  Additive (derivn_is_linear n).
+Canonical derivn_linear n :=  Linear (derivn_is_linear n).
+
+Lemma derivnC c n : c%:P^`(n) = if n == 0%N then c%:P else 0.
+
+Lemma derivnD n : {morph derivn n : p q / p + q}.
+
+Lemma derivn_sub n : {morph derivn n : p q / p - q}.
+
+Lemma derivnMn n m p : (p *+ m)^`(n) = p^`(n) *+ m.
+
+Lemma derivnMNn n m p : (p *- m)^`(n) = p^`(n) *- m.
+
+Lemma derivnN n : {morph derivn n : p / - p}.
+
+Lemma derivnZ n : scalable (derivn n).
+
+Lemma derivnXn m n : 'X^m^`(n) = 'X^(m - n) *+ m ^_ n.
+
+Lemma derivnMXaddC n p c :
+  (p * 'X + c%:P)^`(n.+1) = p^`(n) *+ n.+1  + p^`(n.+1) * 'X.
+
+Lemma derivn_poly0 p n : size p <= n -> p^`(n) = 0.
+
+Lemma lt_size_deriv (p : {poly R}) : p != 0 -> size p^`() < size p.
+
+Definition nderivn n p := \poly_(i < size p - n) (p`_(n + i) *+  'C(n + i, n)).
+
+Local Notation "a ^`N ( n )" := (nderivn n a) : ring_scope.
+
+Lemma coef_nderivn n p i : p^`N(n)`_i = p`_(n + i) *+  'C(n + i, n).
+
+Lemma nderivn_def n p : p^`(n) = p^`N(n) *+ n`!.
+
+Lemma polyOver_nderivn S (ringS : semiringPred S) (kS : keyed_pred ringS) :
+  {in polyOver kS, forall p n, p^`N(n) \in polyOver kS}.
+
+Lemma nderivn0 p : p^`N(0) = p.
+
+Lemma nderivn1 p : p^`N(1) = p^`().
+
+Lemma nderivnC c n : (c%:P)^`N(n) = if n == 0%N then c%:P else 0.
+
+Lemma nderivnXn m n : 'X^m^`N(n) = 'X^(m - n) *+ 'C(m, n).
+
+Fact nderivn_is_linear n : linear (nderivn n).
+Canonical nderivn_additive n := Additive(nderivn_is_linear n).
+Canonical nderivn_linear n := Linear (nderivn_is_linear n).
+
+Lemma nderivnD n : {morph nderivn n : p q / p + q}.
+
+Lemma nderivnB n : {morph nderivn n : p q / p - q}.
+
+Lemma nderivnMn n m p : (p *+ m)^`N(n) = p^`N(n) *+ m.
+
+Lemma nderivnMNn n m p : (p *- m)^`N(n) = p^`N(n) *- m.
+
+Lemma nderivnN n : {morph nderivn n : p / - p}.
+
+Lemma nderivnZ n : scalable (nderivn n).
+
+Lemma nderivnMXaddC n p c :
+  (p * 'X + c%:P)^`N(n.+1) = p^`N(n) + p^`N(n.+1) * 'X.
+
+Lemma nderivn_poly0 p n : size p <= n -> p^`N(n) = 0.
+
+Lemma nderiv_taylor p x h :
+  GRing.comm x h -> p.[x + h] = \sum_(i < size p) p^`N(i).[x] * h ^+ i.
+
+Lemma nderiv_taylor_wide n p x h :
+    GRing.comm x h -> size p <= n ->
+
+End PolynomialTheory.
+
+Prenex Implicits polyC polyCK Poly polyseqK lead_coef root horner polyOver.
+Arguments monic {R}.
+Notation "\poly_ ( i < n ) E" := (poly n (fun i => E)) : ring_scope.
+Notation "c %:P" := (polyC c) : ring_scope.
+Notation "'X" := (polyX _) : ring_scope.
+Notation "''X^' n" := ('X ^+ n) : ring_scope.
+Notation "p .[ x ]" := (horner p x) : ring_scope.
+Notation "n .-unity_root" := (root_of_unity n) : ring_scope.
+Notation "n .-primitive_root" := (primitive_root_of_unity n) : ring_scope.
+Notation "a ^` ()" := (deriv a) : ring_scope.
+Notation "a ^` ( n )" := (derivn n a) : ring_scope.
+Notation "a ^`N ( n )" := (nderivn n a) : ring_scope.
+
+Arguments monicP {R p}.
+Arguments rootP {R p x}.
+Arguments rootPf {R p x}.
+Arguments rootPt {R p x}.
+Arguments unity_rootP {R n z}.
+Arguments polyOverP {R S0 addS kS p}.
+Arguments polyC_inj {R} [x1 x2] eq_x12P.
+
+Canonical polynomial_countZmodType (R : countRingType) :=
+  [countZmodType of polynomial R].
+Canonical poly_countZmodType (R : countRingType) := [countZmodType of {poly R}].
+Canonical polynomial_countRingType (R : countRingType) :=
+  [countRingType of polynomial R].
+Canonical poly_countRingType (R : countRingType) := [countRingType of {poly R}].
+
+Section MapPoly.
+
+Section Definitions.
+
+Variables (aR rR : ringType) (f : aR -> rR).
+
+Definition map_poly (p : {poly aR}) := \poly_(i < size p) f p`_i.
+
+Lemma map_polyE p : map_poly p = Poly (map f p).
+
+Definition commr_rmorph u := forall x, GRing.comm u (f x).
+
+Definition horner_morph u of commr_rmorph u := fun p => (map_poly p).[u].
+
+End Definitions.
+
+Variables aR rR : ringType.
+
+Section Combinatorial.
+
+Variables (iR : ringType) (f : aR -> rR).
+Local Notation "p ^f" := (map_poly f p) : ring_scope.
+
+Lemma map_poly0 : 0^f = 0.
+
+Lemma eq_map_poly (g : aR -> rR) : f =1 g -> map_poly f =1 map_poly g.
+
+Lemma map_poly_id g (p : {poly iR}) :
+  {in (p : seq iR), g =1 id} -> map_poly g p = p.
+
+Lemma coef_map_id0 p i : f 0 = 0 -> (p^f)`_i = f p`_i.
+
+Lemma map_Poly_id0 s : f 0 = 0 -> (Poly s)^f = Poly (map f s).
+
+Lemma map_poly_comp_id0 (g : iR -> aR) p :
+  f 0 = 0 -> map_poly (f \o g) p = (map_poly g p)^f.
+
+Lemma size_map_poly_id0 p : f (lead_coef p) != 0 -> size p^f = size p.
+
+Lemma map_poly_eq0_id0 p : f (lead_coef p) != 0 -> (p^f == 0) = (p == 0).
+
+Lemma lead_coef_map_id0 p :
+  f 0 = 0 -> f (lead_coef p) != 0 -> lead_coef p^f = f (lead_coef p).
+
+Hypotheses (inj_f : injective f) (f_0 : f 0 = 0).
+
+Lemma size_map_inj_poly p : size p^f = size p.
+
+Lemma map_inj_poly : injective (map_poly f).
+
+Lemma lead_coef_map_inj p : lead_coef p^f = f (lead_coef p).
+
+End Combinatorial.
+
+Lemma map_polyK (f : aR -> rR) g :
+  cancel g f -> f 0 = 0 -> cancel (map_poly g) (map_poly f).
+
+Section Additive.
+
+Variables (iR : ringType) (f : {additive aR -> rR}).
+
+Local Notation "p ^f" := (map_poly (GRing.Additive.apply f) p) : ring_scope.
+
+Lemma coef_map p i : p^f`_i = f p`_i.
+
+Lemma map_Poly s : (Poly s)^f = Poly (map f s).
+
+Lemma map_poly_comp (g : iR -> aR) p :
+  map_poly (f \o g) p = map_poly f (map_poly g p).
+
+Fact map_poly_is_additive : additive (map_poly f).
+Canonical map_poly_additive := Additive map_poly_is_additive.
+
+Lemma map_polyC a : (a%:P)^f = (f a)%:P.
+
+Lemma lead_coef_map_eq p :
+  f (lead_coef p) != 0 -> lead_coef p^f = f (lead_coef p).
+
+End Additive.
+
+Variable f : {rmorphism aR -> rR}.
+Implicit Types p : {poly aR}.
+
+Local Notation "p ^f" := (map_poly (GRing.RMorphism.apply f) p) : ring_scope.
+
+Fact map_poly_is_rmorphism : rmorphism (map_poly f).
+Canonical map_poly_rmorphism := RMorphism map_poly_is_rmorphism.
+
+Lemma map_polyZ c p : (c *: p)^f = f c *: p^f.
+Canonical map_poly_linear :=
+  AddLinear (map_polyZ : scalable_for (f \; *:%R) (map_poly f)).
+Canonical map_poly_lrmorphism := [lrmorphism of map_poly f].
+
+Lemma map_polyX : ('X)^f = 'X.
+
+Lemma map_polyXn n : ('X^n)^f = 'X^n.
+
+Lemma monic_map p : p \is monic -> p^f \is monic.
+
+Lemma horner_map p x : p^f.[f x] = f p.[x].
+
+Lemma map_comm_poly p x : comm_poly p x -> comm_poly p^f (f x).
+
+Lemma map_comm_coef p x : comm_coef p x -> comm_coef p^f (f x).
+
+Lemma rmorph_root p x : root p x -> root p^f (f x).
+
+Lemma rmorph_unity_root n z : n.-unity_root z -> n.-unity_root (f z).
+
+Section HornerMorph.
+
+Variable u : rR.
+Hypothesis cfu : commr_rmorph f u.
+
+Lemma horner_morphC a : horner_morph cfu a%:P = f a.
+
+Lemma horner_morphX : horner_morph cfu 'X = u.
+
+Fact horner_is_lrmorphism : lrmorphism_for (f \; *%R) (horner_morph cfu).
+Canonical horner_additive := Additive horner_is_lrmorphism.
+Canonical horner_rmorphism := RMorphism horner_is_lrmorphism.
+Canonical horner_linear := AddLinear horner_is_lrmorphism.
+Canonical horner_lrmorphism := [lrmorphism of horner_morph cfu].
+
+End HornerMorph.
+
+Lemma deriv_map p : p^f^`() = (p^`())^f.
+
+Lemma derivn_map p n : p^f^`(n) = (p^`(n))^f.
+
+Lemma nderivn_map p n : p^f^`N(n) = (p^`N(n))^f.
+
+End MapPoly.
+
+Section MorphPoly.
+
+Variable (aR rR : ringType) (pf : {rmorphism {poly aR} -> rR}).
+
+Lemma poly_morphX_comm : commr_rmorph (pf \o polyC) (pf 'X).
+
+Lemma poly_initial : pf =1 horner_morph poly_morphX_comm.
+
+End MorphPoly.
+
+Notation "p ^:P" := (map_poly polyC p) : ring_scope.
+
+Section PolyCompose.
+
+Variable R : ringType.
+Implicit Types p q : {poly R}.
+
+Definition comp_poly q p := p^:P.[q].
+
+Local Notation "p \Po q" := (comp_poly q p) : ring_scope.
+
+Lemma size_map_polyC p : size p^:P = size p.
+
+Lemma map_polyC_eq0 p : (p^:P == 0) = (p == 0).
+
+Lemma root_polyC p x : root p^:P x%:P = root p x.
+
+Lemma comp_polyE p q : p \Po q = \sum_(i < size p) p`_i *: q^+i.
+
+Lemma coef_comp_poly p q n :
+  (p \Po q)`_n = \sum_(i < size p) p`_i * (q ^+ i)`_n.
+
+Lemma polyOver_comp S (ringS : semiringPred S) (kS : keyed_pred ringS) :
+  {in polyOver kS &, forall p q, p \Po q \in polyOver kS}.
+
+Lemma comp_polyCr p c : p \Po c%:P = p.[c]%:P.
+
+Lemma comp_poly0r p : p \Po 0 = (p`_0)%:P.
+
+Lemma comp_polyC c p : c%:P \Po p = c%:P.
+
+Fact comp_poly_is_linear p : linear (comp_poly p).
+Canonical comp_poly_additive p := Additive (comp_poly_is_linear p).
+Canonical comp_poly_linear p := Linear (comp_poly_is_linear p).
+
+Lemma comp_poly0 p : 0 \Po p = 0.
+
+Lemma comp_polyD p q r : (p + q) \Po r = (p \Po r) + (q \Po r).
+
+Lemma comp_polyB p q r : (p - q) \Po r = (p \Po r) - (q \Po r).
+
+Lemma comp_polyZ c p q : (c *: p) \Po q = c *: (p \Po q).
+
+Lemma comp_polyXr p : p \Po 'X = p.
+
+Lemma comp_polyX p : 'X \Po p = p.
+
+Lemma comp_poly_MXaddC c p q : (p * 'X + c%:P) \Po q = (p \Po q) * q + c%:P.
+
+Lemma comp_polyXaddC_K p z : (p \Po ('X + z%:P)) \Po ('X - z%:P) = p.
+
+Lemma size_comp_poly_leq p q :
+  size (p \Po q) <= ((size p).-1 * (size q).-1).+1.
+
+End PolyCompose.
+
+Notation "p \Po q" := (comp_poly q p) : ring_scope.
+
+Lemma map_comp_poly (aR rR : ringType) (f : {rmorphism aR -> rR}) p q :
+  map_poly f (p \Po q) = map_poly f p \Po map_poly f q.
+
+Section PolynomialComRing.
+
+Variable R : comRingType.
+Implicit Types p q : {poly R}.
+
+Fact poly_mul_comm p q : p * q = q * p.
+
+Canonical poly_comRingType := Eval hnf in ComRingType {poly R} poly_mul_comm.
+Canonical polynomial_comRingType :=
+  Eval hnf in ComRingType (polynomial R) poly_mul_comm.
+Canonical poly_algType := Eval hnf in CommAlgType R {poly R}.
+Canonical polynomial_algType :=
+  Eval hnf in [algType R of polynomial R for poly_algType].
+
+Lemma hornerM p q x : (p * q).[x] = p.[x] * q.[x].
+
+Lemma horner_exp p x n : (p ^+ n).[x] = p.[x] ^+ n.
+
+Lemma horner_prod I r (P : pred I) (F : I -> {poly R}) x :
+  (\prod_(i <- r | P i) F i).[x] = \prod_(i <- r | P i) (F i).[x].
+
+Definition hornerE :=
+  (hornerD, hornerN, hornerX, hornerC, horner_cons,
+   simp, hornerCM, hornerZ, hornerM).
+
+Definition horner_eval (x : R) := horner^~ x.
+
+Fact horner_eval_is_lrmorphism x : lrmorphism_for *%R (horner_eval x).
+Canonical horner_eval_additive x := Additive (horner_eval_is_lrmorphism x).
+Canonical horner_eval_rmorphism x := RMorphism (horner_eval_is_lrmorphism x).
+Canonical horner_eval_linear x := AddLinear (horner_eval_is_lrmorphism x).
+Canonical horner_eval_lrmorphism x := [lrmorphism of horner_eval x].
+
+Fact comp_poly_multiplicative q : multiplicative (comp_poly q).
+Canonical comp_poly_rmorphism q := AddRMorphism (comp_poly_multiplicative q).
+Canonical comp_poly_lrmorphism q := [lrmorphism of comp_poly q].
+
+Lemma comp_polyM p q r : (p * q) \Po r = (p \Po r) * (q \Po r).
+
+Lemma comp_polyA p q r : p \Po (q \Po r) = (p \Po q) \Po r.
+
+Lemma horner_comp p q x : (p \Po q).[x] = p.[q.[x]].
+
+Lemma root_comp p q x : root (p \Po q) x = root p (q.[x]).
+
+Lemma deriv_comp p q : (p \Po q) ^`() = (p ^`() \Po q) * q^`().
+
+Lemma deriv_exp p n : (p ^+ n)^`() = p^`() * p ^+ n.-1 *+ n.
+
+Definition derivCE := (derivE, deriv_exp).
+
+End PolynomialComRing.
+
+Canonical polynomial_countComRingType (R : countComRingType) :=
+  [countComRingType of polynomial R].
+Canonical poly_countComRingType (R : countComRingType) :=
+  [countComRingType of {poly R}].
+
+Section PolynomialIdomain.
+
+Variable R : idomainType.
+
+Implicit Types (a b x y : R) (p q r m : {poly R}).
+
+Lemma size_mul p q : p != 0 -> q != 0 -> size (p * q) = (size p + size q).-1.
+
+Fact poly_idomainAxiom p q : p * q = 0 -> (p == 0) || (q == 0).
+
+Definition poly_unit : pred {poly R} :=
+  fun p => (size p == 1%N) && (p`_0 \in GRing.unit).
+
+Definition poly_inv p := if p \in poly_unit then (p`_0)^-1%:P else p.
+
+Fact poly_mulVp : {in poly_unit, left_inverse 1 poly_inv *%R}.
+
+Fact poly_intro_unit p q : q * p = 1 -> p \in poly_unit.
+
+Fact poly_inv_out : {in [predC poly_unit], poly_inv =1 id}.
+
+Definition poly_comUnitMixin :=
+  ComUnitRingMixin poly_mulVp poly_intro_unit poly_inv_out.
+
+Canonical poly_unitRingType :=
+  Eval hnf in UnitRingType {poly R} poly_comUnitMixin.
+Canonical polynomial_unitRingType :=
+  Eval hnf in [unitRingType of polynomial R for poly_unitRingType].
+
+Canonical poly_unitAlgType := Eval hnf in [unitAlgType R of {poly R}].
+Canonical polynomial_unitAlgType := Eval hnf in [unitAlgType R of polynomial R].
+
+Canonical poly_comUnitRingType := Eval hnf in [comUnitRingType of {poly R}].
+Canonical polynomial_comUnitRingType :=
+  Eval hnf in [comUnitRingType of polynomial R].
+
+Canonical poly_idomainType :=
+  Eval hnf in IdomainType {poly R} poly_idomainAxiom.
+Canonical polynomial_idomainType :=
+  Eval hnf in [idomainType of polynomial R for poly_idomainType].
+
+Lemma poly_unitE p :
+  (p \in GRing.unit) = (size p == 1%N) && (p`_0 \in GRing.unit).
+
+Lemma poly_invE p : p ^-1 = if p \in GRing.unit then (p`_0)^-1%:P else p.
+
+Lemma polyC_inv c : c%:P^-1 = (c^-1)%:P.
+
+Lemma rootM p q x : root (p * q) x = root p x || root q x.
+
+Lemma rootZ x a p : a != 0 -> root (a *: p) x = root p x.
+
+Lemma size_scale a p : a != 0 -> size (a *: p) = size p.
+
+Lemma size_Cmul a p : a != 0 -> size (a%:P * p) = size p.
+
+Lemma lead_coefM p q : lead_coef (p * q) = lead_coef p * lead_coef q.
+
+Lemma lead_coefZ a p : lead_coef (a *: p) = a * lead_coef p.
+
+Lemma scale_poly_eq0 a p : (a *: p == 0) = (a == 0) || (p == 0).
+
+Lemma size_prod (I : finType) (P : pred I) (F : I -> {poly R}) :
+    (forall i, P i -> F i != 0) ->
+  size (\prod_(i | P i) F i) = ((\sum_(i | P i) size (F i)).+1 - #|P|)%N.
+
+Lemma size_prod_seq (I : eqType)  (s : seq I) (F : I -> {poly R}) :
+    (forall i, i \in s -> F i != 0) ->
+  size (\prod_(i <- s) F i) = ((\sum_(i <- s) size (F i)).+1 - size s)%N.
+
+Lemma size_mul_eq1 p q :
+  (size (p * q) == 1%N) = ((size p == 1%N) && (size q == 1%N)).
+
+Lemma size_prod_seq_eq1 (I : eqType) (s : seq I) (P : pred I) (F : I -> {poly R}) :
+  reflect (forall i, P i && (i \in s) -> size (F i) = 1%N)
+          (size (\prod_(i <- s | P i) F i) == 1%N).
+
+Lemma size_prod_eq1 (I : finType) (P : pred I) (F : I -> {poly R}) :
+  reflect (forall i, P i -> size (F i) = 1%N)
+          (size (\prod_(i | P i) F i) == 1%N).
+
+Lemma size_exp p n : (size (p ^+ n)).-1 = ((size p).-1 * n)%N.
+
+Lemma lead_coef_exp p n : lead_coef (p ^+ n) = lead_coef p ^+ n.
+
+Lemma root_prod_XsubC rs x :
+  root (\prod_(a <- rs) ('X - a%:P)) x = (x \in rs).
+
+Lemma root_exp_XsubC n a x : root (('X - a%:P) ^+ n.+1) x = (x == a).
+
+Lemma size_comp_poly p q :
+  (size (p \Po q)).-1 = ((size p).-1 * (size q).-1)%N.
+
+Lemma lead_coef_comp p q : size q > 1 ->
+  lead_coef (p \Po q) = (lead_coef p) * lead_coef q ^+ (size p).-1.
+
+Lemma comp_poly_eq0 p q : size q > 1 -> (p \Po q == 0) = (p == 0).
+
+Lemma size_comp_poly2 p q : size q = 2 -> size (p \Po q) = size p.
+
+Lemma comp_poly2_eq0 p q : size q = 2 -> (p \Po q == 0) = (p == 0).
+
+Theorem max_poly_roots p rs :
+  p != 0 -> all (root p) rs -> uniq rs -> size rs < size p.
+
+Lemma roots_geq_poly_eq0 p (rs : seq R) : all (root p) rs -> uniq rs ->
+  (size rs >= size p)%N -> p = 0.
+
+End PolynomialIdomain.
+
+Canonical polynomial_countUnitRingType (R : countIdomainType) :=
+  [countUnitRingType of polynomial R].
+Canonical poly_countUnitRingType (R : countIdomainType) :=
+  [countUnitRingType of {poly R}].
+Canonical polynomial_countComUnitRingType (R : countIdomainType) :=
+  [countComUnitRingType of polynomial R].
+Canonical poly_countComUnitRingType (R : countIdomainType) :=
+  [countComUnitRingType of {poly R}].
+Canonical polynomial_countIdomainType (R : countIdomainType) :=
+  [countIdomainType of polynomial R].
+Canonical poly_countIdomainType (R : countIdomainType) :=
+  [countIdomainType of {poly R}].
+
+Section MapFieldPoly.
+
+Variables (F : fieldType) (R : ringType) (f : {rmorphism F -> R}).
+
+Local Notation "p ^f" := (map_poly f p) : ring_scope.
+
+Lemma size_map_poly p : size p^f = size p.
+
+Lemma lead_coef_map p : lead_coef p^f = f (lead_coef p).
+
+Lemma map_poly_eq0 p : (p^f == 0) = (p == 0).
+
+Lemma map_poly_inj : injective (map_poly f).
+
+Lemma map_monic p : (p^f \is monic) = (p \is monic).
+
+Lemma map_poly_com p x : comm_poly p^f (f x).
+
+Lemma fmorph_root p x : root p^f (f x) = root p x.
+
+Lemma fmorph_unity_root n z : n.-unity_root (f z) = n.-unity_root z.
+
+Lemma fmorph_primitive_root n z :
+  n.-primitive_root (f z) = n.-primitive_root z.
+
+End MapFieldPoly.
+
+Arguments map_poly_inj {F R} f [p1 p2] : rename.
+
+Section MaxRoots.
+
+Variable R : unitRingType.
+Implicit Types (x y : R) (rs : seq R) (p : {poly R}).
+
+Definition diff_roots (x y : R) := (x * y == y * x) && (y - x \in GRing.unit).
+
+Fixpoint uniq_roots rs :=
+  if rs is x :: rs' then all (diff_roots x) rs' && uniq_roots rs' else true.
+
+Lemma uniq_roots_prod_XsubC p rs :
+    all (root p) rs -> uniq_roots rs ->
+  exists q, p = q * \prod_(z <- rs) ('X - z%:P).
+
+Theorem max_ring_poly_roots p rs :
+  p != 0 -> all (root p) rs -> uniq_roots rs -> size rs < size p.
+
+Lemma all_roots_prod_XsubC p rs :
+    size p = (size rs).+1 -> all (root p) rs -> uniq_roots rs ->
+
+End MaxRoots.
+
+Section FieldRoots.
+
+Variable F : fieldType.
+Implicit Types (p : {poly F}) (rs : seq F).
+
+Lemma poly2_root p : size p = 2 -> {r | root p r}.
+
+Lemma uniq_rootsE rs : uniq_roots rs = uniq rs.
+
+Section UnityRoots.
+
+Variable n : nat.
+
+Lemma max_unity_roots rs :
+  n > 0 -> all n.-unity_root rs -> uniq rs -> size rs <= n.
+
+Lemma mem_unity_roots rs :
+    n > 0 -> all n.-unity_root rs -> uniq rs -> size rs = n ->
+
+Variable z : F.
+Hypothesis prim_z : n.-primitive_root z.
+
+Let zn := [seq z ^+ i | i <- index_iota 0 n].
+
+Lemma factor_Xn_sub_1 : \prod_(0 <= i < n) ('X - (z ^+ i)%:P) = 'X^n - 1.
+
+Lemma prim_rootP x : x ^+ n = 1 -> {i : 'I_n | x = z ^+ i}.
+
+End UnityRoots.
+
+End FieldRoots.
+
+Section MapPolyRoots.
+
+Variables (F : fieldType) (R : unitRingType) (f : {rmorphism F -> R}).
+
+Lemma map_diff_roots x y : diff_roots (f x) (f y) = (x != y).
+
+Lemma map_uniq_roots s : uniq_roots (map f s) = uniq s.
+
+End MapPolyRoots.
+
+Section AutPolyRoot.
+
+Variable F : fieldType.
+Implicit Types u v : {rmorphism F -> F}.
+
+Lemma aut_prim_rootP u z n :
+  n.-primitive_root z -> {k | coprime k n & u z = z ^+ k}.
+
+Lemma aut_unity_rootP u z n : n > 0 -> z ^+ n = 1 -> {k | u z = z ^+ k}.
+
+Lemma aut_unity_rootC u v z n : n > 0 -> z ^+ n = 1 -> u (v z) = v (u z).
+
+End AutPolyRoot.
+
+Module UnityRootTheory.
+
+Notation "n .-unity_root" := (root_of_unity n) : unity_root_scope.
+Notation "n .-primitive_root" := (primitive_root_of_unity n) : unity_root_scope.
+Open Scope unity_root_scope.
+
+Definition unity_rootE := unity_rootE.
+Definition unity_rootP := @unity_rootP.
+Arguments unity_rootP {R n z}.
+
+Definition prim_order_exists := prim_order_exists.
+Notation prim_order_gt0 :=  prim_order_gt0.
+Notation prim_expr_order := prim_expr_order.
+Definition prim_expr_mod := prim_expr_mod.
+Definition prim_order_dvd := prim_order_dvd.
+Definition eq_prim_root_expr := eq_prim_root_expr.
+
+Definition rmorph_unity_root := rmorph_unity_root.
+Definition fmorph_unity_root := fmorph_unity_root.
+Definition fmorph_primitive_root := fmorph_primitive_root.
+Definition max_unity_roots := max_unity_roots.
+Definition mem_unity_roots := mem_unity_roots.
+Definition prim_rootP := prim_rootP.
+
+End UnityRootTheory.
+
+Section DecField.
+
+Variable F : decFieldType.
+
+Lemma dec_factor_theorem (p : {poly F}) :
+  {s : seq F & {q : {poly F} | p = q * \prod_(x <- s) ('X - x%:P)
+                             /\ (q != 0 -> forall x, ~~ root q x)}}.
+
+End DecField.
+
+Module PreClosedField.
+Section UseAxiom.
+
+Variable F : fieldType.
+Hypothesis closedF : GRing.ClosedField.axiom F.
+Implicit Type p : {poly F}.
+
+Lemma closed_rootP p : reflect (exists x, root p x) (size p != 1%N).
+
+Lemma closed_nonrootP p : reflect (exists x, ~~ root p x) (p != 0).
+
+End UseAxiom.
+End PreClosedField.
+
+Section ClosedField.
+
+Variable F : closedFieldType.
+Implicit Type p : {poly F}.
+
+Let closedF := @solve_monicpoly F.
+
+Lemma closed_rootP p : reflect (exists x, root p x) (size p != 1%N).
+
+Lemma closed_nonrootP p : reflect (exists x, ~~ root p x) (p != 0).
+
+Lemma closed_field_poly_normal p :
+  {r : seq F | p = lead_coef p *: \prod_(z <- r) ('X - z%:P)}.
+
+End ClosedField. *)
 (* polydiv:
 Require Import mathcomp.ssreflect.ssreflect.
 From mathcomp
@@ -15550,1753 +16929,877 @@ Canonical Quotient.rquot_eqQuotType.
 Canonical Quotient.rquot_zmodQuotType.
 Canonical Quotient.rquot_ringQuotType. *)
 
-
-
 Set Implicit Arguments.
-
 Unset Strict Implicit.
-
 Unset Printing Implicit Defensive.
 
-
-
 Import GRing.Theory.
-
 Local Open Scope ring_scope.
 
-
-
 Import Pdiv.Ring.
-
 Import PreClosedField.
 
-
-
 Module ClosedFieldQE.
-
 Section ClosedFieldQE.
-
-
 
 Variables (F : fieldType) (F_closed : GRing.ClosedField.axiom F).
 
-
-
 Notation fF := (@GRing.formula F).
-
 Notation tF := (@GRing.term F).
-
 Notation qf f := (GRing.qf_form f && GRing.rformula f).
-
 Definition polyF := seq tF.
 
-
-
 Lemma qf_simpl (f : fF) :
-
   (qf f -> GRing.qf_form f) * (qf f -> GRing.rformula f).
-
 Proof. by split=> /andP[]. Qed.
 
-
-
 Notation cps T := ((T -> fF) -> fF).
-
 Definition ret T1 : T1 -> cps T1 := fun x k => k x.
-
 Arguments ret {T1} x k /.
 
-
-
 Definition bind T1 T2 (x : cps T1) (f : T1 -> cps T2) : cps T2 :=
-
   fun k => x (fun x => f x k).
-
 Arguments bind {T1 T2} x f k /.
-
 Notation "''let' x <- y ; z" :=
-
   (bind y (fun x => z)) (at level 99, x at level 0, y at level 0,
-
     format "'[hv' ''let'  x  <-  y ;  '/' z ']'").
 
-
-
 Definition cpsif T (c : fF) (t : T) (e : T) : cps T :=
-
   fun k => GRing.If c (k t) (k e).
-
 Arguments cpsif {T} c t e k /.
-
 Notation "''if' c1 'then' c2 'else' c3" := (cpsif c1%T c2%T c3%T)
-
   (at level 200, right associativity, format
-
 "'[hv   ' ''if'  c1  '/' '[' 'then'  c2  ']' '/' '[' 'else'  c3 ']' ']'").
 
-
-
 Notation eval := GRing.eval.
-
 Notation rterm := GRing.rterm.
-
 Notation qf_eval := GRing.qf_eval.
 
-
-
 Fixpoint eval_poly (e : seq F) pf :=
-
   if pf is c :: q then eval_poly e q * 'X + (eval e c)%:P else 0.
-
-
 
 Definition rpoly (p : polyF) := all (@rterm F) p.
 
-
-
 Definition sizeT : polyF -> cps nat := (fix loop p :=
-
   if p isn't c :: q then ret 0%N
-
   else 'let n <- loop q;
-
        if n is m.+1 then ret m.+2 else
-
        'if (c == 0) then 0%N else 1%N).
 
-
-
 Definition qf_red_cps T (x : cps T) (y : _ -> T) :=
-
    forall e k, qf_eval e (x k) = qf_eval e (k (y e)).
-
 Notation "x ->_ e y" := (qf_red_cps x (fun e => y))
-
   (e ident, at level 90, format "x  ->_ e  y").
 
-
-
 Definition qf_cps T D (x : cps T) :=
-
   forall k, (forall y, D y -> qf (k y)) -> qf (x k).
 
-
-
 Lemma qf_cps_ret T D (x : T) : D x -> qf_cps D (ret x).
-
 Proof. move=> ??; exact. Qed.
-
 Hint Resolve qf_cps_ret : core.
 
-
-
 Lemma qf_cps_bind T1 D1 T2 D2 (x : cps T1) (f : T1 -> cps T2) :
-
   qf_cps D1 x -> (forall x, D1 x -> qf_cps D2 (f x)) -> qf_cps D2 (bind x f).
-
 Proof. by move=> xP fP k kP /=; apply: xP => y ?; apply: fP. Qed.
 
-
-
 Lemma qf_cps_if T D (c : fF) (t : T) (e : T) : qf c -> D t -> D e ->
-
   qf_cps D ('if c then t else e).
-
 Proof.
-
 move=> qfc Dt De k kP /=; have [qft qfe] := (kP _ Dt, kP _ De).
-
 by do !rewrite qf_simpl //.
-
 Qed.
-
-
 
 Lemma sizeTP (pf : polyF) : sizeT pf ->_e size (eval_poly e pf).
-
 Proof.
-
 elim: pf=> [|c qf qfP /=]; first by rewrite /= size_poly0.
-
 move=> e k; rewrite size_MXaddC qfP -(size_poly_eq0 (eval_poly _ _)).
-
 by case: (size (eval_poly e qf))=> //=; case: eqP; rewrite // orbF.
-
 Qed.
-
-
 
 Lemma sizeT_qf (p : polyF) : rpoly p -> qf_cps xpredT (sizeT p).
-
 Proof.
-
 elim: p => /= [_|c p ihp /andP[rc rq]]; first exact: qf_cps_ret.
-
 apply: qf_cps_bind; first exact: ihp.
-
 move=> [|n] //= _; last exact: qf_cps_ret.
-
 by apply: qf_cps_if; rewrite //= rc.
-
 Qed.
-
-
 
 Definition isnull (p : polyF) : cps bool :=
-
   'let n <- sizeT p; ret (n == 0%N).
 
-
-
 Lemma isnullP (p : polyF) : isnull p ->_e (eval_poly e p == 0).
-
 Proof. by move=> e k; rewrite sizeTP size_poly_eq0. Qed.
 
-
-
 Lemma isnull_qf (p : polyF) : rpoly p -> qf_cps xpredT (isnull p).
-
 Proof.
-
 move=> rp; apply: qf_cps_bind; first exact: sizeT_qf.
-
 by move=> ? _; apply: qf_cps_ret.
-
 Qed.
 
-
-
 Definition lt_sizeT (p q : polyF) : cps bool :=
-
   'let n <- sizeT p; 'let m <- sizeT q; ret (n < m).
-
-
 
 Definition lift (p : {poly F}) := map GRing.Const p.
 
-
-
 Lemma eval_lift (e : seq F) (p : {poly F}) : eval_poly e (lift p) = p.
-
 Proof.
-
 elim/poly_ind: p => [|p c]; first by rewrite /lift polyseq0.
-
 rewrite -cons_poly_def /lift polyseq_cons /nilp.
-
 case pn0: (_ == _) => /=; last by move->; rewrite -cons_poly_def.
-
 move=> _; rewrite polyseqC.
-
 case c0: (_==_)=> /=.
-
   move: pn0; rewrite (eqP c0) size_poly_eq0; move/eqP->.
-
   by apply: val_inj=> /=; rewrite polyseq_cons // polyseq0.
-
 by rewrite mul0r add0r; apply: val_inj=> /=; rewrite polyseq_cons // /nilp pn0.
-
 Qed.
-
-
 
 Fixpoint lead_coefT p : cps tF :=
-
   if p is c :: q then
-
     'let l <- lead_coefT q; 'if (l == 0) then c else l
-
   else ret 0%T.
 
-
-
 Lemma lead_coefTP (k : tF -> fF) :
-
  (forall x e, qf_eval e (k x) = qf_eval e (k (eval e x)%:T%T)) ->
-
   forall (p : polyF) (e : seq F),
-
   qf_eval e (lead_coefT p k) = qf_eval e (k (lead_coef (eval_poly e p))%:T%T).
-
 Proof.
-
 move=> kP p e; elim: p => [|a p IHp]/= in k kP e *.
-
   by rewrite lead_coef0 kP.
-
 rewrite IHp; last by move=> *; rewrite //= -kP.
-
 rewrite GRing.eval_If /= lead_coef_eq0.
-
 case p'0: (_ == _); first by rewrite (eqP p'0) mul0r add0r lead_coefC -kP.
-
 rewrite lead_coefDl ?lead_coefMX // polyseqC size_mul ?p'0 //; last first.
-
   by rewrite -size_poly_eq0 size_polyX.
-
 rewrite size_polyX addnC /=; case: (_ == _)=> //=.
-
 by rewrite ltnS lt0n size_poly_eq0 p'0.
-
 Qed.
-
-
 
 Lemma lead_coefT_qf (p : polyF) : rpoly p -> qf_cps (@rterm _) (lead_coefT p).
-
 Proof.
-
 elim: p => [_|c q ihp //= /andP[rc rq]]; first by apply: qf_cps_ret.
-
 apply: qf_cps_bind => [|y ty]; first exact: ihp.
-
 by apply: qf_cps_if; rewrite //= ty.
-
 Qed.
-
-
 
 Fixpoint amulXnT (a : tF) (n : nat) : polyF :=
-
   if n is n'.+1 then 0%T :: (amulXnT a n') else [:: a].
 
-
-
 Lemma eval_amulXnT  (a : tF) (n : nat) (e : seq F) :
-
   eval_poly e (amulXnT a n) = (eval e a)%:P * 'X^n.
-
 Proof.
-
 elim: n=> [|n] /=; first by rewrite expr0 mulr1 mul0r add0r.
-
 by move->; rewrite addr0 -mulrA -exprSr.
-
 Qed.
-
-
 
 Lemma ramulXnT: forall a n, rterm a -> rpoly (amulXnT a n).
-
 Proof. by move=> a n; elim: n a=> [a /= -> //|n ihn a ra]; apply: ihn. Qed.
 
-
-
 Fixpoint sumpT (p q : polyF) :=
-
   match p, q with a :: p, b :: q => (a + b)%T :: sumpT p q
-
                 | [::], q => q | p, [::] => p end.
 
-
-
 Lemma eval_sumpT (p q : polyF) (e : seq F) :
-
   eval_poly e (sumpT p q) = (eval_poly e p) + (eval_poly e q).
-
 Proof.
-
 elim: p q => [|a p Hp] q /=; first by rewrite add0r.
-
 case: q => [|b q] /=; first by rewrite addr0.
-
 rewrite Hp mulrDl -!addrA; congr (_ + _); rewrite polyC_add addrC -addrA.
-
 by congr (_ + _); rewrite addrC.
-
 Qed.
-
-
 
 Lemma rsumpT (p q : polyF) : rpoly p -> rpoly q -> rpoly (sumpT p q).
-
 Proof.
-
 elim: p q=> [|a p ihp] q rp rq //; move: rp; case/andP=> ra rp.
-
 case: q rq => [|b q]; rewrite /= ?ra ?rp //=.
-
 by case/andP=> -> rq //=; apply: ihp.
-
 Qed.
-
-
 
 Fixpoint mulpT (p q : polyF) :=
-
   if p isn't a :: p then [::]
-
   else sumpT [seq (a * x)%T | x <- q] (0%T :: mulpT p q).
 
-
-
 Lemma eval_mulpT (p q : polyF) (e : seq F) :
-
   eval_poly e (mulpT p q) = (eval_poly e p) * (eval_poly e q).
-
 Proof.
-
 elim: p q=> [|a p Hp] q /=; first by rewrite mul0r.
-
 rewrite eval_sumpT /= Hp addr0 mulrDl addrC mulrAC; congr (_ + _).
-
 elim: q=> [|b q Hq] /=; first by rewrite mulr0.
-
 by rewrite Hq polyC_mul mulrDr mulrA.
-
 Qed.
-
-
 
 Lemma rpoly_map_mul (t : tF) (p : polyF) (rt : rterm t) :
-
   rpoly [seq (t * x)%T | x <- p] = rpoly p.
-
 Proof.
-
 by rewrite /rpoly all_map /= (@eq_all _ _ (@rterm _)) // => x; rewrite /= rt.
-
 Qed.
-
-
 
 Lemma rmulpT (p q : polyF) : rpoly p -> rpoly q -> rpoly (mulpT p q).
-
 Proof.
-
 elim: p q=> [|a p ihp] q rp rq //=; move: rp; case/andP=> ra rp /=.
-
 apply: rsumpT; last exact: ihp.
-
 by rewrite rpoly_map_mul.
-
 Qed.
-
-
 
 Definition opppT : polyF -> polyF := map (GRing.Mul (- 1%T)%T).
 
-
-
 Lemma eval_opppT (p : polyF) (e : seq F) :
-
   eval_poly e (opppT p) = - eval_poly e p.
-
 Proof.
-
 by elim: p; rewrite /= ?oppr0 // => ? ? ->; rewrite !mulNr opprD polyC_opp mul1r.
-
 Qed.
-
-
 
 Definition natmulpT n : polyF -> polyF := map (GRing.Mul n%:R%T).
 
-
-
 Lemma eval_natmulpT  (p : polyF) (n : nat) (e : seq F) :
-
   eval_poly e (natmulpT n p) = (eval_poly e p) *+ n.
-
 Proof.
-
 elim: p; rewrite //= ?mul0rn // => c p ->.
-
 rewrite mulrnDl mulr_natl polyC_muln; congr (_ + _).
-
 by rewrite -mulr_natl mulrAC -mulrA mulr_natl mulrC.
-
 Qed.
-
-
 
 Fixpoint redivp_rec_loopT (q : polyF) sq cq (c : nat) (qq r : polyF)
-
   (n : nat) {struct n} : cps (nat * polyF * polyF) :=
-
   'let sr <- sizeT r;
-
   if sr < sq then ret (c, qq, r) else
-
   'let lr <- lead_coefT r;
-
   let m := amulXnT lr (sr - sq) in
-
   let qq1 := sumpT (mulpT qq [::cq]) m in
-
   let r1 := sumpT (mulpT r ([::cq])) (opppT (mulpT m q)) in
-
   if n is n1.+1 then redivp_rec_loopT q sq cq c.+1 qq1 r1 n1
-
   else ret (c.+1, qq1, r1).
 
-
-
 Fixpoint redivp_rec_loop (q : {poly F}) sq cq
-
    (k : nat) (qq r : {poly F}) (n : nat) {struct n} :=
-
     if size r < sq then (k, qq, r) else
-
       let m := (lead_coef r) *: 'X^(size r - sq) in
-
       let qq1 := qq * cq%:P + m in
-
       let r1 := r * cq%:P - m * q in
-
       if n is n1.+1 then redivp_rec_loop q sq cq k.+1 qq1 r1 n1 else
-
         (k.+1, qq1, r1).
 
-
-
 Lemma redivp_rec_loopTP (k : nat * polyF * polyF -> fF) :
-
   (forall c qq r e,  qf_eval e (k (c,qq,r))
-
     = qf_eval e (k (c, lift (eval_poly e qq), lift (eval_poly e r))))
-
   -> forall q sq cq c qq r n e
-
     (d := redivp_rec_loop (eval_poly e q) sq (eval e cq)
-
       c (eval_poly e qq) (eval_poly e r) n),
-
     qf_eval e (redivp_rec_loopT q sq cq c qq r n k)
-
     = qf_eval e (k (d.1.1, lift d.1.2, lift d.2)).
-
 Proof.
-
 move=> Pk q sq cq c qq r n e /=.
-
 elim: n c qq r k Pk e => [|n Pn] c qq r k Pk e; rewrite sizeTP.
-
   case ltrq : (_ < _); first by rewrite /= ltrq /= -Pk.
-
   rewrite lead_coefTP => [|a p]; rewrite Pk.
-
     rewrite ?(eval_mulpT,eval_amulXnT,eval_sumpT,eval_opppT) //=.
-
     by rewrite ltrq //= mul_polyC ?(mul0r,add0r).
-
   by symmetry; rewrite Pk ?(eval_mulpT,eval_amulXnT,eval_sumpT, eval_opppT).
-
 case ltrq : (_<_); first by rewrite /= ltrq Pk.
-
 rewrite lead_coefTP.
-
   rewrite Pn ?(eval_mulpT,eval_amulXnT,eval_sumpT,eval_opppT) //=.
-
   by rewrite ltrq //= mul_polyC ?(mul0r,add0r).
-
 rewrite -/redivp_rec_loopT => x e'.
-
 rewrite Pn; last by move=> *; rewrite Pk.
-
 symmetry; rewrite Pn; last by move=> *; rewrite Pk.
-
 rewrite Pk ?(eval_lift,eval_mulpT,eval_amulXnT,eval_sumpT,eval_opppT).
-
 by rewrite mul_polyC ?(mul0r,add0r).
-
 Qed.
-
-
 
 Lemma redivp_rec_loopT_qf (q : polyF) (sq : nat) (cq : tF)
-
   (c : nat) (qq r : polyF) (n : nat) :
-
   rpoly q -> rterm cq -> rpoly qq -> rpoly r ->
-
   qf_cps (fun x => [&& rpoly x.1.2 & rpoly x.2])
-
          (redivp_rec_loopT q sq cq c qq r n).
-
 Proof.
-
 do ![move=>x/(pair x){x}] => rw; elim: n => [|n IHn]//= in q sq cq c qq r rw *;
-
 apply: qf_cps_bind; do ?[by apply: sizeT_qf; rewrite !rw] => sr _;
-
 case: ifPn => // _; do ?[by apply: qf_cps_ret; rewrite //= ?rw];
-
 apply: qf_cps_bind; do ?[by apply: lead_coefT_qf; rewrite !rw] => lr /= rlr;
-
 [apply: qf_cps_ret|apply: IHn];
-
 by do !rewrite ?(rsumpT,rmulpT,ramulXnT,rpoly_map_mul,rlr,rw) //=.
-
 Qed.
-
-
 
 Definition redivpT (p : polyF) (q : polyF) : cps (nat * polyF * polyF) :=
-
   'let b <- isnull q;
-
   if b then ret (0%N, [::0%T], p) else
-
   'let sq <- sizeT q; 'let sp <- sizeT p;
-
   'let lq <- lead_coefT q;
-
   redivp_rec_loopT q sq lq 0 [::0%T] p sp.
 
-
-
 Lemma redivp_rec_loopP  (q : {poly F}) (c : nat) (qq r : {poly F}) (n : nat) :
-
   redivp_rec q c qq r n = redivp_rec_loop q (size q) (lead_coef q) c qq r n.
-
 Proof. by elim: n c qq r => [| n Pn] c qq r //=; rewrite Pn. Qed.
 
-
-
 Lemma redivpTP (k : nat * polyF * polyF -> fF) :
-
   (forall c qq r e,
-
      qf_eval e (k (c,qq,r)) =
-
      qf_eval e (k (c, lift (eval_poly e qq), lift (eval_poly e r)))) ->
-
   forall p q e (d := redivp (eval_poly e p) (eval_poly e q)),
-
     qf_eval e (redivpT p q k) = qf_eval e (k (d.1.1, lift d.1.2, lift d.2)).
-
 Proof.
-
 move=> Pk p q e /=; rewrite isnullP unlock /=.
-
 case q0 : (eval_poly e q == 0) => /=; first by rewrite Pk /= mul0r add0r polyC0.
-
 rewrite !sizeTP lead_coefTP /=; last by move=> *; rewrite !redivp_rec_loopTP.
-
 rewrite redivp_rec_loopTP /=; last by move=> *; rewrite Pk.
-
 by rewrite mul0r add0r polyC0 redivp_rec_loopP.
-
 Qed.
-
-
 
 Lemma redivpT_qf (p : polyF) (q : polyF) : rpoly p -> rpoly q ->
-
   qf_cps (fun x => [&& rpoly x.1.2 & rpoly x.2]) (redivpT p q).
-
 Proof.
-
 move=> rp rq; apply: qf_cps_bind => [|[] _]; first exact: isnull_qf.
-
   by apply: qf_cps_ret.
-
 apply: qf_cps_bind => [|sp _]; first exact: sizeT_qf.
-
 apply: qf_cps_bind => [|sq _]; first exact: sizeT_qf.
-
 apply: qf_cps_bind => [|lq rlq]; first exact: lead_coefT_qf.
-
 by apply: redivp_rec_loopT_qf => //=.
-
 Qed.
-
-
 
 Definition rmodpT (p : polyF) (q : polyF) : cps polyF :=
-
   'let d <- redivpT p q; ret d.2.
-
 Definition rdivpT (p : polyF) (q : polyF) : cps polyF :=
-
   'let d <- redivpT p q; ret d.1.2.
-
 Definition rscalpT (p : polyF) (q : polyF) : cps nat :=
-
   'let d <- redivpT p q; ret d.1.1.
-
 Definition rdvdpT (p : polyF) (q : polyF) : cps bool :=
-
   'let d <- rmodpT p q; isnull d.
 
-
-
 Fixpoint rgcdp_loop n (pp qq : {poly F}) {struct n} :=
-
   let rr := rmodp pp qq in if rr == 0 then qq
-
     else if n is n1.+1 then rgcdp_loop n1 qq rr else rr.
 
-
-
 Fixpoint rgcdp_loopT n (pp : polyF) (qq : polyF) : cps polyF :=
-
   'let rr <- rmodpT pp qq; 'let nrr <- isnull rr; if nrr then ret qq
-
     else if n is n1.+1 then rgcdp_loopT n1 qq rr else ret rr.
 
-
-
 Lemma rgcdp_loopP (k : polyF -> fF) :
-
   (forall p e, qf_eval e (k p) = qf_eval e (k (lift (eval_poly e p)))) ->
-
   forall n p q e,
-
     qf_eval e (rgcdp_loopT n p q k) =
-
     qf_eval e (k (lift (rgcdp_loop n (eval_poly e p) (eval_poly e q)))).
-
 Proof.
-
 move=> Pk n p q e; elim: n => /= [| m IHm] in p q e *;
-
 rewrite redivpTP /==> *; rewrite ?isnullP ?eval_lift -/(rmodp _ _);
-
 by case: (_ == _); do ?by rewrite -?Pk ?IHm ?eval_lift.
-
 Qed.
-
-
 
 Lemma rgcdp_loopT_qf (n : nat) (p : polyF) (q : polyF) :
-
   rpoly p -> rpoly q -> qf_cps rpoly (rgcdp_loopT n p q).
-
 Proof.
-
 elim: n => [|n IHn] in p q * => rp rq /=;
-
 (apply: qf_cps_bind=> [|rr rrr]; [
-
   apply: qf_cps_bind => [|[[a u] v]]; do ?exact: redivpT_qf;
-
   by move=> /andP[/= ??]; apply: (@qf_cps_ret _ rpoly)|
-
 apply: qf_cps_bind => [|[] _];
-
 by [apply: isnull_qf|apply: qf_cps_ret|apply: IHn]]).
-
 Qed.
-
-
 
 Definition rgcdpT (p : polyF) (q : polyF) : cps polyF :=
-
   let aux p1 q1 : cps polyF :=
-
     'let b <- isnull p1; if b then ret q1
-
     else 'let n <- sizeT p1; rgcdp_loopT n p1 q1 in
-
   'let b <- lt_sizeT p q; if b then aux q p else aux p q.
 
-
-
 Lemma rgcdpTP (k : polyF -> fF) :
-
   (forall p e, qf_eval e (k p) = qf_eval e (k (lift (eval_poly e p)))) ->
-
    forall p q e, qf_eval e (rgcdpT p q k) =
-
                  qf_eval e (k (lift (rgcdp (eval_poly e p) (eval_poly e q)))).
-
 Proof.
-
 move=> Pk p q e; rewrite /rgcdpT /rgcdp !sizeTP /=.
-
 case: (_ < _); rewrite !isnullP /=; case: (_ == _); rewrite -?Pk ?sizeTP;
-
 by rewrite ?rgcdp_loopP.
-
 Qed.
-
-
 
 Lemma rgcdpT_qf (p : polyF) (q : polyF) :
-
    rpoly p -> rpoly q -> qf_cps rpoly (rgcdpT p q).
-
 Proof.
-
 move=> rp rq k kP; rewrite /rgcdpT /=; do ![rewrite sizeT_qf => // ? _].
-
 case: (_ < _); rewrite ?isnull_qf // => -[]; rewrite ?kP // => _;
-
 by rewrite sizeT_qf => // ? _; rewrite rgcdp_loopT_qf.
-
 Qed.
-
-
 
 Fixpoint rgcdpTs (ps : seq polyF) : cps polyF :=
-
   if ps is p :: pr then 'let pr <- rgcdpTs pr; rgcdpT p pr else ret [::0%T].
 
-
-
 Lemma rgcdpTsP (k : polyF -> fF) :
-
   (forall p e, qf_eval e (k p) = qf_eval e (k (lift (eval_poly e p)))) ->
-
   forall ps e,
-
     qf_eval e (rgcdpTs ps k) =
-
     qf_eval e (k (lift (\big[@rgcdp _/0%:P]_(i <- ps)(eval_poly e i)))).
-
 Proof.
-
 move=> Pk ps e; elim: ps k Pk => [|p ps Pps] /= k Pk.
-
   by rewrite /= big_nil Pk /= mul0r add0r.
-
 by rewrite big_cons Pps => *; rewrite !rgcdpTP // !eval_lift -?Pk.
-
 Qed.
-
-
 
 Lemma rgcdpTs_qf (ps : seq polyF) :
-
    all rpoly ps -> qf_cps rpoly (rgcdpTs ps).
-
 Proof.
-
 elim: ps => [_|c p ihp /andP[rc rp]] //=; first exact: qf_cps_ret.
-
 by apply: qf_cps_bind => [|r rr]; [apply: ihp|apply: rgcdpT_qf].
-
 Qed.
-
-
 
 Fixpoint rgdcop_recT n (q : polyF) (p : polyF) :=
-
   if n is m.+1 then
-
     'let g <- rgcdpT p q; 'let sg <- sizeT g;
-
     if sg == 1%N then ret p
-
     else 'let r <- rdivpT p g;
-
           rgdcop_recT m q r
-
   else 'let b <- isnull q; ret [::b%:R%T].
 
-
-
 Lemma rgdcop_recTP (k : polyF -> fF) :
-
   (forall p e, qf_eval e (k p) = qf_eval e (k (lift (eval_poly e p))))
-
   -> forall p q n e, qf_eval e (rgdcop_recT n p q k)
-
     = qf_eval e (k (lift (rgdcop_rec (eval_poly e p) (eval_poly e q) n))).
-
 Proof.
-
 move=> Pk p q n e; elim: n => [|n Pn] /= in k Pk p q e *.
-
   rewrite isnullP /=.
-
   by case: (_ == _); rewrite Pk /= mul0r add0r ?(polyC0, polyC1).
-
 rewrite /rcoprimep rgcdpTP ?sizeTP ?eval_lift => * /=.
-
   case: (_ == _);
-
   by do ?[rewrite /= ?(=^~Pk, redivpTP, rgcdpTP, sizeTP, Pn, eval_lift) //==> *].
-
 do ?[rewrite /= ?(=^~Pk, redivpTP, rgcdpTP, sizeTP, Pn, eval_lift) //==> *].
-
 case: (_ == _);
-
 by do ?[rewrite /= ?(=^~Pk, redivpTP, rgcdpTP, sizeTP, Pn, eval_lift) //==> *].
-
 Qed.
-
-
 
 Lemma rgdcop_recT_qf (n : nat) (p : polyF) (q : polyF) :
-
   rpoly p -> rpoly q -> qf_cps rpoly (rgdcop_recT n p q).
-
 Proof.
-
 elim: n => [|n ihn] in p q * => k kP rp rq /=.
-
   by rewrite isnull_qf => //*; rewrite rq.
-
 rewrite rgcdpT_qf=> //*; rewrite sizeT_qf=> //*.
-
 case: (_ == _); rewrite ?kP ?rq //= redivpT_qf=> //= ? /andP[??].
-
 by rewrite ihn.
-
 Qed.
-
-
 
 Definition rgdcopT q p := 'let sp <- sizeT p; rgdcop_recT sp q p.
 
-
-
 Lemma rgdcopTP (k : polyF -> fF) :
-
   (forall p e, qf_eval e (k p) = qf_eval e (k (lift (eval_poly e p)))) ->
-
   forall p q e, qf_eval e (rgdcopT p q k) =
-
                 qf_eval e (k (lift (rgdcop (eval_poly e p) (eval_poly e q)))).
-
 Proof. by move=> *; rewrite sizeTP rgdcop_recTP 1?Pk. Qed.
 
-
-
 Lemma rgdcopT_qf (p : polyF) (q : polyF) :
-
   rpoly p -> rpoly q -> qf_cps rpoly (rgdcopT p q).
-
 Proof.
-
 by move=> rp rq k kP; rewrite sizeT_qf => //*; rewrite rgdcop_recT_qf.
-
 Qed.
-
-
 
 Definition ex_elim_seq (ps : seq polyF) (q : polyF) : fF :=
-
   ('let g <- rgcdpTs ps; 'let d <- rgdcopT q g;
-
   'let n <- sizeT d; ret (n != 1%N)) GRing.Bool.
 
-
-
 Lemma ex_elim_seqP (ps : seq polyF) (q : polyF) (e : seq F) :
-
   let gp := (\big[@rgcdp _/0%:P]_(p <- ps)(eval_poly e p)) in
-
   qf_eval e (ex_elim_seq ps q) = (size (rgdcop (eval_poly e q) gp) != 1%N).
-
 Proof.
-
 by do ![rewrite (rgcdpTsP,rgdcopTP,sizeTP,eval_lift) //= | move=> * //=].
-
 Qed.
-
-
 
 Lemma ex_elim_seq_qf  (ps : seq polyF) (q : polyF) :
-
   all rpoly ps -> rpoly q -> qf (ex_elim_seq ps q).
-
 Proof.
-
 move=> rps rq; apply: rgcdpTs_qf=> // g rg; apply: rgdcopT_qf=> // d rd.
-
 exact : sizeT_qf.
-
 Qed.
-
-
 
 Fixpoint abstrX (i : nat) (t : tF) :=
-
   match t with
-
     | 'X_n => if n == i then [::0; 1] else [::t]
-
     | - x => opppT (abstrX i x)
-
     | x + y => sumpT (abstrX i x) (abstrX i y)
-
     | x * y => mulpT (abstrX i x) (abstrX i y)
-
     | x *+ n => natmulpT n (abstrX i x)
-
     | x ^+ n => let ax := (abstrX i x) in iter n (mulpT ax) [::1]
-
     | _ => [::t]
-
   end%T.
 
-
-
 Lemma abstrXP  (i : nat) (t : tF) (e : seq F) (x : F) :
-
   rterm t -> (eval_poly e (abstrX i t)).[x] = eval (set_nth 0 e i x) t.
-
 Proof.
-
 elim: t => [n | r | n | t tP s sP | t tP | t tP n | t tP s sP | t tP | t tP n] h.
-
 - move=> /=; case ni: (_ == _);
-
     rewrite //= ?(mul0r,add0r,addr0,polyC1,mul1r,hornerX,hornerC);
-
     by rewrite // nth_set_nth /= ni.
-
 - by rewrite /= mul0r add0r hornerC.
-
 - by rewrite /= mul0r add0r hornerC.
-
 - by case/andP: h => *; rewrite /= eval_sumpT hornerD tP ?sP.
-
 - by rewrite /= eval_opppT hornerN tP.
-
 - by rewrite /= eval_natmulpT hornerMn tP.
-
 - by case/andP: h => *; rewrite /= eval_mulpT hornerM tP ?sP.
-
 - by [].
-
 - elim: n h => [|n ihn] rt; first by rewrite /= expr0 mul0r add0r hornerC.
-
   by rewrite /= eval_mulpT exprSr hornerM ihn // mulrC tP.
-
 Qed.
-
-
 
 Lemma rabstrX (i : nat) (t : tF) : rterm t -> rpoly (abstrX i t).
-
 Proof.
-
 elim: t; do ?[ by move=> * //=; do ?case: (_ == _)].
-
 - move=> t irt s irs /=; case/andP=> rt rs.
-
   by apply: rsumpT; rewrite ?irt ?irs //.
-
 - by move=> t irt /= rt; rewrite rpoly_map_mul ?irt //.
-
 - by move=> t irt /= n rt; rewrite rpoly_map_mul ?irt //.
-
 - move=> t irt s irs /=; case/andP=> rt rs.
-
   by apply: rmulpT; rewrite ?irt ?irs //.
-
 - move=> t irt /= n rt; move: (irt rt)=> {rt} rt; elim: n => [|n ihn] //=.
-
   exact: rmulpT.
-
 Qed.
-
-
 
 Implicit Types tx ty : tF.
 
-
-
 Lemma abstrX_mulM (i : nat) : {morph abstrX i : x y / x * y >-> mulpT x y}%T.
-
 Proof. by []. Qed.
 
-
-
 Lemma abstrX1 (i : nat) : abstrX i 1%T = [::1%T].
-
 Proof. done. Qed.
 
-
-
 Lemma eval_poly_mulM e : {morph eval_poly e : x y / mulpT x y >-> x * y}.
-
 Proof. by move=> x y; rewrite eval_mulpT. Qed.
 
-
-
 Lemma eval_poly1 e : eval_poly e [::1%T] = 1.
-
 Proof. by rewrite /= mul0r add0r. Qed.
 
-
-
 Notation abstrX_bigmul := (big_morph _ (abstrX_mulM _) (abstrX1 _)).
-
 Notation eval_bigmul := (big_morph _ (eval_poly_mulM _) (eval_poly1 _)).
-
 Notation bigmap_id := (big_map _ (fun _ => true) id).
 
-
-
 Lemma rseq_poly_map (x : nat) (ts : seq tF) :
-
   all (@rterm _) ts ->  all rpoly (map (abstrX x) ts).
-
 Proof.
-
 by elim: ts => //= t ts iht; case/andP=> rt rts; rewrite rabstrX // iht.
-
 Qed.
-
-
 
 Definition ex_elim (x : nat) (pqs : seq tF * seq tF) :=
-
   ex_elim_seq (map (abstrX x) pqs.1)
-
   (abstrX x (\big[GRing.Mul/1%T]_(q <- pqs.2) q)).
 
-
-
 Lemma ex_elim_qf (x : nat) (pqs : seq tF * seq tF) :
-
   GRing.dnf_rterm pqs -> qf (ex_elim x pqs).
-
 case: pqs => ps qs; case/andP=> /= rps rqs.
-
 apply: ex_elim_seq_qf; first exact: rseq_poly_map.
-
 apply: rabstrX=> /=.
-
 elim: qs rqs=> [|t ts iht] //=; first by rewrite big_nil.
-
 by case/andP=> rt rts; rewrite big_cons /= rt /= iht.
-
 Qed.
-
-
 
 Lemma holds_conj : forall e i x ps, all (@rterm _) ps ->
-
   (GRing.holds (set_nth 0 e i x)
-
                (foldr (fun t : tF => GRing.And (t == 0)) GRing.True%T ps)
-
   <-> all ((@root _)^~ x) (map (eval_poly e \o abstrX i) ps)).
-
 Proof.
-
 move=> e i x; elim=> [|p ps ihps] //=.
-
 case/andP=> rp rps; rewrite rootE abstrXP //.
-
 constructor; first by case=> -> hps; rewrite eqxx /=; apply/ihps.
-
 by case/andP; move/eqP=> -> psr; split=> //; apply/ihps.
-
 Qed.
-
-
 
 Lemma holds_conjn (e : seq F) (i : nat) (x : F) (ps : seq tF) :
-
   all (@rterm _) ps ->
-
   (GRing.holds (set_nth 0 e i x)
-
                (foldr (fun t : tF => GRing.And (t != 0)) GRing.True ps) <->
-
   all (fun p => ~~root p x) (map (eval_poly e \o abstrX i) ps)).
-
 Proof.
-
 elim: ps => [|p ps ihps] //=.
-
 case/andP=> rp rps; rewrite rootE abstrXP //.
-
 constructor; first by case=> /eqP-> hps /=; apply/ihps.
-
 by case/andP=> pr psr; split; first apply/eqP=> //; apply/ihps.
-
 Qed.
-
-
 
 Lemma holds_ex_elim: GRing.valid_QE_proj ex_elim.
-
 Proof.
-
 move=> i [ps qs] /= e; case/andP=> /= rps rqs.
-
 rewrite ex_elim_seqP big_map.
-
 have -> : \big[@rgcdp _/0%:P]_(j <- ps) eval_poly e (abstrX i j) =
-
           \big[@rgcdp _/0%:P]_(j <- (map (eval_poly e) (map (abstrX i) (ps)))) j.
-
   by rewrite !big_map.
-
 rewrite -!map_comp.
-
   have aux I (l : seq I) (P : I -> {poly F}) :
-
     \big[(@gcdp F)/0]_(j <- l) P j %= \big[(@rgcdp F)/0]_(j <- l) P j.
-
     elim: l => [| u l ihl] /=; first by rewrite !big_nil eqpxx.
-
     rewrite !big_cons; move: ihl; move/(eqp_gcdr (P u)) => h.
-
     by apply: eqp_trans h _; rewrite eqp_sym; apply: eqp_rgcd_gcd.
-
 case g0: (\big[(@rgcdp F)/0%:P]_(j <- map (eval_poly e \o abstrX i) ps) j == 0).
-
   rewrite (eqP g0) rgdcop0.
-
   case m0 : (_ == 0)=> //=; rewrite ?(size_poly1,size_poly0) //=.
-
     rewrite abstrX_bigmul eval_bigmul -bigmap_id in m0.
-
     constructor=> [[x] // []] //.
-
     case=> _; move/holds_conjn=> hc; move/hc:rqs.
-
     by rewrite -root_bigmul //= (eqP m0) root0.
-
   constructor; move/negP:m0; move/negP=>m0.
-
   case: (closed_nonrootP F_closed _ m0) => x {m0}.
-
   rewrite abstrX_bigmul eval_bigmul -bigmap_id root_bigmul=> m0.
-
   exists x; do 2?constructor=> //; last by apply/holds_conjn.
-
   apply/holds_conj; rewrite //= -root_biggcd.
-
   by rewrite (eqp_root (aux _ _ _ )) (eqP g0) root0.
-
 apply: (iffP (closed_rootP F_closed _)) => -[x Px]; exists x; move: Px => //=.
-
   rewrite (eqp_root (eqp_rgdco_gdco _ _)) root_gdco ?g0 //.
-
   rewrite -(eqp_root (aux _ _ _ )) root_biggcd  abstrX_bigmul eval_bigmul.
-
   rewrite -bigmap_id root_bigmul; case/andP=> psr qsr.
-
   do 2?constructor; first by apply/holds_conj.
-
   by apply/holds_conjn.
-
 rewrite (eqp_root (eqp_rgdco_gdco _ _)) root_gdco ?g0 // -(eqp_root (aux _ _ _)).
-
 rewrite root_biggcd abstrX_bigmul eval_bigmul -bigmap_id.
-
 rewrite root_bigmul=> [[] // [hps hqs]]; apply/andP.
-
 constructor; first by apply/holds_conj.
-
 by apply/holds_conjn.
-
 Qed.
 
-
-
 Lemma wf_ex_elim : GRing.wf_QE_proj ex_elim.
-
 Proof. by move=> i bc /= rbc; apply: ex_elim_qf. Qed.
-
-
 
 Definition Mixin := QEdecFieldMixin wf_ex_elim holds_ex_elim.
 
-
-
 End ClosedFieldQE.
-
 End ClosedFieldQE.
-
 Notation closed_field_QEMixin := ClosedFieldQE.Mixin.
-
-
 
 Import CodeSeq.
 
-
-
 Lemma countable_field_extension (F : countFieldType) (p : {poly F}) :
-
     size p > 1 ->
-
   {E : countFieldType & {FtoE : {rmorphism F -> E} &
-
   {w : E | root (map_poly FtoE p) w
-
          & forall u : E, exists q, u = (map_poly FtoE q).[w]}}}.
-
 Proof.
-
 pose fix d i :=
-
   if i is i1.+1 then
-
     let d1 := oapp (gcdp (d i1)) 0 (unpickle i1) in
-
     if size d1 > 1 then d1 else d i1
-
   else p.
-
 move=> p_gt1; have sz_d i: size (d i) > 1 by elim: i => //= i IHi; case: ifP.
-
 have dv_d i j: i <= j -> d j %| d i.
-
   move/subnK <-; elim: {j}(j - i)%N => //= j IHj; case: ifP => //=.
-
   case: (unpickle _) => /= [q _|]; last by rewrite size_poly0.
-
   exact: dvdp_trans (dvdp_gcdl _ _) IHj.
-
 pose I : pred {poly F} := [pred q | d (pickle q).+1 %| q].
-
 have I'co q i: q \notin I -> i > pickle q -> coprimep q (d i).
-
   rewrite inE => I'q /dv_d/coprimep_dvdl-> //; apply: contraR I'q.
-
   rewrite coprimep_sym /coprimep /= pickleK /= neq_ltn.
-
   case: ifP => [_ _| ->]; first exact: dvdp_gcdr.
-
   rewrite orbF ltnS leqn0 size_poly_eq0 gcdp_eq0 -size_poly_eq0.
-
   by rewrite -leqn0 leqNgt ltnW //.
-
 have memI q: reflect (exists i, d i %| q) (q \in I).
-
   apply: (iffP idP) => [|[i dv_di_q]]; first by exists (pickle q).+1.
-
   have [le_i_q | /I'co i_co_q] := leqP i (pickle q).
-
     rewrite inE /= pickleK /=; case: ifP => _; first exact: dvdp_gcdr.
-
     exact: dvdp_trans (dv_d _ _ le_i_q) dv_di_q.
-
   apply: contraR i_co_q _.
-
   by rewrite /coprimep (eqp_size (dvdp_gcd_idr dv_di_q)) neq_ltn sz_d orbT.
-
 have I_ideal : idealr_closed I.
-
   split=> [||a q1 q2 Iq1 Iq2]; first exact: dvdp0.
-
     by apply/memI=> [[i /idPn[]]]; rewrite dvdp1 neq_ltn sz_d orbT.
-
   apply/memI; exists (maxn (pickle q1).+1 (pickle q2).+1); apply: dvdp_add.
-
     by apply: dvdp_mull; apply: dvdp_trans Iq1; apply/dv_d/leq_maxl.
-
   by apply: dvdp_trans Iq2; apply/dv_d/leq_maxr.
-
 pose Iaddkey := GRing.Pred.Add (DefaultPredKey I) I_ideal.
-
 pose Iidkey := MkIdeal (GRing.Pred.Zmod Iaddkey I_ideal) I_ideal.
-
 pose E := ComRingType _ (@Quotient.mulqC _ _ _ (KeyedPred Iidkey)).
-
 pose PtoE : {rmorphism {poly F} -> E} := [rmorphism of \pi_E%qT : {poly F} -> E].
-
 have PtoEd i: PtoE (d i) = 0.
-
   by apply/eqP; rewrite piE Quotient.equivE subr0; apply/memI; exists i.
-
 pose Einv (z : E) (q := repr z) (dq := d (pickle q).+1) :=
-
   let q_unitP := Bezout_eq1_coprimepP q dq in
-
   if q_unitP is ReflectT ex_uv then PtoE (sval (sig_eqW ex_uv)).1 else 0.
-
 have Einv0: Einv 0 = 0.
-
   rewrite /Einv; case: Bezout_eq1_coprimepP => // ex_uv.
-
   case/negP: (oner_neq0 E); rewrite piE -[_ 1]/(PtoE 1); have [uv <-] := ex_uv.
-
   by rewrite rmorphD !rmorphM PtoEd /= reprK !mulr0 addr0.
-
 have EmulV: GRing.Field.axiom Einv.
-
   rewrite /Einv=> z nz_z; case: Bezout_eq1_coprimepP => [ex_uv |]; last first.
-
     move/Bezout_eq1_coprimepP; rewrite I'co //.
-
     by rewrite piE -{1}[z]reprK -Quotient.idealrBE subr0 in nz_z.
-
   apply/eqP; case: sig_eqW => {ex_uv} [uv uv1]; set i := _.+1 in uv1 *.
-
   rewrite piE /= -[z]reprK -(rmorphM PtoE) -Quotient.idealrBE.
-
   by rewrite -uv1 opprD addNKr -mulNr; apply/memI; exists i; apply: dvdp_mull.
-
 pose Efield := FieldType _ (FieldMixin EmulV Einv0).
-
 pose Ecount := CountType Efield (CanCountMixin reprK).
-
 pose FtoE := [rmorphism of PtoE \o polyC]; pose w : E := PtoE 'X.
-
 have defPtoE q: (map_poly FtoE q).[w] = PtoE q.
-
   by rewrite map_poly_comp horner_map [_.['X]]comp_polyXr.
-
 exists [countFieldType of Ecount], FtoE, w => [|u].
-
   by rewrite /root defPtoE (PtoEd 0%N).
-
 by exists (repr u); rewrite defPtoE /= reprK.
-
 Qed.
-
-
 
 Lemma countable_algebraic_closure (F : countFieldType) :
-
   {K : countClosedFieldType & {FtoK : {rmorphism F -> K} | integralRange FtoK}}.
-
 Proof.
-
 pose minXp (R : ringType) (p : {poly R}) := if size p > 1 then p else 'X.
-
 have minXp_gt1 R p: size (minXp R p) > 1.
-
   by rewrite /minXp; case: ifP => // _; rewrite size_polyX.
-
 have minXpE (R : ringType) (p : {poly R}) : size p > 1 -> minXp R p = p.
-
   by rewrite /minXp => ->.
-
 have ext1 p := countable_field_extension (minXp_gt1 _ p).
-
 pose ext1fT E p := tag (ext1 E p).
-
 pose ext1to E p : {rmorphism _ -> ext1fT E p} := tag (tagged (ext1 E p)).
-
 pose ext1w E p : ext1fT E p := s2val (tagged (tagged (ext1 E p))).
-
 have ext1root E p: root (map_poly (ext1to E p) (minXp E p)) (ext1w E p).
-
   by rewrite /ext1w; case: (tagged (tagged (ext1 E p))).
-
 have ext1gen E p u: {q | u = (map_poly (ext1to E p) q).[ext1w E p]}.
-
   by apply: sig_eqW; rewrite /ext1w; case: (tagged (tagged (ext1 E p))) u.
-
 pose pExtEnum (E : countFieldType) := nat -> {poly E}.
-
 pose Ext := {E : countFieldType & pExtEnum E}; pose MkExt : Ext := Tagged _ _.
-
 pose EtoInc (E : Ext) i := ext1to (tag E) (tagged E i).
-
 pose incEp E i j :=
-
   let v := map_poly (EtoInc E i) (tagged E j) in
-
   if decode j is [:: i1; k] then
-
     if i1 == i then odflt v (unpickle k) else v
-
   else v.
-
 pose fix E_ i := if i is i1.+1 then MkExt _ (incEp (E_ i1) i1) else MkExt F \0.
-
 pose E i := tag (E_ i); pose Krep := {i : nat & E i}.
-
 pose fix toEadd i k : {rmorphism E i -> E (k + i)%N} :=
-
   if k is k1.+1 then [rmorphism of EtoInc _ (k1 + i)%N \o toEadd _ _]
-
   else [rmorphism of idfun].
-
 pose toE i j (le_ij : i <= j) :=
-
   ecast j {rmorphism E i -> E j} (subnK le_ij) (toEadd i (j - i)%N).
-
 have toEeq i le_ii: toE i i le_ii =1 id.
-
   by rewrite /toE; move: (subnK _); rewrite subnn => ?; rewrite eq_axiomK.
-
 have toEleS i j leij leiSj z: toE i j.+1 leiSj z = EtoInc _ _ (toE i j leij z).
-
   rewrite /toE; move: (j - i)%N {leij leiSj}(subnK _) (subnK _) => k.
-
   by case: j /; rewrite (addnK i k.+1) => eq_kk; rewrite [eq_kk]eq_axiomK.
-
 have toEirr := congr1 ((toE _ _)^~ _) (bool_irrelevance _ _).
-
 have toEtrans j i k leij lejk leik z:
-
   toE i k leik z = toE j k lejk (toE i j leij z).
-
 - elim: k leik lejk => [|k IHk] leiSk lejSk.
-
     by case: j => // in leij lejSk *; rewrite toEeq.
-
   have:= lejSk; rewrite {1}leq_eqVlt ltnS => /predU1P[Dk | lejk].
-
     by rewrite -Dk in leiSk lejSk *; rewrite toEeq.
-
   by have leik := leq_trans leij lejk; rewrite !toEleS -IHk.
-
 have [leMl leMr] := (leq_maxl, leq_maxr); pose le_max := (leq_max, leqnn, orbT).
-
 pose pairK (x y : Krep) (m := maxn _ _) :=
-
   (toE _ m (leMl _ _) (tagged x), toE _ m (leMr _ _) (tagged y)).
-
 pose eqKrep x y := prod_curry (@eq_op _) (pairK x y).
-
 have eqKrefl : reflexive eqKrep by move=> z; apply/eqP; apply: toEirr.
-
 have eqKsym : symmetric eqKrep.
-
   move=> z1 z2; rewrite {1}/eqKrep /= eq_sym; move: (leMl _ _) (leMr _ _).
-
   by rewrite maxnC => lez1m lez2m; congr (_ == _); apply: toEirr.
-
 have eqKtrans : transitive eqKrep.
-
   rewrite /eqKrep /= => z2 z1 z3 /eqP eq_z12 /eqP eq_z23.
-
   rewrite -(inj_eq (fmorph_inj (toE _ _ (leMr (tag z2) _)))).
-
   rewrite -!toEtrans ?le_max // maxnCA maxnA => lez3m lez1m.
-
   rewrite {lez1m}(toEtrans (maxn (tag z1) (tag z2))) // {}eq_z12.
-
   do [rewrite -toEtrans ?le_max // -maxnA => lez2m] in lez3m *.
-
   by rewrite (toEtrans (maxn (tag z2) (tag z3))) // eq_z23 -toEtrans.
-
 pose K := {eq_quot (EquivRel _  eqKrefl eqKsym eqKtrans)}%qT.
-
 have cntK : Countable.mixin_of K := CanCountMixin reprK.
-
 pose EtoKrep i (x : E i) : K := \pi%qT (Tagged E x).
-
 have [EtoK piEtoK]: {EtoK | forall i, EtoKrep i =1 EtoK i} by exists EtoKrep.
-
 pose FtoK := EtoK 0%N; rewrite {}/EtoKrep in piEtoK.
-
 have eqEtoK i j x y:
-
   toE i _ (leMl i j) x = toE j _ (leMr i j) y -> EtoK i x = EtoK j y.
-
 - by move/eqP=> eq_xy; rewrite -!piEtoK; apply/eqmodP.
-
 have toEtoK j i leij x : EtoK j (toE i j leij x) = EtoK i x.
-
   by apply: eqEtoK; rewrite -toEtrans.
-
 have EtoK_0 i: EtoK i 0 = FtoK 0 by apply: eqEtoK; rewrite !rmorph0.
-
 have EtoK_1 i: EtoK i 1 = FtoK 1 by apply: eqEtoK; rewrite !rmorph1.
-
 have EtoKeq0 i x: (EtoK i x == FtoK 0) = (x == 0).
-
   by rewrite /FtoK -!piEtoK eqmodE /= /eqKrep /= rmorph0 fmorph_eq0.
-
 have toErepr m i leim x lerm:
-
   toE _ m lerm (tagged (repr (EtoK i x))) = toE i m leim x.
-
 - have: (Tagged E x == repr (EtoK i x) %[mod K])%qT by rewrite reprK piEtoK.
-
   rewrite eqmodE /= /eqKrep; case: (repr _) => j y /= in lerm * => /eqP /=.
-
   have leijm: maxn i j <= m by rewrite geq_max leim.
-
   by move/(congr1 (toE _ _ leijm)); rewrite -!toEtrans.
-
 pose Kadd (x y : K) := EtoK _ (prod_curry +%R (pairK (repr x) (repr y))).
-
 pose Kopp (x : K) := EtoK _ (- tagged (repr x)).
-
 pose Kmul (x y : K) := EtoK _ (prod_curry *%R (pairK (repr x) (repr y))).
-
 pose Kinv (x : K) := EtoK _ (tagged (repr x))^-1.
-
 have EtoK_D i: {morph EtoK i : x y / x + y >-> Kadd x y}.
-
   move=> x y; apply: eqEtoK; set j := maxn (tag _) _; rewrite !rmorphD.
-
   by rewrite -!toEtrans ?le_max  // => lexm leym; rewrite !toErepr.
-
 have EtoK_N i: {morph EtoK i : x / - x >-> Kopp x}.
-
   by move=> x; apply: eqEtoK; set j := tag _; rewrite !rmorphN toErepr.
-
 have EtoK_M i: {morph EtoK i : x y / x * y >-> Kmul x y}.
-
   move=> x y; apply: eqEtoK; set j := maxn (tag _) _; rewrite !rmorphM.
-
   by rewrite -!toEtrans ?le_max  // => lexm leym; rewrite !toErepr.
-
 have EtoK_V i: {morph EtoK i : x / x^-1 >-> Kinv x}.
-
   by move=> x; apply: eqEtoK; set j := tag _; rewrite !fmorphV toErepr.
-
 case: {toErepr}I in (Kadd) (Kopp) (Kmul) (Kinv) EtoK_D EtoK_N EtoK_M EtoK_V.
-
 pose inEi i z := {x : E i | z = EtoK i x}; have KtoE z: {i : nat & inEi i z}.
-
   by elim/quotW: z => [[i x] /=]; exists i, x; rewrite piEtoK.
-
 have inEle i j z: i <= j -> inEi i z -> inEi j z.
-
   by move=> leij [x ->]; exists (toE i j leij x); rewrite toEtoK.
-
 have KtoE2 z1 z2: {i : nat & inEi i z1 & inEi i z2}.
-
   have [[i1 Ez1] [i2 Ez2]] := (KtoE z1, KtoE z2).
-
   by exists (maxn i1 i2); [apply: inEle Ez1 | apply: inEle Ez2].
-
 have KtoE3 z1 z2 z3: {i : nat & inEi i z1 & inEi i z2 * inEi i z3}%type.
-
   have [[i1 Ez1] [i2 Ez2 Ez3]] := (KtoE z1, KtoE2 z2 z3).
-
   by exists (maxn i1 i2); [apply: inEle Ez1 | split; apply: inEle (leMr _ _) _].
-
 have KaddC: commutative Kadd.
-
   by move=> u v; have [i [x ->] [y ->]] := KtoE2 u v; rewrite -!EtoK_D addrC.
-
 have KaddA: associative Kadd.
-
   move=> u v w; have [i [x ->] [[y ->] [z ->]]] := KtoE3 u v w.
-
   by rewrite -!EtoK_D addrA.
-
 have Kadd0: left_id (FtoK 0) Kadd.
-
   by move=> u; have [i [x ->]] := KtoE u; rewrite -(EtoK_0 i) -EtoK_D add0r.
-
 have KaddN: left_inverse (FtoK 0) Kopp Kadd.
-
   by move=> u; have [i [x ->]] := KtoE u; rewrite -EtoK_N -EtoK_D addNr EtoK_0.
-
 pose Kzmod := ZmodType K (ZmodMixin KaddA KaddC Kadd0 KaddN).
-
 have KmulC: commutative Kmul.
-
   by move=> u v; have [i [x ->] [y ->]] := KtoE2 u v; rewrite -!EtoK_M mulrC.
-
 have KmulA: @associative Kzmod Kmul.
-
   move=> u v w; have [i [x ->] [[y ->] [z ->]]] := KtoE3 u v w.
-
   by rewrite -!EtoK_M mulrA.
-
 have Kmul1: left_id (FtoK 1) Kmul.
-
   by move=> u; have [i [x ->]] := KtoE u; rewrite -(EtoK_1 i) -EtoK_M mul1r.
-
 have KmulD: left_distributive Kmul Kadd.
-
   move=> u v w; have [i [x ->] [[y ->] [z ->]]] := KtoE3 u v w.
-
   by rewrite -!(EtoK_M, EtoK_D) mulrDl.
-
 have Kone_nz: FtoK 1 != FtoK 0 by rewrite EtoKeq0 oner_neq0.
-
 pose KringMixin := ComRingMixin KmulA KmulC Kmul1 KmulD Kone_nz.
-
 pose Kring := ComRingType (RingType Kzmod KringMixin) KmulC.
-
 have KmulV: @GRing.Field.axiom Kring Kinv.
-
   move=> u; have [i [x ->]] := KtoE u; rewrite EtoKeq0 => nz_x.
-
   by rewrite -EtoK_V -[_ * _]EtoK_M mulVf ?EtoK_1.
-
 have Kinv0: Kinv (FtoK 0) = FtoK 0 by rewrite -EtoK_V invr0.
-
 pose Kuring := [comUnitRingType of UnitRingType _ (FieldUnitMixin KmulV Kinv0)].
-
 pose KfieldMixin := @FieldMixin _ _ KmulV Kinv0.
-
 pose Kidomain := IdomainType Kuring (FieldIdomainMixin KfieldMixin).
-
 pose Kfield := FieldType Kidomain KfieldMixin.
-
 have EtoKrmorphism i: rmorphism (EtoK i : E i -> Kfield).
-
   by do 2?split=> [x y|]; rewrite ?EtoK_D ?EtoK_N ?EtoK_M ?EtoK_1.
-
 pose EtoKM := RMorphism (EtoKrmorphism _); have EtoK_E: EtoK _ = EtoKM _ by [].
-
 have toEtoKp := @eq_map_poly _ Kring _ _(toEtoK _ _ _).
-
 have Kclosed: GRing.ClosedField.axiom Kfield.
-
   move=> n pK n_gt0; pose m0 := \max_(i < n) tag (KtoE (pK i)); pose m := m0.+1.
-
   have /fin_all_exists[pE DpE] (i : 'I_n): exists y, EtoK m y = pK i.
-
     pose u := KtoE (pK i); have leum0: tag u <= m0 by rewrite (bigmax_sup i).
-
     by have [y ->] := tagged u; exists (toE _ _ (leqW leum0) y); rewrite toEtoK.
-
   pose p := 'X^n - rVpoly (\row_i pE i); pose j := code [:: m0; pickle p].
-
   pose pj := tagged (E_ j) j; pose w : E j.+1 := ext1w (E j) pj.
-
   have lemj: m <= j by rewrite (allP (ltn_code _)) ?mem_head.
-
   exists (EtoKM j.+1 w); apply/eqP; rewrite -subr_eq0; apply/eqP.
-
   transitivity (EtoKM j.+1 (map_poly (toE m j.+1 (leqW lemj)) p).[w]).
-
     rewrite -horner_map -map_poly_comp toEtoKp EtoK_E; move/EtoKM: w => w.
-
     rewrite rmorphB [_ 'X^n]map_polyXn !hornerE hornerXn; congr (_ - _ : Kring).
-
     rewrite (@horner_coef_wide _ n) ?size_map_poly ?size_poly //.
-
     by apply: eq_bigr => i _; rewrite coef_map coef_rVpoly valK mxE /= DpE.
-
   suffices Dpj: map_poly (toE m j lemj) p = pj.
-
     apply/eqP; rewrite EtoKeq0 (eq_map_poly (toEleS _ _ _ _)) map_poly_comp Dpj.
-
     rewrite -rootE -[pj]minXpE ?ext1root // -Dpj size_map_poly.
-
     by rewrite size_addl ?size_polyXn ltnS ?size_opp ?size_poly.
-
   rewrite {w}/pj; elim: {-9}j lemj => // k IHk lemSk.
-
   move: lemSk (lemSk); rewrite {1}leq_eqVlt ltnS => /predU1P[<- | lemk] lemSk.
-
     rewrite {k IHk lemSk}(eq_map_poly (toEeq m _)) map_poly_id //= /incEp.
-
     by rewrite codeK eqxx pickleK.
-
   rewrite (eq_map_poly (toEleS _ _ _ _)) map_poly_comp {}IHk //= /incEp codeK.
-
   by rewrite -if_neg neq_ltn lemk.
-
 suffices{Kclosed} algF_K: {FtoK : {rmorphism F -> Kfield} | integralRange FtoK}.
-
   pose Kdec := DecFieldType Kfield (closed_field_QEMixin Kclosed).
-
   pose KclosedField := ClosedFieldType Kdec Kclosed.
-
   by exists [countClosedFieldType of CountType KclosedField cntK].
-
 exists (EtoKM 0%N) => /= z; have [i [{z}z ->]] := KtoE z.
-
 suffices{z} /(_ z)[p mon_p]: integralRange (toE 0%N i isT).
-
   by rewrite -(fmorph_root (EtoKM i)) -map_poly_comp toEtoKp; exists p.
-
 rewrite /toE /E; clear - minXp_gt1 ext1root ext1gen.
-
 move: (i - 0)%N (subnK _) => n; case: i /.
-
 elim: n => [|n IHn] /= z; first exact: integral_id.
-
 have{z} [q ->] := ext1gen _ _ z; set pn := tagged (E_ _) _.
-
 apply: integral_horner.
-
   by apply/integral_poly=> i; rewrite coef_map; apply: integral_rmorph.
-
 apply: integral_root (ext1root _ _) _.
-
   by rewrite map_poly_eq0 -size_poly_gt0 ltnW.
-
 by apply/integral_poly=> i; rewrite coef_map; apply: integral_rmorph.
-
 Qed.
-

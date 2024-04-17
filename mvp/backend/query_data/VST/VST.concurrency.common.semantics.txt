@@ -1,261 +1,26 @@
 From mathcomp.ssreflect Require Import ssreflect seq ssrbool.
-
 Require Import VST.concurrency.common.core_semantics.
-(* VST.concurrency.common.core_semantics:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.lib.Axioms.
-
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-Require Import compcert.common.Smallstep.
-
-Require Export VST.sepcomp.semantics.
-
-Inductive step2corestep (sem:part_semantics):(state sem) -> mem -> (state sem) -> mem -> Prop :=
-  coreify: forall s1 m1 t s2,
-    step sem (set_mem s1 m1) t s2 ->
-    Smallstep.at_external sem (set_mem s1 m1) = None ->
-    step2corestep sem s1 m1 s2 (get_mem s2).
-    
-Program Definition sem2coresem (sem:part_semantics) corestep_not_halted : CoreSemantics _ _:=
-  {|
-    initial_core := fun _ m c m' f args => start_stack sem m c f args /\ get_mem c = m'
-    ; at_external := fun s m => Smallstep.at_external sem (set_mem s m) *)
-
 Require Import VST.sepcomp.event_semantics.
-(* VST.sepcomp.event_semantics:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-
-Require Import VST.msl.Extensionality.
-Require Import VST.sepcomp.mem_lemmas.
-Require Import VST.sepcomp.semantics.
-Require Import VST.sepcomp.semantics_lemmas.
-
-Inductive mem_event :=
-  Write : forall (b : block) (ofs : Z) (bytes : list memval), mem_event
-| Read : forall (b:block) (ofs n:Z) (bytes: list memval), mem_event
-| Alloc: forall (b:block)(lo hi:Z), mem_event
-
-| Free: forall (l: list (block * Z * Z)), mem_event.
-
-Fixpoint ev_elim (m:mem) (T: list mem_event) (m':mem):Prop :=
-  match T with
-   nil => m'=m
- | (Read b ofs n bytes :: R) => Mem.loadbytes m b ofs n = Some bytes /\ ev_elim m R m'
- | (Write b ofs bytes :: R) => exists m'', Mem.storebytes m b ofs bytes = Some m'' /\ ev_elim m'' R m'
- | (Alloc b lo hi :: R) => exists m'', Mem.alloc m lo hi = (m'',b) /\ ev_elim m'' R m'
- | (Free l :: R) => exists m'', Mem.free_list m l = Some m'' /\ ev_elim m'' R m'
-  end.
-
-Definition pmax (popt qopt: option permission): option permission :=
-  match popt, qopt with
-    _, None => popt
-  | None, _ => qopt
-  | Some p, Some q => if Mem.perm_order_dec p q then Some p else Some q
-  end.
-
-Lemma po_pmax_I p q1 q2:
-  Mem.perm_order'' p q1 -> Mem.perm_order'' p q2 -> Mem.perm_order'' p (pmax q1 q2).
-
-Fixpoint cur_perm (l: block * Z) (T: list mem_event): option permission :=
-  match T with
-      nil => None
-    | (mu :: R) =>
-          let popt := cur_perm l R in
-          match mu, l with
-            | (Read b ofs n bytes), (b',ofs') =>
-                 pmax (if eq_block b b' && zle ofs ofs' && zlt ofs' (ofs+n)
-                       then Some Readable else None) popt
-            | (Write b ofs bytes), (b',ofs') =>
-                 pmax (if eq_block b b' && zle ofs ofs' && zlt ofs' (ofs+ Zlength bytes)
-                       then Some Writable else None) popt
-            | (Alloc b lo hi), (b',ofs') =>  
-                 if eq_block b b' then None else popt
-            | (Free l), (b',ofs') =>
-                 List.fold_right (fun tr qopt => match tr with (b,lo,hi) =>
-                                                   if eq_block b b' && zle lo ofs' && zlt ofs' hi
-                                                   then Some Freeable else qopt
-                                                end)
-                                 popt l
-          end
-  end.
-
-Lemma po_None popt: Mem.perm_order'' popt None.
-
-Lemma ev_perm b ofs: forall T m m', ev_elim m T m' ->
-      Mem.perm_order'' ((Mem.mem_access m) !! b ofs Cur) (cur_perm (b,ofs) T).
-
-Lemma ev_elim_app: forall T1 m1 m2 (EV1:ev_elim m1 T1 m2) T2 m3  (EV2: ev_elim m2 T2 m3), ev_elim m1 (T1++T2) m3.
-
-Lemma ev_elim_split: forall T1 T2 m1 m3 (EV1:ev_elim m1 (T1++T2) m3),
-      exists m2, ev_elim m1 T1 m2 /\ ev_elim m2 T2 m3.
-
-Record EvSem {C} :=
-  { 
-    msem :> @MemSem C
-
-  ; ev_step: C -> mem -> list mem_event -> C -> mem -> Prop
-
-  ; ev_step_ax1: forall c m T c' m',
-       ev_step c m T c' m' ->
-            corestep msem c m c' m'
-  ; ev_step_ax2: forall c m c' m',
-       corestep msem c m c' m' ->
-       exists T, ev_step c m T c' m'
-  ; ev_step_fun: forall c m T' c' m' T'' c'' m'',
-       ev_step c m T' c' m' -> ev_step c m T'' c'' m'' -> T'=T''
-
-  ; ev_step_elim: forall c m T c' m' (STEP: ev_step c m T c' m'),
-       ev_elim m T m' 
-  }.
-
-Lemma Ev_sem_cur_perm {C} (R: @EvSem C) c m T c' m' b ofs (D: ev_step R c m T c' m'):
-      Mem.perm_order'' ((Mem.mem_access m) !! b ofs Cur) (cur_perm (b,ofs) T).
-
-Require Import List.
-Import ListNotations.
-
-Definition in_free_list (b : block) ofs xs :=
-  exists x, List.In x xs /\
-       let '(b', lo, hi) := x in
-       b = b' /\
-       (lo <= ofs < hi)%Z.
-
-Fixpoint in_free_list_trace (b : block) ofs es :=
-  match es with
-  | Free l :: es =>
-    in_free_list b ofs l \/ in_free_list_trace b ofs es
-  | _ :: es =>
-    in_free_list_trace b ofs es
-  | nil =>
-    False
-  end.
-
-Lemma EFLT_char es: forall b ofs, in_free_list_trace b ofs es <->
-                             exists l lo hi, In (Free l) es /\ In ((b, lo), hi) l /\ lo <= ofs < hi.
-
-Lemma freelist_mem_access_1 b ofs p: forall l m (ACC:(Mem.mem_access m) !! b ofs Cur = Some p)
-
-Lemma freelist_access_2 b ofs: forall l  (FL: in_free_list b ofs l)
-                                 m m' (FR : Mem.free_list m l = Some m'),
-
-Lemma freelist_access_3 b ofs: forall l m (ACC: (Mem.mem_access m) !! b ofs Cur = None)
-
-Lemma ev_elim_accessNone b ofs: forall ev m' m'' (EV:ev_elim m'' ev m')
-                                  (ACC: (Mem.mem_access m'') !! b ofs Cur = None)
-
-Lemma ev_elim_valid_block: forall ev m m' (EV: ev_elim m ev m') b
-                             (VB : Mem.valid_block m b), Mem.valid_block m' b.
-
-Lemma ev_elim_free_1 b ofs:
-  forall ev m m',
-    ev_elim m ev m' ->
-    in_free_list_trace b ofs ev ->
-    (Mem.perm m b ofs Cur Freeable \/
-
-Lemma perm_order_pp_refl p: Mem.perm_order'' p p.
-
-Lemma in_free_list_dec b ofs xs: {in_free_list b ofs xs} + {~in_free_list b ofs xs}.
-
-Lemma in_free_list_trace_dec b ofs: forall es, {in_free_list_trace b ofs es} + {~in_free_list_trace b ofs es}.
-
-Lemma freelist_access_1 b ofs: forall l,
-    ~ in_free_list b ofs l ->
-    forall m m' : mem, Mem.free_list m l = Some m' -> (Mem.mem_access m') !! b ofs Cur = (Mem.mem_access m) !! b ofs Cur.
-
-Lemma ev_elim_free_2 b ofs:
-  forall ev m m' (EV: ev_elim m ev m')
-    (T: ~ in_free_list_trace b ofs ev),
-    Mem.perm_order'' ((Mem.mem_access m') !! b ofs Cur)
-
-Lemma free_list_cases:
-  forall l m m' b ofs
-    (Hfree: Mem.free_list m l = Some m'), *)
-
-
 
 Require Import VST.concurrency.common.machine_semantics.
-(* VST.concurrency.common.machine_semantics:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.lib.Axioms.
-
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-
-Require Import VST.sepcomp.mem_lemmas.
-
-Definition option_proj {A: Type} (default: A) (x: option A) :=
- match x with Some y => y | None => default end.
-
-Record ConcurSemantics {G TID SCH TR C M res: Type} : Type :=
-  { initial_machine : option res -> M -> C  -> M -> val -> list val -> Prop
-    ; conc_halted : SCH -> C -> option val
-    ; thread_step : G -> SCH -> C -> M -> C -> M -> Prop
-    ; machine_step : G -> SCH -> TR -> C -> M -> SCH -> TR -> C -> M -> Prop
-    ; running_thread : C -> TID -> Prop
-    ; thread_step_not_halted:
-      forall ge  U m q  m' q', thread_step ge U q m q' m' -> conc_halted U q = None
-    ; machine_step_not_halted:
-        forall ge  U m tr q  U' m' tr' q', machine_step ge U tr q m U' tr' q' m' -> conc_halted U q = None
-   } . *)
-
-
 
 Class Semantics:=
-
   {
-
-    
-    semG: Type;
-
+        semG: Type;
     semC: Type;
-
     semSem: @EvSem semC;
-
     
-
     the_ge: semG
-
   }.
-
-
 
 Class Resources:=
-
   {
-
     res: Type;
-
     lock_info : Type
-
   }.
 
-
-
 Module Type SEMANTICS.
-
   Parameter G : Type.
-
   Parameter C : Type.
-
   Parameter SEM : @EvSem C.
-
 End SEMANTICS.
-

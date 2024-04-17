@@ -1,384 +1,192 @@
 
-
 Set Warnings "-extraction-opaque-accessed,-extraction".
-
 Set Warnings "-notation-overridden,-parsing".
-
-
 
 Require Import String List. Open Scope string.
 
-
-
 From QuickChick Require Import QuickChick Tactics.
-
 From mathcomp Require Import ssreflect ssrfun ssrbool ssrnat eqtype seq.
-
 Import QcDefaultNotation. Open Scope qc_scope.
-
-
 
 Set Bullet Behavior "Strict Subproofs".
 
-
-
 Require Import Coq.Arith.Arith.
-
 Require Import Coq.Arith.EqNat.
-
 Require Import Coq.omega.Omega.
-
 Require Import Coq.Lists.List.
-
 Import ListNotations.
-
 Require Import Maps.
-
 Require Import Imp.
 
-
-
 Inductive tm : Type :=
-
   | C : nat -> tm         
-
   | P : tm -> tm -> tm.   
-
-
 
 Derive (Arbitrary, Show) for tm.
 
-
-
 Fixpoint evalF (t : tm) : nat :=
-
   match t with
-
   | C n => n
-
   | P a1 a2 => evalF a1 + evalF a2
-
   end.
-
-
 
 Reserved Notation " t '\\' n " (at level 50, left associativity).
 
-
-
 Inductive eval : tm -> nat -> Prop :=
-
   | E_Const : forall n,
-
       C n \\ n
-
   | E_Plus : forall t1 t2 n1 n2,
-
       t1 \\ n1 ->
-
       t2 \\ n2 ->
-
       P t1 t2 \\ (n1 + n2)
-
-
 
   where " t '\\' n " := (eval t n).
 
-
-
 Module SimpleArith1.
-
-
 
 Reserved Notation " t '===>' t' " (at level 55).
 
-
-
 Inductive step : tm -> tm -> Prop :=
-
   | ST_PlusConstConst : forall n1 n2,
-
       P (C n1) (C n2) ===> C (n1 + n2)
-
   | ST_Plus1 : forall t1 t1' t2,
-
       t1 ===> t1' ->
-
       P t1 t2 ===> P t1' t2
-
   | ST_Plus2 : forall n1 t2 t2',
-
       t2 ===> t2' ->
-
       P (C n1) t2 ===> P (C n1) t2'
 
-
-
   where " t '===>' t' " := (step t t').
-
-
 
 End SimpleArith1.
 
-
-
 Definition relation (X: Type) := X->X->Prop.
 
-
-
 Definition deterministic {X: Type} (R: relation X) :=
-
   forall x y1 y2 : X, R x y1 -> R x y2 -> y1 = y2.
 
-
-
 Module SimpleArith2.
-
 Import SimpleArith1.
 
-
-
 Theorem step_deterministic:
-
   deterministic step.
-
 Admitted.  
-
-
 
 End SimpleArith2.
 
-
-
 Ltac solve_by_inverts n :=
-
   match goal with | H : ?T |- _ => 
-
   match type of T with Prop =>
-
     solve [ 
-
       inversion H; 
-
       match n with S (S (?n')) => subst; solve_by_inverts (S n') end ]
-
   end end.
 
-
-
 Ltac solve_by_invert :=
-
   solve_by_inverts 1.
 
-
-
 Module SimpleArith3.
-
 Import SimpleArith1.
 
-
-
 Theorem step_deterministic_alt: deterministic step.
-
 Admitted. 
-
-
 
 End SimpleArith3.
 
-
-
 Inductive value : tm -> Prop :=
-
   | v_const : forall n, value (C n).
 
-
-
 Instance dec_value t : Dec (value t).
-
 constructor; unfold decidable.
-
 destruct t.
-
 - left; constructor; auto.
-
 - right=> contra. inversion contra.
-
 Defined.
-
 Derive ArbitrarySizedSuchThat for (fun t => value t).
-
-
 
 Reserved Notation " t '===>' t' " (at level 40).
 
-
-
 Inductive step : tm -> tm -> Prop :=
-
   | ST_PlusConstConst : forall n1 n2,
-
           P (C n1) (C n2)
-
       ===> C (n1 + n2)
-
   | ST_Plus1 : forall t1 t1' t2,
-
         t1 ===> t1' ->
-
         P t1 t2 ===> P t1' t2
-
   | ST_Plus2 : forall v1 t2 t2',
-
         value v1 ->                     
-
         t2 ===> t2' ->
-
         P v1 t2 ===> P v1 t2'
-
-
 
   where " t '===>' t' " := (step t t').
 
-
-
 Theorem step_deterministic :
-
   deterministic step.
-
 Admitted. 
-
-
 
 Definition step_fun (t : tm) : option tm := Some t.
 
-
-
 Axiom step_fun_correct : forall t t',
-
     step_fun t = Some t' <-> step t t'.
 
-
-
 Instance dec_step (t : tm) : Dec (exists t', step t t') :=
-
   {| dec := _ |}.
-
 Proof.
-
   destruct (step_fun t) eqn:Step.
-
   - left; exists t0; eapply step_fun_correct; eauto.
-
   - right => [[t' contra]]. eapply step_fun_correct in contra; congruence.
-
 Defined.
 
-
-
 Theorem strong_progress : forall t,
-
   value t \/ (exists t', t ===> t').
-
 Admitted. QuickChick strong_progress. 
 
-
-
 Definition normal_form {X:Type} (R:relation X) (t:X) : Prop :=
-
   ~ exists t', R t t'.
 
-
-
 Lemma value_is_nf : forall v,
-
   value v -> normal_form step v.
-
 Admitted.  
 
-
-
 Lemma nf_is_value : forall t,
-
   normal_form step t -> value t.
-
 Admitted. 
 
-
-
 Inductive multi {X:Type} (R: relation X) : relation X :=
-
   | multi_refl  : forall (x : X), multi R x x
-
   | multi_step : forall (x y z : X),
-
                     R x y ->
-
                     multi R y z ->
-
                     multi R x z.
-
-
 
 Notation " t '===>*' t' " := (multi step t t') (at level 40).
 
-
-
 Theorem multi_R : forall (X:Type) (R:relation X) (x y : X),
-
        R x y -> (multi R) x y.
-
 Admitted. 
-
-
 
 Theorem multi_trans :
-
   forall (X:Type) (R: relation X) (x y z : X),
-
       multi R x y  ->
-
       multi R y z ->
-
       multi R x z.
-
 Admitted. 
-
-
 
 Definition step_normal_form := normal_form step.
 
-
-
 Definition normal_form_of (t t' : tm) :=
-
   (t ===>* t' /\ step_normal_form t').
 
-
-
 Theorem normal_forms_unique:
-
   deterministic normal_form_of.
-
 Admitted. 
-
-
 
 Definition normalizing {X:Type} (R:relation X) :=
-
   forall t, exists t',
-
     (multi R) t t' /\ normal_form R t'.
 
-
-
 Lemma multistep_congr_1 : forall t1 t1' t2,
-
      t1 ===>* t1' ->
-
      P t1 t2 ===>* P t1' t2.
-
 Admitted. 
-
-
 

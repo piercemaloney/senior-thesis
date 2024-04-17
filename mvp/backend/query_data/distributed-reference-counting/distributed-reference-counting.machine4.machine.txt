@@ -1,348 +1,395 @@
 
-
 Require Export abstract_machine.
-
-
+(* abstract_machine:
+Require Import List.
+Require Export fifo.
+Require Export table. 
+Require Export reduce. 
+Require Export sigma2. 
 
 Unset Standard Proposition Elimination Names.
 
+Section MACHINE.
 
+Parameter Site : Set. 
+Parameter owner : Site.
+
+Axiom eq_site_dec : eq_dec Site. 
+
+Definition change_site (E : Set) := change_x0 Site E eq_site_dec.
+
+Lemma that_site :
+ forall (E : Set) (f : Site -> E) (s0 : Site) (x : E),
+ change_site E f s0 x s0 = x.
+
+Lemma other_site :
+ forall (E : Set) (f : Site -> E) (s0 s1 : Site) (x : E),
+ s0 <> s1 -> change_site E f s0 x s1 = f s1.
+
+Definition eq_queue_dec := eq_couple_dec Site Site eq_site_dec eq_site_dec.
+
+Definition change_queue (Q : Set) := update2_table Site eq_site_dec Q.
+
+Lemma that_queue :
+ forall (E : Set) (f : Site -> Site -> E) (s0 s1 : Site) (x : E),
+ change_queue E f s0 s1 x s0 s1 = x.
+
+Lemma other_queue :
+ forall (E : Set) (f : Site -> Site -> E) (s0 s1 s2 s3 : Site) (x : E),
+ s2 <> s0 \/ s3 <> s1 -> change_queue E f s0 s1 x s2 s3 = f s2 s3.
+
+Parameter LS : list Site.
+
+Axiom finite_site : list_of_elements Site eq_site_dec LS.
+
+Lemma in_s_LS : forall s : Site, In s LS.
+
+Variable Data : Set.
+
+Definition Bag_of_Data := Site -> Site -> queue Data.
+
+End MACHINE.
+
+Section M_ACTION.
+
+Variable Message : Set.
+Let Bag_of_message := Bag_of_Data Message.
+
+Definition Post_message (m0 : Message) (b0 : Bag_of_message)
+  (s0 s1 : Site) :=
+  change_queue (queue Message) b0 s0 s1 (input Message m0 (b0 s0 s1)).
+
+Definition Collect_message (b0 : Bag_of_message) (s0 s1 : Site) :=
+  change_queue (queue Message) b0 s0 s1 (first_out Message (b0 s0 s1)).
+
+Lemma post_here :
+ forall (b0 : Bag_of_message) (m0 : Message) (s0 s1 : Site),
+ Post_message m0 b0 s0 s1 s0 s1 = input Message m0 (b0 s0 s1).
+
+Lemma post_elsewhere :
+ forall (b0 : Bag_of_message) (m0 : Message) (s0 s1 s2 s3 : Site),
+ s0 <> s2 \/ s1 <> s3 -> Post_message m0 b0 s0 s1 s2 s3 = b0 s2 s3.
+
+Lemma collect_here :
+ forall (b0 : Bag_of_message) (s0 s1 : Site),
+ Collect_message b0 s0 s1 s0 s1 = first_out Message (b0 s0 s1).
+
+Lemma collect_elsewhere :
+ forall (b0 : Bag_of_message) (s0 s1 s2 s3 : Site),
+ s0 <> s2 \/ s1 <> s3 -> Collect_message b0 s0 s1 s2 s3 = b0 s2 s3.
+
+End M_ACTION.
+
+Section IN_Q_EFFECT.
+
+Variable Message : Set.
+Let Bag_of_message := Bag_of_Data Message.
+
+Lemma in_post :
+ forall (m m' : Message) (bom : Bag_of_message) (s1 s2 s3 s4 : Site),
+ m <> m' ->
+ In_queue Message m (Post_message Message m' bom s1 s2 s3 s4) ->
+ In_queue Message m (bom s3 s4).
+
+Lemma not_in_post :
+ forall (m m' : Message) (bom : Bag_of_message) (s1 s2 s3 s4 : Site),
+ m <> m' ->
+ ~ In_queue Message m (bom s3 s4) ->
+ ~ In_queue Message m (Post_message Message m' bom s1 s2 s3 s4).
+
+Lemma not_in_collect :
+ forall (m : Message) (bom : Bag_of_message) (s1 s2 s3 s4 : Site),
+ ~ In_queue Message m (bom s3 s4) ->
+ ~ In_queue Message m (Collect_message Message bom s1 s2 s3 s4).
+
+Lemma in_collect :
+ forall (m : Message) (bom : Bag_of_message) (s1 s2 s3 s4 : Site),
+ In_queue Message m (Collect_message Message bom s1 s2 s3 s4) ->
+ In_queue Message m (bom s3 s4).
+
+Hypothesis eq_message_dec : eq_dec Message.
+
+Lemma in_queue_decidable :
+ forall (m : Message) (q : queue Message),
+ {In_queue Message m q} + {~ In_queue Message m q}.
+
+End IN_Q_EFFECT.
+
+Section REDUCE_EFFECT.
+
+Variable Message : Set.
+Let Bag_of_message := Bag_of_Data Message.
+
+Variable f : Message -> Z.
+
+Lemma reduce_post_message :
+ forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
+ reduce Message f (Post_message Message m b s1 s2 s1 s2) =
+ (reduce Message f (b s1 s2) + f m)%Z.
+
+Lemma reduce_collect_message :
+ forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
+ first Message (b s1 s2) = value Message m ->
+ reduce Message f (Collect_message Message b s1 s2 s1 s2) =
+ (reduce Message f (b s1 s2) - f m)%Z.
+
+Lemma reduce_post_message_null :
+ forall (m : Message) (s1 s2 s3 s4 : Site) (b : Bag_of_message),
+ f m = 0%Z ->
+ reduce Message f (Post_message Message m b s1 s2 s3 s4) =
+ reduce Message f (b s3 s4).
+
+Lemma reduce_collect_message_null :
+ forall (m : Message) (s1 s2 s3 s4 : Site) (b : Bag_of_message),
+ first Message (b s1 s2) = value Message m ->
+ f m = 0%Z ->
+ reduce Message f (Collect_message Message b s1 s2 s3 s4) =
+ reduce Message f (b s3 s4).
+
+End REDUCE_EFFECT.
+
+Section SIG_SEND.
+
+Let Send_T := Site -> Z.
+
+Definition sigma_send_table (t : Send_T) :=
+  sigma_table Site LS Z (fun (s : Site) (x : Z) => x) t.
+
+Definition Inc_send_table (t0 : Send_T) (s0 : Site) :=
+  update_table Site eq_site_dec Z t0 s0 (t0 s0 + 1)%Z.  
+
+Definition Dec_send_table (t0 : Send_T) (s0 : Site) :=
+  update_table Site eq_site_dec Z t0 s0 (t0 s0 - 1)%Z.  
+
+Let Date_T := Site -> nat.
+
+Definition Set_date_table (d0 : Date_T) (s0 : Site) 
+  (new_date : nat) := update_table Site eq_site_dec nat d0 s0 new_date.
+
+End SIG_SEND.
+
+Section SEND_EFFECT.
+
+Let Send_T := Site -> Z.
+
+Lemma sigma_inc_send_table :
+ forall (t : Send_T) (s : Site),
+ sigma_send_table (Inc_send_table t s) = (sigma_send_table t + 1)%Z.
+
+Lemma sigma_dec_send_table :
+ forall (t : Send_T) (s : Site),
+ sigma_send_table (Dec_send_table t s) = (sigma_send_table t - 1)%Z.
+
+End SEND_EFFECT. 
+
+Section SIG_RECV.
+
+Let Recv_T := Site -> bool.
+
+Definition sigma_receive_table (t : Recv_T) :=
+  sigma_table Site LS bool (fun s : Site => Int) t.
+
+Definition Set_rec_table (r0 : Recv_T) (s0 : Site) :=
+  change_site bool r0 s0 true.
+
+Definition Reset_rec_table (r0 : Recv_T) (s0 : Site) :=
+  change_site bool r0 s0 false.
+
+Lemma sigma_set_receive_table :
+ forall (t : Recv_T) (s : Site),
+ t s = false ->
+ sigma_receive_table (Set_rec_table t s) = (sigma_receive_table t + 1)%Z.
+
+Lemma sigma_reset_receive_table :
+ forall (t : Recv_T) (s : Site),
+ t s = true ->
+ sigma_receive_table (Reset_rec_table t s) = (sigma_receive_table t - 1)%Z.
+
+End SIG_RECV.
+
+Section BUT_OWNER.
+
+Variable Data : Set.
+Let Table := Site -> Data.
+Variable f : Site -> Data -> Z.
+
+Definition sigma_table_but_owner (st : Table) :=
+  sigma_but Site owner eq_site_dec LS (fun s : Site => f s (st s)).
+
+Lemma sigma_sigma_but_owner :
+ forall t : Table,
+ sigma_table Site LS Data f t =
+ (sigma_table_but_owner t + f owner (t owner))%Z.
+
+End BUT_OWNER. *)
+
+Unset Standard Proposition Elimination Names.
 
 Section MESSAGES.
 
-
-
 Inductive Message : Set :=
-
   | dec : Message
-
   | inc_dec : Site -> Message
-
   | copy : Message.
 
-
-
 Theorem eq_message_dec : eq_dec Message.
-
 Proof.
-
  unfold eq_dec in |- *; double induction a b; intros.
-
  auto.
 
-
+ right; discriminate.
 
  right; discriminate.
 
-
-
  right; discriminate.
-
-
-
- right; discriminate.
-
-
 
  case (eq_site_dec s0 s); intros.
-
  rewrite e; auto.
-
-
 
  right; injection; auto.
 
-
+ right; discriminate.
 
  right; discriminate.
 
-
-
  right; discriminate.
-
-
-
- right; discriminate.
-
-
 
  auto.
-
 Qed.
-
-
 
 End MESSAGES.
 
-
-
 Section CONFIGURATION.
-
-
 
 Definition Date_table := Site -> nat.
 
-
-
 Definition Send_table := Site -> Z.
-
-
 
 Definition Rec_table := Site -> bool.
 
-
-
 Definition Bag_of_message := Bag_of_Data Message.
 
-
-
 Record Config : Set := mkconfig
-
   {st : Send_table; rt : Rec_table; bm : Bag_of_message}.
-
 	
-
 End CONFIGURATION.
-
-
 
 Section INITIALIZATION.
 
-
-
 Definition send_init : Send_table := fun _ : Site => 0%Z.
-
 	
-
 Definition rec_init : Rec_table :=
-
   fun s : Site =>
-
   if eq_site_dec s owner then true else false.
-
 	
-
 Definition bag_init : Bag_of_message := fun _ _ : Site => empty Message.
-
 	
-
 Definition config_init : Config := mkconfig send_init rec_init bag_init.
-
-
 
 End INITIALIZATION.
 
-
-
 Section TRANSITIONS.
 
-
-
 Definition delete_trans (c : Config) (s : Site) :=
-
   mkconfig (st c) (Reset_rec_table (rt c) s)
-
     (Post_message Message dec (bm c) s owner).
 
-
-
 Definition copy_trans (c : Config) (s1 s2 : Site) :=
-
   mkconfig (Inc_send_table (st c) s1) (rt c)
-
     (Post_message Message copy (bm c) s1 s2). 
 
-
-
 Definition rec_copy1_trans (c : Config) (s1 s2 : Site) :=
-
   mkconfig (st c) (rt c)
-
     (Post_message Message dec (Collect_message Message (bm c) s1 s2) s2 s1). 
 
-
-
 Definition rec_copy2_trans (c : Config) (s2 : Site) :=
-
   mkconfig (st c) (Set_rec_table (rt c) s2)
-
     (Collect_message Message (bm c) owner s2).
 
-
-
 Definition rec_copy3_trans (c : Config) (s1 s2 : Site) :=
-
   mkconfig (st c) (Set_rec_table (rt c) s2)
-
     (Post_message Message (inc_dec s1) (Collect_message Message (bm c) s1 s2)
-
        s2 owner). 
 
-
-
 Definition rec_dec_trans (c : Config) (s1 s2 : Site) :=
-
   mkconfig (Dec_send_table (st c) s2) (rt c)
-
     (Collect_message Message (bm c) s1 s2). 
 
-
-
 Definition rec_inc_trans (c : Config) (s1 s3 : Site) :=
-
   mkconfig (Inc_send_table (st c) owner) (rt c)
-
     (Post_message Message dec (Collect_message Message (bm c) s1 owner) owner
-
        s3). 
 
-
-
 Definition redirect_inc_trans (c : Config) (s1 s2 : Site)
-
   (q : queue Message) :=
-
   mkconfig (st c) (rt c)
-
     (Post_message Message dec
-
        (change_queue (queue Message) (bm c) s1 owner q) s1 s2). 
 
-
-
 Definition copy_out_of_band_trans (c : Config) (s1 s2 : Site)
-
   (q3 q4 : queue Message) :=
-
   mkconfig (st c) (rt c)
-
     (change_queue (queue Message) (bm c) s1 s2
-
        (append Message q3 (input Message copy q4))).
-
-
 
 Definition access (s : Site) (rt : Rec_table) := rt s = true.		
 
-
-
 Inductive class_trans (c : Config) : Set :=
-
   | make_copy :
-
       forall s1 s2 : Site, s1 <> s2 -> access s1 (rt c) -> class_trans c
-
   | receive_dec :
-
       forall s1 s2 : Site,
-
       first Message (bm c s1 s2) = value Message dec -> class_trans c
-
   | receive_inc :
-
       forall s1 s3 : Site,
-
       first Message (bm c s1 owner) = value Message (inc_dec s3) ->
-
       class_trans c
-
   | receive_copy1 :
-
       forall s1 s2 : Site,
-
       rt c s2 = true ->
-
       first Message (bm c s1 s2) = value Message copy -> class_trans c
-
   | receive_copy2 :
-
       forall s2 : Site,
-
       rt c s2 = false ->
-
       first Message (bm c owner s2) = value Message copy -> class_trans c
-
   | receive_copy3 :
-
       forall s1 s2 : Site,
-
       rt c s2 = false ->
-
       s1 <> owner ->
-
       s2 <> owner ->
-
       first Message (bm c s1 s2) = value Message copy -> class_trans c
-
   | delete_entry :
-
       forall s : Site,
-
       st c s = 0%Z -> rt c s = true -> s <> owner -> class_trans c
-
   | redirect_inc :
-
       forall (s1 s2 : Site) (q : queue Message),
-
       s1 <> s2 -> 
-
-
       bm c s1 owner = input Message dec (input Message (inc_dec s2) q) ->
-
       class_trans c
-
   | copy_out_of_band :
-
       forall (s1 s2 : Site) (q1 q2 q3 q4 : queue Message),
-
       s1 <> s2 -> 
-
-
       bm c s1 s2 = append Message q1 (input Message copy q2) ->
-
       append Message q1 q2 = append Message q3 q4 -> class_trans c.
-
   
-
 Definition transition (c : Config) (t : class_trans c) :=
-
   match t with
-
   | make_copy s1 s2 h1 h2 => copy_trans c s1 s2
-
   | receive_dec s1 s2 h1 => rec_dec_trans c s1 s2
-
   | receive_inc s1 s3 h1 => rec_inc_trans c s1 s3
-
   | receive_copy1 s1 s2 h1 h2 => rec_copy1_trans c s1 s2
-
   | receive_copy2 s2 h1 h2 => rec_copy2_trans c s2
-
   | receive_copy3 s1 s2 h1 h2 h3 h4 => rec_copy3_trans c s1 s2
-
   | delete_entry s h1 h2 h3 => delete_trans c s
-
   | redirect_inc s1 s2 q h1 h => redirect_inc_trans c s1 s2 q
-
   | copy_out_of_band s1 s2 q1 q2 q3 q4 h1 h2 h3 =>
-
       copy_out_of_band_trans c s1 s2 q3 q4
-
   end.
 
-
-
 Inductive legal : Config -> Prop :=
-
   | begin : legal config_init
-
   | after :
-
       forall (c : Config) (t : class_trans c),
-
       legal c -> legal (transition c t).
-
 	
-
 End TRANSITIONS.
-

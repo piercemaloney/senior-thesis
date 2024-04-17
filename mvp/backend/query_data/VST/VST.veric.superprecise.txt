@@ -1,1285 +1,357 @@
 Require Import Reals.
-
 Require Export VST.veric.base.
-
 Require Import VST.veric.compcert_rmaps.
-(* VST.veric.compcert_rmaps:
-Require Export VST.msl.msl_standard.
-Require Import VST.veric.base.
-Require Import compcert.cfrontend.Ctypes.
-Require Import VST.veric.shares.
-Require Import VST.veric.rmaps.
-Require Import VST.veric.rmaps_lemmas.
-Require Export VST.veric.Memory. 
-
-Instance EqDec_type: EqDec type := type_eq.
-
-Definition funsig := (list (ident*type) * type)%type. 
-
-Inductive kind : Type := VAL : memval -> kind
-                                   | LK : forall n i : Z, kind
-                                   | FUN: funsig -> calling_convention -> kind.
-
-Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
-Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
-
-Lemma isVAL_i: forall v, isVAL (VAL v).
-Hint Resolve isVAL_i.
-
-Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
-
-Module CompCert_AV <: ADR_VAL.
-
-Definition address := address.
-Definition some_address : address := (xH,0).
-Definition kind := kind.
-
-End CompCert_AV.
-
-Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
-
-Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
-
-Module R := Rmaps (CompCert_AV).
-Module RML := Rmaps_Lemmas(R).
-
-Export RML.
-Export R.
-
-Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
-Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
-
-Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
-  mk_rshare (rshare_sh p) H = p.
-
-Definition fixup_splitting
-  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
-  fun l => 
-    match z l with
-    | Some (sh, k) =>
-       match dec_readable (a l) with
-       | left p => Some (readable_part p,  k)
-       | right _ => None
-       end
-    | None => None
-    end.
-
-Definition share_of (x: option (rshare * kind)) : Share.t :=
-  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
-
-Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
-
-Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
-
-Lemma join_sub_same_k:
- forall {a a' : rshare} {k k': AV.kind},
-
-Lemma pure_readable_glb_Rsh:
- forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
-
-Lemma join_glb_Rsh:  
-  forall a b c : Share.t,
-
-Lemma pure_readable_share_glb:
-  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
-
-Lemma glb_Rsh_bot_unreadable:
-  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
-
-Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
-
-Lemma join_share_of: forall a b c,
-     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
-
-Lemma pure_readable_share_i:
-  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
-
-Obligation Tactic := Tactics.program_simpl.
-
-Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
-
-Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
-
-Program Definition writable (l: address): pred rmap :=
- fun phi =>
-  match phi @ l with
-    | YES sh _ k lp => writable0_share sh /\ isVAL k
-    | _ => False
-  end.
-
-Program Definition readable (loc: address) : pred rmap :=
-   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
-
-Lemma readable_join:
-  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
-            readable loc phi1 -> readable loc phi3.
-
-Lemma readable_writable_join:
-forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
-
-Lemma writable0_join_sub:
-  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
-
-Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
-            writable loc phi1 -> writable loc phi2.
-
-Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
-
-Lemma writable_e: forall loc m, 
-   writable loc m -> 
-   exists sh, exists rsh, exists v, exists p, 
-     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
-Arguments writable_e [loc] [m] _.
-
-Lemma readable_e: forall loc m, 
-   readable loc m -> 
-  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
-Arguments readable_e [loc] [m] _.
-
-Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
-  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
-
-Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
-  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
-
-Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
-
-Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
-
-Lemma bytes_writable_dec:
-   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
-
-Lemma bytes_readable_dec:
-   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
-
-Lemma bytes_writable_readable:
-  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
-
-Hint Resolve bytes_writable_readable : mem.
-
-Lemma rmap_age_i:
- forall w w' : rmap,
-    level w = S (level w') ->
-   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
-    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
-    age w w'. *)
-
 Require Import VST.veric.res_predicates.
-(* VST.veric.res_predicates:
-Require Import VST.msl.log_normalize.
-Require Export VST.veric.base.
-Require Import VST.veric.rmaps.
-Require Import VST.veric.compcert_rmaps.  
-Require Import VST.veric.shares. 
-Require Import VST.veric.address_conflict.
-
-Import RML. Import R.
-Local Open Scope pred.
-
-Program Definition kind_at (k: kind) (l: address) : pred rmap :=
-   fun m => exists rsh, exists sh, exists pp, m @ l = YES rsh sh k pp.
-
-Definition spec : Type :=  forall (sh: Share.t) (l: AV.address), pred rmap.
-
-Program Definition yesat_raw (pp: preds) (k: kind) 
-                           (sh: share) (rsh: readable_share sh) (l: address) : pred rmap :=
-   fun phi => phi @ l = YES sh rsh k (preds_fmap (approx (level phi)) (approx (level phi)) pp).
-
-Obligation Tactic := idtac.
-
-Program Definition yesat (pp: preds) (k: kind) : spec :=
- fun (sh: share) (l: AV.address) (m: rmap) =>
-
-Program Definition pureat (pp: preds) (k: kind) (l: AV.address): pred rmap :=
-
-Ltac do_map_arg :=
-match goal with |- ?a = ?b =>
-  match a with context [map ?x _] =>
-    match b with context [map ?y _] => replace y with x; auto end end end.
-
-Lemma yesat_raw_eq_aux:
-  forall pp k rsh sh l,
-    hereditary age
-    (fun phi : rmap =>
-     resource_fmap (approx (level phi)) (approx (level phi)) (phi @ l) =
-     resource_fmap (approx (level phi)) (approx (level phi)) (YES rsh sh k pp)).
-
-Lemma yesat_raw_eq: yesat_raw =
-  fun pp k rsh sh l =>
-  ((exist (hereditary age)
-   (fun phi =>
-   resource_fmap (approx (level phi)) (approx (level phi)) (phi @ l) =
-   resource_fmap (approx (level phi)) (approx (level phi)) (YES rsh sh k pp))
-   (yesat_raw_eq_aux pp k rsh sh l)) : pred rmap).
-
-Lemma yesat_eq_aux: 
-  forall pp k sh l, 
-    hereditary age
-    (fun m : rmap =>
-      exists rsh, 
-     resource_fmap (approx (level m)) (approx (level m)) (m @ l) =
-     resource_fmap (approx (level m)) (approx (level m)) (YES sh rsh k pp)).
-
-Lemma yesat_eq: yesat = fun pp k sh l =>
- exist (hereditary age)
-  (fun m => 
-  exists rsh, 
-   resource_fmap (approx (level m)) (approx (level m)) (m @ l) = 
-   resource_fmap (approx (level m)) (approx (level m)) (YES sh rsh k pp))
-   (yesat_eq_aux pp k sh l).
-
-Lemma map_compose_approx_succ_e:
-  forall A n pp pp',
-       map (compose (A:=A) (approx (S n))) pp =
-    map (compose (A:=A) (approx (S n))) pp' ->
-  map (compose (A:=A) (approx n)) pp = map (compose (A:=A) (approx n)) pp'.
-
-Program Definition noat (l: AV.address) : pred rmap :=
-
-Definition resource_share (r: resource) : option share :=
- match r with
- | YES sh _ _ _ => Some sh
- | NO sh _ => Some sh
- | PURE _ _ => None
- end.
-
-Definition nonlock (r: resource) : Prop :=
- match r with
- | YES _ _ k _ => isVAL k \/ isFUN k
- | NO _ _ => True
- | PURE _ _ => False
- end.
-
-Lemma age1_nonlock: forall phi phi' l,
-  age1 phi = Some phi' -> (nonlock (phi @ l) <-> nonlock (phi' @ l)).
-
-Lemma age1_resource_share: forall phi phi' l,
-  age1 phi = Some phi' -> (resource_share (phi @ l) = resource_share (phi' @ l)).
-
-Lemma resource_share_join_exists: forall r1 r2 r sh1 sh2,
-  resource_share r1 = Some sh1 ->
-  resource_share r2 = Some sh2 ->
-  join r1 r2 r ->
-  exists sh, join sh1 sh2 sh /\ resource_share r = Some sh.
-
-Lemma resource_share_join: forall r1 r2 r sh1 sh2 sh,
-  resource_share r1 = Some sh1 ->
-  resource_share r2 = Some sh2 ->
-  join r1 r2 r ->
-  join sh1 sh2 sh ->
-  resource_share r = Some sh.
-
-Lemma resource_share_joins: forall r1 r2 sh1 sh2,
-  resource_share r1 = Some sh1 ->
-  resource_share r2 = Some sh2 ->
-  joins r1 r2 ->
-  joins sh1 sh2.
-
-Lemma nonlock_join: forall r1 r2 r,
-  nonlock r1 ->
-  nonlock r2 ->
-  join r1 r2 r ->
-  nonlock r.
-
-Program Definition nonlockat (l: AV.address): pred rmap :=
-
-Program Definition shareat (l: AV.address) (sh: share): pred rmap :=
-
-Program Definition jam {A} {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} {B: Type} {S': B -> Prop} (S: forall l, {S' l}+{~ S' l}) (P Q: B -> pred A) : B -> pred A :=
-  fun (l: B) m => if S l then P l m else Q l m.
-
-Lemma jam_true: forall A JA PA agA AgeA B (S': B -> Prop) S P Q loc, S' loc -> @jam A JA PA agA AgeA B S' S P Q loc = P loc.
-
-Lemma jam_false: forall A JA PA agA AgeA B (S': B -> Prop) S P Q loc, ~ S' loc -> @jam A JA PA agA AgeA B S' S P Q loc = Q loc.
-
-Lemma boxy_jam:  forall (m: modality) A (S': A -> Prop) S P Q,
-      (forall (x: A), boxy m (P x)) ->
-      (forall x, boxy m (Q x)) ->
-      forall x, boxy m (@jam rmap _ _ _ _ A S' S P Q x).
-
-Definition extensible_jam: forall A (S': A -> Prop) S (P Q: A -> pred rmap),
-      (forall (x: A), boxy extendM (P x)) ->
-      (forall x, boxy extendM (Q x)) ->
-      forall x, boxy extendM  (@jam _ _ _ _ _ _ S' S P Q x).
-
-Definition jam_vacuous:
-  forall A JA PA agA AgeA B S S' P Q, (forall x:B, ~ S x) -> @jam A JA PA agA AgeA B S S' P Q = Q.
-
-Lemma make_sub_rmap: forall w (P: address -> Prop) (P_DEC: forall l, {P l} + {~ P l}),
-  (forall l sh k, P l -> res_option (w @ l) = Some (sh, k) -> isVAL k \/ isFUN k) ->
-  {w' | level w' = level w /\ resource_at w' =
-       (fun l => if P_DEC l then w @ l else core (w @ l)) /\ ghost_of w' = ghost_of w}.
-
-Definition is_resource_pred (p: address -> pred rmap) (q: resource -> address -> nat -> Prop) :=
-  forall l w, (p l) w = q (w @ l) l (level w).
-
-Definition resource_stable (p: address -> pred rmap) :=
-  forall l w w', w @ l = w' @ l -> level w = level w' -> (p l) w = (p l) w'.
-
-Lemma is_resource_pred_resource_stable: forall {p},
-  (exists q, is_resource_pred p q) -> resource_stable p.
-
-Program Definition noghost : pred rmap := fun m => identity (ghost_of m).
-
-Lemma allp_jam_split2: forall (P Q R: address -> Prop) (p q r: address -> pred rmap)
-  (P_DEC: forall l, {P l} + {~ P l})
-  (Q_DEC: forall l, {Q l} + {~ Q l})
-  (R_DEC: forall l, {R l} + {~ R l}),
-  (exists resp, is_resource_pred p resp) ->
-  (exists resp, is_resource_pred q resp) ->
-  (exists resp, is_resource_pred r resp) ->
-  Ensemble_join Q R P ->
-  (forall l, Q l -> p l = q l) ->
-  (forall l, R l -> p l = r l) ->
-  (forall l m sh k, P l -> (p l) m -> res_option (m @ l) = Some (sh, k) -> isVAL k \/ isFUN k) ->
-  allp (jam P_DEC p noat) && noghost =
-  (allp (jam Q_DEC q noat) && noghost) * (allp (jam R_DEC r noat) && noghost).
-
-Lemma allp_jam_overlap: forall (P Q: address -> Prop) (p q: address -> pred rmap)
-  (P_DEC: forall l, {P l} + {~ P l})
-  (Q_DEC: forall l, {Q l} + {~ Q l}),
-  (exists resp, is_resource_pred p resp) ->
-  (exists resp, is_resource_pred q resp) ->
-  (forall l w1 w2, p l w1 -> q l w2 -> joins w1 w2 -> False) ->
-  (exists l, P l /\ Q l) ->
-  allp (jam P_DEC p noat) * allp (jam Q_DEC q noat) |-- FF.
-
-Lemma yesat_join_diff:
-  forall pp pp' k k' sh sh' l w, k <> k' -> 
-                  yesat pp k sh l w -> yesat pp' k' sh' l w -> False.
-
-Lemma yesat_raw_join:
-  forall pp k (sh1 sh2 sh3: Share.t) rsh1 rsh2 rsh3 l phi1 phi2 phi3,
-
-Lemma nonunit_join: forall A {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}{CA: Disj_alg A} (x y z: A),
-  nonunit x -> join x y z -> nonunit z.
-
-Lemma yesat_join:
-  forall pp k sh1 sh2 sh3 l m1 m2 m3,
-   join sh1 sh2 sh3 ->   
-   yesat pp k sh1 l m1 ->
-   yesat pp k sh2 l m2 ->
-   join m1 m2 m3 ->
-   yesat pp k sh3 l m3.
-
-Definition spec_parametric (Q: address -> spec) : Prop :=
-   forall l l', exists pp, exists ok,
-             forall sh m,
-           Q l sh l' m = 
-            (exists p, exists k, ok k /\ m @ l' = 
-                 YES sh p k (preds_fmap (approx (level m)) (approx (level m)) pp)).
-
-Lemma YES_ext:
-  forall sh sh' rsh rsh' k p, sh=sh' -> YES sh rsh k p = YES sh' rsh' k p.
-
-Definition VALspec : spec :=
-       fun (sh: Share.t) (l: address) =>
-          allp (jam (eq_dec l)
-                                  (fun l' => EX v: memval, 
-                                                yesat NoneP (VAL v) sh l')
-                                  noat) && noghost.
-
-Definition VALspec_range (n: Z) : spec :=
-     fun (sh: Share.t) (l: address) =>
-          andp (allp (jam (adr_range_dec l n)
-                                  (fun l' => EX v: memval, 
-                                                yesat NoneP (VAL v) sh l')
-                                  noat)) noghost.
-
-Definition nonlock_permission_bytes (sh: share) (a: address) (n: Z) : pred rmap :=
-  andp (allp (jam (adr_range_dec a n) (fun i => shareat i sh && nonlockat i) noat)) noghost.
-
-Definition nthbyte (n: Z) (l: list memval) : memval :=
-     nth (nat_of_Z n) l Undef.
-
-Definition address_mapsto_old (ch: memory_chunk) (v: val) : spec :=
-        fun (sh: Share.t) (l: AV.address)  => 
-             allp (jam (adr_range_dec l (size_chunk ch)) 
-                              (fun l' => yesat NoneP (VAL (nthbyte (snd l' - snd l) (encode_val ch v))) sh l')
-                           noat).
-
-Definition address_mapsto (ch: memory_chunk) (v: val) : spec :=
-        fun (sh: Share.t) (l: AV.address) =>
-           EX bl: list memval, 
-               !! (length bl = size_chunk_nat ch  /\ decode_val ch bl = v /\ (align_chunk ch | snd l))  &&
-                (allp (jam (adr_range_dec l (size_chunk ch))
-                                    (fun loc => yesat NoneP (VAL (nth (nat_of_Z (snd loc - snd l)) bl Undef)) sh loc)
-                                    noat)) && noghost.
-
-Lemma address_mapsto_align: forall ch v sh l,
-  address_mapsto ch v sh l = address_mapsto ch v sh l && !! (align_chunk ch | snd l).
-
-Lemma address_mapsto_fun:
-  forall ch sh sh' l v v',
-          (address_mapsto ch v sh l * TT) && (address_mapsto ch v' sh' l * TT) |-- !!(v=v').
-
-Definition LKspec lock_size (R: pred rmap) : spec :=
-   fun (sh: Share.t) (l: AV.address)  =>
-    allp (jam (adr_range_dec l lock_size)
-               (fun l' => yesat (SomeP Mpred (fun _ => R)) (LK lock_size (snd l' - snd l)) sh l')
-               noat) && noghost.
-
-Definition TTat (l: address) : pred rmap := TT.
-
-Lemma address_mapsto_old_parametric: forall ch v, 
-   spec_parametric (fun l sh l' => yesat NoneP (VAL (nthbyte (snd l' - snd l) (encode_val ch v))) sh l').
-
-Lemma VALspec_parametric: 
-  spec_parametric (fun l sh l' => EX v: memval,  yesat NoneP (VAL v) sh l').
-
-Lemma LKspec_parametric lock_size: forall R: pred rmap,
-  spec_parametric (fun l sh l' => yesat (SomeP Mpred (fun _ => R)) (LK lock_size (snd l' - snd l)) sh l').
-
-Definition val2address (v: val) : option AV.address := 
-  match v with Vptr b ofs => Some (b, Ptrofs.signed ofs) | _ => None end.
-
-Lemma VALspec_readable:
-  forall l sh w,  (VALspec sh l * TT) %pred w -> readable l w.
-
-Lemma address_mapsto_VALspec:
-  forall ch v sh l i, 0 <= i < size_chunk ch ->
-        address_mapsto ch v sh l |-- VALspec sh (adr_add l i) * TT.
-
-Lemma address_mapsto_exists:
-  forall ch v sh (rsh: readable_share sh) loc w0
-      (RESERVE: forall l', adr_range loc (size_chunk ch) l' -> w0 @ l' = NO Share.bot bot_unreadable)
-
-Lemma VALspec1: VALspec_range 1 = VALspec.
-
-Lemma VALspec_range_exp_address_mapsto:
-  forall ch sh l,
-    (align_chunk ch | snd l) ->
-    VALspec_range (size_chunk ch) sh l |-- EX v: val, address_mapsto ch v sh l.
-
-Lemma address_mapsto_VALspec_range:
-  forall ch v sh l,
-        address_mapsto ch v sh l |-- VALspec_range (size_chunk ch) sh l.
-
-Lemma approx_eq_i:
-  forall (P Q: pred rmap) (w: rmap),
-      (|> ! (P <=> Q)) w -> approx (level w) P = approx (level w) Q.
-
-Lemma level_later {A} `{H : ageable A}: forall {w: A} {n': nat},
-         laterR (level w) n' ->
-       exists w', laterR w w' /\ n' = level w'.
-
-Lemma VALspec_range_bytes_readable:
-  forall n sh loc m, VALspec_range n sh loc m -> bytes_readable loc n m.
-
-Lemma VALspec_range_bytes_writable:
-  forall n sh loc m, writable_share sh -> VALspec_range n sh loc m -> bytes_writable loc n m.
-
-Lemma yesat_join_sub:
-  forall pp k l sh m m',
-          join_sub m m' ->
-          yesat pp k sh l m ->
-         exists sh', yesat pp k sh' l m'.
-
-Lemma VALspec_range_precise: forall n sh l,  precise (VALspec_range n sh l).
-
-Lemma nonlock_permission_bytes_precise: forall sh p n,
-  precise (nonlock_permission_bytes sh p n).
-
-Lemma address_mapsto_precise: forall ch v sh l, precise (address_mapsto ch v sh l).
-
-Lemma LKspec_precise lock_size: forall R sh l, precise (LKspec lock_size R sh l).
-
-Program Definition core_load (ch: memory_chunk) (l: address) (v: val): pred rmap :=
-  EX bl: list memval,
-  !!(length bl = size_chunk_nat ch /\ decode_val ch bl = v /\ (align_chunk ch | snd l)) &&
-    allp (jam (adr_range_dec l (size_chunk ch))
-      (fun l' phi => exists sh, exists rsh, phi @ l' 
-        = YES sh rsh (VAL (nth (nat_of_Z (snd l' - snd l)) bl Undef)) NoneP)
-      (fun _ _ => True)).
-
-Program Definition core_load' (ch: memory_chunk) (l: address) (v: val) (bl: list memval)
-  : pred rmap :=
-  !!(length bl = size_chunk_nat ch /\ decode_val ch bl = v /\ (align_chunk ch | snd l)) &&
-    allp (jam (adr_range_dec l (size_chunk ch))
-      (fun l' phi => exists sh, exists rsh, phi @ l' 
-        = YES sh rsh (VAL (nth (nat_of_Z (snd l' - snd l)) bl Undef)) NoneP)
-      (fun _ _ => True)).
-
-Lemma VALspec_range_0: forall sh loc, VALspec_range 0 sh loc = emp.
-Hint Resolve VALspec_range_0: normalize.
-
-Lemma nonlock_permission_bytes_0: forall sh a, nonlock_permission_bytes sh a 0 = emp.
-
-Lemma nonlock_permission_bytes_not_nonunit: forall sh p n,
-  ~ nonunit sh ->
-  nonlock_permission_bytes sh p n |-- emp.
-
-Lemma is_resource_pred_YES_VAL sh:
-  is_resource_pred
-    (fun l' => EX  v: memval, yesat NoneP (VAL v) sh l')
-    (fun r _ n => (exists b0 rsh, r = YES sh rsh (VAL b0)
-        (SomeP (ConstType unit) (fun _ => tt)))).
-
-Lemma is_resource_pred_YES_VAL' sh v:
-  is_resource_pred
-    (fun l' => yesat NoneP (VAL (v l')) sh l')
-    (fun r l n => (exists rsh, r = YES sh rsh (VAL (v l))
-        (SomeP (ConstType unit) (fun _ => tt)))).
-
-Lemma is_resource_pred_nonlock_shareat sh:
-  is_resource_pred
-    (fun i : address => shareat i sh && nonlockat i)
-    (fun r _ _ => resource_share r = Some sh /\ nonlock r).
-
-Lemma VALspec_range_split2:
-  forall (n m r: Z) (sh: Share.t) (b: block) (ofs: Z),
-
-Lemma nonlock_permission_bytes_split2:
-  forall (n m r: Z) (sh: Share.t) (b: block) (ofs: Z),
-
-Lemma VALspec_range_VALspec:
-  forall (n : Z) (v : val) (sh : Share.t) (l : address) (i : Z),
-
-Lemma VALspec_range_overlap': forall sh p1 p2 n1 n2,
-  adr_range p1 n1 p2 ->
-  n2 > 0 ->
-  VALspec_range n1 sh p1 * VALspec_range n2 sh p2 |-- FF.
-
-Lemma address_mapsto_overlap':
-  forall sh ch1 v1 ch2 v2 a1 a2,
-     adr_range a1 (size_chunk ch1) a2 ->
-     address_mapsto ch1 v1 sh a1 * address_mapsto ch2 v2 sh a2 |-- FF.
-
-Lemma VALspec_range_overlap: forall sh l1 n1 l2 n2,
-  range_overlap l1 n1 l2 n2 ->
-  VALspec_range n1 sh l1 * VALspec_range n2 sh l2 |-- FF.
-
-Lemma address_mapsto_overlap: forall sh l1 ch1 v1 l2 ch2 v2,
-  range_overlap l1 (size_chunk ch1) l2 (size_chunk ch2) ->
-  address_mapsto ch1 v1 sh l1 * address_mapsto ch2 v2 sh l2 |-- FF.
-
-Lemma share_joins_self: forall sh: share, joins sh sh -> nonunit sh -> False.
-
-Lemma nonlock_permission_bytes_overlap:
-  forall sh n1 n2 p1 p2,
-  nonunit sh ->
-  range_overlap p1 n1 p2 n2 ->
-  nonlock_permission_bytes sh p1 n1 * nonlock_permission_bytes sh p2 n2 |-- FF.
-
-Lemma address_mapsto_value_cohere':
-  forall ch v1 v2 sh1 sh2 a r
- (Hmaps1 : address_mapsto ch v1 sh1 a r)
- (Hmaps2 : address_mapsto ch v2 sh2 a r), v1=v2.
-
-Lemma address_mapsto_value_cohere:
-  forall ch v1 v2 sh1 sh2 a,
- address_mapsto ch v1 sh1 a * address_mapsto ch v2 sh2 a |-- !! (v1=v2).
-
-Definition almost_empty rm: Prop:=
-  forall loc sh psh k P, rm @ loc = YES sh psh k P -> forall val, ~ k = VAL val.
-
-Definition no_locks phi :=
-  forall addr sh sh' z z' P,
-phi @ addr <> YES sh sh' (LK z z') P. *)
-
-
 
 Lemma int_of_bytes_uniq:
-
   forall i j, length i = length j -> int_of_bytes i = int_of_bytes j -> i = j.
-
 Proof.
-
   induction i; intros.
-
  destruct j; inv H. auto.
-
  destruct j; inv H.
-
  specialize (IHi _ H2).
-
  simpl in H0.
-
 do 2 rewrite (Z.add_comm (Byte.unsigned _)) in H0.
-
  remember (int_of_bytes j * 256 + Byte.unsigned i0) as v eqn:?H.
-
  symmetry in H0.
-
  rename i0 into b.
-
  pose proof (Zmod_unique _ _ _ _ H (Byte.unsigned_range _)).
-
  pose proof (Zmod_unique _ _ _ _ H0 (Byte.unsigned_range _)).
-
  assert (Byte.repr (Byte.unsigned a) = Byte.repr (Byte.unsigned b)) by congruence.
-
  repeat rewrite Byte.repr_unsigned in H4.
-
  subst b.
-
  f_equal. clear H1.
-
  apply IHi.
-
  omega.
-
 Qed.
-
-
 
 Lemma decode_int_uniq:
-
   forall i j, length i = length j -> decode_int i = decode_int j -> i=j.
-
 Proof.
-
  unfold decode_int, rev_if_be.
-
  destruct Archi.big_endian.
-
  intros. rewrite <- (rev_involutive i). rewrite <- (rev_involutive j).
-
  f_equal.
-
  assert (length (rev i) = length (rev j)).
-
  repeat rewrite rev_length; auto.
-
  eapply int_of_bytes_uniq; eauto.
-
  apply int_of_bytes_uniq.
-
 Qed.
-
-
 
 Lemma decode_int_range:
-
   forall l N, N = two_p (8 * Z.of_nat (length l)) -> 0 <= decode_int l < N.
-
 Proof.
-
 intros; subst; revert l.
-
 unfold decode_int.
-
 assert (forall l, 0 <= int_of_bytes l < two_p (8 * Z.of_nat (length l))).
-
 2: intros; rewrite <- rev_if_be_length; auto.
-
 induction l.
-
 simpl; omega.
-
 simpl int_of_bytes. simpl length.
-
 rewrite Nat2Z.inj_succ.
-
 unfold Z.succ.
-
 rewrite Z.mul_add_distr_l.
-
 rewrite two_p_is_exp; try omega.
-
 change (two_p (8*1)) with 256.
-
 pose proof (Byte.unsigned_range a).
-
 change Byte.modulus with 256 in H.
-
 omega.
-
 Qed.
-
-
 
 Lemma sign_ext_injective:
-
  forall n i j,
-
     0 < n < Int.zwordsize ->
-
     0 <= i < two_p n ->
-
     0 <= j < two_p n ->
-
     Int.sign_ext n (Int.repr i) = Int.sign_ext n (Int.repr j) ->
-
     i=j.
-
 Proof.
-
 intros.
-
 pose proof (Int.eqmod_sign_ext n (Int.repr i) H).
-
 pose proof (Int.eqmod_sign_ext n (Int.repr j) H).
-
 rewrite H2 in H3.
-
 apply Int.eqmod_sym in H3.
-
 pose proof (Int.eqmod_trans _ _ _ _ H3 H4).
-
 rewrite Int.unsigned_repr in H5.
-
 2: pose proof (two_p_monotone_strict n Int.zwordsize);
-
    change Int.max_unsigned with (two_p Int.zwordsize - 1);
-
    omega.
-
 rewrite Int.unsigned_repr in H5.
-
 2: pose proof (two_p_monotone_strict n Int.zwordsize);
-
    change Int.max_unsigned with (two_p Int.zwordsize - 1);
-
    omega.
-
 apply Int.eqmod_small_eq in H5; auto.
-
 Qed.
-
-
 
 Lemma zero_ext_injective:
-
  forall n i j,
-
     0 <= n < Int.zwordsize ->
-
     0 <= i < two_p n ->
-
     0 <= j < two_p n ->
-
     Int.zero_ext n (Int.repr i) = Int.zero_ext n (Int.repr j) ->
-
     i=j.
-
 Proof.
-
 intros.
-
 pose proof (Int.eqmod_zero_ext n (Int.repr i) H).
-
 pose proof (Int.eqmod_zero_ext n (Int.repr j) H).
-
 rewrite H2 in H3.
-
 apply Int.eqmod_sym in H3.
-
 pose proof (Int.eqmod_trans _ _ _ _ H3 H4).
-
 rewrite Int.unsigned_repr in H5.
-
 2: pose proof (two_p_monotone_strict n Int.zwordsize);
-
    change Int.max_unsigned with (two_p Int.zwordsize - 1);
-
    omega.
-
 rewrite Int.unsigned_repr in H5.
-
 2: pose proof (two_p_monotone_strict n Int.zwordsize);
-
    change Int.max_unsigned with (two_p Int.zwordsize - 1);
-
    omega.
-
 apply Int.eqmod_small_eq in H5; auto.
-
 Qed.
-
-
 
 Lemma repr_decode_int_inj:
-
   forall l1 l2, length l1 = 4%nat -> length l2 = 4%nat ->
-
     Int.repr (decode_int l1) = Int.repr (decode_int l2) ->
-
     l1=l2.
-
 Proof.
-
 intros.
-
 apply decode_int_uniq; [congruence | ].
-
 rewrite <- (Int.unsigned_repr (decode_int l1)).
-
 2:{
-
 pose proof (decode_int_range l1 _ (eq_refl _)).
-
 rewrite H in H2.
-
 change (two_p (8 * Z.of_nat 4)) with (Int.max_unsigned + 1) in H2.
-
 omega.
-
 }
-
 rewrite <- (Int.unsigned_repr (decode_int l2)).
-
 2:{
-
 pose proof (decode_int_range l2 _ (eq_refl _)).
-
 rewrite H0 in H2.
-
 change (two_p (8 * Z.of_nat 4)) with (Int.max_unsigned + 1) in H2.
-
 omega.
-
 }
-
 congruence.
-
 Qed.
-
-
 
 Lemma repr_decode_int64_inj:
-
   forall l1 l2, length l1 = 8%nat -> length l2 = 8%nat ->
-
     Int64.repr (decode_int l1) = Int64.repr (decode_int l2) ->
-
     l1=l2.
-
 Proof.
-
 intros.
-
 apply decode_int_uniq; [congruence | ].
-
 rewrite <- (Int64.unsigned_repr (decode_int l1)).
-
 2:{
-
 pose proof (decode_int_range l1 _ (eq_refl _)).
-
 rewrite H in H2.
-
 change (two_p (8 * Z.of_nat 8)) with (Int64.max_unsigned + 1) in H2.
-
 omega.
-
 }
-
 rewrite <- (Int64.unsigned_repr (decode_int l2)).
-
 2:{
-
 pose proof (decode_int_range l2 _ (eq_refl _)).
-
 rewrite H0 in H2.
-
 change (two_p (8 * Z.of_nat 8)) with (Int64.max_unsigned + 1) in H2.
-
 omega.
-
 }
-
 congruence.
-
 Qed.
-
-
 
 Transparent Float.of_bits.
-
 Transparent Float32.of_bits.
 
-
-
 Lemma double_of_bits_inj:
-
   forall i j, Float.of_bits i = Float.of_bits j -> i=j.
-
 Proof.
-
 intros.
-
 unfold Float.of_bits in H.
-
 rewrite <- (Int64.repr_unsigned i).
-
 rewrite <- (Int64.repr_unsigned j).
-
 f_equal.
-
 unfold Fappli_IEEE_bits.b64_of_bits in H.
-
 rewrite <- (Fappli_IEEE_bits.bits_of_binary_float_of_bits 52 11 (refl_equal _) (refl_equal _) (refl_equal _) (Int64.unsigned i))
-
   by (apply Int64.unsigned_range).
-
 rewrite <- (Fappli_IEEE_bits.bits_of_binary_float_of_bits 52 11 (refl_equal _) (refl_equal _) (refl_equal _) (Int64.unsigned j))
-
   by (apply Int64.unsigned_range).
-
 f_equal; apply H.
-
 Qed.
-
-
 
 Require Import ZArith.
-
 From compcert Require Import Fappli_IEEE Fcore_Zaux Fcore_generic_fmt.
 
-
-
 Lemma binary_normalize_inj:
-
   forall s1 m1 e1 (h1 : bounded 24 128 m1 e1 = true),
-
   forall s2 m2 e2 (h2 : bounded 24 128 m2 e2 = true),
-
    binary_normalize 53 1024 (eq_refl _) (eq_refl _) mode_NE (cond_Zopp s1 (Zpos m1)) e1 s1 =
-
    binary_normalize 53 1024 (eq_refl _) (eq_refl _) mode_NE (cond_Zopp s2 (Zpos m2)) e2 s2 ->
-
   B754_finite 24 128 s1 m1 e1 h1 = B754_finite 24 128 s2 m2 e2 h2.
-
 Proof.
-
 intros s1 m1 e1 h1 s2 m2 e2 h2 Hn.
-
 apply B2R_inj ; try easy.
-
 assert (H: forall s m e h,
-
   B2R 24 128 (B754_finite 24 128 s m e h) =
-
   B2R 53 1024 (binary_normalize 53 1024 (eq_refl _) (eq_refl _) mode_NE (cond_Zopp s (Zpos m)) e s)).
-
 2: now rewrite 2!H, Hn.
-
 clear.
-
 intros s m e h.
-
 generalize (binary_normalize_correct 53 1024 (eq_refl _) (eq_refl _) mode_NE (cond_Zopp s (Zpos m)) e s).
-
 rewrite round_generic ; auto with typeclass_instances.
-
 rewrite  Fcore_Raux.Rlt_bool_true.
-
 intros [-> _].
-
 easy.
-
 apply Raxioms.Rlt_trans with (1 := abs_B2R_lt_emax _ _ (B754_finite 24 128 s m e h)).
-
 now apply Fcore_Raux.bpow_lt.
-
 apply Fcore_FLT.generic_format_FLT.
-
 assert (h' := generic_format_B2R 24 128 (B754_finite 24 128 s m e h)).
-
 apply Fcore_FLT.FLT_format_generic in h'.
-
 destruct h' as [f [H1 [H2 H3]]].
-
 exists f.
-
 rewrite <- H1.
-
 repeat split.
-
 apply Z.lt_trans with (1 := H2).
-
 now apply Zpower_lt.
-
 now apply Z.le_trans with (2 := H3).
-
 easy.
-
 Qed.
-
-
 
 Lemma binary_normalize_finite:
-
   forall b m e,
-
   bounded (23 + 1) (2 ^ (8 - 1)) m e = true ->
-
  match
-
      binary_normalize 53 1024 eq_refl eq_refl mode_NE
-
           (cond_Zopp b (Z.pos m)) e b
-
  with B754_finite _ _ _ _ => True | _ => False
-
  end.
-
 Proof.
-
 intros s m e h.
-
 generalize (binary_normalize_correct 53 1024 (eq_refl _) (eq_refl _) mode_NE (cond_Zopp s (Zpos m)) e s).
-
 rewrite round_generic ; auto with typeclass_instances.
-
 rewrite Fcore_Raux.Rlt_bool_true.
 
-
-
 intros [H _].
-
 assert (H': B2R 53 1024 (binary_normalize 53 1024 eq_refl eq_refl mode_NE (cond_Zopp s (Z.pos m)) e s) <> 0%R).
-
   rewrite H, <- (Fcore_float_prop.F2R_0 radix2 e).
-
   case s.
-
   now apply RIneq.Rlt_not_eq, Fcore_float_prop.F2R_lt_compat.
-
   now apply RIneq.Rgt_not_eq, Fcore_float_prop.F2R_lt_compat.
-
 clear H.
-
 destruct binary_normalize ; try easy ; now elim H'.
 
-
-
 apply Raxioms.Rlt_trans with (1 := abs_B2R_lt_emax _ _ (B754_finite 24 128 s m e h)).
-
 now apply Fcore_Raux.bpow_lt.
-
 apply Fcore_FLT.generic_format_FLT.
-
 assert (h' := generic_format_B2R 24 128 (B754_finite 24 128 s m e h)).
-
 apply Fcore_FLT.FLT_format_generic in h'.
-
 destruct h' as [f [H1 [H2 H3]]].
-
 exists f.
-
 rewrite <- H1.
-
 repeat split.
-
 apply Z.lt_trans with (1 := H2).
-
 now apply Zpower_lt.
-
 now apply Z.le_trans with (2 := H3).
-
 easy.
-
 Qed.
-
-
 
 Lemma float32_preserves_payload:
-
  forall s pl,
-
     let '(s1,pl1) := Float.of_single_pl s pl in
-
       (s=s1 /\ (536870912 * (Pos.lor (proj1_sig pl) 4194304))%positive = proj1_sig pl1).
-
 Proof.
-
  intros.
-
  unfold Float.of_single_pl.
-
  split; auto.
-
 Qed.
 
-
-
 Lemma pos_lor_inj:  
-
   forall k N (a b: nan_pl k),
-
      Zpower_nat 2 (Z.to_nat (k-2)) = Zpos N ->
-
      Pos.lor (proj1_sig a) N =  Pos.lor (proj1_sig b) N ->
-
     a=b.
-
 Proof.
-
 intros.
-
  destruct a as [a Ha]. destruct b as [b Hb].
-
  simpl in *.
-
  assert (a=b); [ | subst a; f_equal; apply Axioms.proof_irr].
-
 Abort.
-
-
 
 Inductive wishes_eq_horses := .
 
-
-
 Lemma float32_payload_inj:
-
   wishes_eq_horses ->
-
   forall s1 pl1 s2 pl2,
-
     Float.of_single_pl s1 pl1= Float.of_single_pl s2 pl2 ->
-
     (s1,pl1) = (s2,pl2).
-
 Proof.
-
 intro WH; intros.
-
  pose proof (float32_preserves_payload s1 pl1).
-
  pose proof (float32_preserves_payload s2 pl2).
-
  rewrite H in H0. clear H.
-
  destruct (Float.of_single_pl s2 pl2).
-
  destruct H0,H1. subst.
-
  f_equal.
-
  rewrite <- H2 in H0; clear - WH H0.
-
  apply Pos.mul_reg_l in H0.
-
  contradiction WH.
-
 Qed.
-
-
 
 Lemma single_of_bits_inj:
-
   forall i j : Int.int, Float32.of_bits i = Float32.of_bits j -> i=j.
-
 Proof.
-
 intros.
-
 unfold Float32.of_bits in H.
-
 rewrite <- (Int.repr_unsigned i).
-
 rewrite <- (Int.repr_unsigned j).
-
 f_equal.
-
 rewrite <- (Fappli_IEEE_bits.bits_of_binary_float_of_bits 23 8 (refl_equal _) (refl_equal _) (refl_equal _) (Int.unsigned i))
-
   by (apply Int.unsigned_range).
-
 rewrite <- (Fappli_IEEE_bits.bits_of_binary_float_of_bits 23 8 (refl_equal _) (refl_equal _) (refl_equal _) (Int.unsigned j))
-
   by (apply Int.unsigned_range).
-
 f_equal.
-
 unfold Fappli_IEEE_bits.b32_of_bits in H.
-
 match goal with |- ?A = ?B => remember A as u eqn:H9; remember B as v eqn:H10;
-
    clear H9 H10 end.
-
 clear i j.
 
-
-
 destruct u,v; auto; try congruence.
-
 Qed.
 
-
-
 Lemma Vint_inj: forall i j, Vint i = Vint j -> i=j.
-
 Proof. congruence. Qed.
 
-
-
 Lemma decode_val_uniq:
-
    
-
   forall ch b1 b2 v,
-
     v <> Vundef ->
-
     length b1 = size_chunk_nat ch ->
-
     length b2 = size_chunk_nat ch ->
-
     decode_val ch b1 = v ->
-
     decode_val ch b2 = v ->
-
     b1=b2.
-
 Proof.
-
  intros.
-
  unfold size_chunk_nat in *.
-
  unfold decode_val in *.
-
  destruct (proj_bytes b1) eqn:B1.
-
 subst v.
-
-
 
 Abort.
 
-
-
 Lemma superprecise_ewand_lem1:
-
   forall S P: pred rmap, superprecise P ->
-
           S |-- P * TT ->
-
           S = (P * (ewand P S))%pred.
-
 Proof.
-
 intros.
-
 apply pred_ext.
-
 intros w ?. specialize (H0 w H1).
-
 destruct H0 as [w1 [w2 [? [? _]]]].
-
 exists w1; exists w2; split3; auto.
-
 exists w1; exists w; split3; auto.
-
 intros w [w1 [w2 [? [? ?]]]].
-
 destruct H3 as [w3 [w4 [? [? ?]]]].
-
 assert (w1=w3). eapply H; eauto.
-
 apply join_core2 in H1; apply join_core2 in H3; unfold comparable; congruence.
-
 subst w3.
-
 pose proof (join_eq H1 H3); subst w4.
-
 auto.
-
 Qed.
-
-
 

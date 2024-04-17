@@ -1,57 +1,113 @@
 Require Export DACandMAC. 
-
+(* DACandMAC:
+Require Export SFSstate. 
  
-
-Section Chsubsc. 
-
+Set Implicit Arguments.
+Unset Strict Implicit. 
  
-
+Section Preconditions. 
+ 
 Variable s : SFSstate. 
-
  
-
-Definition chsubsc_SC (v : SUBJECT) (sc : SecClass) :
-
-  set (SUBJECT * SecClass) :=
-
-  match fSSC (subjectSC s) v with
-
-  | None => subjectSC s
-
+Definition PreDACRead (u : SUBJECT) (o : OBJECT) : Prop :=
+  match facl (acl s) o with
   | Some y =>
-
-      set_add SSCeq_dec (v, sc) (set_remove SSCeq_dec (v, y) (subjectSC s))
-
+      set_In u (UsersReaders y) \/
+      (exists g : GRPNAME, set_In u (groups s g) /\ set_In g (GroupReaders y))
+  | None => False
   end. 
-
  
-
+Definition PreDACWrite (u : SUBJECT) (o : OBJECT) : Prop :=
+  match facl (acl s) o with
+  | Some y =>
+      set_In u (UsersWriters y) \/
+      (exists g : GRPNAME, set_In u (groups s g) /\ set_In g (GroupWriters y))
+  | None => False
+  end. 
+ 
+Definition PreMAC (u : SUBJECT) (o : OBJECT) : Prop :=
+  match fOSC (objectSC s) o, fSSC (subjectSC s) u with
+  | None, _ => False
+  | _, None => False
+  | Some a, Some b => le_sc a b
+  end. 
+ 
+Definition PreStarPropRead (u : SUBJECT) (o : OBJECT) : Prop :=
+  forall b : OBJECT,
+  match fsecmat (secmat s) b, fOSC (objectSC s) o, fOSC (objectSC s) b with
+  | None, _, _ => False
+  | _, None, _ => False
+  | _, _, None => False
+  | Some x, Some y, Some z => set_In u (ActWriters x) -> le_sc y z
+  end. 
+ 
+Definition PreStarPropWrite (u : SUBJECT) (o : OBJECT) : Prop :=
+  forall b : OBJECT,
+  match fsecmat (secmat s) b, fOSC (objectSC s) o, fOSC (objectSC s) b with
+  | None, _, _ => False
+  | _, None, _ => False
+  | _, _, None => False
+  | Some x, Some y, Some z => set_In u (ActReaders x) -> le_sc z y
+  end. 
+ 
+Inductive IsUNIXOwner (u : SUBJECT) : AccessCtrlListData -> Prop :=
+    IUO :
+      forall a : AccessCtrlListData,
+      IsUNIXOwner u
+        (acldata u (group a) (UsersReaders a) (GroupReaders a)
+           (UsersWriters a) (GroupWriters a) (UsersOwners a) 
+           (GroupOwners a)). 
+                              
+Inductive ExecuterIsOwner (u : SUBJECT) (o : OBJECT) : Prop :=
+  | UNIXOwner :
+      forall y : AccessCtrlListData,
+      facl (acl s) o = Some y -> IsUNIXOwner u y -> ExecuterIsOwner u o
+  | ACLOwner :
+      forall y : AccessCtrlListData,
+      facl (acl s) o = Some y ->
+      set_In u (UsersOwners y) -> ExecuterIsOwner u o
+  | ACLGrp :
+      forall y : AccessCtrlListData,
+      facl (acl s) o = Some y ->
+      (exists g : GRPNAME, set_In u (groups s g) /\ set_In g (GroupOwners y)) ->
+      ExecuterIsOwner u o. 
+ 
+Definition InFileSystem (o : OBJECT) : Prop :=
+  set_In o
+    (set_union OBJeq_dec (DOM OBJeq_dec (files s))
+       (DOM OBJeq_dec (directories s))). 
+ 
+End Preconditions. 
+ 
+Hint Resolve IUO UNIXOwner ACLOwner ACLGrp. 
+ 
+Hint Unfold PreDACRead PreDACWrite PreMAC PreStarPropRead PreStarPropWrite
+  InFileSystem. *)
+ 
+Section Chsubsc. 
+ 
+Variable s : SFSstate. 
+ 
+Definition chsubsc_SC (v : SUBJECT) (sc : SecClass) :
+  set (SUBJECT * SecClass) :=
+  match fSSC (subjectSC s) v with
+  | None => subjectSC s
+  | Some y =>
+      set_add SSCeq_dec (v, sc) (set_remove SSCeq_dec (v, y) (subjectSC s))
+  end. 
+ 
 Let t (u : SUBJECT) (sc : SecClass) : SFSstate :=
-
   mkSFS (groups s) (primaryGrp s) (chsubsc_SC u sc) 
-
     (AllGrp s) (RootGrp s) (SecAdmGrp s) (objectSC s) 
-
     (acl s) (secmat s) (files s) (directories s). 
-
  
-
 Inductive chsubsc (secadm u : SUBJECT) (sc : SecClass) : SFSstate -> Prop :=
-
     chsubscOK :
-
       set_In secadm (groups s (SecAdmGrp s)) ->
-
       (forall rw : ReadersWriters,
-
        ~ set_In u (ActReaders rw) /\ ~ set_In u (ActWriters rw)) ->
-
       chsubsc secadm u sc (t u sc). 
-
  
-
 End Chsubsc. 
-
  
-
 Hint Unfold chsubsc_SC.

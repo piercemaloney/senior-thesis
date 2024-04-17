@@ -1,814 +1,407 @@
 Require Import VST.floyd.proofauto.
-
 Require Import VST.progs.list_dt.
-
 Require Import VST.progs.insertionsort.
-
 Require Import Sorted.
-
 Require Import Omega.
-
 Require Import Coq.Sorting.Permutation.
-
-
 
 Local Open Scope logic.
 
-
-
 Instance LS: listspec t_struct_list _tail.
-
 Proof. eapply mk_listspec; reflexivity. Defined.
 
-
-
 Fixpoint insert x xs :=
-
   match xs with
-
     | [] => [x]
-
     | h :: t => if Int.cmp Cle x h then x :: xs else h :: (insert x t)
-
   end.
 
-
-
 Definition insertion_sort xs :=
-
     fold_right insert [] xs.
 
-
-
 Definition insert_spec :=
-
   DECLARE _insert
-
     WITH sh: share, contents : list int, insert_val : int, sorted_ptr : val, insert_ptr: val
-
     PRE [_insert_node OF (tptr t_struct_list), _sorted OF (tptr t_struct_list)]
-
         PROP (writable_share sh)
-
         LOCAL (temp _sorted sorted_ptr; temp _insert_node insert_ptr)
-
         SEP (lseg LS sh (map Vint contents) sorted_ptr nullval;
-
                data_at sh t_struct_list (Vint insert_val, nullval) insert_ptr)
-
     POST [tptr t_struct_list]
-
       EX v: val,
-
         PROP() LOCAL(temp ret_temp v)
-
         SEP(lseg LS sh (map Vint (insert insert_val contents)) v nullval).
 
-
-
 Definition insertionsort_spec :=
-
   DECLARE  _insertionsort
-
     WITH sh: share, contents : list int, list_ptr : val
-
     PRE [_p OF (tptr t_struct_list)]
-
         PROP (writable_share sh)
-
         LOCAL (temp _p list_ptr)
-
         SEP (lseg LS sh (map Vint contents) list_ptr nullval)
-
     POST [tptr t_struct_list]
-
       EX v: val,
-
         PROP() LOCAL(temp ret_temp v)
-
         SEP(lseg LS sh (map Vint (insertion_sort contents)) v nullval).
 
-
-
 Definition main_spec :=
-
  DECLARE _main
-
   WITH u : unit
-
   PRE  [] main_pre prog u
-
   POST [ tint ] main_post prog u.
-
-
 
 Definition Vprog : varspecs := nil.
 
-
-
 Definition Gprog : funspecs :=   ltac:(with_library prog
-
      [insert_spec; insertionsort_spec]).
 
-
-
 Lemma list_cell_eq: forall sh,
-
    list_cell LS sh = field_at sh t_struct_list [StructField _head].
-
 Proof. admit. Qed.
 
-
-
 Definition isptrb v :=
-
    match v with | Vptr _ _ => true | _ => false end.
 
-
-
 Definition Igt a b:=
-
 Int.cmp Cgt a b = true.
 
-
-
 Definition fst_3 {A B C} (a: A* B*C) := fst (fst a).
-
 Definition snd_3 {A B C} (a: A * B * C) := snd (fst a).
-
 Definition third_3 {A B C} (a: A * B * C) := snd a.
 
-
-
 Definition insert_invariant sh insert_val contents :=
-
 EX prev_ptr : val,
-
 EX index_ptr : val,
-
 EX sorted_val : int,
-
 EX next_ptr : val,
-
 EX prev_val : int,
-
 EX contents_lt: list int,
-
 EX contents_rest : list int,
-
 PROP ( if (isptrb prev_ptr)
-
       then
-
         (Forall (Igt insert_val) (contents_lt ++ [prev_val]))
-
       else Forall (Igt insert_val) contents_lt;
-
       if (isptrb index_ptr)
-
       then
-
         if (isptrb prev_ptr)
-
         then
-
              (contents_lt) ++ (prev_val)::(sorted_val)::(contents_rest) = contents
-
         else sorted_val::contents_rest = contents
-
       else
-
         if (isptrb prev_ptr)
-
         then
-
           contents_lt ++ (prev_val :: nil) = contents
-
         else
-
           nil = contents)
-
 LOCAL (temp _index index_ptr; temp _insert_value (Vint insert_val);
-
         if (isptrb index_ptr)
-
         then temp _sortedvalue (Vint (sorted_val))
-
         else `(next_ptr = nullval);
-
         `eq (eval_id _guard)
-
          (`logical_and_result `(tptr t_struct_list)
-
            (eval_id _index) `tint
-
            (`(eval_binop Ogt tint tint) (eval_id _insert_value)
-
              (eval_id _sortedvalue)));
-
         temp _previous prev_ptr;
-
         if (isptrb prev_ptr)
-
         then `True
-
         else temp _sorted index_ptr)
-
 SEP (
-
      (if(isptrb index_ptr)
-
       then
-
        (list_cell LS sh (index_ptr) (Vint (sorted_val)) *
-
         field_at sh t_struct_list [StructField _tail] next_ptr index_ptr)
-
       else
-
          emp);
-
       (if(isptrb prev_ptr)
-
        then lseg LS sh (map Vint (contents_lt))) (eval_id _sorted) `(prev_ptr) *
-
              `(list_cell LS sh (prev_ptr) (Vint (prev_val))) *
-
              `(field_at sh t_struct_list [StructField _tail] index_ptr prev_ptr)
-
        else emp);
-
      `(lseg LS sh (map Vint (contents_rest))) `(next_ptr) `nullval;
-
      `(field_at sh t_struct_list [StructField _head] (Vint insert_val)) (eval_id _insert_node);
-
      `(field_at sh t_struct_list [StructField _tail] nullval) (eval_id _insert_node) ).
 
-
-
 Definition insert_post sh insert_val contents :=
-
 EX prev_ptr : val,
-
 EX index_ptr : val,
-
 EX sorted_val : int,
-
 EX next_ptr : val,
-
 EX prev_val : int,
-
 EX contents_lt: list int,
-
 EX contents_rest : list int,
-
 PROP (
-
       if (isptrb prev_ptr)
-
       then
-
         (Forall (Igt insert_val) (contents_lt ++ [prev_val]))
-
       else Forall (Igt insert_val) contents_lt;
-
         if (isptrb index_ptr)
-
       then
-
         if (isptrb prev_ptr)
-
         then
-
              (contents_lt) ++ (prev_val)::(sorted_val)::(contents_rest) = contents
-
         else sorted_val::contents_rest = contents
-
       else
-
         if (isptrb prev_ptr)
-
         then
-
           contents_lt ++ (prev_val :: nil) = contents
-
         else
-
           nil = contents)
-
 LOCAL ( lift1 (typed_false (typeof (Etempvar _guard tint)))
-
               (eval_expr (Etempvar _guard tint));
-
         `(eq index_ptr) (eval_id _index);
-
         `(eq (Vint insert_val)) (eval_id _insert_value);
-
         if (isptrb index_ptr)
-
         then
-
           `(eq (Vint (sorted_val))) (eval_id _sortedvalue)
-
         else
-
           `(next_ptr = nullval);
-
         `eq (eval_id _guard)
-
          (`logical_and_result `(tptr t_struct_list)
-
            (eval_id _index) `tint
-
            (`(eval_binop Ogt tint tint) (eval_id _insert_value)
-
              (eval_id _sortedvalue)));
-
         `(eq prev_ptr) (eval_id _previous);
-
       if (isptrb prev_ptr)
-
         then `True
-
         else `(eq index_ptr) (eval_id _sorted))
-
 SEP (
-
      (if(isptrb index_ptr)
-
       then
-
         
-
        (`(list_cell LS sh (index_ptr) (Vint sorted_val)) *
-
         `(field_at sh t_struct_list [StructField _tail] next_ptr index_ptr))
-
       else
-
          emp);
-
       (if(isptrb prev_ptr)
-
        then  `(lseg LS sh (map Vint (contents_lt))) (eval_id _sorted) `(prev_ptr) *
-
              `(list_cell LS sh (prev_ptr) (Vint prev_val)) *
-
              `(field_at sh t_struct_list [StructField _tail] index_ptr prev_ptr)
-
        else emp);
-
      `(lseg LS sh (map Vint contents_rest)) `(next_ptr) `nullval;
-
      `(field_at sh t_struct_list [StructField _head] (Vint insert_val)) (eval_id _insert_node);
-
      `(field_at sh t_struct_list [StructField _tail] nullval) (eval_id _insert_node)).
 
-
-
 Lemma lseg_cons_non_nill : forall {ls ll} LS sh h r v1 v2 , @lseg ls ll LS sh (h::r) v1 v2 =
-
 !!isptr v1 && @lseg ls ll LS sh (h::r) v1 v2.
-
 intros.
-
 apply pred_ext.
-
   + apply andp_right; auto. rewrite lseg_unfold.
-
      normalize. rewrite field_at_isptr.
-
      normalize.
-
   +  normalize.
-
 Qed.
-
-
 
 Lemma Forall_app :
-
 forall {A} P (l1 l2 :list A),
-
 Forall P (l1 ++ l2) <->
-
 Forall P l1 /\ Forall P l2.
-
 intros.
-
 split; induction l1; intros.
-
 inv H. destruct l2; inv H0. auto.
-
 split. auto. simpl in H2. inv H2.
-
 constructor; auto.
-
 split. inv H. constructor; auto. apply IHl1 in H3.
-
 intuition.
-
 inv H. apply IHl1 in H3. intuition.
-
 simpl. intuition.
-
 simpl. constructor.
-
 destruct H. inv H. auto.
-
 apply IHl1. intuition.
-
 inv H0; auto.
-
 Qed.
-
-
 
 Lemma lseg_is_ptr_or_null :
-
 forall  sh c v1 v2 R,
-
 @lseg t_struct_list _tail LS sh (c) v1 v2 * R |-- !!is_pointer_or_null v1 && (@lseg t_struct_list _tail LS sh c v1 v2)  * R.
-
 Proof.
-
 intros.
-
 cancel.
-
 apply andp_right.
-
 rewrite lseg_unroll.
-
 apply orp_left. rewrite andp_assoc.
-
 unfold ptr_eq. destruct v1; normalize. destruct v2; normalize.
-
 unfold Int.cmpu in *. simpl.
-
 destruct H.
-
 apply int_eq_e in H.
-
 apply int_eq_e in H0.
-
 subst. unfold Int.zero. entailer.
-
 unfold lseg_cons. normalize.
-
 assert (X := @list_cell_eq). entailer.
-
 cancel.
-
 Qed.
-
-
 
 Lemma eval_id_initialized : forall v id rho t,
-
 tc_val t v ->
-
 v = eval_id id rho ->
-
 denote_tc_initialized id t rho.
-
 Proof.
-
 intros.
-
 unfold eval_id in *.
-
 unfold denote_tc_initialized.
-
 exists v. split.
-
 destruct (Map.get (te_of rho) id).
-
 simpl in H0. inv H0.
-
 auto.
-
 inv H0.
-
 inv H.
-
 auto.
-
 Qed.
-
-
 
 Ltac destruct_ptr :=
-
   match goal with
-
     | [ H: isptr (?X) |- _] => let v := fresh "pt" in (remember X as v; destruct v; inv H)
-
   end.
 
-
-
 Lemma lt_lemma : forall v1 v2 b1 t1,
-
                    typed_true tint (logical_and_result t1 b1 tint
-
                                                 (eval_binop Ogt tint tint
-
                                                 (Vint v1) (Vint v2))) ->
-
                                     Forall (Igt v1) [v2].
-
 Proof.
-
   intros.
-
   simpl in *.
-
   unfold logical_and_result in *.
-
   simpl in *. constructor. unfold Igt.
-
   replace (Int.lt v2 v1) with
-
   (Int.cmp Clt v2 v1) in * by auto.
-
   remember (Int.cmp Clt v2 v1).
-
   destruct b; inv H.
-
   rewrite <- Int.swap_cmp in Heqb. simpl swap_comparison in Heqb.
-
   auto. destruct (strict_bool_val b1 t1); inv H1. destruct b; simpl; inv H0.
-
   auto.
-
 Qed.
 
-
-
 Lemma body_insertionsort : semax_body Vprog Gprog f_insertionsort insertionsort_spec.
-
 Proof.
-
 start_function.
-
 name p _p.
-
 name sorted _sorted.
-
 name index _index.
-
 name next _next.
 
-
-
 forward. 
-
 forward. 
-
-
 
 Definition body_invariant sh contents :=
-
 EX sorted_list : list int,
-
 EX unsorted_list : list int,
-
 EX p: val, EX i: val,
-
 PROP (contents = sorted_list ++ unsorted_list)
-
 LOCAL (temp _sorted p; temp _index i)
-
 SEP (`(lseg LS sh (map Vint (insertion_sort sorted_list)) p nullval);
-
      `(lseg LS sh (map Vint unsorted_list) i nullval)).
 
-
-
 Definition body_post sh contents :=
-
 EX p: val,
-
 PROP ()
-
 LOCAL (temp _sorted p)
-
 SEP (`(lseg LS sh (map Vint (insertion_sort contents)) p nullval)).
 
-
-
 forward_while
-
     (body_invariant sh contents)
-
     (body_post sh contents)
-
      [[[sorted_list unsorted_list] p0] i].
 
-
-
 apply (exp_right nil).
-
 apply (exp_right contents).
-
 apply (exp_right (Vint (Int.repr 0))).
-
 apply (exp_right list_ptr).
-
 entailer!.
-
-
 
 entailer.
 
-
-
 apply (exp_right p0).
-
 entailer!.
-
 destruct unsorted_list; inv H0.
-
 rewrite <- app_nil_end. auto.
 
-
-
 focus_SEP 1.
-
 normalize.
-
 apply semax_lseg_nonnull.
-
 entailer!.
-
 intros insert_val' unsorted_list2' ? ? ?.
-
 simpl valinject.
-
 assert (exists insert_val, exists unsorted_list2,
-
    insert_val' = Vint insert_val /\ unsorted_list2' = map Vint unsorted_list2
-
     /\ unsorted_list = insert_val :: unsorted_list2)
-
   as [insert_val [unsorted_list2 [? [? ?]]]].
-
 clear - H0. admit.
-
 unfold POSTCONDITION; subst.
-
 abbreviate_semax.
-
 rename unsorted_list2 into unsorted_list.
-
 forward. 
-
 forward. 
-
-
 
 rewrite list_cell_eq.
 
-
-
 simpl.
-
 clear H1.
-
 apply semax_pre with
-
 (EX v : val,
-
  PROP  ()
-
    LOCAL  (temp _next y;  temp _sorted v; temp _index i)
-
    SEP
-
    (`(data_at sh t_struct_list (Vint insert_val, nullval) i);
-
    `(lseg LS sh (map Vint unsorted_list) y nullval);
-
    `(lseg LS sh (map Vint (insertion_sort sorted_list)) v nullval))).
-
 apply (exp_right p0).
-
 go_lower. ent_iter. apply andp_right. apply prop_right; repeat split; auto.
-
 unfold_data_at 1%nat.
-
 entailer.
-
-
 
 apply extract_exists_pre. intros sorted_val.
-
 forward_call  
-
   (sh, (insertion_sort sorted_list), insert_val, sorted_val, i).
-
 Intros vret.
-
 forward index_old. 
-
 unfold body_invariant.
-
 entailer.
-
 apply (exp_right (sorted_list ++ [insert_val],
-
                            unsorted_list, sorted, next)).
-
 entailer!.
-
 rewrite app_ass; reflexivity.
 
-
-
 Lemma insert_reorder : forall v1 v2 l,
-
 insert v1 (insert v2 (l)) = insert v2 (insert v1 l).
-
 Proof.
-
 induction l. simpl. remember (Int.lt v2 v1); remember (Int.lt v1 v2).
-
 destruct b; destruct b0; auto.
-
 replace (Int.lt v2 v1) with (Int.cmp Clt v2 v1) in * by auto.
-
 replace (Int.lt v1 v2) with (Int.cmp Clt v1 v2) in * by auto.
-
 rewrite <- Int.swap_cmp in Heqb. simpl swap_comparison in Heqb.
-
 symmetry in Heqb.
-
 rewrite <- negb_false_iff in Heqb.
-
 rewrite <- Int.negate_cmp in Heqb.
-
 simpl negate_comparison in *.
-
 Admitted.
 
-
-
 Lemma insert_insertion_sort : forall v l,
-
 insert v (insertion_sort l) = insertion_sort (l ++ [v]).
-
 intros.
-
 induction l.
-
 auto.
-
 simpl.
-
 rewrite insert_reorder. rewrite IHl. auto.
-
 Qed.
-
-
 
 rewrite insert_insertion_sort. cancel.
-
 unfold body_post.
-
 forward_intro sorted_list.
-
 forward.
-
 apply exp_right with sorted.
-
 entailer!.
-
 Qed.
 
-
-
 Lemma body_insert: semax_body Vprog Gprog f_insert insert_spec.
-
 Proof.
-
 start_function.
-
 name insert_value _insert_value.
-
 name index _index.
-
 name insert_node _insert_node.
-
 name sorted _sorted.
-
 forward. 
-
 forward. 
-
 forward. 
-
 normalize. simpl.
-
 Abort.  
-

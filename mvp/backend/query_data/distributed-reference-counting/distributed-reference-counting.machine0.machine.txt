@@ -1,460 +1,573 @@
 
-
 Require Import List.
-
 Require Export fifo.
-
-Require Export table.
-
-
+(* fifo:
+Require Export bibli.
 
 Unset Standard Proposition Elimination Names.
 
+Section DEF_FIFO.
 
+Variable data : Set.
+
+Inductive queue : Set :=
+  | empty : queue
+  | input : data -> queue -> queue.
+	
+Inductive exc : Set :=
+  | value : data -> exc
+  | error : exc.
+	
+Definition last (q : queue) :=
+  match q with
+  | empty => error
+  | input d _ => value d
+  end.
+
+Fixpoint first (q : queue) : exc :=
+  match q with
+  | empty => error
+  | input d q' =>
+      match q' with
+      | empty => value d
+      | input _ _ => first q'
+      end
+  end.
+	
+Fixpoint first_out (q : queue) : queue :=
+  match q with
+  | empty => empty
+  | input d q' =>
+      match q' with
+      | empty => empty
+      | input _ _ => input d (first_out q')
+      end
+  end.
+	
+Fixpoint In_queue (d : data) (q : queue) {struct q} : Prop :=
+  match q with
+  | empty => False
+  | input d' q' => d = d' \/ In_queue d q'
+  end.
+	
+Lemma not_in_empty : forall d : data, ~ In_queue d empty.
+
+Hypothesis eq_data_dec : eq_dec data.
+
+Fixpoint card (d : data) (q : queue) {struct q} : Z :=
+  match q with
+  | empty => 0%Z
+  | input d' q' =>
+      if eq_data_dec d d'
+      then (card d q' + 1)%Z
+      else card d q'
+  end.
+
+Lemma card_pos : forall (d : data) (q : queue), (card d q >= 0)%Z.
+
+Lemma card_strct_pos :
+ forall (d : data) (q : queue), In_queue d q -> (card d q > 0)%Z.
+
+Lemma card_null :
+ forall (d : data) (q : queue), ~ In_queue d q -> card d q = 0%Z.
+
+End DEF_FIFO.
+
+Section BELONG.
+
+Variable data : Set.
+
+Lemma first_in :
+ forall (d : data) (q : queue data),
+ first data q = value data d -> In_queue data d q.
+
+Lemma in_q_input :
+ forall (d' d : data) (q : queue data),
+ d <> d' -> In_queue data d (input data d' q) -> In_queue data d q.
+
+Lemma not_in_q_input :
+ forall (data : Set) (d' d : data) (q : queue data),
+ d <> d' -> ~ In_queue data d (input data d' q) -> ~ In_queue data d q.
+		
+Lemma in_q_output :
+ forall (d : data) (q : queue data),
+ In_queue data d (first_out data q) -> In_queue data d q.
+
+Lemma not_in_q_output :
+ forall (data : Set) (d : data) (q : queue data),
+ ~ In_queue data d q -> ~ In_queue data d (first_out data q).
+
+Hypothesis eq_data_dec : eq_dec data.
+
+Lemma equality_from_queue_membership :
+ forall (x y : data) (q : queue data),
+ In_queue data y q -> ~ In_queue data x q -> x <> y.
+
+End BELONG.
+
+Section MORE_NOT_INQ.
+
+Variable data : Set.
+
+Hypothesis eq_data_dec : eq_dec data.
+
+Lemma not_in_q_input2 :
+ forall (d' d : data) (q : queue data),
+ ~ In_queue data d (input data d' q) -> ~ In_queue data d q.
+		
+End MORE_NOT_INQ.
+
+Section OCCUR.
+
+Variable data : Set.
+
+Hypothesis eq_data_dec : eq_dec data.
+
+Lemma input_S_card :
+ forall (d d' : data) (q : queue data),
+ d = d' ->
+ card data eq_data_dec d (input data d' q) =
+ (card data eq_data_dec d q + 1)%Z.
+
+Lemma input_diff_card :
+ forall (d d' : data) (q : queue data),
+ d <> d' ->
+ card data eq_data_dec d (input data d' q) = card data eq_data_dec d q.
+
+Lemma firstout_pred_card :
+ forall (d : data) (q : queue data),
+ first data q = value data d ->
+ card data eq_data_dec d (first_out data q) =
+ (card data eq_data_dec d q - 1)%Z.
+
+Lemma firstout_diff_card :
+ forall (d : data) (q : queue data),
+ first data q <> value data d ->
+ card data eq_data_dec d (first_out data q) = card data eq_data_dec d q.
+
+End OCCUR.
+
+Section APPEND.
+
+Variable data : Set.
+
+Fixpoint append (q : queue data) : queue data -> queue data :=
+  fun q2 : queue data =>
+  match q with
+  | empty => q2
+  | input d q' => input data d (append q' q2)
+  end.
+
+Lemma append_nil1 : forall q : queue data, append (empty data) q = q.
+
+Lemma append_nil2 : forall q : queue data, append q (empty data) = q.
+
+Lemma input_append :
+ forall (d : data) (q1 q2 : queue data),
+ input data d (append q1 q2) = append (input data d q1) q2.
+
+Lemma append_assoc :
+ forall q1 q2 q3 : queue data,
+ append q1 (append q2 q3) = append (append q1 q2) q3.
+
+Lemma append_right_non_empty :
+ forall (q1 q2 : queue data) (d : data),
+ append q1 (input data d q2) <> empty data.
+
+Lemma case_append_right :
+ forall (E : Set) (x y : E) (q1 q2 : queue data) (d : data),
+ match append q1 (input data d q2) with
+ | empty => x
+ | input _ _ => y
+ end = y. 
+
+Lemma case_first_value :
+ forall (E : Set) (x y : E) (d : data) (q : queue data),
+ first data q = value data d ->
+ match q with
+ | empty => x
+ | input _ _ => y
+ end = y. 
+
+Lemma append_first_out :
+ forall (q1 : queue data) (d : data),
+ first_out data (append q1 (input data d (empty data))) = q1.
+
+Lemma append_first :
+ forall (q1 : queue data) (d : data),
+ first data (append q1 (input data d (empty data))) = value data d.
+
+Lemma first_out_input :
+ forall (d0 d1 : data) (q : queue data),
+ first_out data (input data d0 (input data d1 q)) =
+ input data d0 (first_out data (input data d1 q)).
+
+Lemma first_input :
+ forall (d0 d1 : data) (q : queue data),
+ first data (input data d0 (input data d1 q)) = first data (input data d1 q).
+
+Lemma append_first_out2 :
+ forall (d : data) (q1 : queue data),
+ first data q1 = value data d ->
+ append (first_out data q1) (input data d (empty data)) = q1.
+
+End APPEND.
+
+Section INQUEUE_APPEND.
+
+Variable data : Set.
+
+Lemma inqueue_append :
+ forall (m : data) (q1 q2 : queue data),
+ In_queue data m q1 \/ In_queue data m q2 ->
+ In_queue data m (append data q1 q2).
+
+Lemma not_inqueue_append :
+ forall (m : data) (q1 q2 : queue data),
+ ~ In_queue data m q1 /\ ~ In_queue data m q2 ->
+ ~ In_queue data m (append data q1 q2).
+
+Lemma in_q_shuffle1 :
+ forall (m1 m2 : data) (q3 q4 : queue data),
+ In_queue data m2 (input data m1 (append data q3 q4)) ->
+ In_queue data m2 (append data q3 (input data m1 q4)).
+
+Lemma not_in_q_shuffle1 :
+ forall (m1 m2 : data) (q3 q4 : queue data),
+ ~ In_queue data m2 (input data m1 (append data q3 q4)) ->
+ ~ In_queue data m2 (append data q3 (input data m1 q4)).
+
+Lemma not_in_q_shuffle :
+ forall (m1 m2 : data) (q1 q2 q3 q4 : queue data),
+ ~ In_queue data m2 (append data q1 (input data m1 q2)) ->
+ append data q1 q2 = append data q3 q4 ->
+ ~ In_queue data m2 (append data q3 (input data m1 q4)).
+
+Lemma in_q_shuffle :
+ forall (m1 m2 : data) (q1 q2 q3 q4 : queue data),
+ In_queue data m2 (append data q3 (input data m1 q4)) ->
+ append data q1 q2 = append data q3 q4 ->
+ In_queue data m2 (append data q1 (input data m1 q2)).
+
+End INQUEUE_APPEND. *)
+Require Export table.
+(* table:
+Require Import List.
+Require Export finite.
+
+Unset Standard Proposition Elimination Names.
+
+Section TABLE1.
+
+Variable E F : Set.
+Hypothesis eq_E_dec : eq_dec E.
+Variable t : E -> F.
+Variable x0 : E.
+Variable y0 : F.
+
+Definition change_x0 (x : E) :=
+  if eq_E_dec x0 x then y0 else t x.
+
+Lemma here : change_x0 x0 = y0.
+	
+Lemma elsewhere : forall x : E, x0 <> x -> change_x0 x = t x.
+
+End TABLE1.
+
+Section TABLE2.
+
+Variable E F G : Set.
+Hypothesis eq_E_dec : eq_dec E.
+Hypothesis eq_F_dec : eq_dec F.
+Variable t : E -> F -> G.
+Variable x0 : E.
+Variable y0 : F.
+Variable z0 : G.
+
+Definition change_x0y0 :=
+  change_x0 E (F -> G) eq_E_dec t x0 (change_x0 F G eq_F_dec (t x0) y0 z0).
+
+Lemma here2 : change_x0y0 x0 y0 = z0.
+                     
+Remark elsewhere2_x : forall x : E, x <> x0 -> change_x0y0 x = t x.
+
+Remark elsewhere2_y :
+ forall y : F,
+ y <> y0 -> (fun x : E => change_x0y0 x y) = (fun x : E => t x y).
+
+Lemma elsewhere2 :
+ forall (x : E) (y : F), x <> x0 \/ y <> y0 -> change_x0y0 x y = t x y. 
+	
+End TABLE2.
+ 
+Section CHANGE_SUM1.
+
+Variable E : Set.
+Hypothesis eq_E_dec : eq_dec E.
+Variable f : E -> Z.
+Variable x0 : E.
+Variable y0 : Z.
+
+Lemma sigma_nowhere :
+ forall l : list E,
+ ~ In x0 l -> sigma E l (change_x0 E Z eq_E_dec f x0 y0) = sigma E l f. 
+
+Lemma sigma_change :
+ forall l : list E,
+ only_once E eq_E_dec x0 l ->
+ sigma E l (change_x0 E Z eq_E_dec f x0 y0) = (sigma E l f - f x0 + y0)%Z.
+ 	
+End CHANGE_SUM1.
+
+Section SUM1_S.
+
+Variable E : Set.
+Hypothesis eq_E_dec : eq_dec E.
+Variable L : list E.
+Hypothesis finite_E : list_of_elements E eq_E_dec L.
+Variable f : E -> Z.
+Variable x0 : E.
+
+Remark sigma_change_S :
+ sigma E L (change_x0 E Z eq_E_dec f x0 (f x0 + 1)%Z) = (sigma E L f + 1)%Z.    
+
+Lemma sigma__S :
+ forall g : E -> Z,
+ g x0 = (f x0 + 1)%Z ->
+ (forall x : E, x <> x0 -> g x = f x) -> sigma E L g = (sigma E L f + 1)%Z.    
+   
+Remark sigma_change_pred :
+ sigma E L (change_x0 E Z eq_E_dec f x0 (f x0 - 1)%Z) = (sigma E L f - 1)%Z.    
+   
+Lemma sigma__pred :
+ forall g : E -> Z,
+ g x0 = (f x0 - 1)%Z ->
+ (forall x : E, x <> x0 -> g x = f x) -> sigma E L g = (sigma E L f - 1)%Z.    
+ 
+End SUM1_S. *)
+
+Unset Standard Proposition Elimination Names.
 
 Section MACHINE.
 
-
-
 Parameter Site : Set. 
-
  
-
 Parameter owner : Site.
-
-
 
 Axiom eq_site_dec : eq_dec Site. 
 
-
-
 Definition change_site (E : Set) := change_x0 Site E eq_site_dec.
 
-
-
 Lemma that_site :
-
  forall (E : Set) (f : Site -> E) (s0 : Site) (x : E),
-
  change_site E f s0 x s0 = x.
-
 Proof.
-
  intros; unfold change_site in |- *; apply here.
-
 Qed.
-
-
 
 Lemma other_site :
-
  forall (E : Set) (f : Site -> E) (s0 s1 : Site) (x : E),
-
  s0 <> s1 -> change_site E f s0 x s1 = f s1.
-
 Proof.
-
  intros; unfold change_site in |- *; apply elsewhere; trivial.
-
 Qed.
-
-
 
 Definition eq_queue_dec := eq_couple_dec Site Site eq_site_dec eq_site_dec.
 
-
-
 Definition change_queue (Q : Set) :=
-
   change_x0y0 Site Site Q eq_site_dec eq_site_dec.
 
-
-
 Lemma that_queue :
-
  forall (E : Set) (f : Site -> Site -> E) (s0 s1 : Site) (x : E),
-
  change_queue E f s0 s1 x s0 s1 = x.
-
 Proof.
-
  intros; unfold change_queue in |- *; apply here2.
-
 Qed.
-
-
 
 Lemma other_queue :
-
  forall (E : Set) (f : Site -> Site -> E) (s0 s1 s2 s3 : Site) (x : E),
-
  s2 <> s0 \/ s3 <> s1 -> change_queue E f s0 s1 x s2 s3 = f s2 s3.
-
 Proof.
-
  intros; unfold change_queue in |- *; apply elsewhere2; trivial.
-
 Qed.
-
-
 
 Parameter LS : list Site.
 
-
-
 Axiom finite_site : list_of_elements Site eq_site_dec LS.
 
-
-
 Lemma in_s_LS : forall s : Site, In s LS.
-
 Proof.
-
  intros; apply only_once_in with (eq_E_dec := eq_site_dec);
-
   exact (finite_site s).
-
 Qed.
-
-
 
 End MACHINE.
 
-
-
 Section MESSAGES.
 
-
-
 Inductive Message : Set :=
-
   | dec : Message
-
   | inc_dec : Site -> Message
-
   | copy : Message.
 
-
-
 Theorem eq_message_dec : eq_dec Message.
-
 Proof.
-
  unfold eq_dec in |- *; double induction a b; intros.
-
  auto.
 
-
+ right; discriminate.
 
  right; discriminate.
 
-
-
  right; discriminate.
-
-
-
- right; discriminate.
-
-
 
  case (eq_site_dec s0 s); intros.
-
  rewrite e; auto.
-
-
 
  right; injection; auto.
 
-
+ right; discriminate.
 
  right; discriminate.
 
-
-
  right; discriminate.
-
-
-
- right; discriminate.
-
-
 
  auto.
-
 Qed.
-
-
 
 End MESSAGES.
 
-
-
 Section TABLES.
-
-
 
 Definition Date_table := Site -> nat.
 
-
-
 Definition Send_table := Site -> Z.
-
-
 
 Definition Rec_table := Site -> bool.
 
-
-
 End TABLES.
-
-
 
 Section BAG.
 
-
-
 Definition Bag_of_message := Site -> Site -> queue Message.
 
-
-
 Definition card_mess (m : Message) (q : queue Message) :=
-
   card Message eq_message_dec m q.
 
-
-
 Lemma pos_card_mess :
-
  forall (m : Message) (q : queue Message), (card_mess m q >= 0)%Z.
-
 Proof.
-
  intros; unfold card_mess in |- *; apply card_pos.
-
 Qed.
-
-
 
 Lemma strct_pos_card_mess :
-
  forall (m : Message) (q : queue Message),
-
  In_queue Message m q -> (card_mess m q > 0)%Z.
-
 Proof.
-
  intros; unfold card_mess in |- *; apply card_strct_pos; trivial.
-
 Qed.
-
-
 
 Lemma diff_or_elsewhere :
-
  forall (m m' : Message) (bom : Bag_of_message) (s1 s2 s3 s4 : Site),
-
  first Message (bom s3 s4) = value Message m ->
-
  m <> m' ->
-
  first Message (bom s1 s2) <> value Message m' \/ s1 <> s3 \/ s2 <> s4.
-
 Proof.
-
  intros; case (eq_queue_dec s1 s3 s2 s4); intro.
-
  decompose [and] a; rewrite H1; rewrite H2; rewrite H; left; injection; auto.
 
-
-
  auto.
-
 Qed.
-
-
 
 End BAG.
 
-
-
 Section CONFIGURATION.
-
-
 
 Definition access (s : Site) (rt : Rec_table) := s = owner \/ rt s = true.		
 
-
-
 Record Config : Set := mkconfig
-
   {time : nat;
-
    dt : Date_table;
-
    st : Send_table;
-
    rt : Rec_table;
-
    bm : Bag_of_message}.
-
 	
-
 End CONFIGURATION.
-
-
 
 Section ALT_DEF.
 
-
-
 Inductive D_queue : queue Message -> Prop :=
-
   | D_empty : D_queue (empty Message)
-
   | D_dec : forall qm : queue Message, D_queue (input Message dec qm).
 
-
-
 Inductive alternate : queue Message -> Prop :=
-
   | alt_null : alternate (empty Message)
-
   | alt_single_inc :
-
       forall s0 : Site,
-
       alternate (input Message (inc_dec s0) (empty Message))
-
   | alt_dec_alt :
-
       forall qm : queue Message,
-
       alternate qm -> alternate (input Message dec qm)
-
   | alt_inc_dec :
-
       forall (qm : queue Message) (s0 : Site),
-
       alternate qm ->
-
       alternate (input Message (inc_dec s0) (input Message dec qm)).
 
-
-
 Lemma not_D_queue :
-
  forall (q0 : queue Message) (s0 : Site),
-
  ~ D_queue (input Message (inc_dec s0) q0).
-
 Proof.
-
  intros; red in |- *; intro.
-
  inversion H.
-
 Qed.
-
 	
-
 Lemma D_first_out :
-
  forall q0 : queue Message, D_queue q0 -> D_queue (first_out Message q0).
-
 Proof.
-
  intros; elim H; simpl in |- *.
-
  apply D_empty.
-
-
 
  simple destruct qm.
-
  apply D_empty.
 
-
-
  intros; apply D_dec.
-
 Qed.
-
 	
-
 Lemma alt_first_out :
-
  forall q0 : queue Message, alternate q0 -> alternate (first_out Message q0).
-
 Proof.
-
  intros; elim H; simpl in |- *.
-
  apply alt_null.
-
-
 
  intro; apply alt_null.
-
  
-
  simple induction qm; intros.
-
  apply alt_null.
-
-
 
  apply alt_dec_alt; trivial.
 
-
-
  simple induction qm; intros.
-
  apply alt_single_inc.
 
-
-
  apply alt_inc_dec; trivial.
-
 Qed.
-
-
 
 End ALT_DEF.
 
-
-
 Section RELAT_DEF.
-
-
 
 Variable c0 : Config.
 
-
-
 Inductive parent : Site -> Site -> Prop :=
-
     parent_intro :
-
       forall s1 s0 : Site,
-
       In_queue Message (inc_dec s1) (bm c0 s0 owner) -> parent s1 s0.
 
-
-
 Inductive ancestor : Site -> Site -> Prop :=
-
   | short : forall s1 s0 : Site, parent s1 s0 -> ancestor s1 s0
-
   | long :
-
       forall s2 s1 s0 : Site,
-
       parent s2 s1 -> ancestor s1 s0 -> ancestor s2 s0.
 
-
-
 End RELAT_DEF.
-
-
 

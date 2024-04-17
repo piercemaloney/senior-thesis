@@ -1,9 +1,7 @@
 
-
 Require Import ILL.Definitions.
 (* ILL.Definitions:
 Require Export Problems.PCP Problems.Reduction. *)
-
 Require Import bsm_defs mm_defs eill ill.
 (* bsm_defs:
 Require Import List Arith Omega Bool.
@@ -448,8 +446,201 @@ End g_eill_complete.
 
 Theorem G_eill_correct Si Ga p : 
            Si; Ga ⊦ p <-> map (fun c => ![i c]) Si ++ map £ Ga ⊢ £ p. *)
+(* ill:
+Require Import List Permutation Arith Omega.
 
+Require Import utils pos vec.
 
+Set Implicit Arguments.
+
+Local Infix "~p" := (@Permutation _) (at level 70).
+
+Definition ll_vars := nat.
+
+Inductive ll_conn := ll_with | ll_limp | ll_times | ll_plus.
+Inductive ll_cst := ll_one | ll_bot | ll_top.
+
+Inductive ll_form : Set :=
+  | ll_var  : ll_vars -> ll_form
+  | ll_zero : ll_cst  -> ll_form
+  | ll_ban  : ll_form -> ll_form
+  | ll_bin  : ll_conn -> ll_form -> ll_form -> ll_form.
+
+Notation "⟙" := (ll_zero ll_top).
+Notation "⟘" := (ll_zero ll_bot).
+Notation 𝝐 := (ll_zero ll_one).
+
+Infix "&" := (ll_bin ll_with) (at level 50, only parsing).
+Infix "﹠" := (ll_bin ll_with) (at level 50).
+Infix "⊗" := (ll_bin ll_times) (at level 50).
+Infix "⊕" := (ll_bin ll_plus) (at level 50).
+Infix "-o" := (ll_bin ll_limp) (at level 51, only parsing, right associativity).
+Infix "⊸" := (ll_bin ll_limp) (at level 51, right associativity).
+
+Notation "'!' x" := (ll_ban x) (at level 52, only parsing).
+Notation "❗ x" := (ll_ban x) (at level 52).
+
+Notation "£" := ll_var.
+
+Definition ll_lbang := map (fun x => !x).
+
+Notation "'!l' x" := (ll_lbang x) (at level 60, only parsing).
+Notation "‼ x" := (ll_lbang x) (at level 60).
+
+Notation "∅" := nil (only parsing).
+
+Reserved Notation "l '⊢' x" (at level 70, no associativity).
+
+Inductive S_ill : list ll_form -> ll_form -> Prop :=
+
+  | in_llp_ax     : forall A,                         A::∅ ⊢ A
+
+  | in_llp_perm   : forall Γ Δ A,              Γ ~p Δ     ->   Γ ⊢ A 
+                                           
+                                      ->                 Δ ⊢ A
+
+  | in_llp_limp_l : forall Γ Δ A B C,          Γ ⊢ A      ->   B::Δ ⊢ C
+                                               
+                                      ->           A ⊸ B::Γ++Δ ⊢ C
+
+  | in_llp_limp_r : forall Γ A B,                    A::Γ ⊢ B
+                                           
+                                      ->            Γ ⊢ A ⊸ B
+
+  | in_llp_with_l1 : forall Γ A B C,                  A::Γ ⊢ C 
+                                           
+                                      ->           A﹠B::Γ ⊢ C
+
+  | in_llp_with_l2 : forall Γ A B C,                  B::Γ ⊢ C 
+                                           
+                                      ->           A﹠B::Γ ⊢ C
+ 
+  | in_llp_with_r : forall Γ A B,               Γ ⊢ A     ->   Γ ⊢ B
+                                           
+                                      ->              Γ ⊢ A﹠B
+
+  | in_llp_bang_l : forall Γ A B,                    A::Γ ⊢ B
+                                           
+                                      ->            ❗ A::Γ ⊢ B
+
+  | in_llp_bang_r : forall Γ A,                       ‼Γ ⊢ A
+                                           
+                                      ->              ‼Γ ⊢ ❗ A
+
+  | in_llp_weak : forall Γ A B,                        Γ ⊢ B
+                                           
+                                      ->           ❗ A::Γ ⊢ B
+
+  | in_llp_cntr : forall Γ A B,                    ❗ A::❗ A::Γ ⊢ B
+                                           
+                                      ->             ❗ A::Γ ⊢ B
+
+  | in_llp_cut : forall Γ Δ A B,                 Γ ⊢ A    ->   A::Δ ⊢ B
+                                               
+                                      ->              Γ++Δ ⊢ B
+
+  | in_llp_times_l : forall Γ A B C,               A::B::Γ ⊢ C 
+                                           
+                                      ->            A⊗B::Γ ⊢ C
+ 
+  | in_llp_times_r : forall Γ Δ A B,             Γ ⊢ A    ->   Δ ⊢ B
+                                           
+                                      ->              Γ++Δ ⊢ A⊗B
+
+  | in_llp_plus_l :  forall Γ A B C,            A::Γ ⊢ C  ->  B::Γ ⊢ C 
+                                           
+                                      ->            A⊕B::Γ ⊢ C
+
+  | in_llp_plus_r1 : forall Γ A B,                    Γ ⊢ A  
+                                           
+                                      ->              Γ ⊢ A⊕B
+
+  | in_llp_plus_r2 : forall Γ A B,                    Γ ⊢ B  
+                                           
+                                      ->              Γ ⊢ A⊕B
+
+  | in_llp_bot_l : forall Γ A,                     ⟘::Γ ⊢ A
+
+  | in_llp_top_r : forall Γ,                          Γ ⊢ ⟙
+
+  | in_llp_unit_l : forall Γ A,                       Γ ⊢ A  
+                                           
+                                      ->           𝝐 ::Γ ⊢ A
+
+  | in_llp_unit_r :                                   ∅ ⊢ 𝝐
+
+where "l ⊢ x" := (S_ill l x).
+
+Definition ILL_PROVABILITY (c : (list ll_form) * ll_form) := let (Ga,A) := c in Ga ⊢ A. 
+
+Fact S_ill_weak Γ Δ B : Δ ⊢ B -> ‼Γ++Δ ⊢ B.
+
+Fact S_ill_cntr Γ Δ B : ‼Γ++‼Γ++Δ ⊢ B -> ‼Γ++ Δ ⊢ B.
+
+Theorem S_ill_weak_cntr Σ Γ A B : In A Σ -> ‼Σ++Γ ⊢ B <-> ❗ A::‼Σ++Γ ⊢ B.
+
+Section trivial_phase_semantics.
+
+  Variables (n : nat) (s : ll_vars -> vec nat n -> Prop).
+
+  Reserved Notation "'⟦' A '⟧'" (at level 65).
+
+  Definition ll_tps_imp (X Y : _ -> Prop) (v : vec _ n) := forall x, X x -> Y (vec_plus x v).
+  Definition ll_tps_mult (X Y : _ -> Prop) (x : vec _ n) := exists a b, x = vec_plus a b /\ X a /\ Y b. 
+  
+  Infix "**" := (ll_tps_mult) (at level 65, right associativity).
+  Infix "-*" := (ll_tps_imp) (at level 65, right associativity).
+
+  Fact ll_tps_mult_mono (X1 X2 Y1 Y2 : _ -> Prop) : 
+             (forall x, X1 x -> X2 x)
+          -> (forall x, Y1 x -> Y2 x)
+          -> (forall x, (X1**Y1) x -> (X2**Y2) x).
+
+  Fixpoint ll_tps A x : Prop :=
+    match A with
+      | £ X     => s X x
+      | A ﹠ B  => ⟦A⟧ x /\ ⟦B⟧ x
+      | ❗ A     => ⟦A⟧ x /\ x = vec_zero
+      | A ⊸ B  => (⟦A⟧ -* ⟦B⟧) x
+      | A ⊗ B  => (⟦A⟧ ** ⟦B⟧) x
+      | A ⊕ B  => ⟦A⟧ x \/ ⟦B⟧ x
+      | ⟘             => False
+      | ⟙             => True
+      | 𝝐              => x = vec_zero
+    end
+  where "⟦ A ⟧" := (ll_tps A).
+
+  Reserved Notation "'[[' Γ ']]'" (at level 0).
+
+  Fixpoint ll_tps_list Γ :=
+    match Γ with
+      | ∅    => eq vec_zero
+      | A::Γ => ⟦A⟧ ** [[Γ]]
+    end
+  where "[[ Γ ]]" := (ll_tps_list Γ).
+
+  Fact ll_tps_app Γ Δ x : [[Γ++Δ]] x <-> ([[Γ]]**[[Δ]]) x.
+
+  Fact ll_tps_lbang Γ x : [[‼Γ]] x <-> [[Γ]] x /\ x = vec_zero.
+
+  Fact ll_tps_list_bang_zero Γ : [[‼Γ]] vec_zero <-> forall A, In A Γ -> ⟦A⟧ vec_zero.
+
+  Fact ll_tps_perm Γ Δ : Γ ~p Δ -> forall x, [[Γ]] x -> [[Δ]] x.
+  
+  Definition ll_sequent_tps Γ A := [[Γ]] -* ⟦A⟧.
+
+  Notation "'[<' Γ '|-' A '>]'" := (ll_sequent_tps Γ A).
+
+  Fact ll_sequent_tps_mono Γ A B :
+     (forall x, ⟦A⟧ x -> ⟦B⟧ x) -> forall x, [< Γ |- A >] x -> [< Γ |- B >] x.
+
+  Fact ll_perm_tps Γ Δ : Γ ~p Δ -> forall x A, [< Γ |- A >] x -> [< Δ |- A >] x.
+
+  Fact ll_sequent_tps_eq  Γ A : [< Γ |- A >] vec_zero <-> forall x, [[Γ]] x -> ⟦A⟧ x.
+
+  Theorem ll_tps_sound Γ A : Γ ⊢ A -> [< Γ |- A >] vec_zero.
+
+End trivial_phase_semantics. *)
 
 Require Import PCP_BPCP BPCP_iBPCP iBPCP_BSM BSM_MM MM_EILL EILL_ILL.
 (* PCP_BPCP:
@@ -605,155 +796,78 @@ Section EILL_ILL.
 
 End EILL_ILL. *)
 
-
-
 Check PCP_BPCP.                           Print Assumptions PCP_BPCP.
-
 Check BPCP_iBPCP.                         Print Assumptions BPCP_iBPCP.
-
 Check iBPCP_BSM_HALTING.                  Print Assumptions iBPCP_BSM_HALTING.
-
 Check BSM_MM_HALTING.                     Print Assumptions BSM_MM_HALTING.
-
 Check BSM_MM_HALTS_ON_ZERO.               Print Assumptions BSM_MM_HALTS_ON_ZERO.
-
 Check MM_HALTS_ON_ZERO_EILL_PROVABILITY.  Print Assumptions MM_HALTS_ON_ZERO_EILL_PROVABILITY.
-
 Check EILL_ILL_PROVABILITY.               Print Assumptions EILL_ILL_PROVABILITY.
 
-
-
 Theorem PCP_BSM_HALTING : PCP ⪯ BSM_HALTING.
-
 Proof.
-
   eapply reduces_transitive. exact PCP_BPCP.
-
   eapply reduces_transitive. exact BPCP_iBPCP.
-
   exact iBPCP_BSM_HALTING.
-
 Qed.
-
-
 
 Theorem PCP_MM_HALTS_ON_ZERO : PCP ⪯ MM_HALTS_ON_ZERO.
-
 Proof.
-
   eapply reduces_transitive. exact PCP_BSM_HALTING.
-
   exact BSM_MM_HALTS_ON_ZERO.
-
 Qed.
-
-
 
 Theorem PCP_MM_HALTING : PCP ⪯ MM_HALTING.
-
 Proof.
-
   eapply reduces_transitive. exact PCP_BSM_HALTING.
-
   exact BSM_MM_HALTING.
-
 Qed.
-
-
 
 Theorem PCP_ILL : PCP ⪯ ILL_PROVABILITY.
-
 Proof.
-
   eapply reduces_transitive. exact PCP_MM_HALTS_ON_ZERO.
-
   eapply reduces_transitive. exact MM_HALTS_ON_ZERO_EILL_PROVABILITY.
-
   exact EILL_ILL_PROVABILITY.
-
 Qed.
-
-
 
 Module Def_of_undec.
 
-
-
   Inductive dec {X} (P : X -> Prop) : Prop := is_dec (H : forall x, { P x} + {~ P x}).
-
-
 
   Notation compl P := (fun x => ~ P x).
 
-
-
   Notation "Q ⪯T P" := (dec (P) -> dec (Q)) (at level 20).
 
-
-
   Lemma red_turing X Y (P : X -> Prop) (Q : Y -> Prop) : P ⪯ Q -> P ⪯T Q.
-
   Proof.
-
     intros (f & Hf) [ H ].
-
     exists.
-
     intros x; destruct (H (f x)) as [ H1 | H1 ]; 
-
       rewrite <- Hf in H1; tauto.
-
   Qed.
-
-
 
   Inductive undec : forall X, (X -> Prop) -> Prop :=
-
     undec_seed : undec PCP
-
   | undec_red X (P : X -> Prop) Y (Q : Y -> Prop) : Q ⪯T P -> undec Q -> undec P.
 
-
-
   Lemma red_undec  X Y (Q : Y -> Prop) (P : X -> Prop) :
-
     Q ⪯ P -> undec Q -> undec P.
-
   Proof.
-
     intros. eapply undec_red. eapply red_turing; eauto. eauto.
-
   Qed.
-
     
-
   Lemma undec_compl X (P : X -> Prop) :
-
     undec (compl P) -> undec P.
-
   Proof.
-
     intros. eapply undec_red; try eassumption. firstorder.
-
   Qed.
-
   
-
   Lemma undec_PCP X (P : X -> Prop) :
-
     undec P <-> (PCP ⪯T P).
-
   Proof.
-
     split; intros.
-
     - induction H; eauto.
-
     - eauto using undec. 
-
   Qed.
-
     
-
 End Def_of_undec.
-

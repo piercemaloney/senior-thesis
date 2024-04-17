@@ -1,268 +1,331 @@
 
-
 Require Export DecidableEnumerable.
+(* DecidableEnumerable:
+Require Export Shared.Prelim.
 
+Definition compl X p := fun x : X => ~ p x.
+Definition decidable {X} (p : X -> Prop) := exists f, forall x, p x <-> f x = true.
+Definition enumerable {X} (p : X -> Prop) := exists f, forall x, p x <-> exists n : nat, f n = Some x.
+
+Definition discrete X := decidable (fun '(x,y) => x = y :> X). 
+Definition enumerable__T X := exists f : nat -> option X, forall x, exists n, f n = Some x.
+
+Lemma dec_decidable' X p :
+  (forall x : X, dec (p x)) -> { f : _ | forall x, p x <-> f x = true}.
+
+Lemma decidable_iff X p :
+  decidable p <-> inhabited (forall x : X, dec (p x)).
+
+Lemma discrete_iff X :
+  discrete X <-> inhabited (eq_dec X).
+
+Lemma dec_compl X p :
+  decidable p -> decidable (fun x : X => ~ p x).
+
+Lemma dec_conj X p q :
+  decidable p -> decidable q -> decidable (fun x : X => p x /\ q x).
+
+Lemma dec_disj X p q :
+  decidable p -> decidable q -> decidable (fun x : X => p x \/ q x).
+
+Theorem dec_count_enum X (p : X -> Prop) :
+  decidable p -> enumerable__T X -> enumerable p.
+
+Theorem dec_count_enum' X (p : X -> Prop) :
+  decidable p -> enumerable__T X -> enumerable (fun x => ~ p x).
+
+Lemma enumerable_enumerable_T X :
+  enumerable (fun _ : X => True) <-> enumerable__T X.
+
+Definition cumulative {X} (L: nat -> list X) :=
+  forall n, exists A, L (S n) = L n ++ A.
+Hint Extern 0 (cumulative _) => intros ?; cbn; eauto.
+
+Lemma cum_ge {X} (L: nat -> list X) n m :
+  cumulative L -> m >= n -> exists A, L m = L n ++ A.
+
+Lemma cum_ge' {X} (L: nat -> list X) x n m :
+  cumulative L -> x el L n -> m >= n -> x el L m.
+
+Definition enum {X} p (L: nat -> list X) :=
+  cumulative L /\ forall x, p x <-> exists m, x el L m.
+
+Section enumerable_enum.
+
+  Variable X : Type.
+  Variable p : X -> Prop.
+  Variables (e : nat -> option X).
+  
+  Definition T_ (n : nat) : list X :=  match e n with Some x => [x] | None => [] end.
+
+  Lemma count_enum' : exists L : nat -> list X, forall x, (exists n, e n = Some x) <-> (exists n, x el L n).
+      
+End enumerable_enum.
+
+Lemma enum_to_cumulative X (p : X -> Prop) L :
+  (forall x, p x <-> exists m : nat, x el L m) -> exists L, enum p L.
+
+Class enumT X :=
+  {
+    L_T :> nat -> list X;
+    cum_T : cumulative L_T ;
+    el_T : forall x, exists m, x el L_T m
+  }.
+
+Arguments L_T {_ _} _, _ {_} _.
+Hint Immediate cum_T.
+
+Lemma discrete_bool : discrete bool.
+
+Lemma discrete_nat : discrete nat.
+
+Lemma discrete_nat_nat : discrete (nat * nat).
+
+Lemma count_bool :
+  enumerable__T bool.
+
+Lemma count_nat :
+  enumerable__T nat.
+
+Lemma T_nat_in n m : m <= n -> m el L_T nat n.
+
+Lemma T_nat_length n : length (L_T nat n) = S n.
+
+Section enumerable_prod.
+
+  Variable X Y : Type.
+
+  Section fixLs.
+    
+    Variables (L_X : enumT X).
+    Variables (L_Y : enumT Y).
+    
+    Fixpoint T_prod (n : nat) : list (X * Y) :=
+      match n
+      with
+      | 0 => [ (x,y) | (x,y) ∈ (L_T X 0 × L_T Y 0) ]
+      | S n => T_prod n ++ [ (x,y) | (x,y) ∈ (L_T X n  × L_T Y n) ]
+      end.
+
+    Lemma T_prod_cum : cumulative T_prod.
+
+  End fixLs.
+  
+  Lemma T_prod_el LX LY (a : X * Y)  :
+    exists n, a el T_prod LX LY n.
+
+  Global Instance prod_enumerable (LX : enumT X) (LY : enumT Y) : enumT (X * Y). 
+
+End enumerable_prod.
+
+Lemma C_exhaustive n m : (n,m) el L_T (1 + n + m).
+
+Lemma C_longenough n : length (L_T (nat * nat) n) > n.
+
+Definition R_nat_nat n : option (nat * nat) := nthe n (L_T n).
+
+Lemma pairs_retract :  forall p, exists n, R_nat_nat n = Some p. 
+
+Lemma enumerable_nat_nat : enumerable__T (nat * nat).
+  
+Section enum_enumerable.
+  
+  Context X L p { enum_X : @enum X p L }.
+
+  Definition ofNat n := match R_nat_nat n with Some (n, m) => nthe n ((L m)) | None => None end.
+
+  Lemma enum_count : enumerable p.
+  
+End enum_enumerable.
+
+Lemma discrete_prod X Y : discrete X -> discrete Y -> discrete (X * Y).
+
+Lemma discrete_sum X Y : discrete X -> discrete Y -> discrete (X + Y).
+
+Lemma discrete_option X : discrete X -> discrete (option X).
+
+Lemma discrete_list X : discrete X -> discrete (list X).
+
+Lemma enumerable_enum X p :
+  (exists L, enum p L) <-> @enumerable X p.
+
+Lemma enum_enumT X :
+  enumerable__T X <-> inhabited (enumT X).
+
+Lemma enumerable__T_prod X Y : enumerable__T X -> enumerable__T Y -> enumerable__T (X * Y).
+
+Lemma enumerable__T_sum X Y : enumerable__T X -> enumerable__T Y -> enumerable__T (X + Y).
+
+Lemma enumerable__T_option X : enumerable__T X -> enumerable__T (option X).
+
+Section enumerable_list.
+
+  Variable X : Type.
+
+  Section fixL.
+    
+    Variables (LX : enumT X).
+
+    Fixpoint T_list (n : nat) : list (list X) :=
+      match n
+      with
+      | 0 => [ [] ]
+      | S n => T_list n ++ [ x :: L | (x,L) ∈ (L_T X n × T_list n) ]
+      end.
+
+    Lemma T_list_cum : cumulative T_list. 
+
+  End fixL.
+
+  Lemma T_list_el LX l :
+    exists n, l el T_list LX n.
+  
+  Global Instance enumerable_list (LX : enumT X) : enumT (list X).
+
+End enumerable_list.
+
+Lemma enumerable__T_list X : enumerable__T X -> enumerable__T (list X).
+
+Lemma enumerable_disj X (p q : X -> Prop) :
+  enumerable p -> enumerable q -> enumerable (fun x => p x \/ q x).
+
+Lemma enumerable_conj X (p q : X -> Prop) :
+  discrete X -> enumerable p -> enumerable q -> enumerable (fun x => p x /\ q x).
+
+Lemma projection X Y (p : X * Y -> Prop) :
+  enumerable p -> enumerable (fun x => exists y, p (x,y)).
+
+Lemma projection' X Y (p : X * Y -> Prop) :
+  enumerable p -> enumerable (fun y => exists x, p (x,y)). *)
 Require Import ConstructiveEpsilon.
-
-
 
 Definition stable P := ~~ P -> P.
 
-
-
 Definition MP := forall f : nat -> bool, stable (exists n, f n = true).
 
-
-
 Definition mu (p : nat -> Prop) :
-
   (forall x, dec (p x)) -> ex p -> sig p.
-
 Proof.
-
   apply constructive_indefinite_ground_description_nat_Acc.
-
 Defined.
 
-
-
 Local Notation R p :=
-
   (fun x y : nat => x = S y /\ ~ p y).
 
-
-
 Lemma Acc_ind_dep (A : Type) (R : A -> A -> Prop) (P : forall a, Acc R a -> Prop) :
-
   (forall x (F : (forall y, R y x -> Acc R y)), (forall y (Hy : R y x), P y (F y Hy)) -> P x (Acc_intro x F))
-
   -> forall x (h : Acc R x), P x h.
-
 Proof.
-
   refine (fix f H x h := match h with Acc_intro _ F => _ end).
-
   apply H. intros y Hy. apply f, H.
-
 Qed.
-
-
 
 Notation mu' d H := (proj1_sig (mu d H)).
 
-
-
 Lemma mu_least (p : nat -> Prop) (d : forall x, dec (p x)) (H : ex p) :
-
   forall n, p n -> mu' d H <= n.
-
 Proof.
-
   intros n H'. unfold mu, constructive_indefinite_ground_description_nat_Acc.
-
   unfold acc_implies_P_eventually. assert (Hn : 0 <= n) by omega. revert n H' Hn.
-
   generalize 0, (P_eventually_implies_acc_ex p H). clear H.
-
   intros k H. pattern k, H. apply (@Acc_ind_dep nat (R p)). clear k H.
-
   intros k F IH n H1 H2. cbn. destruct (d k) as [H|H]; trivial.
-
   destruct Fix_F eqn : E. rewrite <- E. apply IH; trivial. clear E.
-
   apply le_lt_eq_dec in H2 as [H2|H2]; subst; tauto.
-
 Qed.
-
-
 
 Definition ldecidable X (p : X -> Prop) :=
-
   forall x, p x \/ ~ p x.
 
-
-
 Lemma weakPost X (p : X -> Prop) : discrete X ->
-
   ldecidable p -> enumerable p -> enumerable (compl p) -> decidable p.
-
 Proof.
-
   intros [E] % discrete_iff Hl [f Hf] [g Hg].
-
   eapply decidable_iff. econstructor. intros x.
-
   assert (exists n, f n = Some x \/ g n = Some x) by (destruct (Hl x); firstorder).
-
   destruct (mu (p := fun n => f n = Some x \/ g n = Some x)) as [n HN]; trivial.
-
   - intros n. exact _.
-
   - decide (f n = Some x); decide (g n = Some x); firstorder.
-
 Qed.
-
-
 
 Lemma MP_to_decMP :
-
   MP -> (forall p : nat -> Prop, decidable p -> stable (exists n, p n)).
-
 Proof.
-
   intros H p [d Hd] ?.
-
   specialize (H (fun x => if d x then true else false)).
-
   destruct H.
-
   - intros ?. eapply H0. intros [n]. eapply H. exists n. now eapply Hd in H1 as ->.
-
   - specialize (Hd x). destruct (d x); try congruence. exists x. now eapply Hd.
-
 Qed.
-
-
 
 Lemma decMP_to_eMP :
-
   (forall p : nat -> Prop, decidable p -> stable (exists n, p n)) -> (forall X (p : X -> Prop), enumerable p -> stable (exists n, p n)).
-
 Proof.
-
   intros dMP X p [e He] ?. destruct (dMP (fun n => e n <> None)).
-
   - exists (fun n => match e n with Some _ => true | _ => false end). intros; destruct (e x); firstorder congruence.
-
   - intros ?. eapply H. intros [x]. eapply H0. eapply He in H1 as [n].
-
     exists n. congruence.
-
   - destruct (e x) eqn:E; try congruence. exists x0. eapply He. now exists x. 
-
 Qed.
-
-
 
 Lemma eMP_to_MP :
-
   (forall X (p : X -> Prop), enumerable p -> stable (exists n, p n)) -> MP.
-
 Proof.
-
   intros eMP f ?. destruct (eMP nat (fun n => f n = true)).
-
   - eapply dec_count_enum. now exists f. exists Some. eauto.
-
   - firstorder. 
-
   - eauto.
-
 Qed.
-
-
 
 Lemma MP_enum_stable X (p : X -> Prop) :
-
   MP -> enumerable p -> discrete X -> forall x, stable (p x).
-
 Proof.
-
   intros MP [f Hf] [d Hd] x. eapply MP_to_decMP with (p := fun n => f n = Some x) in MP.
-
   - intros H. rewrite Hf in *. now eapply MP.
-
   - exists (fun n => match f n with Some x' => d (x, x') | _ => false end).
-
     intros x0. destruct (f x0). rewrite <- (Hd (x,x1)). split. inversion 1. eauto. intros ->. eauto.
-
     split; inversion 1.
-
 Qed.
-
-
 
 Definition POST' :=
-
   forall X (p : X -> Prop), discrete X -> enumerable p -> enumerable (fun x => ~ p x) -> ldecidable p.
 
-
-
 Theorem MP_Post :
-
   MP -> POST'.
-
 Proof.
-
   intros mp X p HX [f Hf] [g Hg].
-
   cut (forall x, exists n, f n = Some x \/ g n = Some x).
-
   - intros H x. destruct (H x); firstorder.
-
   - intros x. apply (MP_to_decMP mp).
-
     + apply discrete_iff in HX as [H]. apply decidable_iff.
-
       constructor. intros n. exact _.
-
     + intros H. assert (H1 : ~ ~ (p x \/ ~ p x)) by tauto. firstorder.
-
 Qed.
-
-
 
 Lemma Post_to' :
-
    POST' -> MP.
-
 Proof.
-
   intros HP. apply eMP_to_MP. apply decMP_to_eMP.
-
   intros p [Hp] % decidable_iff H. destruct (HP nat (fun _ => exists n, p n)) with (x:=0); trivial.
-
   - eapply discrete_iff. econstructor. exact _.
-
   - change (enumerable (fun m => exists n, (fun (x : nat * nat) => p (snd x)) (m,n))).
-
     apply projection. eapply dec_count_enum; try apply enumerable_nat_nat.
-
     apply decidable_iff. constructor. intros [n m]. exact _.
-
   - exists (fun _ => None). intros x. firstorder congruence.
-
   - contradiction.
-
 Qed.
-
-
 
 Definition POST :=
-
   forall X (p : X -> Prop), discrete X -> enumerable p -> enumerable (fun x => ~ p x) -> decidable p.
 
-
-
 Lemma Post_MP :
-
   POST <-> MP.
-
 Proof.
-
   split; intros.
-
   - intros ?. eapply Post_to'.
-
     intros ? ? ? ? ? ?. destruct (H X p H0 H1 H2) as [g].
-
     specialize (H3 x). destruct (g x); firstorder congruence.
-
   - intros ? ? ? ? ?. eapply weakPost; eauto.
-
     eapply MP_Post; eauto.
-
 Qed.
-
-
 

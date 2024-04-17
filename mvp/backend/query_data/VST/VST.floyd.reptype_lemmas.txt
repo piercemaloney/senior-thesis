@@ -1,3092 +1,1022 @@
 Require Import VST.floyd.base2.
-(* VST.floyd.base2:
-Require Export VST.floyd.base.
-Require Export VST.floyd.typecheck_lemmas.
-Require Export VST.floyd.functional_base.
-Require Export VST.floyd.seplog_tactics.
-Require Export VST.floyd.const_only_eval.
-Require Export VST.floyd.computable_functions.
-
-Fixpoint delete_id {A: Type} i (al: list (ident*A)) : option (A * list (ident*A)) :=
- match al with
- | (j,x)::bl => if ident_eq i j then Some (x,bl)
-                else match delete_id i bl with
-                        | None => None
-                        | Some (y,cl) => Some (y, (j,x)::cl)
-                        end
-  | nil => None
- end.
-
-Inductive NOTE__Perhaps_you_need_to_Import_floyd_library___See_reference_manual_chapter___with_library : Type := .
-
-Definition cc_of_fundef (fd: Clight.fundef) : calling_convention :=
- match fd with
- | Internal f => fn_callconv f
- | External _ _ _ c => c
- end.
-
-Definition funsig_of_fundef (fd: Clight.fundef) : funsig :=
- match fd with
- | Internal {| fn_return := fn_return; fn_params := fn_params |} =>
-    (fn_params, fn_return)
- | External _ t t0 _ => (arglist 1 t, t0)
- end.
-
-Definition vacuous_funspec (fd: Clight.fundef): funspec :=
-   mk_funspec (funsig_of_fundef fd) (cc_of_fundef fd) (rmaps.ConstType NOTE__Perhaps_you_need_to_Import_floyd_library___See_reference_manual_chapter___with_library) (fun _ _ => FF) (fun _ _ => FF) (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Fixpoint augment_funspecs' (fds: list (ident * Clight.fundef)) (G:funspecs) : option funspecs :=
- match fds with
- | (i,fd)::fds' => match delete_id i G with
-                       | Some (f, G') =>
-                              match augment_funspecs' fds' G' with
-                               | Some G2 => Some ((i,f)::G2)
-                               | None => None
-                              end
-                       | None =>
-                              match augment_funspecs' fds' G with
-                               | Some G2 => Some ((i, vacuous_funspec fd)::G2)
-                               | None => None
-                              end
-                        end
- | nil => match G with nil => Some nil | _::_ => None end
- end.
-
-Definition augment_funspecs prog G : funspecs :=
- match augment_funspecs' (prog_funct prog) G with
- | Some G' => G'
- | None => nil
- end. *)
-
 Require Import VST.floyd.type_induction.
-(* VST.floyd.type_induction:
-Require Import VST.floyd.base2.
-Require Import VST.floyd.fieldlist.
-Require Import VST.floyd.computable_theorems.
-Open Scope nat.
-
-Inductive ListType: list Type -> Type :=
-  | Nil: ListType nil
-  | Cons: forall {A B} (a: A) (b: ListType B), ListType (A :: B).
-
-Fixpoint ListTypeGen {A} (F: A -> Type) (f: forall A, F A) (l: list A) : ListType (map F l) :=
-  match l with
-  | nil => Nil
-  | cons h t => Cons (f h) (ListTypeGen F f t)
-  end.
-
-Lemma ListTypeGen_preserve: forall A F f1 f2 (l: list A),
-  (forall a, In a l -> f1 a = f2 a) ->
-  ListTypeGen F f1 l = ListTypeGen F f2 l.
-
-Definition decay' {X} {F: Type} {l: list X} (v: ListType (map (fun _ => F) l)): list F.
-
-Fixpoint decay'' {X} {F: Type} (l0 : list Type) (v: ListType l0) :
-  forall (l: list X), l0 = map (fun _ => F) l -> list F :=
-  match v in ListType l1
-    return forall l2, l1 = map (fun _ => F) l2 -> list F
-  with
-  | Nil => fun _ _ => nil
-  | Cons A B a b =>
-    fun (l1 : list X) (E0 : A :: B = map (fun _ : X => F) l1) =>
-    match l1 as l2 return (A :: B = map (fun _ : X => F) l2 -> list F) with
-    | nil => fun _ => nil 
-    | x :: l2 =>
-       fun E1 : A :: B = map (fun _ : X => F) (x :: l2) =>
-       (fun
-          X0 : map (fun _ : X => F) (x :: l2) =
-               map (fun _ : X => F) (x :: l2) -> list F =>
-        X0 eq_refl)
-         match
-           E1 in (_ = y)
-           return (y = map (fun _ : X => F) (x :: l2) -> list F)
-         with
-         | eq_refl =>
-             fun H0 : A :: B = map (fun _ : X => F) (x :: l2) =>
-              (fun (H3 : A = F) (H4 : B = map (fun _ : X => F) l2) =>
-                  (eq_rect A (fun A0 : Type => A0) a F H3) :: (decay'' B b l2 H4))
-                 (f_equal
-                    (fun e : list Type =>
-                     match e with
-                     | nil => A
-                     | T :: _ => T
-                     end) H0)
-                (f_equal
-                   (fun e : list Type =>
-                    match e with
-                    | nil => B
-                    | _ :: l3 => l3
-                    end) H0)
-         end
-    end E0
-  end.
-
-Definition decay {X} {F: Type} {l: list X} (v: ListType (map (fun _ => F) l)): list F :=
-  let l0 := map (fun _ => F) l in
-  let E := @eq_refl _ (map (fun _ => F) l) : l0 = map (fun _ => F) l in
-  decay'' l0 v l E.
-
-Lemma decay_spec: forall A F f l,
-  decay (ListTypeGen (fun _: A => F) f l) = map f l.
-
-Section COMPOSITE_ENV.
-Context {cs: compspecs}.
-
-Lemma type_ind: forall P : type -> Prop,
-  (forall t,
-  match t with
-  | Tarray t0 _ _ => P t0
-  | Tstruct id _ => let m := co_members (get_co id) in Forall (fun it => P (field_type (fst it) m)) m
-  | Tunion id _ => let m := co_members (get_co id) in Forall (fun it => P (field_type (fst it) m)) m
-  | _ => True
-  end -> P t) ->
-  forall t, P t.
-
-Ltac type_induction t :=
-  pattern t;
-  match goal with
-  | |- ?P t =>
-    apply type_ind; clear t;
-    let t := fresh "t" in
-    intros t IH;
-    let id := fresh "id" in
-    let a := fresh "a" in
-    destruct t as [| | | | | | | id a | id a]
-  end.
-
-Variable A: type -> Type.
-
-Definition FT_aux id :=
-    let m := co_members (get_co id) in
-    ListType (map (fun it => A (field_type (fst it) m)) m).
-
-Variable F_ByValue: forall t: type, A t.
-Variable F_Tarray: forall t n a, A t -> A (Tarray t n a).
-Variable F_Tstruct: forall id a, FT_aux id -> A (Tstruct id a).
-Variable F_Tunion: forall id a, FT_aux id -> A (Tunion id a).
-
-Fixpoint type_func_rec (n: nat) (t: type): A t :=
-  match n with
-  | 0 =>
-    match t as t0 return A t0 with
-    | Tstruct id a =>
-       match cenv_cs ! id with
-       | None => let m := co_members (get_co id) in
-                       F_Tstruct id a (ListTypeGen (fun it => A (field_type (fst it) m)) (fun it => F_ByValue (field_type (fst it) m)) m)
-       | _ => F_ByValue (Tstruct id a)
-       end
-    | Tunion id a =>
-       match cenv_cs ! id with
-       | None => let m := co_members (get_co id) in
-                      F_Tunion id a (ListTypeGen (fun it => A (field_type (fst it) m)) (fun it => F_ByValue (field_type (fst it) m)) m)
-       | _ => F_ByValue (Tunion id a)
-       end
-    | t' => F_ByValue t'
-    end
-  | S n' =>
-    match t as t0 return A t0 with
-    | Tarray t0 n a => F_Tarray t0 n a (type_func_rec n' t0)
-    | Tstruct id a =>  let m := co_members (get_co id) in
-                            F_Tstruct id a (ListTypeGen (fun it => A (field_type (fst it) m)) (fun it => type_func_rec n' (field_type (fst it) m)) m)
-    | Tunion id a =>  let m := co_members (get_co id) in
-                            F_Tunion id a (ListTypeGen (fun it => A (field_type (fst it) m)) (fun it => type_func_rec n' (field_type (fst it) m)) m)
-    | t' => F_ByValue t'
-    end
-  end.
-
-Definition type_func t := type_func_rec (rank_type cenv_cs t) t.
-
-Lemma rank_type_Tstruct: forall id a co, cenv_cs ! id = Some co ->
-  rank_type cenv_cs (Tstruct id a) = S (co_rank (get_co id)).
-
-Lemma rank_type_Tunion: forall id a co, cenv_cs ! id = Some co ->
-  rank_type cenv_cs (Tunion id a) = S (co_rank (get_co id)).
-
-Lemma type_func_rec_rank_irrelevent: forall t n n0,
-  n >= rank_type cenv_cs t ->
-  n0 >= rank_type cenv_cs t ->
-  type_func_rec n t = type_func_rec n0 t.
-
-Definition FTI_aux id :=
-    let m := co_members (get_co id) in
-    (ListTypeGen (fun it => A (field_type (fst it) m)) (fun it => type_func (field_type (fst it) m)) m).
-
-Lemma type_func_eq: forall t,
-  type_func t =
-  match t as t0 return A t0 with
-  | Tarray t0 n a => F_Tarray t0 n a (type_func t0)
-  | Tstruct id a => F_Tstruct id a (FTI_aux id)
-  | Tunion id a => F_Tunion id a (FTI_aux id)
-  | t' => F_ByValue t'
-  end.
-
-End COMPOSITE_ENV.
-
-Arguments type_func {cs} A F_ByValue F_Tarray F_Tstruct F_Tunion t / .
-
-Ltac type_induction t :=
-  pattern t;
-  match goal with
-  | |- ?P t =>
-    apply type_ind; clear t;
-    let t := fresh "t" in
-    intros t IH;
-    let id := fresh "id" in
-    let a := fresh "a" in
-    destruct t as [| | | | | | | id a | id a]
-  end. *)
-
 Require Export VST.floyd.compact_prod_sum.
-
 Require Import VST.floyd.fieldlist.
-(* VST.floyd.fieldlist:
-Require Import VST.floyd.base2.
-Require Import VST.floyd.client_lemmas.
-
-Arguments align !n !amount / .
-Arguments Z.max !n !m / .
-
-Definition field_type i m :=
-  match Ctypes.field_type i m with
-  | Errors.OK t => t
-  | _ => Tvoid
-  end.
-
-Definition field_offset env i m :=
-  match Ctypes.field_offset env i m with
-  | Errors.OK ofs => ofs
-  | _ => 0
-  end.
-
-Fixpoint field_offset_next_rec env i m ofs sz :=
-  match m with
-  | nil => 0
-  | (i0, t0) :: m0 =>
-    match m0 with
-    | nil => sz
-    | (_, t1) :: _ =>
-      if ident_eq i i0
-      then align (ofs + @sizeof env t0) (@alignof env t1)
-      else field_offset_next_rec env i m0 (align (ofs + @sizeof env t0) (@alignof env t1)) sz
-    end
-  end.
-
-Definition field_offset_next env i m sz := field_offset_next_rec env i m 0 sz.
-
-Lemma in_members_field_type: forall i m,
-  in_members i m ->
-  In (i, field_type i m) m.
-
-Lemma field_offset_field_type_match: forall cenv i m,
-  match Ctypes.field_offset cenv i m, Ctypes.field_type i m with
-
-Lemma field_type_in_members: forall i m,
-  match Ctypes.field_type i m with
-
-Section COMPOSITE_ENV.
-Context {cs: compspecs}.
-
-Ltac solve_field_offset_type i m :=
-  let H := fresh "H" in
-  let Hty := fresh "H" in
-  let Hofs := fresh "H" in
-  let t := fresh "t" in
-  let ofs := fresh "ofs" in
-  pose proof field_offset_field_type_match cenv_cs i m;
-  destruct (Ctypes.field_offset cenv_cs i m) as [ofs|?] eqn:Hofs, (Ctypes.field_type i m) as [t|?] eqn:Hty;
-    [clear H | inversion H | inversion H | clear H].
-
-Lemma complete_legal_cosu_member: forall (cenv : composite_env) (id : ident) (t : type) (m : list (ident * type)),
-  In (id, t) m -> @composite_complete_legal_cosu_type cenv m = true -> @complete_legal_cosu_type cenv t = true.
-
-Lemma complete_legal_cosu_type_field_type: forall id i,
-  in_members i (co_members (get_co id)) ->
-  complete_legal_cosu_type (field_type i (co_members (get_co id))) = true.
-
-Lemma align_compatible_rec_Tstruct_inv': forall id a ofs,
-  align_compatible_rec cenv_cs (Tstruct id a) ofs ->
-  forall i,
-  in_members i (co_members (get_co id)) ->
-  align_compatible_rec cenv_cs (field_type i (co_members (get_co id)))
-    (ofs + field_offset cenv_cs i (co_members (get_co id))).
-
-Lemma align_compatible_rec_Tunion_inv': forall id a ofs,
-  align_compatible_rec cenv_cs (Tunion id a) ofs ->
-  forall i,
-  in_members i (co_members (get_co id)) ->
-  align_compatible_rec cenv_cs (field_type i (co_members (get_co id))) ofs.
-
-Lemma field_offset_aligned: forall i m,
-  (alignof (field_type i m) | field_offset cenv_cs i m).
-
-Lemma alignof_composite_hd_divide: forall i t m, (alignof t | alignof_composite cenv_cs ((i, t) :: m)).
-
-Lemma alignof_composite_tl_divide: forall i t m, (alignof_composite cenv_cs m | alignof_composite cenv_cs ((i, t) :: m)).
-
-Lemma alignof_field_type_divide_alignof: forall i m,
-  in_members i m ->
-  (alignof (field_type i m) | alignof_composite cenv_cs m).
-
-Lemma field_offset_in_range: forall i m,
-  in_members i m ->
-  0 <= field_offset cenv_cs i m /\ field_offset cenv_cs i m + sizeof (field_type i m) <= sizeof_struct cenv_cs 0 m.
-
-Lemma sizeof_union_in_members: forall i m,
-  in_members i m ->
-  sizeof (field_type i m) <= sizeof_union cenv_cs m.
-
-Lemma field_offset_no_overlap:
-  forall i1 i2 m,
-  i1 <> i2 ->
-  in_members i1 m ->
-  in_members i2 m ->
-  field_offset cenv_cs i1 m + sizeof (field_type i1 m) <= field_offset cenv_cs i2 m \/
-  field_offset cenv_cs i2 m + sizeof (field_type i2 m) <= field_offset cenv_cs i1 m.
-
-Lemma not_in_members_field_type: forall i m,
-  ~ in_members i m ->
-  field_type i m = Tvoid.
-
-Lemma not_in_members_field_offset: forall i m,
-  ~ in_members i m ->
-  field_offset cenv_cs i m = 0.
-
-Lemma field_offset_next_in_range: forall i m sz,
-  in_members i m ->
-  sizeof_struct cenv_cs 0 m <= sz ->
-  field_offset cenv_cs i m + sizeof (field_type i m) <=
-  field_offset_next cenv_cs i m sz <= sz.
-
-Lemma Pos_eqb_eq: forall p q: positive, iff (eq (Pos.eqb p q) true) (eq p q).
-
-Lemma id_in_list_true: forall i ids, id_in_list i ids = true -> In i ids.
-
-Lemma id_in_list_false: forall i ids, id_in_list i ids = false -> ~In i ids.
-
-Lemma members_no_replicate_ind: forall m,
-  (members_no_replicate m = true) <->
-  match m with
-  | nil => True
-  | (i0, _) :: m0 => ~ in_members i0 m0 /\ members_no_replicate m0 = true
-  end.
-
-Lemma map_members_ext: forall A (f f':ident * type -> A) (m: members),
-  members_no_replicate m = true ->
-  (forall i, in_members i m -> f (i, field_type i m) = f' (i, field_type i m)) ->
-  map f m = map f' m.
-
-Lemma in_members_tail_no_replicate: forall i i0 t0 m,
-  members_no_replicate ((i0, t0) :: m) = true ->
-  in_members i m ->
-  i <> i0.
-
-Lemma neq_field_offset_rec_cons: forall env i i0 t0 m z,
-  i <> i0 ->
-  field_offset_rec env i ((i0, t0) :: m) z =
-  field_offset_rec env i m (align z (alignof t0) + sizeof t0).
-
-Lemma neq_field_offset_next_rec_cons: forall env i i0 t0 i1 t1 m z sz,
-  i <> i0 ->
-  field_offset_next_rec env i ((i0, t0) :: (i1, t1) :: m) z sz =
-  field_offset_next_rec env i ((i1, t1) :: m) (align (z +  sizeof t0) (alignof t1)) sz.
-
-Lemma sizeof_struct_0: forall env i m,
-  sizeof_struct env 0 m = 0 ->
-  in_members i m ->
-  sizeof (field_type i m) = 0 /\
-  field_offset_next env i m 0 - (field_offset env i m + sizeof (field_type i m)) = 0.
-
-Lemma sizeof_union_0: forall env i m,
-  sizeof_union env m = 0 ->
-  in_members i m ->
-  sizeof (field_type i m) = 0.
-
-Definition in_map: forall {A B : Type} (f : A -> B) (l : list A) (x : A),
-       In x l -> In (f x) (map f l) :=
-fun (A B : Type) (f : A -> B) (l : list A) =>
-list_ind (fun l0 : list A => forall x : A, In x l0 -> In (f x) (map f l0))
-  (fun (x : A) (H : In x nil) => H)
-  (fun (a : A) (l0 : list A)
-     (IHl : forall x : A, In x l0 -> In (f x) (map f l0)) (x : A)
-     (H : In x (a :: l0)) =>
-   or_ind
-     (fun H0 : a = x =>
-      or_introl (eq_ind_r (fun a0 : A => f a0 = f x) eq_refl H0))
-     (fun H0 : In x l0 =>
-      or_intror
-        ((fun H1 : In x l0 -> In (f x) (map f l0) =>
-          (fun H2 : In (f x) (map f l0) => H2) (H1 H0)) (IHl x))) H) l.
-
-Lemma In_field_type: forall it m,
-  members_no_replicate m = true ->
-  In it m ->
-  field_type (fst it) m = snd it.
-
-End COMPOSITE_ENV.
-
-Lemma members_spec_change_composite' {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall id,
-  match (coeq cs_from cs_to) ! id with
-  | Some b => test_aux cs_from cs_to b id
-  | None => false
-  end = true ->
-  Forall (fun it => cs_preserve_type cs_from cs_to (coeq _ _) (snd it) = true) (co_members (get_co id)).
-
-Lemma members_spec_change_composite'' {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall id,
-  match (coeq cs_from cs_to) ! id with
-  | Some b => test_aux cs_from cs_to b id
-  | None => false
-  end = true ->
-  forall i, cs_preserve_type cs_from cs_to (coeq _ _) (field_type i (co_members (get_co id))) = true.
-
-Lemma members_spec_change_composite {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall id,
-  match (coeq cs_from cs_to) ! id with
-  | Some b => test_aux cs_from cs_to b id
-  | None => false
-  end = true ->
-  Forall (fun it => cs_preserve_type cs_from cs_to (coeq _ _) (field_type (fst it) (co_members (get_co id))) = true) (co_members (get_co id)).
-
-Lemma field_offset_change_composite {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall id i,
-  match (coeq cs_from cs_to) ! id with
-  | Some b => test_aux cs_from cs_to b id
-  | None => false
-  end = true ->
-  field_offset (@cenv_cs cs_from) i (co_members (@get_co cs_to id)) =
-  field_offset (@cenv_cs cs_to) i (co_members (@get_co cs_to id)).
-
-Lemma field_offset_next_change_composite {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall id i,
-  match (coeq cs_from cs_to) ! id with
-  | Some b => test_aux cs_from cs_to b id
-  | None => false
-  end = true ->
-  field_offset_next (@cenv_cs cs_from) i (co_members (get_co id)) (co_sizeof (@get_co cs_from id)) =
-field_offset_next (@cenv_cs cs_to) i (co_members (get_co id)) (co_sizeof (@get_co cs_to id)).
-
-Arguments field_type i m / .
-Arguments field_offset env i m / . *)
-
 Require Import VST.floyd.sublist.
-(* VST.floyd.sublist:
-Require Import compcert.lib.Coqlib.
-Require Import VST.msl.Coqlib2.
-Require Import Coq.Lists.List.
-Import ListNotations.
-
-Class Inhabitant (A: Type) := default : A.
-
-Instance Inhabitant_Z : Inhabitant Z := 0.
-Instance Inhabitant_nat : Inhabitant nat := O.
-Instance Inhabitant_positive : Inhabitant positive := 1%positive.
-Instance Inhabitant_list {T: Type} : Inhabitant (list T) := @nil T.
-Instance Inhabitant_fun {T1 T2: Type} {H: Inhabitant T2} : Inhabitant (T1->T2) := fun _ => H.
-Instance Inhabitant_Prop : Inhabitant Prop := False.
-Instance Inhabitant_bool : Inhabitant bool := false.
-Instance Inhabitant_pair {T1 T2 : Type} {x1: Inhabitant T1} {x2: Inhabitant T2} : Inhabitant (T1*T2)%type := (x1,x2).
-
-Lemma Zlength_length:
-  forall A (al: list A) (n: Z),
-    0 <= n ->
-    (Zlength al = n <-> length al = Z.to_nat n).
-
-Lemma firstn_app1: forall {A} n (p l: list A),
-  (n <= Datatypes.length p)%nat ->
-
-Lemma firstn_app2: forall {A} (n: nat) (al bl: list A),
- (n >= length al)%nat ->
- firstn n (al++bl) = al ++ firstn (n - length al) bl.
-
-Lemma firstn_list_repeat {A} (v:A): forall i k, (i<=k)%nat ->
-      firstn i (list_repeat k v) = list_repeat i v.
-
-Lemma firstn_app:
- forall {A} n m (al: list A), firstn n al ++ firstn m (skipn n al) =
-  firstn (n+m) al.
-
-Lemma nth_skipn:
-  forall {A} i n data (d:A),
-       nth i (skipn n data) d = nth (i+n) data d.
-
-Lemma skipn_skipn: forall {A} n m (xs: list A),
-  skipn n (skipn m xs) = skipn (m + n) xs.
-
-Lemma firstn_exact_length: forall {A} (xs: list A), firstn (length xs) xs = xs.
-
-Lemma skipn_exact_length: forall {A} (xs: list A), skipn (length xs) xs = nil.
-
-Lemma len_le_1_rev: forall {A} (contents: list A),
-  (length contents <= 1)%nat ->
-  contents = rev contents.
-
-Lemma firstn_firstn: forall {A} (contents: list A) n m,
-  (n <= m)%nat ->
-  firstn n (firstn m contents) = firstn n contents.
-
-Lemma firstn_1_skipn: forall {A} n (ct: list A) d,
-  (n < length ct)%nat ->
-  nth n ct d :: nil = firstn 1 (skipn n ct).
-
-Lemma skipn_length: forall {A} (contents: list A) n,
-  length (skipn n contents) = (length contents - n)%nat.
-
-Lemma nth_firstn: forall {A} (contents: list A) n m d,
-  (n < m)%nat ->
-  nth n (firstn m contents) d = nth n contents d.
-
-Lemma skipn_length_short:
-  forall {A} n (al: list A),
-    (length al <= n)%nat ->
-    (length (skipn n al) = 0)%nat.
-
-Lemma skipn_short:
-   forall {A} n (al: list A), (n >= length al)%nat -> skipn n al = nil.
-
-Lemma nth_map':
-  forall {A B} (f: A -> B) d d' i al,
-  (i < length al)%nat ->
-   nth i (map f al) d = f (nth i al d').
-
-Lemma skipn_nil: forall A n, skipn n (@nil A) = nil.
-
-Lemma skipn_drop:
- forall A n m (al: list A), skipn n (skipn m al) = skipn (n+m) al.
-
-Lemma skipn_app1:
- forall A n (al bl: list A),
-  (n <= length al)%nat ->
-  skipn n (al++bl) = skipn n al ++ bl.
-
-Lemma skipn_app2:
- forall A n (al bl: list A),
-  (n >= length al)%nat ->
-  skipn n (al++bl) = skipn (n-length al) bl.
-
-Lemma list_repeat_app: forall A a b (x:A),
-  list_repeat a x ++ list_repeat b x = list_repeat (a+b) x.
-
-Lemma firstn_same:
-  forall A n (b: list A), (n >= length b)%nat -> firstn n b = b.
-
-Lemma nth_firstn_low:
- forall A i n al (d: A),
-  (i < n <= length al)%nat -> nth i (firstn n al) d = nth i al d.
-
-Lemma nth_error_nth:
-  forall A (d: A) i al, (i < length al)%nat -> nth_error al i = Some (nth i al d).
-
-Lemma skipn_rev:
-  forall {A} n (vl: list A),
-   skipn n (rev vl) = rev (firstn (length vl - n) vl).
-
-Lemma Forall_list_repeat:
-  forall {A} (P: A -> Prop) (n: nat) (a: A),
-    P a -> Forall P (list_repeat n a).
-
-Lemma skipn_firstn: forall {A} n m (xs: list A),
-  skipn n (firstn m xs) = firstn (m-n) (skipn n xs).
-
-Lemma rev_skipn:
- forall {A} n (vl: list A),
-  rev (skipn n vl) = firstn (length vl -n) (rev vl).
-
-Lemma firstn_skipn_rev:
-  forall {A} lo n (vl: list A),
-  (n+lo <= length vl)%nat ->
-  firstn n (skipn lo (rev vl)) =
-  rev (firstn n (skipn (length vl - (lo+n))%nat vl)).
-
-Lemma map_firstn:
-  forall A B (F: A -> B) n (al: list A),
-  map F (firstn n al) = firstn n (map F al).
-
-Lemma map_skipn:
-  forall A B (F: A -> B) n (al: list A),
-  map F (skipn n al) = skipn n (map F al).
-
-Lemma Zlength_app: forall T (al bl: list T),
-    Zlength (al++bl) = Zlength al + Zlength bl.
-
-Lemma Zlength_rev: forall T (vl: list T), Zlength (rev vl) = Zlength vl.
-
-Lemma Zlength_map: forall A B (f: A -> B) l, Zlength (map f l) = Zlength l.
-
-Lemma ZtoNat_Zlength:
- forall {A} (l: list A), Z.to_nat (Zlength l) = length l.
-Hint Rewrite @ZtoNat_Zlength : norm.
-
-Lemma Zlength_nonneg:
- forall {A} (l: list A), 0 <= Zlength l.
-
-Definition Zlength' := @Zlength.
-
-Ltac pose_Zlength_nonneg1 T A :=
-     lazymatch goal with
-      | H:  0 <= @Zlength T A |- _ => idtac
-      | H:  0 <= @Zlength T A /\ _ |- _ => idtac
-      | |- _ => pose proof (@Zlength_nonneg T A)
-     end;
-     
-     let x := fresh "x" in set (x:= @Zlength T A) in *;
-     let y := fresh "y" in set (y := @Zlength) in x;
-     fold @Zlength' in y; subst y; subst x.
-
-Ltac pose_Zlength_nonneg :=
- repeat
-  match goal with
-  | |- context [@Zlength ?T ?A] => pose_Zlength_nonneg1 T A
-  | H: context [@Zlength ?T ?A] |- _ => pose_Zlength_nonneg1 T A
- end;
-  unfold Zlength' in *.
-
-Ltac list_solve := autorewrite with sublist; pose_Zlength_nonneg; omega.
-
-Definition Znth {X}{d: Inhabitant X} n (xs: list X) :=
-  if (zlt n 0) then default else nth (Z.to_nat n) xs d.
-
-Lemma Znth_map:
-  forall {A:Type} {da: Inhabitant A}{B:Type}{db: Inhabitant B} i (f: A -> B) (al: list A),
-  0 <= i < Zlength al ->
-  Znth i (map f al)  = f (Znth i al).
-
-Hint Rewrite 
-   (@Znth_map Z _) (@Znth_map nat _) (@Znth_map positive _)
-    using (auto; rewrite ?Zlength_map in *; omega) : sublist.
-
-Lemma Znth_succ: forall {A}{a: Inhabitant A} i lo (v: list A), Z.succ lo <= i -> Znth (i - lo) v = Znth (i - (Z.succ lo)) (skipn 1 v).
-
-Lemma Znth_0_cons {A}{a: Inhabitant A} l (v:A): Znth 0 (v::l) = v.
-Hint Rewrite @Znth_0_cons : sublist.
-
-Lemma Znth_pos_cons {A}{a: Inhabitant A} i l (v:A): 0<i -> Znth i (v::l) = Znth (i-1) l.
-
-Lemma Znth_In : forall {A}{a: Inhabitant A} i l, 0 <= i < Zlength l -> In (Znth i l) l.
-
-Lemma split3_full_length_list: forall {A}{a: Inhabitant A} lo mid hi (ct: list A),
-  lo <= mid < hi ->
-  Zlength ct = hi - lo ->
-  ct = firstn (Z.to_nat (mid - lo)) ct ++
-
-Lemma Forall_Znth:
- forall {A}{a: Inhabitant A} (F: A -> Prop) (al: list A) i,
-   0 <= i < Zlength al ->
-   Forall F al ->
-   F (Znth i al).
-
-Hint Rewrite @app_nil_l @app_nil_r : sublist.
-
-Lemma app_Znth1:
-  forall A (a: Inhabitant A) (l l': list A) (i:Z),
-  i < Zlength l -> Znth i (l++l') = Znth i l.
-
-Lemma app_Znth2:
-  forall A (a: Inhabitant A) (l l': list A) (i:Z),
-  i >= Zlength l -> Znth i (l++l') = Znth (i-Zlength l) l'.
-
-Lemma Znth_firstn:
-  forall {A}{a: Inhabitant A} (al: list A) (n m : Z),
-  n<m -> Znth n (firstn (Z.to_nat m) al) = Znth n al.
-
-Lemma Znth_skipn: forall {A}{a: Inhabitant A}  i n xs,
-  0 <= i ->
-  0 <= n ->
-  Znth i (skipn (nat_of_Z n) xs) = Znth (i+n) xs.
-
-Lemma Z2Nat_neg: forall i, i < 0 -> Z.to_nat i = 0%nat.
-
-Lemma Zlength_firstn:
-  forall {A} n (v: list A), Zlength (firstn (Z.to_nat n) v) = Z.min (Z.max 0 n) (Zlength v).
-
-Lemma Zlength_skipn:
-  forall {A} n (v: list A),
-  Zlength (skipn (Z.to_nat n) v) = Z.max 0 (Zlength v - (Z.max 0n)).
-
-Lemma Znth_cons:
- forall {A}(a: Inhabitant A)  i (al: list A) bl,
-  0 <= i < Zlength al  ->
-  Znth i al :: bl = firstn (Z.to_nat 1) (skipn (Z.to_nat i) al) ++ bl.
-
-Lemma Zfirstn_app1:
- forall A n (al bl: list A),
-  n <= Zlength al -> firstn (Z.to_nat n) (al++bl) = firstn (Z.to_nat n) al.
-
-Lemma Zfirstn_same:
-  forall A n (b: list A), n >= Zlength b -> firstn (Z.to_nat n) b = b.
-
-Lemma Zfirstn_app2: forall {A} n (al bl: list A),
- n >= Zlength al ->
- firstn (Z.to_nat n) (al++bl) = al ++ firstn (Z.to_nat (n - Zlength al)) bl.
-
-Lemma Zfirstn_firstn: forall {A} (contents: list A) n m,
-  n <= m ->
-  firstn (Z.to_nat n) (firstn (Z.to_nat m) contents) = firstn (Z.to_nat n) contents.
-Lemma Zskipn_app1:
- forall A n (al bl: list A),
-  n <= Zlength al ->
-  skipn (Z.to_nat n) (al++bl) = skipn (Z.to_nat n) al ++ bl.
-
-Lemma Zskipn_app2:
- forall A n (al bl: list A),
-  n >= Zlength al ->
-  skipn (Z.to_nat n) (al++bl) = skipn (Z.to_nat (n-Zlength al)) bl.
-
-Lemma Znth_rev:
-  forall {A}{d: Inhabitant A} i (al:list A),
-  0 <= i < Zlength al ->
-  Znth i (rev al) = Znth (Zlength al - i - 1) al.
-
-Lemma Zskipn_firstn: forall {A} n m (xs: list A),
- 0 <= n ->
- skipn (Z.to_nat n) (firstn (Z.to_nat m) xs) =
-
-Lemma Zskipn_skipn: forall {A} n m (xs: list A),
-  0 <= n -> 0 <= m ->
-  skipn (Z.to_nat n) (skipn (Z.to_nat m) xs) = skipn (Z.to_nat (m + n)) xs.
-
-Lemma Zfirstn_app:
- forall {A} n m (al: list A),
-  0 <= n -> 0 <= m ->
-  firstn (Z.to_nat n) al ++ firstn (Z.to_nat m) (skipn (Z.to_nat n) al) =
-
-Lemma Zfirstn_exact_length:
-  forall {A} n (al: list A),
-  n = Zlength al ->
-  firstn (Z.to_nat n) al = al.
-
-Definition sublist {A} (lo hi: Z) (al: list A) : list A :=
-  firstn (Z.to_nat (hi-lo)) (skipn (Z.to_nat lo) al).
-
-Definition upd_Znth {A} (i: Z) (al: list A) (x: A): list A :=
-   sublist 0 i al ++ x :: sublist (i+1) (Zlength al) al.
-
-Lemma sublist_sublist {A} i j k m (l:list A): 0<=m -> 0<=k <=i -> i <= j-m ->
-  sublist k i (sublist m j l) = sublist (k+m) (i+m) l.
-
-Lemma sublist_rejoin:
-  forall {A} lo mid hi (al: list A),
-  0 <= lo <= mid ->
-  mid <= hi <= Zlength al ->
-  sublist lo mid al ++ sublist mid hi al = sublist lo hi al.
-
-Lemma sublist_map:
-  forall {A B} (F: A -> B) lo hi (al: list A),
-  sublist lo hi (map F al) = map F (sublist lo hi al).
-
-Lemma map_sublist:
-  forall {A B} (F: A -> B) lo hi (al: list A),
-  map F (sublist lo hi al) = sublist lo hi (map F al).
-
-Lemma sublist_len_1:
-  forall {A}{d: Inhabitant A} i (al: list A),
-  0 <= i < Zlength al ->
-  sublist i (i+1) al = Znth i al :: nil.
-
-Lemma Znth_cons_sublist:
-  forall {A}{d: Inhabitant A} i (al: list A) bl,
-  0 <= i < Zlength al ->
-  Znth i al :: bl = sublist i (i+1) al ++ bl.
-
-Lemma Zlength_sublist:
-  forall {A} lo hi (al: list A),
- 0 <= lo <= hi -> hi <= Zlength al ->
- Zlength (sublist lo hi al) = hi-lo.
-
-Lemma sublist_same_gen:
-forall {A} lo hi (al: list A),
-  lo = 0 -> hi >= Zlength al ->
-  sublist lo hi al = al.
-
-Lemma sublist_same:
-forall {A} lo hi (al: list A),
-  lo = 0 -> hi = Zlength al ->
-  sublist lo hi al = al.
-
-Lemma Znth_sublist:
-  forall {A}{d: Inhabitant A} lo i hi (al: list A),
- 0 <= lo ->
- 0 <= i < hi-lo ->
- Znth i (sublist lo hi al) = Znth (i+lo) al.
-
-Lemma rev_sublist:
-  forall {A} lo hi (al: list A),
-  0 <= lo <= hi -> hi <= Zlength al ->
-  rev (sublist lo hi al) = sublist (Zlength al - hi) (Zlength al - lo) (rev al).
-
-Lemma sublist_nil:
-  forall {A} lo (al: list A),
-  sublist lo lo al = nil.
-
-Lemma sublist_nil_gen : forall {A} (l : list A) i j, j <= i -> sublist i j l = [].
-
-Lemma sublist_rev:
-  forall {A} lo hi (al: list A),
-  0 <= lo <= hi -> hi <= Zlength al ->
-  sublist lo hi (rev al) = rev (sublist (Zlength al - hi) (Zlength al - lo) al).
-
-Lemma sublist_app:
-  forall {A} lo hi (al bl: list A),
-  0 <= lo <= hi -> hi <= Zlength al + Zlength bl ->
-  sublist lo hi (al++bl) =
-  sublist (Z.min lo (Zlength al)) (Z.min hi (Zlength al)) al ++
-
-Lemma sublist_split:
-  forall {A} lo mid hi (al: list A),
-  0 <= lo <= mid ->
-  mid <= hi <= Zlength al ->
-  sublist lo hi al = sublist lo mid al ++ sublist mid hi al.
-
-Lemma sublist_last_1 : forall {A}{d: Inhabitant A} lo hi (al : list A), 0 <= lo <= hi -> hi + 1 <= Zlength al ->
-  sublist lo (hi + 1) al = sublist lo hi al ++ [Znth hi al].
-
-Lemma Zlen_le_1_rev:
- forall {A} (al: list A),
-  Zlength al <= 1 -> rev al = al.
-
-Lemma skipn_0:
-  forall A (l: list A), skipn 0 l = l.
-
-Lemma sublist_1_cons {A} l (v:A) n: sublist 1 n (v::l) = sublist 0 (n-1) l.
-
-Lemma sublist_nil': forall (A : Type) (lo lo': Z) (al : list A), lo=lo' -> sublist lo lo' al = [].
-
-Lemma sublist_skip {A} (l:list A) i : 0<=i ->  sublist i (Zlength l) l = skipn (Z.to_nat i) l.
-
-Lemma sublist_firstn {A} (l:list A) i: sublist 0 i l = firstn (Z.to_nat i) l.
-
-Lemma sublist_app1:
-  forall (A : Type) (k i : Z) (al bl : list A),
-  0 <= k <= i -> i <= Zlength al -> sublist k i (al ++ bl) = sublist k i al.
-
-Lemma sublist0_app1 {A} i (al bl:list A): 0<= i <= Zlength al ->
-  sublist 0 i (al ++ bl) = sublist 0 i al.
-
-Lemma sublist_app2 {A} i j (al bl:list A): 0<=Zlength al <= i->
-  sublist i j (al ++ bl) = sublist (i-Zlength al) (j-Zlength al) bl.
-
-Lemma sublist_sublist0 {A} i j k (l:list A): 0<=k -> k<=i<=j ->
-  sublist k i (sublist 0 j l) = sublist k i l.
-
-Lemma sublist_sublist00 {A} i j (l:list A): 0<=i<=j ->
-  sublist 0 i (sublist 0 j l) = sublist 0 i l.
-
-Lemma skipn_list_repeat:
-   forall A k n (a: A),
-     (k <= n)%nat -> skipn k (list_repeat n a) = list_repeat (n-k) a.
-
-Lemma sublist_list_repeat {A} i j k (v:A) (I: 0<=i)
-          (IJK: i <= j <= k):
-      sublist i j (list_repeat (Z.to_nat k) v) = list_repeat (Z.to_nat (j-i)) v.
-
-Lemma Zlength_list_repeat:
-  forall {A} n (x: A),
-  0 <= n ->
-  Zlength (list_repeat (Z.to_nat n) x) = n.
-
-Lemma list_repeat_0:
-  forall {A} (x:A), list_repeat (Z.to_nat 0) x = nil.
-
-Lemma Znth_list_repeat_inrange:
-  forall {A}{d: Inhabitant A} i n (a: A),
-   (0 <= i < n)%Z ->
-   Znth i (list_repeat (Z.to_nat n) a) = a.
-
-Lemma firstn_nil {A} n: firstn n (nil:list A) = nil.
-
-Lemma firstn_In {A} (x:A): forall l n, In x (firstn n l) -> In x l.
-Lemma skipn_In {A} (x:A): forall l n, In x (skipn n l) -> In x l.
-
-Lemma sublist_In {A} lo hi data (x:A) (I:In x (sublist lo hi data)): In x data.
-
-Lemma Zlength_list_repeat' {A} n (v:A): Zlength (list_repeat n v) = Z.of_nat n.
-
-Lemma sublist0_app2 {A : Type} i (al bl : list A):
-  Zlength al <= i <= Zlength al + Zlength bl ->
-  sublist 0 i (al ++ bl) = al ++ sublist 0 (i - Zlength al) bl.
-
-Lemma sublist_rejoin':
-  forall {A} lo mid mid' hi (al: list A),
-  mid=mid' ->
-  0 <= lo <= mid ->
-  mid' <= hi <= Zlength al ->
-  sublist lo mid al ++ sublist mid' hi al = sublist lo hi al.
-
-Hint Rewrite @sublist_nil' using list_solve: sublist.
-Hint Rewrite @app_nil_l : sublist.
-Hint Rewrite @Zlength_rev : sublist.
-Hint Rewrite @sublist_rejoin' using list_solve : sublist.
-
-Lemma subsub1:
- forall a b : Z, (a-(a-b)) = b.
-Hint Rewrite subsub1 : sublist.
-
-Lemma sublist_app':
-  forall {A} lo hi (al bl: list A),
-  0 <= lo <= Zlength al ->
-  0 <= hi-Zlength al <= Zlength bl ->
-  sublist lo hi (al++bl) =
-  sublist lo (Zlength al) al ++
-  sublist 0 (hi-Zlength al) bl.
-
-Lemma upd_Znth_Zlength {A} i (l:list A) v: 0<=i < Zlength l ->
-      Zlength (upd_Znth i l v) = Zlength l.
-
-Lemma upd_Znth_map {A B} (f:A -> B) i l v:
-      upd_Znth i (map f l) (f v) =
-      map f (upd_Znth i l v).
-
-Lemma upd_Znth_lookup K {A}{d: Inhabitant A}: forall l (L:Zlength l = K) i j (v:A) (I: 0<=i<K) (J: 0<=j<K),
-   (i=j /\ Znth i (upd_Znth j l v) = v) \/
-   (i<>j /\ Znth i (upd_Znth j l v) = Znth i l).
-
-Lemma upd_Znth_lookup' K {A}{d: Inhabitant A}: forall l (L:Zlength l = K) i (I: 0<=i<K) j (J: 0<=j<K) (v:A),
-    Znth i (upd_Znth j l v) = if zeq i j then v else Znth i l.
-
-Lemma upd_Znth_char {A} n l1 (v:A) l2 w: Zlength l1=n ->
-      upd_Znth n (l1 ++ v :: l2) w = l1 ++ w :: l2.
-
-Lemma upd_Znth_same {A}{d: Inhabitant A}: forall i l u, 0<= i< Zlength l -> Znth i (upd_Znth i l u) = u.
-
-Lemma upd_Znth_diff {A}{d: Inhabitant A}: forall i j l u, 0<= i< Zlength l -> 0<= j< Zlength l -> i<>j ->
-      Znth i (upd_Znth j l u) = Znth i l.
-
-Lemma upd_Znth_app1 {A} i l1 l2 (I: 0 <= i < Zlength l1) (v:A):
-      upd_Znth i (l1++l2) v = upd_Znth i l1 v ++ l2.
-
-Lemma upd_Znth_app2 {A} (l1 l2:list A) i v:
-  Zlength l1 <= i <= Zlength l1 + Zlength l2 ->
-  upd_Znth i (l1 ++ l2) v = l1 ++ upd_Znth (i-Zlength l1) l2 v.
-
-Lemma upd_Znth0 {A} (l:list A) v:
-upd_Znth 0 l v = v :: sublist 1 (Zlength l) l.
-
-Lemma sublist_upd_Znth_l: forall {A} (l: list A) i lo hi v,
-  0 <= lo <= hi ->
-  hi <= i < Zlength l ->
-  sublist lo hi (upd_Znth i l v) = sublist lo hi l.
-
-Lemma sublist_upd_Znth_r: forall {A} (l: list A) i lo hi v,
-  0 <= i < lo ->
-  lo <= hi <= Zlength l ->
-  sublist lo hi (upd_Znth i l v) = sublist lo hi l.
-
-Lemma sublist_upd_Znth_lr: forall {A} (l: list A) i lo hi v,
-  0 <= lo <= i->
-  i < hi <= Zlength l ->
-  sublist lo hi (upd_Znth i l v) = upd_Znth (i - lo) (sublist lo hi l) v.
-
-Hint Rewrite @Znth_list_repeat_inrange : sublist.
-Hint Rewrite @Zlength_cons @Zlength_nil: sublist.
-Hint Rewrite @list_repeat_0: sublist.
-Hint Rewrite <- @app_nil_end : sublist.
-Hint Rewrite @Zlength_app: sublist.
-Hint Rewrite @Zlength_map: sublist.
-Hint Rewrite @Zlength_list_repeat using list_solve: sublist.
-Hint Rewrite Z.sub_0_r Z.add_0_l Z.add_0_r : sublist.
-Hint Rewrite @Zlength_sublist using list_solve: sublist.
-Hint Rewrite Z.max_r Z.max_l using omega : sublist.
-Hint Rewrite Z.min_r Z.min_l using omega : sublist.
-Hint Rewrite Z.add_simpl_r Z.sub_add Z.sub_diag : sublist.
-Hint Rewrite @sublist_sublist using list_solve : sublist.
-Hint Rewrite @sublist_app1 using list_solve : sublist.
-Hint Rewrite @sublist_app2 using list_solve : sublist.
-Hint Rewrite @sublist_list_repeat  using list_solve : sublist.
-Hint Rewrite @sublist_same using list_solve : sublist.
-Hint Rewrite Z.add_simpl_l : sublist.
-Hint Rewrite Z.add_add_simpl_l_l Z.add_add_simpl_l_r
-     Z.add_add_simpl_r_l Z.add_add_simpl_r_r : sublist.
-Hint Rewrite Z.add_0_r : sublist.
-Hint Rewrite @app_Znth1 using list_solve : sublist.
-Hint Rewrite @app_Znth2 using list_solve : sublist.
-Hint Rewrite @Znth_sublist using list_solve : sublist.
-Hint Rewrite @upd_Znth_Zlength using list_solve : sublist.
-
-Hint Rewrite @sublist_nil : sublist.
-
-Lemma list_repeat_app':
- forall {A: Type} a b (x:A), 
-    0 <= a -> 0 <= b ->
-    list_repeat (Z.to_nat a) x ++ list_repeat (Z.to_nat b) x = list_repeat (Z.to_nat (a+b)) x.
-
-Lemma Znth_overflow:
-  forall {A}{d: Inhabitant A} i (al: list A), i >= Zlength al -> Znth i al = d.
-
-Lemma Znth_underflow:
-  forall {A}{d: Inhabitant A} i (al: list A),  i < 0 -> Znth i al = d.
-
-Lemma Znth_outofbounds:
-  forall {A}{d: Inhabitant A} i (al: list A),  (i < 0 \/ i >= Zlength al) -> Znth i al = d.
-
-Lemma sublist_one:
-  forall {A}{d: Inhabitant A} lo hi (al: list A),
-    0 <= lo -> hi <= Zlength al ->
-    lo+1=hi -> sublist lo hi al = Znth lo al :: nil.
-
-Lemma Forall_app :
-forall {A} P (l1 l2 :list A),
-Forall P (l1 ++ l2) <->
-Forall P l1 /\ Forall P l2.
-
-Lemma Forall_firstn:
-  forall A (f: A -> Prop) n l, Forall f l -> Forall f (firstn n l).
-
-Lemma Forall_skipn:
-  forall A (f: A -> Prop) n l, Forall f l -> Forall f (skipn n l).
-
-Lemma Forall_map:
-  forall {A B} (f: B -> Prop) (g: A -> B) al,
-   Forall f (map g al) <-> Forall (Basics.compose f g) al.
-
-Lemma Forall_sublist:
-  forall {A} (f: A -> Prop) lo hi al,
-   Forall f al -> Forall f (sublist lo hi al).
-
-Hint Rewrite @upd_Znth_app1 using list_solve : sublist.
-Hint Rewrite @upd_Znth_app2 using list_solve : sublist.
-
-Lemma map_list_repeat: forall {A B} (f: A->B) n (x:A), map f (list_repeat n x) = list_repeat n (f x).
-Hint Rewrite @map_list_repeat : sublist.
-
-Lemma Zlength_sublist_correct: forall {A} (l: list A) (lo hi: Z),
-  0 <= lo <= hi ->
-  hi <= Zlength l ->
-  Zlength (sublist lo hi l) = hi - lo.
-
-Lemma Zlength_sublist_incorrect: forall {A} (l: list A) (lo hi: Z),
-  0 <= lo < hi ->
-  hi > Zlength l ->
-  Zlength (sublist lo hi l) < hi - lo.
-
-Lemma nth_Znth {A} {d: Inhabitant A}:
-forall n (xs:list A), 0 <= n < Zlength xs -> (nth (Z.to_nat n) xs d) = (Znth n xs). *)
-
-
 
 Definition
-
 map_map: forall {A B C : Type} (f : A -> B) (g : B -> C) (l : list A),
-
        map g (map f l) = map (fun x : A => g (f x)) l :=
-
 fun (A B C : Type) (f : A -> B) (g : B -> C) (l : list A) =>
-
 list_ind
-
   (fun l0 : list A => map g (map f l0) = map (fun x : A => g (f x)) l0)
-
   eq_refl
-
   (fun (a : A) (l0 : list A)
-
      (IHl : map g (map f l0) = map (fun x : A => g (f x)) l0) =>
-
    eq_ind_r
-
      (fun l1 : list C =>
-
       g (f a) :: l1 = g (f a) :: map (fun x : A => g (f x)) l0) eq_refl IHl)
-
   l.
-
-
 
 Notation sigTT P := (fun tv => match tv with existT t v => P t end).
 
-
-
 Definition compact_prod_sigT_type {A} {P: A -> Type} (l: list (sigT P)): Type :=
-
   compact_prod (map (sigTT P) l).
 
-
-
 Definition compact_prod_sigT_value: forall {A} {P: A -> Type} (l: list (sigT P)), compact_prod (map (sigTT P) l).
-
 Proof.
-
   intros.
-
   destruct l as [| [t0 v0] l]; [exact tt |].
-
   revert t0 v0; induction l as [| [t v] l]; intros.
-
   + exact v0.
-
   + exact (v0, IHl t v).
-
 Defined.
-
-
 
 Definition compact_sum_sigT_type {A} {P: A -> Type} (l: list (sigT P)): Type :=
-
   compact_sum (map (sigTT P) l).
 
-
-
 Definition compact_sum_sigT_value: forall {A} {P: A -> Type} (l: list (sigT P)), compact_sum (map (sigTT P) l).
-
 Proof.
-
   intros.
-
   destruct l as [| [t0 v0] l]; [exact tt |].
-
   revert t0 v0; destruct l as [| [t v] l]; intros.
-
   + exact v0.
-
   + exact (inl v0).
-
 Defined.
-
-
 
 Definition compact_prod_map {X: Type} {F F0: X -> Type} (l: list X)
-
   (f: ListType (map (fun x => F x -> F0 x) l)): compact_prod (map F l) -> compact_prod (map F0 l).
-
 Proof.
-
   intros.
-
   destruct l; [exact tt |].
-
   revert x f X0; induction l; intros; simpl in *.
-
   + inversion f; subst.
-
     exact (a X0).
-
   + remember ((F a -> F0 a) :: map (fun x0 : X => F x0 -> F0 x0) l) as L;
-
     inversion f; subst.
-
     exact (a0 (fst X0), IHl a b (snd X0)).
-
 Defined.
-
-
 
 Lemma compact_prod_map_nil: forall {X: Type} {F F0: X -> Type},
-
   @compact_prod_map X F F0 nil Nil tt = tt.
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Lemma compact_prod_map_single: forall {X: Type} {F F0: X -> Type} (x: X)
-
   (f: F x -> F0 x) (v: F x),
-
   compact_prod_map (x :: nil) (Cons f Nil) v = f v.
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Lemma compact_prod_map_cons: forall {X: Type} {F F0: X -> Type} (x x0: X) (l: list X)
-
   (f: F x -> F0 x) (fl: ListType (map (fun x => F x -> F0 x) (x0 :: l)))
-
   (v: F x) (vl: compact_prod (map F (x0 :: l))),
-
   compact_prod_map (x :: x0 :: l) (Cons f fl) (v, vl) = (f v, compact_prod_map _ fl vl).
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Definition compact_sum_map {X: Type} {F F0: X -> Type} (l: list X)
-
   (f: ListType (map (fun x => F x -> F0 x) l)): compact_sum (map F l) -> compact_sum (map F0 l).
-
 Proof.
-
   intros.
-
   destruct l; [exact tt |].
-
   revert x f X0; induction l; intros; simpl in *.
-
   + inversion f; subst.
-
     exact (a X0).
-
   + remember ((F a -> F0 a) :: map (fun x0 : X => F x0 -> F0 x0) l) as L;
-
     inversion f; subst.
-
     exact match X0 with
-
           | inl X0_l => inl (a0 X0_l)
-
           | inr X0_r => inr (IHl a b X0_r)
-
           end.
-
 Defined.
 
-
-
 Lemma compact_sum_map_nil: forall {X: Type} {F F0: X -> Type},
-
   @compact_sum_map X F F0 nil Nil tt = tt.
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Lemma compact_sum_map_single: forall {X: Type} {F F0: X -> Type} (x: X)
-
   (f: F x -> F0 x) (v: F x),
-
   compact_sum_map (x :: nil) (Cons f Nil) v = f v.
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Lemma compact_sum_map_cons_inl: forall {X: Type} {F F0: X -> Type} (x x0: X) (l: list X)
-
   (f: F x -> F0 x) (fl: ListType (map (fun x => F x -> F0 x) (x0 :: l)))
-
   (v: F x),
-
   compact_sum_map (x :: x0 :: l) (Cons f fl) (inl v) = inl (f v).
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
-
-
 
 Lemma compact_sum_map_cons_inr: forall {X: Type} {F F0: X -> Type} (x x0: X) (l: list X)
-
   (f: F x -> F0 x) (fl: ListType (map (fun x => F x -> F0 x) (x0 :: l)))
-
   (vl: compact_sum (map F (x0 :: l))),
-
   compact_sum_map (x :: x0 :: l) (Cons f fl) (inr vl) = inr (compact_sum_map _ fl vl).
-
 Proof.
-
   intros.
-
   reflexivity.
-
 Qed.
 
-
-
 Definition reptype_gen {cs: compspecs} : type -> (sigT (fun x => x)) :=
-
   type_func (fun _ => (sigT (fun x => x)))
-
   (fun t =>
-
      if (type_is_by_value t)
-
      then existT (fun x => x) val Vundef
-
      else existT (fun x => x) unit tt)
-
   (fun t n a TV => existT (fun x => x) (list (projT1 TV)) (list_repeat (Z.to_nat n) (projT2 TV)))
-
   (fun id a TVs => existT (fun x => x) (compact_prod_sigT_type (decay TVs)) (compact_prod_sigT_value (decay TVs)))
-
   (fun id a TVs => existT (fun x => x) (compact_sum_sigT_type (decay TVs)) (compact_sum_sigT_value (decay TVs))).
-
-
 
 Definition reptype {cs: compspecs} t: Type := match reptype_gen t with existT t _ => t end.
 
-
-
 Definition default_val {cs: compspecs} t: reptype t :=
-
   match reptype_gen t as tv
-
     return match tv with existT t _ => t end
-
   with existT t v => v end.
-
-
 
 Instance Inhabitant_reptype {cs: compspecs} (t: type) : Inhabitant (reptype t) := default_val t.
 
-
-
 Section CENV.
-
 Context {cs: compspecs}.
 
-
-
 Lemma reptype_gen_eq: forall t,
-
   reptype_gen t =
-
   match t with
-
   | Tarray t0 n _ => existT (fun x => x) (list (projT1 (reptype_gen t0))) (list_repeat (Z.to_nat n) (projT2 (reptype_gen t0)))
-
   | Tstruct id _ => existT (fun x => x)
-
                      (compact_prod_sigT_type (map reptype_gen (map (fun it => field_type (fst it) (co_members (get_co id))) (co_members (get_co id)))))
-
                      (compact_prod_sigT_value (map reptype_gen (map (fun it => field_type (fst it) (co_members (get_co id))) (co_members (get_co id)))))
-
   | Tunion id _ => existT (fun x => x)
-
                      (compact_sum_sigT_type (map reptype_gen (map (fun it => field_type (fst it) (co_members (get_co id))) (co_members (get_co id)))))
-
                      (compact_sum_sigT_value (map reptype_gen (map (fun it => field_type (fst it) (co_members (get_co id))) (co_members (get_co id)))))
-
   | _ => if (type_is_by_value t)
-
          then existT (fun x => x) val Vundef
-
          else existT (fun x => x) unit tt
-
   end.
-
 Proof.
-
   intros.
-
   unfold reptype_gen at 1.
-
   rewrite type_func_eq.
-
   destruct t; auto.
-
   +  unfold FTI_aux; rewrite decay_spec.
-
     rewrite map_map.
-
     reflexivity.
-
   + unfold FTI_aux; rewrite decay_spec.
-
     rewrite map_map.
-
     reflexivity.
-
 Defined.
-
-
 
 Definition reptype_structlist (m: members) := compact_prod (map (fun it => reptype (field_type (fst it) m)) m).
-
 Definition reptype_unionlist (m: members) := compact_sum (map (fun it => reptype (field_type (fst it) m)) m).
 
-
-
 Notation REPTYPE t :=
-
   match t return Type with
-
   | Tvoid
-
   | Tfunction _ _ _ => unit
-
   | Tint _ _ _
-
   | Tlong _ _
-
   | Tfloat _ _
-
   | Tpointer _ _ => val
-
   | Tarray t0 _ _ => list (reptype t0)
-
   | Tstruct id _ => reptype_structlist (co_members (get_co id))
-
   | Tunion id _ => reptype_unionlist (co_members (get_co id))
-
   end.
-
-
 
 Lemma reptype_eq: forall t,
-
   reptype t = REPTYPE t.
-
 Proof.
-
   intros.
-
   unfold reptype.
-
   rewrite reptype_gen_eq.
-
   destruct t as [| | | | | | | id ? | id ?]; auto.
-
   + unfold compact_prod_sigT_type.
-
     pose proof get_co_members_no_replicate id.
-
     forget (co_members (get_co id)) as m.
-
     rewrite map_map.
-
     rewrite map_map.
-
     unfold reptype_structlist.
-
     f_equal.
-
   + unfold compact_sum_sigT_type.
-
     pose proof get_co_members_no_replicate id.
-
     forget (co_members (get_co id)) as m.
-
     rewrite map_map.
-
     rewrite map_map.
-
     unfold reptype_unionlist.
-
     f_equal.
-
 Defined.
-
-
 
 Definition unfold_reptype {t} (v: reptype t): REPTYPE t :=
-
   @eq_rect Type (reptype t) (fun x: Type => x) v (REPTYPE t) (reptype_eq t).
 
-
-
 Definition fold_reptype {t} (v: REPTYPE t): reptype t :=
-
   @eq_rect_r Type (REPTYPE t) (fun x: Type => x) v (reptype t) (reptype_eq t).
 
-
-
 Lemma fold_unfold_reptype: forall t (v: reptype t),
-
   fold_reptype (unfold_reptype v) = v.
-
 Proof.
-
   intros.
-
   unfold fold_reptype, unfold_reptype.
-
   apply JMeq_eq.
-
   match goal with
-
   | |- JMeq (@eq_rect_r ?A ?x ?F ?v ?y ?H) _ =>
-
     eapply @JMeq_trans; [apply (eq_rect_r_JMeq A x y F v H) |]
-
   end.
-
   match goal with
-
   | |- JMeq (@eq_rect ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_JMeq A x y F v H)
-
   end.
-
 Defined.
-
-
 
 Lemma unfold_fold_reptype: forall t (v: REPTYPE t),
-
   unfold_reptype (fold_reptype v) = v.
-
 Proof.
-
   intros.
-
   unfold fold_reptype, unfold_reptype.
-
   apply JMeq_eq.
-
   match goal with
-
   | |- JMeq (@eq_rect ?A ?x ?F ?v ?y ?H) _ =>
-
     eapply @JMeq_trans; [apply (eq_rect_JMeq A x y F v H) |]
-
   end.
-
   match goal with
-
   | |- JMeq (@eq_rect_r ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_r_JMeq A x y F v H)
-
   end.
-
 Defined.
-
-
 
 Lemma unfold_reptype_JMeq: forall t (v: reptype t),
-
   JMeq (unfold_reptype v) v.
-
 Proof.
-
   intros.
-
   unfold unfold_reptype.
-
   match goal with
-
   | |- JMeq (@eq_rect ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_JMeq A x y F v H)
-
   end.
-
 Qed.
-
-
 
 Lemma fold_reptype_JMeq: forall t v,
-
   JMeq (fold_reptype v : reptype t) v.
-
 Proof.
-
   intros.
-
   unfold fold_reptype.
-
   match goal with
-
   | |- JMeq (@eq_rect_r ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_r_JMeq A x y F v H)
-
   end.
-
 Qed.
-
-
 
 Definition union_default_filter m :=
-
   match m with
-
   | nil => fun _ => false
-
   | hd :: _ => fun m => if member_dec hd m then true else false
-
   end.
-
-
 
 Definition is_default_filter {A} f (l: list A) :=
-
   match l with
-
   | nil => True
-
   | hd :: _ => f hd = true
-
   end.
-
-
 
 Lemma union_default_filter_is_default_filter: forall m, is_default_filter (union_default_filter m) m.
-
 Proof.
-
   intros.
-
   destruct m; simpl; auto.
-
   destruct (member_dec p p); auto.
-
 Qed.
-
-
 
 Lemma const_true_is_default_filter: forall m, is_default_filter (fun _: ident * type => true) m.
-
 Proof.
-
   intros.
-
   destruct m; simpl; auto.
-
 Qed.
-
-
 
 Definition struct_default_val (m : members) := compact_prod_gen (fun it => default_val (field_type (fst it) m)) m.
-
 Definition union_default_val (m : members) := compact_sum_gen (fun it => true) (fun it => default_val (field_type (fst it) m)) m.
 
-
-
 Lemma compact_prod_sigT_compact_prod_gen:
-
   forall {A B} {P: A -> Type} (genT: B -> A) (genV: forall b: B, P (genT b)) (gen: B -> sigT P) (l: list B),
-
     (forall b, gen b = existT P (genT b) (genV b)) ->
-
     JMeq (compact_prod_sigT_value (map gen l)) (compact_prod_gen genV l).
-
 Proof.
-
   intros.
-
   assert (gen = fun b => existT P (genT b) (genV b)) by (extensionality; apply H).
-
   rewrite H0; clear H H0 gen.
-
   destruct l; [apply JMeq_refl |].
-
   revert b; induction l; intros.
-
   + apply JMeq_refl.
-
   + simpl map.
-
     change (compact_prod_gen genV (b :: a :: l)) with (genV b, compact_prod_gen genV (a :: l)).
-
     change (compact_prod_sigT_value
-
         (existT P (genT b) (genV b)
-
          :: existT P (genT a) (genV a)
-
             :: map (fun b0 : B => existT P (genT b0) (genV b0)) l)) with
-
       (genV b, compact_prod_sigT_value (existT P (genT a) (genV a) :: map (fun b0 : B => existT P (genT b0) (genV b0)) l)).
-
     apply JMeq_pair; [auto |].
-
     exact (IHl a).
-
 Qed.
-
-
 
 Lemma compact_sum_sigT_compact_sum_gen:
-
   forall {A B} {P: A -> Type} (genT: B -> A) (genV: forall b: B, P (genT b)) (filter: B -> bool) (gen: B -> sigT P) (l: list B),
-
     (forall b, gen b = existT P (genT b) (genV b)) ->
-
     is_default_filter filter l ->
-
     JMeq (compact_sum_sigT_value (map gen l)) (compact_sum_gen filter genV l).
-
 Proof.
-
   intros.
-
   assert (gen = fun b => existT P (genT b) (genV b)) by (extensionality; apply H).
-
   rewrite H1; clear H H1 gen.
-
   destruct l; [apply JMeq_refl |].
-
   destruct l.
-
   + apply JMeq_refl.
-
   + change (compact_sum_sigT_value
-
         (map (fun b1 : B => existT P (genT b1) (genV b1)) (b :: b0 :: l))) with
-
   (@inl (P (genT b)) (compact_sum (map (fun tv => match tv with existT t _ => P t end) (map (fun b1 : B => @existT A P (genT b1) (genV b1)) (b0 :: l)))) (genV b)).
-
     change (compact_sum (map (fun tv => match _ with existT t _ => P t end) (map (fun b1 : B => @existT A P (genT b1) (genV b1)) (b :: b0 :: l)))) with
-
       (P (genT b) + compact_sum (map (fun tv => match tv with existT t _ => P t end) (map (fun b1 : B => @existT A P (genT b1) (genV b1)) (b0 :: l))))%type.
-
     replace (compact_sum_gen filter genV (b :: b0 :: l)) with
-
       (@inl (P (genT b)) (compact_sum (map (fun b1 : B => P (genT b1)) (b0 :: l))) (genV b)).
-
     2:{
-
       simpl in H0 |- *.
-
       rewrite H0.
-
       auto.
-
     }
-
     match goal with
-
     | |- @JMeq _ (@inl _ ?A _) _ (@inl _ ?B _) =>
-
          replace A with B; [auto |]
-
     end.
-
     rewrite map_map; reflexivity.
-
 Qed.
-
-
 
 Lemma default_val_eq: forall t,
-
   default_val t =
-
   fold_reptype
-
   match t as t' return REPTYPE t'
-
   with
-
   | Tvoid
-
   | Tfunction _ _ _ => tt
-
   | Tint _ _ _
-
   | Tlong _ _
-
   | Tfloat _ _
-
   | Tpointer _ _ => Vundef
-
   | Tarray t0 n _ => list_repeat (Z.to_nat n) (default_val t0)
-
   | Tstruct id _ => struct_default_val (co_members (get_co id))
-
   | Tunion id _ => union_default_val (co_members (get_co id))
-
   end.
-
 Proof.
-
   intros.
-
   unfold fold_reptype.
-
   apply JMeq_eq.
-
   match goal with
-
   | |- JMeq _ (@eq_rect_r ?A ?x ?F ?v ?y ?H) =>
-
     eapply JMeq_trans; [| apply @JMeq_sym; apply (@eq_rect_r_JMeq A x y F v H)]
-
   end.
-
   unfold default_val.
-
   unfold reptype at 1.
-
   rewrite reptype_gen_eq.
-
   destruct t; auto.
-
   + unfold struct_default_val.
-
     rewrite map_map.
-
     apply (compact_prod_sigT_compact_prod_gen
-
       (fun it => reptype (field_type (fst it) (co_members (get_co i))))
-
       (fun it => default_val (field_type (fst it) (co_members (get_co i))))
-
       (fun it => reptype_gen (field_type (fst it) (co_members (get_co i))))); intros.
-
     unfold reptype, default_val.
-
     destruct (reptype_gen (field_type (fst b) (co_members (get_co i)))); reflexivity.
-
   + unfold union_default_val.
-
     rewrite map_map.
-
     apply (compact_sum_sigT_compact_sum_gen
-
       (fun it => reptype (field_type (fst it) (co_members (get_co i))))
-
       (fun it => default_val (field_type (fst it) (co_members (get_co i))))
-
       _
-
       (fun it => reptype_gen (field_type (fst it) (co_members (get_co i))))); intros.
-
     unfold reptype, default_val.
-
     destruct (reptype_gen (field_type (fst b) (co_members (get_co i)))); reflexivity.
-
     apply const_true_is_default_filter.
-
 Qed.
-
-
 
 Inductive pointer_val : Type :=
-
   | ValidPointer: block -> Ptrofs.int -> pointer_val
-
   | NullPointer.
 
-
-
 Lemma PV_eq_dec: forall x y: pointer_val, {x = y} + {x <> y}.
-
 Proof.
-
   intros; destruct x, y; [| right | right | left]; try congruence.
-
   destruct (block_eq_dec b b0), (Ptrofs.eq_dec i i0); [left | right | right | right]; congruence.
-
 Qed.
-
-
 
 Lemma zero_in_range : (-1 < 0 < Int.modulus)%Z.
-
 compute; split; auto.
-
 Defined.
-
 Definition Int_zero := Int.mkint 0 zero_in_range.
 
-
-
 Definition pointer_val_val (pv: pointer_val): val :=
-
   match pv with
-
   | ValidPointer b i => Vptr b i
-
   | NullPointer => Vint Int.zero 
-
   end.
-
-
 
 Definition reptype': type -> Type :=
-
   type_func (fun _ => Type)
-
   (fun t =>
-
      if (type_is_by_value t)
-
      then match t with
-
           | Tint _ _ _ => int
-
           | Tlong _ _ => Int64.int
-
           | Tfloat _ _ => float
-
           | Tpointer _ _ => pointer_val
-
           | _ => val
-
           end
-
      else unit)
-
   (fun t n a T => list T)
-
   (fun id a T => compact_prod (decay T))
-
   (fun id a T => compact_sum (decay T)).
 
-
-
 Notation REPTYPE' t :=
-
   match t return Type with
-
   | Tvoid
-
   | Tfunction _ _ _ => unit
-
   | Tint _ _ a => int
-
   | Tlong _ a => Int64.int
-
   | Tfloat _ a => float
-
   | Tpointer _ a => pointer_val
-
   | Tarray t0 _ _ => list (reptype' t0)
-
   | Tstruct id _ => compact_prod (map (fun it => reptype' (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))
-
   | Tunion id _ => compact_sum (map (fun it => reptype' (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))
-
   end.
-
-
 
 Lemma reptype'_eq: forall t,
-
   reptype' t = REPTYPE' t.
-
 Proof.
-
   intros.
-
  unfold reptype'.
-
  etransitivity.
-
  apply (type_func_eq (fun _ => Type) _ _ _ _ t) .
-
   destruct t; auto.
-
   + f_equal.
-
     unfold FTI_aux; rewrite decay_spec.
-
     reflexivity.
-
   + f_equal.
-
     unfold FTI_aux; rewrite decay_spec.
-
     reflexivity.
-
 Defined.
-
-
 
 Definition unfold_reptype' {t} (v: reptype' t): REPTYPE' t :=
-
   @eq_rect Type (reptype' t) (fun x: Type => x) v (REPTYPE' t) (reptype'_eq t).
 
-
-
 Definition fold_reptype' {t} (v: REPTYPE' t): reptype' t :=
-
   @eq_rect_r Type (REPTYPE' t) (fun x: Type => x) v (reptype' t) (reptype'_eq t).
 
-
-
 Lemma fold_unfold_reptype': forall t (v: reptype' t),
-
   fold_reptype' (unfold_reptype' v) = v.
-
 Proof.
-
   intros.
-
   unfold fold_reptype', unfold_reptype'.
-
   apply JMeq_eq.
-
   match goal with
-
   | |- JMeq (@eq_rect_r ?A ?x ?F ?v ?y ?H) _ =>
-
     eapply JMeq_trans; [apply (eq_rect_r_JMeq A x y F v H) |]
-
   end.
-
   match goal with
-
   | |- JMeq (@eq_rect ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_JMeq A x y F v H)
-
   end.
-
 Defined.
-
-
 
 Lemma unfold_fold_reptype': forall t (v: REPTYPE' t),
-
   unfold_reptype' (fold_reptype' v) = v.
-
 Proof.
-
   intros.
-
   unfold fold_reptype', unfold_reptype'.
-
   apply JMeq_eq.
-
   match goal with
-
   | |- JMeq (@eq_rect ?A ?x ?F ?v ?y ?H) _ =>
-
     eapply JMeq_trans; [apply (eq_rect_JMeq A x y F v H) |]
-
   end.
-
   match goal with
-
   | |- JMeq (@eq_rect_r ?A ?x ?F ?v ?y ?H) _ =>
-
     apply (eq_rect_r_JMeq A x y F v H)
-
   end.
-
 Defined.
-
-
 
 Definition repinj_bv (t: type): reptype' t -> reptype t :=
-
   fun v =>
-
   fold_reptype
-
   (match t as t' return (REPTYPE' t' -> REPTYPE t': Type)
-
    with
-
    | Tvoid
-
    | Tfunction _ _ _ => @id unit
-
    | Tint _ _ a => Vint
-
    | Tlong _ a => Vlong
-
    | Tfloat _ a => Vfloat
-
    | Tpointer _ a => pointer_val_val
-
    | Tarray t0 n a => fun _ => nil
-
    | Tstruct id a => fun _ => struct_default_val _
-
    | Tunion id a => fun _ => union_default_val _
-
    end (unfold_reptype' v)).
-
-
 
 Definition repinj_aux_s (id: ident) (a: attr) (F: ListType (map (fun it => reptype' (field_type (fst it) (co_members (get_co id))) -> reptype (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))): reptype' (Tstruct id a) -> reptype (Tstruct id a) :=
-
   fun v => @fold_reptype (Tstruct id a) (compact_prod_map _ F (unfold_reptype' v)).
 
-
-
 Definition repinj_aux_u (id: ident) (a: attr) (F: ListType (map (fun it => reptype' (field_type (fst it) (co_members (get_co id))) -> reptype (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))): reptype' (Tunion id a) -> reptype (Tunion id a) :=
-
   fun v => @fold_reptype (Tunion id a) (compact_sum_map _ F (unfold_reptype' v)).
 
-
-
 Definition repinj: forall t: type, reptype' t -> reptype t :=
-
   type_func (fun t => reptype' t -> reptype t)
-
   repinj_bv
-
   (fun t n a f v => @fold_reptype (Tarray t n a) (map f (unfold_reptype' v)))
-
   repinj_aux_s
-
   repinj_aux_u.
 
-
-
 Lemma repinj_eq: forall t v,
-
   repinj t v =
-
   fold_reptype
-
   (match t as t' return REPTYPE' t' -> REPTYPE t' with
-
    | Tvoid
-
    | Tfunction _ _ _ => @id unit
-
    | Tint _ _ a => Vint
-
    | Tlong _ a => Vlong
-
    | Tfloat _ a => Vfloat
-
    | Tpointer _ a => pointer_val_val
-
    | Tarray t0 _ _ => map (repinj t0)
-
    | Tstruct id a => compact_prod_map _ (ListTypeGen (fun it => reptype' (field_type (fst it) (co_members (get_co id))) -> reptype (field_type (fst it) (co_members (get_co id)))) (fun it => repinj (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))
-
    | Tunion id a => compact_sum_map _ (ListTypeGen (fun it => reptype' (field_type (fst it) (co_members (get_co id))) -> reptype (field_type (fst it) (co_members (get_co id)))) (fun it => repinj (field_type (fst it) (co_members (get_co id)))) (co_members (get_co id)))
-
    end (unfold_reptype' v)).
-
 Proof.
-
   intros.
-
   unfold repinj.
-
   rewrite type_func_eq.
-
   destruct t; auto.
-
 Defined.
 
-
-
 Lemma int_add_repr_0_l: forall i, Int.add (Int.repr 0) i = i.
-
 Proof. intros. apply Int.add_zero_l. Qed.
-
 Lemma int_add_repr_0_r: forall i, Int.add i (Int.repr 0) = i.
-
 Proof. intros. apply Int.add_zero. Qed.
-
 Hint Rewrite int_add_repr_0_l int_add_repr_0_r : norm.
 
-
-
 Lemma ptrofs_add_repr_0_l: forall i, Ptrofs.add (Ptrofs.repr 0) i = i.
-
 Proof. intros. apply Ptrofs.add_zero_l. Qed.
-
 Lemma ptrofs_add_repr_0_r: forall i, Ptrofs.add i (Ptrofs.repr 0) = i.
-
 Proof. intros. apply Ptrofs.add_zero. Qed.
-
 Hint Rewrite ptrofs_add_repr_0_l ptrofs_add_repr_0_r : norm.
 
-
-
 Definition repinject (t: type) : reptype t -> val :=
-
   match t as t0 return reptype t0 -> val with
-
   | Tint _ _ _ => fun v => v
-
   | Tlong _ _ => fun v => v
-
   | Tfloat _ _ => fun v => v
-
   | Tpointer _ _ => fun v => v
-
   | _ => fun _ => Vundef
-
  end.
-
-
 
 Definition valinject (t: type) : val -> reptype t :=
-
   match t as t0 return val -> reptype t0 with
-
   | Tint _ _ _ => fun v => v
-
   | Tlong _ _ => fun v => v
-
   | Tfloat _ _ => fun v => v
-
   | Tpointer _ _ => fun v => v
-
   | t => fun _ => default_val t
-
  end.
 
-
-
 Lemma valinject_JMeq: forall t v, type_is_by_value t = true -> JMeq (valinject t v) v.
-
 Proof.
-
   intros.
-
   destruct t; simpl in *; try congruence; try tauto; apply JMeq_refl.
-
 Qed.
-
-
 
 Lemma repinject_JMeq: forall t v, type_is_by_value t = true -> JMeq (repinject t v) v.
-
 Proof.
-
   intros.
-
   destruct t; simpl in *; try congruence; try tauto; apply JMeq_refl.
-
 Qed.
-
-
 
 Lemma repinject_unfold_reptype: forall t v,
-
   match t as t' return REPTYPE t' -> Prop with
-
   | Tint _ _ _
-
   | Tfloat _ _
-
   | Tlong _ _
-
   | Tpointer _ _ => fun vv => repinject t v = vv
-
   | _ => fun _ => True
-
   end (unfold_reptype v).
-
 Proof.
-
   intros; destruct t; auto;
-
   unfold repinject;
-
   unfold unfold_reptype;
-
   rewrite <- eq_rect_eq; auto.
-
 Qed.
-
-
 
 Lemma repinject_valinject:
-
   forall t v,
-
     type_is_by_value t = true -> repinject t (valinject t v) = v.
-
 Proof.
-
   intros.
-
   destruct t; try inversion H; reflexivity.
-
 Qed.
-
-
 
 Lemma valinject_repinject: forall t v,
-
   type_is_by_value t = true ->
-
   (valinject t (repinject t v)) = v.
-
 Proof.
-
   intros.
-
   destruct t; inversion H; reflexivity.
-
 Qed.
-
-
 
 Lemma repinject_default_val:
-
  forall t, repinject t (default_val t) = Vundef.
-
 Proof.
-
 destruct t; reflexivity.
-
 Qed.
-
-
 
 End CENV.
 
-
-
 Arguments reptype' {cs} t / .
 
-
-
 Global Notation REPTYPE t :=
-
   match t return Type with
-
   | Tvoid
-
   | Tfunction _ _ _ => unit
-
   | Tint _ _ _
-
   | Tlong _ _
-
   | Tfloat _ _
-
   | Tpointer _ _ => val
-
   | Tarray t0 _ _ => list (reptype t0)
-
   | Tstruct id _ => reptype_structlist (co_members (get_co id))
-
   | Tunion id _ => reptype_unionlist (co_members (get_co id))
-
   end.
-
-
 
 Tactic Notation "unfold_repinj" :=
-
 repeat match goal with |- context [repinj ?T] =>
-
  let x := fresh "x" in set (x := repinj T);
-
     lazy beta iota zeta delta in x; subst x; lazy beta
-
 end.
-
-
 
 Tactic Notation "unfold_repinj" constr(T) :=
-
 match goal with |- context [repinj T] =>
-
  let x := fresh "x" in set (x := repinj T);
-
     lazy beta iota zeta delta in x; subst x; lazy beta
-
 end.
 
-
-
 Lemma reptype_change_composite {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall (t: type),
-
   cs_preserve_type cs_from cs_to (coeq _ _) t = true ->
-
   @reptype cs_from t = @reptype cs_to t.
-
 Proof.
-
   intros t.
-
   type_induction t; intros.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite (@reptype_eq cs_from), (@reptype_eq cs_to).
-
     rewrite IH; auto.
-
   + rewrite !reptype_eq.
-
     reflexivity.
-
   + rewrite (@reptype_eq cs_from), (@reptype_eq cs_to).
-
     simpl in H.
-
     rewrite co_members_get_co_change_composite by auto.
-
     apply members_spec_change_composite in H.
-
     cbv zeta in IH.
-
     revert H IH.
-
     unfold reptype_structlist.
-
     generalize (co_members (get_co id)) at 1 3 4 5 7 9; intros.
-
     f_equal.
-
     induction IH as [| [i t] ?].
-
     - reflexivity.
-
     - Opaque field_type. simpl. Transparent field_type.
-
       inv H.
-
       f_equal; auto.
-
   + rewrite (@reptype_eq cs_from), (@reptype_eq cs_to).
-
     simpl in H.
-
     rewrite co_members_get_co_change_composite by auto.
-
     apply members_spec_change_composite in H.
-
     cbv zeta in IH.
-
     revert H IH.
-
     unfold reptype_unionlist.
-
     generalize (co_members (get_co id)) at 1 3 4 5 7 9; intros.
-
     f_equal.
-
     induction IH as [| [i t] ?].
-
     - reflexivity.
-
     - Opaque field_type. simpl. Transparent field_type.
-
       inv H.
-
       f_equal; auto.
-
 Qed.
-
-
 
 Lemma default_val_change_composite {cs_from cs_to} {CCE: change_composite_env cs_from cs_to}: forall (t: type),
-
   cs_preserve_type cs_from cs_to (coeq _ _) t = true ->
-
   JMeq (@default_val cs_from t) (@default_val cs_to t).
-
 Proof.
-
   intros t.
-
   type_induction t; intros.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite (@default_val_eq cs_from), (@default_val_eq cs_to).
-
     eapply JMeq_trans; [| eapply JMeq_trans]; [apply fold_reptype_JMeq | | apply JMeq_sym, fold_reptype_JMeq].
-
     specialize (IH H).
-
     revert IH; generalize (@default_val cs_from t), (@default_val cs_to t).
-
     rewrite reptype_change_composite by auto.
-
     intros.
-
     apply JMeq_eq in IH; subst.
-
     apply JMeq_refl.
-
   + rewrite !default_val_eq.
-
     apply JMeq_refl.
-
   + rewrite (@default_val_eq cs_from), (@default_val_eq cs_to).
-
     eapply JMeq_trans; [| eapply JMeq_trans]; [apply fold_reptype_JMeq | | apply JMeq_sym, fold_reptype_JMeq].
-
     simpl in H.
-
     rewrite co_members_get_co_change_composite by auto.
-
     apply members_spec_change_composite in H.
-
     cbv zeta in IH.
-
     unfold struct_default_val.
-
     apply compact_prod_gen_JMeq.
-
     rewrite <- Forall_forall.
-
     revert H IH.
-
     generalize (co_members (get_co id)) at 1 3 4 5 6 7 9 10 11 12; intros.
-
     induction H as [| [i t] ?].
-
     - constructor.
-
     - inv IH.
-
       constructor; auto.
-
   + rewrite (@default_val_eq cs_from), (@default_val_eq cs_to).
-
     eapply JMeq_trans; [| eapply JMeq_trans]; [apply fold_reptype_JMeq | | apply JMeq_sym, fold_reptype_JMeq].
-
     simpl in H.
-
     rewrite co_members_get_co_change_composite by auto.
-
     apply members_spec_change_composite in H.
-
     cbv zeta in IH.
-
     unfold union_default_val.
-
     apply compact_sum_gen_JMeq.
-
     rewrite <- Forall_forall.
-
     revert H IH.
-
     generalize (co_members (get_co id)) at 1 3 4 5 6 7 9 10 11 12; intros.
-
     induction H as [| [i t] ?].
-
     - constructor.
-
     - inv IH.
-
       constructor; auto.
-
 Qed.
-
-
 
 Fixpoint force_lengthn {A} n (xs: list A) (default: A) :=
-
   match n, xs with
-
   | O, _ => nil
-
   | S n0, nil => default :: force_lengthn n0 nil default
-
   | S n0, hd :: tl => hd :: force_lengthn n0 tl default
-
   end.
 
-
-
 Lemma force_lengthn_length_n: forall {A} n (xs : list A) (default: A),
-
   length (force_lengthn n xs default) = n.
-
 Proof.
-
   intros.
-
   revert xs; induction n; intros.
-
   + reflexivity.
-
   + simpl.
-
     destruct xs; simpl; rewrite IHn; reflexivity.
-
 Qed.
-
-
 
 Lemma nth_force_lengthn_nil: forall {A} n i (default: A),
-
   nth i (force_lengthn n nil default) default = default.
-
 Proof.
-
   intros.
-
   revert i; induction n; intros.
-
   + simpl. destruct i; reflexivity.
-
   + simpl. destruct i.
-
     - reflexivity.
-
     - rewrite IHn. reflexivity.
-
 Qed.
-
-
 
 Lemma nth_force_lengthn: forall {A} n i (xs : list A) (default: A),
-
   (0 <= i < n) %nat ->
-
   nth i (force_lengthn n xs default) default = nth i xs default.
-
 Proof.
-
   intros.
-
   revert i H xs; induction n; intros.
-
   + omega.
-
   + simpl.
-
     destruct xs.
-
     - simpl.
-
       destruct i; [reflexivity |].
-
       apply nth_force_lengthn_nil.
-
     - simpl.
-
       destruct i; [reflexivity |].
-
       apply IHn.
-
       omega.
-
 Qed.
-
-
 
 Lemma force_lengthn_id: forall {A} n ct (d: A), length ct = n -> force_lengthn n ct d = ct.
-
 Proof.
-
   intros.
-
   revert ct H; induction n; intros.
-
   + destruct ct; try solve [inversion H].
-
     reflexivity.
-
   + destruct ct; try solve [inversion H].
-
     simpl.
-
     rewrite IHn by auto.
-
     reflexivity.
-
 Qed.
-
-
 
 Open Scope Z.
 
-
-
 Fixpoint replist' {A: Type} {d: Inhabitant A} (lo: Z) (n: nat) (al: list A) :=
-
  match n with
-
  | O => nil
-
  | S n' =>  Znth lo al :: replist' (Z.succ lo) n' al
-
  end.
 
-
-
 Definition replist {cs: compspecs} (t: type)  (lo hi: Z) (al: list (reptype t)) :=
-
   replist'  lo (Z.to_nat (hi-lo)) al.
 
-
-
 Lemma replist_replist {cs: compspecs}:
-
  forall t (lo hi lo' hi': Z) al,
-
    0 <= lo <= hi ->
-
    0 <= lo' <= hi' ->
-
    lo'+hi <= hi'  ->
-
  replist t lo hi (replist t lo' hi' al) =
-
    replist t (lo+lo') (hi+lo') al.
-
 Proof.
-
 intros.
-
  unfold replist.
-
  forget (default_val t) as d.
-
  replace (hi + lo' - (lo + lo')) with (hi-lo) by omega.
-
  remember (Z.to_nat (hi-lo)) as n.
-
  assert (hi = lo + Z.of_nat n).
-
   subst n. rewrite Z2Nat.id by omega. omega.
-
  subst hi.
-
  clear Heqn. destruct H as [? _].
-
  rewrite Z.add_assoc in H1.
-
   revert lo lo' H H0 H1; induction n; intros; simpl.
-
    reflexivity.
-
  f_equal.
-
 +
-
   clear - H H0 H1. destruct H0 as [? _].
-
   remember (Z.to_nat (hi'-lo')) as k.
-
   rewrite inj_S in H1.
-
   replace hi' with (lo' + Z.of_nat k) in H1
-
     by (subst k; rewrite Z2Nat.id by omega; omega).
-
   clear hi' Heqk.
-
   assert (lo < Z.of_nat k) by omega. clear H1.
-
   revert lo lo' H H0 H2; induction k; intros. simpl in H2; omega.
-
   unfold replist'; fold @replist'.
-
   rewrite inj_S in H2.
-
   simpl.
-
   assert (lo=0 \/ 0<lo) by omega.
-
   destruct H1. subst lo.
-
   unfold Znth at 1. rewrite if_false by omega. simpl. auto.
-
   clear H.
-
   unfold Znth at 1. rewrite if_false by omega.
-
   destruct (Z.to_nat lo) eqn:?.
-
   apply Z2Nat.inj_lt in H1; try omega.
-
   simpl nth.
-
   specialize (IHk (Z.of_nat n0) (Z.succ lo')).
-
   replace (lo+lo') with (Z.of_nat n0 + Z.succ lo').
-
 2:{
-
   unfold Z.succ.
-
   transitivity (Z.of_nat n0 + 1 + lo'); [ omega |].
-
   f_equal. apply Z2Nat.inj; try omega.
-
   rewrite Z2Nat.inj_add; try omega. rewrite Nat2Z.id.
-
  rewrite Heqn0. change (Z.to_nat 1) with 1%nat.  omega.
-
 }
-
   etransitivity; [ | apply IHk]; try omega.
-
 2:{
-
   assert (lo = Z.of_nat (S n0)).  apply Z2Nat.inj; try omega.
-
   rewrite Nat2Z.id. auto.
-
    subst lo. clear - H2. rewrite inj_S in H2. omega.
-
 }
-
   unfold Znth. rewrite if_false by omega. rewrite Nat2Z.id. auto.
-
 +
-
   specialize (IHn (Z.succ lo) lo'). rewrite IHn; try omega.
-
    f_equal; omega.
-
    rewrite inj_S in H1.
-
   omega.
-
 Qed.
-
-
 
 Lemma replist'_succ:
-
  forall {A} {d:Inhabitant A} lo n r al,
-
    (lo>=0) -> replist' (Z.succ lo) n (r::al) = replist' lo n al.
-
 Proof.
-
 intros.
-
 revert lo al H; induction n; simpl; intros.
-
 auto.
-
 f_equal.
-
 unfold Znth.
-
  do 2 rewrite if_false by omega.
-
  replace (Z.to_nat (Z.succ lo)) with (S (Z.to_nat lo)).
-
  reflexivity. unfold Z.succ. rewrite Z2Nat.inj_add by omega.
-
  change (Z.to_nat 1) with 1%nat; omega.
-
  apply IHn. omega.
-
 Qed.
-
-
 
 Lemma replist_firstn_skipn {cs: compspecs}:
-
  forall t lo hi al,
-
   (lo <= hi <= length al)%nat ->
-
   replist t (Z.of_nat lo) (Z.of_nat hi) al = firstn (hi-lo) (skipn lo al).
-
 Proof.
-
 intros.
-
  unfold replist.
-
  rewrite <- Nat2Z.inj_sub by omega.
-
  rewrite Nat2Z.id.
-
  assert (hi-lo <= length al - lo)%nat by omega.
-
  clear H.
-
  forget (hi-lo)%nat as n. clear hi.
-
  revert n al H0; induction lo; intros.
-
  simpl.
-
  assert (n <= length al)%nat by omega; clear H0.
-
  revert al H; induction n; simpl; intros; auto.
-
  destruct al; simpl in H. omega.
-
  f_equal.
-
  rewrite <- (IHn al) by omega. clear IHn.
-
  rewrite <- (replist'_succ 0 n r al) by omega.
-
  reflexivity.
-
  rewrite inj_S.
-
   destruct al. simpl length in H0. assert (n=0)%nat by omega.
-
   subst;   simpl. auto.
-
   simpl length in H0. simpl in H0. simpl. rewrite <- (IHlo _ _ H0).
-
   apply replist'_succ. omega.
-
 Qed.
-
-
 
 Lemma skipn_0:
-
  forall A (al: list A) n,
-
   (n=0)%nat -> skipn n al = al.
-
 Proof.
-
 intros; subst; reflexivity.
-
 Qed.
-
-
 
 Lemma replist_elim {cs: compspecs}:
-
   forall t lo hi al,
-
     lo = 0 -> hi = Zlength al ->
-
     replist t lo hi al = al.
-
 Proof.
-
 intros.
-
 subst.
-
 change 0 with (Z.of_nat 0).
-
 rewrite Zlength_correct.
-
 rewrite replist_firstn_skipn by omega.
-
 rewrite skipn_0 by auto.
-
 rewrite NPeano.Nat.sub_0_r.
-
 apply firstn_exact_length.
-
 Qed.
-
-
 
 Lemma replist_Zlength {cs: compspecs}:
-
   forall t lo hi al,
-
     lo <= hi ->
-
    Zlength (replist t lo hi al) = hi-lo.
-
 Proof.
-
 intros.
-
 rewrite <- (Z2Nat.id (hi-lo)) by omega.
-
 unfold replist.
-
 clear H.
-
 forget (Z.to_nat (hi-lo)) as n. clear hi.
-
 revert lo; induction n; intros.
-
 simpl. rewrite Zlength_nil. auto.
-
 rewrite inj_S.
-
 simpl. rewrite Zlength_cons.
-
 rewrite IHn. auto.
-
 Qed.
-
-
 
 Lemma replist_length {cs: compspecs}:
-
   forall t lo hi al,
-
     lo <= hi ->
-
    length (replist t lo hi al) = Z.to_nat (hi-lo).
-
 Proof.
-
 intros.
-
 rewrite <- (Nat2Z.id (length _)).
-
 f_equal.
-
 rewrite <- Zlength_correct.
-
 apply replist_Zlength; auto.
-
 Qed.
-
-
 
 Lemma unfold_reptype_elim:
-
   forall cs t v v',
-
     JMeq v v' ->
-
    @unfold_reptype cs t v = v'.
-
 Proof.
-
 intros.
-
 unfold unfold_reptype.
-
 match type of v' with ?t => set (t' := t) in * end.
-
 pose proof (eq_rect_JMeq _ (reptype t) t' (fun x : Type => x) v (reptype_eq t)).
-
 apply JMeq_eq.
-
 apply @JMeq_trans with (reptype t) v; auto.
-
 Qed.
 
-
-
 Lemma Zlength_default_val_Tarray_tuchar {cs} n a (N:0<=n): Zlength (@default_val cs (Tarray tuchar n a)) = n.
-
 Proof. unfold default_val; simpl. rewrite Zlength_list_repeat; trivial. Qed.
-
-
 

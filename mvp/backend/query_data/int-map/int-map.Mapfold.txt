@@ -1,17 +1,432 @@
 
-
 Require Import Bool.
-
 Require Import Sumbool.
-
 Require Import NArith.
-
 Require Import Ndigits.
-
+Require Import Ndec.
+Require Import Map.
+(* Map:
+Require Import Bool.
+Require Import Sumbool.
+Require Import NArith.
+Require Import Ndigits.
 Require Import Ndec.
 
-Require Import Map.
+Global Set Asymmetric Patterns.
 
+Definition ad := N. 
+
+Section MapDefs.
+
+  Variable A : Type.  
+
+  Inductive Map :=
+    | M0 : Map
+    | M1 : ad -> A -> Map
+    | M2 : Map -> Map -> Map.
+
+  Lemma option_sum : forall o:option A, {y : A | o = Some y} + {o = None}.
+
+  Fixpoint MapGet (m:Map) : ad -> option A :=
+    match m with
+    | M0 => fun a:ad => None
+    | M1 x y => fun a:ad => if Neqb x a then Some y else None
+    | M2 m1 m2 =>
+        fun a:ad =>
+          match a with
+          | N0 => MapGet m1 N0
+          | Npos xH => MapGet m2 N0
+          | Npos (xO p) => MapGet m1 (Npos p)
+          | Npos (xI p) => MapGet m2 (Npos p)
+          end
+    end.
+
+  Definition newMap := M0.
+
+  Definition MapSingleton := M1.
+
+  Definition eqm (g g':ad -> option A) := forall a:ad, g a = g' a.
+
+  Lemma newMap_semantics : eqm (MapGet newMap) (fun a:ad => None).
+
+  Lemma MapSingleton_semantics :
+   forall (a:ad) (y:A),
+     eqm (MapGet (MapSingleton a y))
+       (fun a':ad => if Neqb a a' then Some y else None).
+
+  Lemma M1_semantics_1 : forall (a:ad) (y:A), MapGet (M1 a y) a = Some y.
+
+  Lemma M1_semantics_2 :
+   forall (a a':ad) (y:A), Neqb a a' = false -> MapGet (M1 a y) a' = None.
+
+  Lemma Map2_semantics_1 :
+   forall m m':Map,
+     eqm (MapGet m) (fun a:ad => MapGet (M2 m m') (Ndouble a)).
+
+  Lemma Map2_semantics_1_eq :
+   forall (m m':Map) (f:ad -> option A),
+     eqm (MapGet (M2 m m')) f -> eqm (MapGet m) (fun a:ad => f (Ndouble a)).
+
+  Lemma Map2_semantics_2 :
+   forall m m':Map,
+     eqm (MapGet m') (fun a:ad => MapGet (M2 m m') (Ndouble_plus_one a)).
+
+  Lemma Map2_semantics_2_eq :
+   forall (m m':Map) (f:ad -> option A),
+     eqm (MapGet (M2 m m')) f ->
+     eqm (MapGet m') (fun a:ad => f (Ndouble_plus_one a)).
+
+  Lemma MapGet_M2_bit_0_0 :
+   forall a:ad,
+     Nbit0 a = false ->
+     forall m m':Map, MapGet (M2 m m') a = MapGet m (Ndiv2 a).
+
+  Lemma MapGet_M2_bit_0_1 :
+   forall a:ad,
+     Nbit0 a = true ->
+     forall m m':Map, MapGet (M2 m m') a = MapGet m' (Ndiv2 a).
+
+  Lemma MapGet_M2_bit_0_if :
+   forall (m m':Map) (a:ad),
+     MapGet (M2 m m') a =
+     (if Nbit0 a then MapGet m' (Ndiv2 a) else MapGet m (Ndiv2 a)).
+
+  Lemma MapGet_M2_bit_0 :
+   forall (m m' m'':Map) (a:ad),
+     (if Nbit0 a then MapGet (M2 m' m) a else MapGet (M2 m m'') a) =
+     MapGet m (Ndiv2 a).
+
+  Lemma Map2_semantics_3 :
+   forall m m':Map,
+     eqm (MapGet (M2 m m'))
+       (fun a:ad =>
+          match Nbit0 a with
+          | false => MapGet m (Ndiv2 a)
+          | true => MapGet m' (Ndiv2 a)
+          end).
+
+  Lemma Map2_semantics_3_eq :
+   forall (m m':Map) (f f':ad -> option A),
+     eqm (MapGet m) f ->
+     eqm (MapGet m') f' ->
+     eqm (MapGet (M2 m m'))
+       (fun a:ad =>
+          match Nbit0 a with
+          | false => f (Ndiv2 a)
+          | true => f' (Ndiv2 a)
+          end).
+
+  Fixpoint MapPut1 (a:ad) (y:A) (a':ad) (y':A) (p:positive) {struct p} :
+   Map :=
+    match p with
+    | xO p' =>
+        let m := MapPut1 (Ndiv2 a) y (Ndiv2 a') y' p' in
+        match Nbit0 a with
+        | false => M2 m M0
+        | true => M2 M0 m
+        end
+    | _ =>
+        match Nbit0 a with
+        | false => M2 (M1 (Ndiv2 a) y) (M1 (Ndiv2 a') y')
+        | true => M2 (M1 (Ndiv2 a') y') (M1 (Ndiv2 a) y)
+        end
+    end.
+
+  Lemma MapGet_if_commute :
+   forall (b:bool) (m m':Map) (a:ad),
+     MapGet (if b then m else m') a = (if b then MapGet m a else MapGet m' a).
+
+  Lemma MapGet_if_same :
+   forall (m:Map) (b:bool) (a:ad), MapGet (if b then m else m) a = MapGet m a.
+
+  Lemma MapGet_M2_bit_0_2 :
+   forall (m m' m'':Map) (a:ad),
+     MapGet (if Nbit0 a then M2 m m' else M2 m' m'') a =
+     MapGet m' (Ndiv2 a).
+
+  Lemma MapPut1_semantics_1 :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p -> MapGet (MapPut1 a y a' y' p) a = Some y.
+
+  Lemma MapPut1_semantics_2 :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p -> MapGet (MapPut1 a y a' y' p) a' = Some y'.
+
+  Lemma MapGet_M2_both_None :
+   forall (m m':Map) (a:ad),
+     MapGet m (Ndiv2 a) = None ->
+     MapGet m' (Ndiv2 a) = None -> MapGet (M2 m m') a = None.
+ 
+  Lemma MapPut1_semantics_3 :
+   forall (p:positive) (a a' a0:ad) (y y':A),
+     Nxor a a' = Npos p ->
+     Neqb a a0 = false ->
+     Neqb a' a0 = false -> MapGet (MapPut1 a y a' y' p) a0 = None.
+
+  Lemma MapPut1_semantics :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p ->
+     eqm (MapGet (MapPut1 a y a' y' p))
+       (fun a0:ad =>
+          if Neqb a a0
+          then Some y
+          else if Neqb a' a0 then Some y' else None).
+
+  Lemma MapPut1_semantics' :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p ->
+     eqm (MapGet (MapPut1 a y a' y' p))
+       (fun a0:ad =>
+          if Neqb a' a0
+          then Some y'
+          else if Neqb a a0 then Some y else None).
+
+  Fixpoint MapPut (m:Map) : ad -> A -> Map :=
+    match m with
+    | M0 => M1
+    | M1 a y =>
+        fun (a':ad) (y':A) =>
+          match Nxor a a' with
+          | N0 => M1 a' y'
+          | Npos p => MapPut1 a y a' y' p
+          end
+    | M2 m1 m2 =>
+        fun (a:ad) (y:A) =>
+          match a with
+          | N0 => M2 (MapPut m1 N0 y) m2
+          | Npos xH => M2 m1 (MapPut m2 N0 y)
+          | Npos (xO p) => M2 (MapPut m1 (Npos p) y) m2
+          | Npos (xI p) => M2 m1 (MapPut m2 (Npos p) y)
+          end
+    end.
+
+  Lemma MapPut_semantics_1 :
+   forall (a:ad) (y:A) (a0:ad),
+     MapGet (MapPut M0 a y) a0 = MapGet (M1 a y) a0.
+
+  Lemma MapPut_semantics_2_1 :
+   forall (a:ad) (y y':A) (a0:ad),
+     MapGet (MapPut (M1 a y) a y') a0 =
+     (if Neqb a a0 then Some y' else None).
+
+  Lemma MapPut_semantics_2_2 :
+   forall (a a':ad) (y y':A) (a0 a'':ad),
+     Nxor a a' = a'' ->
+     MapGet (MapPut (M1 a y) a' y') a0 =
+     (if Neqb a' a0 then Some y' else if Neqb a a0 then Some y else None).
+
+  Lemma MapPut_semantics_2 :
+   forall (a a':ad) (y y':A) (a0:ad),
+     MapGet (MapPut (M1 a y) a' y') a0 =
+     (if Neqb a' a0 then Some y' else if Neqb a a0 then Some y else None).
+
+  Lemma MapPut_semantics_3_1 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapPut (M2 m m') a y =
+     (if Nbit0 a
+      then M2 m (MapPut m' (Ndiv2 a) y)
+      else M2 (MapPut m (Ndiv2 a) y) m').
+
+  Lemma MapPut_semantics :
+   forall (m:Map) (a:ad) (y:A),
+     eqm (MapGet (MapPut m a y))
+       (fun a':ad => if Neqb a a' then Some y else MapGet m a').
+
+  Fixpoint MapPut_behind (m:Map) : ad -> A -> Map :=
+    match m with
+    | M0 => M1
+    | M1 a y =>
+        fun (a':ad) (y':A) =>
+          match Nxor a a' with
+          | N0 => m
+          | Npos p => MapPut1 a y a' y' p
+          end
+    | M2 m1 m2 =>
+        fun (a:ad) (y:A) =>
+          match a with
+          | N0 => M2 (MapPut_behind m1 N0 y) m2
+          | Npos xH => M2 m1 (MapPut_behind m2 N0 y)
+          | Npos (xO p) => M2 (MapPut_behind m1 (Npos p) y) m2
+          | Npos (xI p) => M2 m1 (MapPut_behind m2 (Npos p) y)
+          end
+    end.
+
+  Lemma MapPut_behind_semantics_3_1 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapPut_behind (M2 m m') a y =
+     (if Nbit0 a
+      then M2 m (MapPut_behind m' (Ndiv2 a) y)
+      else M2 (MapPut_behind m (Ndiv2 a) y) m').
+
+  Lemma MapPut_behind_as_before_1 :
+   forall a a' a0:ad,
+     Neqb a' a0 = false ->
+     forall y y':A,
+       MapGet (MapPut (M1 a y) a' y') a0 =
+       MapGet (MapPut_behind (M1 a y) a' y') a0.
+
+  Lemma MapPut_behind_as_before :
+   forall (m:Map) (a:ad) (y:A) (a0:ad),
+     Neqb a a0 = false ->
+     MapGet (MapPut m a y) a0 = MapGet (MapPut_behind m a y) a0.
+
+  Lemma MapPut_behind_new :
+   forall (m:Map) (a:ad) (y:A),
+     MapGet (MapPut_behind m a y) a =
+     match MapGet m a with
+     | Some y' => Some y'
+     | _ => Some y
+     end.
+
+  Lemma MapPut_behind_semantics :
+   forall (m:Map) (a:ad) (y:A),
+     eqm (MapGet (MapPut_behind m a y))
+       (fun a':ad =>
+          match MapGet m a' with
+          | Some y' => Some y'
+          | _ => if Neqb a a' then Some y else None
+          end).
+
+  Definition makeM2 (m m':Map) :=
+    match m, m' with
+    | M0, M0 => M0
+    | M0, M1 a y => M1 (Ndouble_plus_one a) y
+    | M1 a y, M0 => M1 (Ndouble a) y
+    | _, _ => M2 m m'
+    end.
+
+  Lemma makeM2_M2 :
+   forall m m':Map, eqm (MapGet (makeM2 m m')) (MapGet (M2 m m')).
+
+  Fixpoint MapRemove (m:Map) : ad -> Map :=
+    match m with
+    | M0 => fun _:ad => M0
+    | M1 a y =>
+        fun a':ad => match Neqb a a' with
+                     | true => M0
+                     | false => m
+                     end
+    | M2 m1 m2 =>
+        fun a:ad =>
+          if Nbit0 a
+          then makeM2 m1 (MapRemove m2 (Ndiv2 a))
+          else makeM2 (MapRemove m1 (Ndiv2 a)) m2
+    end.
+
+  Lemma MapRemove_semantics :
+   forall (m:Map) (a:ad),
+     eqm (MapGet (MapRemove m a))
+       (fun a':ad => if Neqb a a' then None else MapGet m a').
+
+  Fixpoint MapCard (m:Map) : nat :=
+    match m with
+    | M0 => 0
+    | M1 _ _ => 1
+    | M2 m m' => MapCard m + MapCard m'
+    end.
+
+  Fixpoint MapMerge (m:Map) : Map -> Map :=
+    match m with
+    | M0 => fun m':Map => m'
+    | M1 a y => fun m':Map => MapPut_behind m' a y
+    | M2 m1 m2 =>
+        fun m':Map =>
+          match m' with
+          | M0 => m
+          | M1 a' y' => MapPut m a' y'
+          | M2 m'1 m'2 => M2 (MapMerge m1 m'1) (MapMerge m2 m'2)
+          end
+    end.
+
+  Lemma MapMerge_semantics :
+   forall m m':Map,
+     eqm (MapGet (MapMerge m m'))
+       (fun a0:ad =>
+          match MapGet m' a0 with
+          | Some y' => Some y'
+          | None => MapGet m a0
+          end).
+
+  Fixpoint MapDelta (m:Map) : Map -> Map :=
+    match m with
+    | M0 => fun m':Map => m'
+    | M1 a y =>
+        fun m':Map =>
+          match MapGet m' a with
+          | None => MapPut m' a y
+          | _ => MapRemove m' a
+          end
+    | M2 m1 m2 =>
+        fun m':Map =>
+          match m' with
+          | M0 => m
+          | M1 a' y' =>
+              match MapGet m a' with
+              | None => MapPut m a' y'
+              | _ => MapRemove m a'
+              end
+          | M2 m'1 m'2 => makeM2 (MapDelta m1 m'1) (MapDelta m2 m'2)
+          end
+    end.
+
+  Lemma MapDelta_semantics_comm :
+   forall m m':Map, eqm (MapGet (MapDelta m m')) (MapGet (MapDelta m' m)).
+
+  Lemma MapDelta_semantics_1_1 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad),
+     MapGet (M1 a y) a0 = None ->
+     MapGet m' a0 = None -> MapGet (MapDelta (M1 a y) m') a0 = None.
+
+  Lemma MapDelta_semantics_1 :
+   forall (m m':Map) (a:ad),
+     MapGet m a = None ->
+     MapGet m' a = None -> MapGet (MapDelta m m') a = None.
+
+  Lemma MapDelta_semantics_2_1 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad) (y0:A),
+     MapGet (M1 a y) a0 = None ->
+     MapGet m' a0 = Some y0 -> MapGet (MapDelta (M1 a y) m') a0 = Some y0.
+
+  Lemma MapDelta_semantics_2_2 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad) (y0:A),
+     MapGet (M1 a y) a0 = Some y0 ->
+     MapGet m' a0 = None -> MapGet (MapDelta (M1 a y) m') a0 = Some y0.
+
+  Lemma MapDelta_semantics_2 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapGet m a = None ->
+     MapGet m' a = Some y -> MapGet (MapDelta m m') a = Some y.
+
+  Lemma MapDelta_semantics_3_1 :
+   forall (a0:ad) (y0:A) (m':Map) (a:ad) (y y':A),
+     MapGet (M1 a0 y0) a = Some y ->
+     MapGet m' a = Some y' -> MapGet (MapDelta (M1 a0 y0) m') a = None.
+
+  Lemma MapDelta_semantics_3 :
+   forall (m m':Map) (a:ad) (y y':A),
+     MapGet m a = Some y ->
+     MapGet m' a = Some y' -> MapGet (MapDelta m m') a = None.
+
+  Lemma MapDelta_semantics :
+   forall m m':Map,
+     eqm (MapGet (MapDelta m m'))
+       (fun a0:ad =>
+          match MapGet m a0, MapGet m' a0 with
+          | None, Some y' => Some y'
+          | Some y, None => Some y
+          | _, _ => None
+          end).
+
+  Definition MapEmptyp (m:Map) := match m with
+                                  | M0 => true
+                                  | _ => false
+                                  end.
+
+  Lemma MapEmptyp_correct : MapEmptyp M0 = true.
+
+  Lemma MapEmptyp_complete : forall m:Map, MapEmptyp m = true -> m = M0.
+
+End MapDefs. *)
 Require Import Fset.
 (* Fset:
 Require Import Bool.
@@ -204,7 +619,6 @@ Section FSetDefs.
 End FSetDefs.
 
 Lemma FSet_Dom : forall s:FSet, MapDom unit s = s. *)
-
 Require Import Mapaxioms.
 (* Mapaxioms:
 Require Import Bool.
@@ -542,7 +956,6 @@ Lemma FSetInter_Union_r :
  forall s s' s'':FSet,
    eqmap unit (FSetInter s (FSetUnion s' s''))
      (FSetUnion (FSetInter s s') (FSetInter s s'')). *)
-
 Require Import Mapiter.
 (* Mapiter:
 Require Import Bool.
@@ -827,7 +1240,6 @@ Section MapIter.
      eqm A (alist_semantics (aapp l l')) (alist_semantics (aapp l' l)).
 
 End MapIter. *)
-
 Require Import Lsort.
 (* Lsort:
 Require Import Bool.
@@ -995,7 +1407,6 @@ Section LSort.
      alist_sorted_2 l -> alist_sorted_2 l' -> l = l'.
 
 End LSort. *)
-
 Require Import Mapsubset.
 (* Mapsubset:
 Require Import Bool.
@@ -1278,813 +1689,408 @@ Section MapDisjointExtra.
      MapDisjoint _ _ m m''' -> MapDisjoint _ _ m m''.
 
 End MapDisjointExtra. *)
-
 Require Import List.
-
-
 
 Section MapFoldResults.
 
-
-
   Variable A : Type.
 
-
-
   Variable M : Type.
-
   Variable neutral : M.
-
   Variable op : M -> M -> M.
 
-
-
   Variable nleft : forall a:M, op neutral a = a.
-
   Variable nright : forall a:M, op a neutral = a.
-
   Variable assoc : forall a b c:M, op (op a b) c = op a (op b c).
 
-
-
   Lemma MapFold_ext :
-
    forall (f:ad -> A -> M) (m m':Map A),
-
      eqmap A m m' -> MapFold _ _ neutral op f m = MapFold _ _ neutral op f m'.
-
   Proof.
-
     intros. rewrite (MapFold_as_fold A M neutral op assoc nleft nright f m).
-
     rewrite (MapFold_as_fold A M neutral op assoc nleft nright f m').
-
     cut (alist_of_Map A m = alist_of_Map A m'). intro. rewrite H0. reflexivity.
-
     apply alist_canonical. unfold eqmap in H. apply eqm_trans with (f' := MapGet A m).
-
     apply eqm_sym. apply alist_of_Map_semantics.
-
     apply eqm_trans with (f' := MapGet A m'). assumption.
-
     apply alist_of_Map_semantics.
-
     apply alist_of_Map_sorts2.
-
     apply alist_of_Map_sorts2.
-
   Qed.
-
-
 
   Lemma MapFold_ext_f_1 :
-
    forall (m:Map A) (f g:ad -> A -> M) (pf:ad -> ad),
-
      (forall (a:ad) (y:A), MapGet _ m a = Some y -> f (pf a) y = g (pf a) y) ->
-
      MapFold1 _ _ neutral op f pf m = MapFold1 _ _ neutral op g pf m.
-
   Proof.
-
     simple induction m. trivial.
-
     simpl in |- *. intros. apply H. rewrite (Neqb_correct a). reflexivity.
-
     intros. simpl in |- *. rewrite (H f g (fun a0:ad => pf (Ndouble a0))).
-
     rewrite (H0 f g (fun a0:ad => pf (Ndouble_plus_one a0))). reflexivity.
-
     intros. apply H1. rewrite MapGet_M2_bit_0_1. rewrite Ndouble_plus_one_div2. assumption.
-
     apply Ndouble_plus_one_bit0.
-
     intros. apply H1. rewrite MapGet_M2_bit_0_0. rewrite Ndouble_div2. assumption.
-
     apply Ndouble_bit0.
-
   Qed.
-
-
 
   Lemma MapFold_ext_f :
-
    forall (f g:ad -> A -> M) (m:Map A),
-
      (forall (a:ad) (y:A), MapGet _ m a = Some y -> f a y = g a y) ->
-
      MapFold _ _ neutral op f m = MapFold _ _ neutral op g m.
-
   Proof.
-
     intros. exact (MapFold_ext_f_1 m f g (fun a0:ad => a0) H).
-
   Qed.
-
-
 
   Lemma MapFold1_as_Fold_1 :
-
    forall (m:Map A) (f f':ad -> A -> M) (pf pf':ad -> ad),
-
      (forall (a:ad) (y:A), f (pf a) y = f' (pf' a) y) ->
-
      MapFold1 _ _ neutral op f pf m = MapFold1 _ _ neutral op f' pf' m.
-
   Proof.
-
     simple induction m. trivial.
-
     intros. simpl in |- *. apply H.
-
     intros. simpl in |- *.
-
     rewrite
-
      (H f f' (fun a0:ad => pf (Ndouble a0))
-
         (fun a0:ad => pf' (Ndouble a0))).
-
     rewrite
-
      (H0 f f' (fun a0:ad => pf (Ndouble_plus_one a0))
-
         (fun a0:ad => pf' (Ndouble_plus_one a0))).
-
     reflexivity.
-
     intros. apply H1.
-
     intros. apply H1.
-
   Qed.
-
-
 
   Lemma MapFold1_as_Fold :
-
    forall (f:ad -> A -> M) (pf:ad -> ad) (m:Map A),
-
      MapFold1 _ _ neutral op f pf m =
-
      MapFold _ _ neutral op (fun (a:ad) (y:A) => f (pf a) y) m.
-
   Proof.
-
     intros. unfold MapFold in |- *. apply MapFold1_as_Fold_1. trivial.
-
   Qed.
-
-
 
   Lemma MapFold1_ext :
-
    forall (f:ad -> A -> M) (m m':Map A),
-
      eqmap A m m' ->
-
      forall pf:ad -> ad,
-
        MapFold1 _ _ neutral op f pf m = MapFold1 _ _ neutral op f pf m'.
-
   Proof.
-
     intros. rewrite MapFold1_as_Fold. rewrite MapFold1_as_Fold. apply MapFold_ext. assumption.
-
   Qed.
-
-
 
   Variable comm : forall a b:M, op a b = op b a.
 
-
-
   Lemma MapFold_Put_disjoint_1 :
-
    forall (p:positive) (f:ad -> A -> M) (pf:ad -> ad) 
-
      (a1 a2:ad) (y1 y2:A),
-
      Nxor a1 a2 = Npos p ->
-
      MapFold1 A M neutral op f pf (MapPut1 A a1 y1 a2 y2 p) =
-
      op (f (pf a1) y1) (f (pf a2) y2).
-
   Proof.
-
     simple induction p. intros. simpl in |- *. elim (sumbool_of_bool (Nbit0 a1)). intro H1. rewrite H1.
-
     simpl in |- *. rewrite Ndiv2_double_plus_one. rewrite Ndiv2_double. apply comm.
-
     change (Nbit0 a2 = negb true) in |- *. rewrite <- H1. rewrite (Nneg_bit0_2 _ _ _ H0).
-
     rewrite negb_elim. reflexivity.
-
     assumption.
-
     intro H1. rewrite H1. simpl in |- *. rewrite Ndiv2_double. rewrite Ndiv2_double_plus_one.
-
     reflexivity.
-
     change (Nbit0 a2 = negb false) in |- *. rewrite <- H1. rewrite (Nneg_bit0_2 _ _ _ H0).
-
     rewrite negb_elim. reflexivity.
-
     assumption.
-
     simpl in |- *. intros. elim (sumbool_of_bool (Nbit0 a1)). intro H1. rewrite H1. simpl in |- *.
-
     rewrite nleft.
-
     rewrite
-
      (H f (fun a0:ad => pf (Ndouble_plus_one a0)) (
-
         Ndiv2 a1) (Ndiv2 a2) y1 y2).
-
     rewrite Ndiv2_double_plus_one. rewrite Ndiv2_double_plus_one. reflexivity.
-
     unfold Nodd.
-
     rewrite <- (Nsame_bit0 _ _ _ H0). assumption.
-
     assumption.
-
     rewrite <- Nxor_div2. rewrite H0. reflexivity.
-
     intro H1. rewrite H1. simpl in |- *. rewrite nright.
-
     rewrite
-
      (H f (fun a0:ad => pf (Ndouble a0)) (Ndiv2 a1) (Ndiv2 a2) y1 y2)
-
      .
-
     rewrite Ndiv2_double. rewrite Ndiv2_double. reflexivity.
-
     unfold Neven.
-
     rewrite <- (Nsame_bit0 _ _ _ H0). assumption.
-
     assumption.
-
     rewrite <- Nxor_div2. rewrite H0. reflexivity.
-
     intros. simpl in |- *. elim (sumbool_of_bool (Nbit0 a1)). intro H0. rewrite H0. simpl in |- *.
-
     rewrite Ndiv2_double. rewrite Ndiv2_double_plus_one. apply comm.
-
     assumption.
-
     change (Nbit0 a2 = negb true) in |- *. rewrite <- H0. rewrite (Nneg_bit0_1 _ _ H).
-
     rewrite negb_elim. reflexivity.
-
     intro H0. rewrite H0. simpl in |- *. rewrite Ndiv2_double. rewrite Ndiv2_double_plus_one.
-
     reflexivity.
-
     change (Nbit0 a2 = negb false) in |- *. rewrite <- H0. rewrite (Nneg_bit0_1 _ _ H).
-
     rewrite negb_elim. reflexivity.
-
     assumption.
-
   Qed.
-
-
 
   Lemma MapFold_Put_disjoint_2 :
-
    forall (f:ad -> A -> M) (m:Map A) (a:ad) (y:A) (pf:ad -> ad),
-
      MapGet A m a = None ->
-
      MapFold1 A M neutral op f pf (MapPut A m a y) =
-
      op (f (pf a) y) (MapFold1 A M neutral op f pf m).
-
   Proof.
-
     simple induction m. intros. simpl in |- *. rewrite (nright (f (pf a) y)). reflexivity.
-
     intros a1 y1 a2 y2 pf H. simpl in |- *. elim (Ndiscr (Nxor a1 a2)). intro H0. elim H0.
-
     intros p H1. rewrite H1. rewrite comm. exact (MapFold_Put_disjoint_1 p f pf a1 a2 y1 y2 H1).
-
     intro H0. rewrite (Neqb_complete _ _ (Nxor_eq_true _ _ H0)) in H.
-
     rewrite (M1_semantics_1 A a2 y1) in H. discriminate H.
-
     intros. elim (sumbool_of_bool (Nbit0 a)). intro H2.
-
     cut (MapPut A (M2 A m0 m1) a y = M2 A m0 (MapPut A m1 (Ndiv2 a) y)). intro.
-
     rewrite H3. simpl in |- *. rewrite (H0 (Ndiv2 a) y (fun a0:ad => pf (Ndouble_plus_one a0))).
-
     rewrite Ndiv2_double_plus_one. rewrite <- assoc.
-
     rewrite
-
      (comm (MapFold1 A M neutral op f (fun a0:ad => pf (Ndouble a0)) m0)
-
         (f (pf a) y)).
-
     rewrite assoc. reflexivity.
-
     assumption.
-
     rewrite (MapGet_M2_bit_0_1 A a H2 m0 m1) in H1. assumption.
-
     simpl in |- *. elim (Ndiscr a). intro H3. elim H3. intro p. elim p. intros p0 H4 H5. rewrite H5.
-
     reflexivity.
-
     intros p0 H4 H5. rewrite H5 in H2. discriminate H2.
-
     intro H4. rewrite H4. reflexivity.
-
     intro H3. rewrite H3 in H2. discriminate H2.
-
     intro H2. cut (MapPut A (M2 A m0 m1) a y = M2 A (MapPut A m0 (Ndiv2 a) y) m1).
-
     intro. rewrite H3. simpl in |- *. rewrite (H (Ndiv2 a) y (fun a0:ad => pf (Ndouble a0))).
-
     rewrite Ndiv2_double. rewrite <- assoc. reflexivity.
-
     assumption.
-
     rewrite (MapGet_M2_bit_0_0 A a H2 m0 m1) in H1. assumption.
-
     simpl in |- *. elim (Ndiscr a). intro H3. elim H3. intro p. elim p. intros p0 H4 H5. rewrite H5 in H2.
-
     discriminate H2.
-
     intros p0 H4 H5. rewrite H5. reflexivity.
-
     intro H4. rewrite H4 in H2. discriminate H2.
-
     intro H3. rewrite H3. reflexivity.
-
   Qed.
-
-
 
   Lemma MapFold_Put_disjoint :
-
    forall (f:ad -> A -> M) (m:Map A) (a:ad) (y:A),
-
      MapGet A m a = None ->
-
      MapFold A M neutral op f (MapPut A m a y) =
-
      op (f a y) (MapFold A M neutral op f m).
-
   Proof.
-
     intros. exact (MapFold_Put_disjoint_2 f m a y (fun a0:ad => a0) H).
-
   Qed.
-
-
 
   Lemma MapFold_Put_behind_disjoint_2 :
-
    forall (f:ad -> A -> M) (m:Map A) (a:ad) (y:A) (pf:ad -> ad),
-
      MapGet A m a = None ->
-
      MapFold1 A M neutral op f pf (MapPut_behind A m a y) =
-
      op (f (pf a) y) (MapFold1 A M neutral op f pf m).
-
   Proof.
-
     intros. cut (eqmap A (MapPut_behind A m a y) (MapPut A m a y)). intro.
-
     rewrite (MapFold1_ext f _ _ H0 pf). apply MapFold_Put_disjoint_2. assumption.
-
     apply eqmap_trans with (m' := MapMerge A (M1 A a y) m). apply MapPut_behind_as_Merge.
-
     apply eqmap_trans with (m' := MapMerge A m (M1 A a y)).
-
     apply eqmap_trans with (m' := MapDelta A (M1 A a y) m). apply eqmap_sym. apply MapDelta_disjoint.
-
     unfold MapDisjoint in |- *. unfold in_dom in |- *. simpl in |- *. intros. elim (sumbool_of_bool (Neqb a a0)).
-
     intro H2. rewrite (Neqb_complete _ _ H2) in H. rewrite H in H1. discriminate H1.
-
     intro H2. rewrite H2 in H0. discriminate H0.
-
     apply eqmap_trans with (m' := MapDelta A m (M1 A a y)). apply MapDelta_sym.
-
     apply MapDelta_disjoint. unfold MapDisjoint in |- *. unfold in_dom in |- *. simpl in |- *. intros.
-
     elim (sumbool_of_bool (Neqb a a0)). intro H2. rewrite (Neqb_complete _ _ H2) in H.
-
     rewrite H in H0. discriminate H0.
-
     intro H2. rewrite H2 in H1. discriminate H1.
-
     apply eqmap_sym. apply MapPut_as_Merge.
-
   Qed.
-
-
 
   Lemma MapFold_Put_behind_disjoint :
-
    forall (f:ad -> A -> M) (m:Map A) (a:ad) (y:A),
-
      MapGet A m a = None ->
-
      MapFold A M neutral op f (MapPut_behind A m a y) =
-
      op (f a y) (MapFold A M neutral op f m).
-
   Proof.
-
     intros. exact (MapFold_Put_behind_disjoint_2 f m a y (fun a0:ad => a0) H).
-
   Qed.
-
-
 
   Lemma MapFold_Merge_disjoint_1 :
-
    forall (f:ad -> A -> M) (m1 m2:Map A) (pf:ad -> ad),
-
      MapDisjoint A A m1 m2 ->
-
      MapFold1 A M neutral op f pf (MapMerge A m1 m2) =
-
      op (MapFold1 A M neutral op f pf m1) (MapFold1 A M neutral op f pf m2).
-
   Proof.
-
     simple induction m1. simpl in |- *. intros. rewrite nleft. reflexivity.
-
     intros. unfold MapMerge in |- *. apply (MapFold_Put_behind_disjoint_2 f m2 a a0 pf).
-
     apply in_dom_none. exact (MapDisjoint_M1_l _ _ m2 a a0 H).
-
     simple induction m2. intros. simpl in |- *. rewrite nright. reflexivity.
-
     intros. unfold MapMerge in |- *. rewrite (MapFold_Put_disjoint_2 f (M2 A m m0) a a0 pf). apply comm.
-
     apply in_dom_none. exact (MapDisjoint_M1_r _ _ (M2 A m m0) a a0 H1).
-
     intros. simpl in |- *. rewrite (H m3 (fun a0:ad => pf (Ndouble a0))).
-
     rewrite (H0 m4 (fun a0:ad => pf (Ndouble_plus_one a0))).
-
     cut (forall a b c d:M, op (op a b) (op c d) = op (op a c) (op b d)). intro. apply H4.
-
     intros. rewrite assoc. rewrite <- (assoc b c d). rewrite (comm b c). rewrite (assoc c b d).
-
     rewrite assoc. reflexivity.
-
     exact (MapDisjoint_M2_r _ _ _ _ _ _ H3).
-
     exact (MapDisjoint_M2_l _ _ _ _ _ _ H3).
-
   Qed.
-
-
 
   Lemma MapFold_Merge_disjoint :
-
    forall (f:ad -> A -> M) (m1 m2:Map A),
-
      MapDisjoint A A m1 m2 ->
-
      MapFold A M neutral op f (MapMerge A m1 m2) =
-
      op (MapFold A M neutral op f m1) (MapFold A M neutral op f m2).
-
   Proof.
-
     intros. exact (MapFold_Merge_disjoint_1 f m1 m2 (fun a0:ad => a0) H).
-
   Qed.
-
  
-
 End MapFoldResults.
-
-
 
 Section MapFoldDistr.
 
-
-
   Variable A : Type.
 
-
-
   Variable M : Type.
-
   Variable neutral : M.
-
   Variable op : M -> M -> M.
 
-
-
   Variable M' : Type.
-
   Variable neutral' : M'.
-
   Variable op' : M' -> M' -> M'.
 
-
-
   Variable N : Type.
-
-
 
   Variable times : M -> N -> M'.
 
-
-
   Variable absorb : forall c:N, times neutral c = neutral'.
-
   Variable
-
     distr :
-
       forall (a b:M) (c:N), times (op a b) c = op' (times a c) (times b c).
 
-
-
   Lemma MapFold_distr_r_1 :
-
    forall (f:ad -> A -> M) (m:Map A) (c:N) (pf:ad -> ad),
-
      times (MapFold1 A M neutral op f pf m) c =
-
      MapFold1 A M' neutral' op' (fun (a:ad) (y:A) => times (f a y) c) pf m.
-
   Proof.
-
     simple induction m. intros. exact (absorb c).
-
     trivial.
-
     intros. simpl in |- *. rewrite distr. rewrite H. rewrite H0. reflexivity.
-
   Qed.
-
-
 
   Lemma MapFold_distr_r :
-
    forall (f:ad -> A -> M) (m:Map A) (c:N),
-
      times (MapFold A M neutral op f m) c =
-
      MapFold A M' neutral' op' (fun (a:ad) (y:A) => times (f a y) c) m.
-
   Proof.
-
     intros. exact (MapFold_distr_r_1 f m c (fun a:ad => a)).
-
   Qed.
-
-
 
 End MapFoldDistr.
 
-
-
 Section MapFoldDistrL.
-
-
 
   Variable A : Type.
 
-
-
   Variable M : Type.
-
   Variable neutral : M.
-
   Variable op : M -> M -> M.
 
-
-
   Variable M' : Type.
-
   Variable neutral' : M'.
-
   Variable op' : M' -> M' -> M'.
-
-
 
   Variable N : Type.
 
-
-
   Variable times : N -> M -> M'.
 
-
-
   Variable absorb : forall c:N, times c neutral = neutral'.
-
   Variable
-
     distr :
-
       forall (a b:M) (c:N), times c (op a b) = op' (times c a) (times c b).
 
-
-
   Lemma MapFold_distr_l :
-
    forall (f:ad -> A -> M) (m:Map A) (c:N),
-
      times c (MapFold A M neutral op f m) =
-
      MapFold A M' neutral' op' (fun (a:ad) (y:A) => times c (f a y)) m.
-
   Proof.
-
     intros. apply MapFold_distr_r with (times := fun (a:M) (b:N) => times b a);
-
   assumption.
-
   Qed.
-
-
 
 End MapFoldDistrL.
 
-
-
 Section MapFoldExists.
-
-
 
   Variable A : Type.
 
-
-
   Lemma MapFold_orb_1 :
-
    forall (f:ad -> A -> bool) (m:Map A) (pf:ad -> ad),
-
      MapFold1 A bool false orb f pf m =
-
      match MapSweep1 A f pf m with
-
      | Some _ => true
-
      | _ => false
-
      end.
-
   Proof.
-
     simple induction m. trivial.
-
     intros a y pf. simpl in |- *. unfold MapSweep2 in |- *. case (f (pf a) y); reflexivity.
-
     intros. simpl in |- *. rewrite (H (fun a0:ad => pf (Ndouble a0))).
-
     rewrite (H0 (fun a0:ad => pf (Ndouble_plus_one a0))).
-
     case (MapSweep1 A f (fun a0:ad => pf (Ndouble a0)) m0); reflexivity.
-
   Qed.
-
-
 
   Lemma MapFold_orb :
-
    forall (f:ad -> A -> bool) (m:Map A),
-
      MapFold A bool false orb f m =
-
      match MapSweep A f m with
-
      | Some _ => true
-
      | _ => false
-
      end.
-
   Proof.
-
     intros. exact (MapFold_orb_1 f m (fun a:ad => a)).
-
   Qed.
-
-
 
 End MapFoldExists.
 
-
-
 Section DMergeDef.
-
-
 
   Variable A : Type.
 
-
-
   Definition DMerge :=
-
     MapFold (Map A) (Map A) (M0 A) (MapMerge A) (fun (_:ad) (m:Map A) => m).
 
-
-
   Lemma in_dom_DMerge_1 :
-
    forall (m:Map (Map A)) (a:ad),
-
      in_dom A a (DMerge m) =
-
      match MapSweep _ (fun (_:ad) (m0:Map A) => in_dom A a m0) m with
-
      | Some _ => true
-
      | _ => false
-
      end.
-
   Proof.
-
     unfold DMerge in |- *. intros.
-
     rewrite
-
      (MapFold_distr_l (Map A) (Map A) (M0 A) (MapMerge A) bool false orb ad
-
         (in_dom A) (fun c:ad => refl_equal _) (in_dom_merge A))
-
      .
-
     apply MapFold_orb.
-
   Qed.
-
-
 
   Lemma in_dom_DMerge_2 :
-
    forall (m:Map (Map A)) (a:ad),
-
      in_dom A a (DMerge m) = true ->
-
      {b : ad & 
-
      {m0 : Map A | MapGet _ m b = Some m0 /\ in_dom A a m0 = true}}.
-
   Proof.
-
     intros m a. rewrite in_dom_DMerge_1.
-
     elim
-
      (option_sum _
-
         (MapSweep (Map A) (fun (_:ad) (m0:Map A) => in_dom A a m0) m)).
-
     intro H. elim H. intro r. elim r. intros b m0 H0. intro. split with b. split with m0.
-
     split. exact (MapSweep_semantics_2 _ _ _ _ _ H0).
-
     exact (MapSweep_semantics_1 _ _ _ _ _ H0).
-
     intro H. rewrite H. intro. discriminate H0.
-
   Qed.
-
-
 
   Lemma in_dom_DMerge_3 :
-
    forall (m:Map (Map A)) (a b:ad) (m0:Map A),
-
      MapGet _ m a = Some m0 ->
-
      in_dom A b m0 = true -> in_dom A b (DMerge m) = true.
-
   Proof.
-
     intros m a b m0 H H0. rewrite in_dom_DMerge_1.
-
     elim
-
      (MapSweep_semantics_4 _ (fun (_:ad) (m'0:Map A) => in_dom A b m'0) _ _ _
-
         H H0).
-
     intros a' H1. elim H1. intros m'0 H2. rewrite H2. reflexivity.
-
   Qed.
-
-
 
 End DMergeDef.

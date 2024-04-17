@@ -1,7 +1,5 @@
 
-
 Set Implicit Arguments.
-
 Require Import FCF.FCF.
 (* FCF.FCF:
 Require Export FCF.Crypto.
@@ -13,7 +11,6 @@ Require Export FCF.NotationV1.
 Require Export FCF.Tactics.
 
 Open Scope eq_scope. *)
-
 Require Import FCF.CompFold. 
 (* FCF.CompFold:
 Set Implicit Arguments.
@@ -919,490 +916,624 @@ Theorem prob_fold_and_eq_exp :
   forall (A : Set)(c : Comp A)(n : nat)(P : A -> bool),
     Pr[compFold _ (fun b _ => x <-$ c; ret b && (P x)) true (forNats n)] ==
     expRat (Pr[x <-$c; ret (P x)]) n. *)
-
 Require Export FCF.Array.
-
-Require Export FCF.Hybrid.
-
-
+(* FCF.Array:
+Set Implicit Arguments.
+Require Import FCF.Crypto.
+Require Import FCF.Fold.
 
 Local Open Scope list_scope.
 
+Section ListArray.
+
+  Variable D R : Set.
+  Hypothesis D_EqDec : EqDec D.
+
+  Definition Array := list (D * R).
+
+  Fixpoint arrayLookup(ls : list (D * R)) d :=
+    match ls with
+      | nil => None
+      | (d', r') :: ls' =>
+        if (eqb d d') 
+          then Some r' 
+          else (arrayLookup ls' d)
+    end.
+
+  Definition arrayEquiv(arr1 arr2 : Array) :=
+    forall d, 
+      (arrayLookup arr1 d) = (arrayLookup arr2 d).
+
+  Definition arrayLookupDef(ls : list (D * R)) d def :=
+    match arrayLookup ls d with
+        | None => def
+        | Some r => r
+    end.
+
+  Definition arrayUpdate (arr_opt : option Array) d r_opt :=
+    let arr := match arr_opt with
+                 | None => nil
+                 | Some arr => arr
+               end in
+    match r_opt with
+        | None => arr
+        | Some r =>
+          (d, r) :: arr
+    end.
+ 
+  Lemma arrayLookup_app_some_eq : forall ls d v,
+    arrayLookup ls d = None ->
+    arrayLookup (ls ++ (d, v) :: nil) d = Some v.
+
+  Lemma arrayLookup_app_none : forall ls d d' v',
+    arrayLookup ls d = None ->
+    arrayLookup (ls ++ (d, v') :: nil) d' = arrayLookup ((d, v') :: ls) d'.
+
+  Lemma arrayLookup_app_ne : forall ls d r d',
+    d <> d' ->
+    arrayLookup (ls ++ (d, r) :: nil) d' = arrayLookup ls d'.
+  
+  Lemma arrayLookup_app_some : forall ls d d' v v',
+    arrayLookup ls d = Some v ->
+    arrayLookup (ls ++ (d, v') :: nil) d' = arrayLookup ls d'.
+
+  Theorem arrayLookup_arrayUpdate_eq : 
+    forall arr p v,
+      arrayLookup (arrayUpdate arr p (Some v)) p = (Some v).
+
+   Theorem arrayLookup_arrayUpdate_ne : 
+    forall arr p1 p2 v,
+      p1 <> p2 ->
+      arrayLookup (arrayUpdate (Some arr) p1 (Some v)) p2 = arrayLookup arr p2.
+
+   Theorem arrayLookup_arrayUpdate_None_ne : 
+     forall p1 p2 v,
+       p1 <> p2 ->
+       arrayLookup (arrayUpdate None p1 (Some v)) p2 = None.
+
+End ListArray.
+
+Notation "f '#' i " := (arrayLookup _ f i) (at level 70) : array_scope.
+
 Local Open Scope array_scope.
 
+Definition arrayLookupList(A B : Set)(eqd : EqDec A)(ls : list (A * (list B)))(a : A) :=
+    match (arrayLookup _ ls a) with
+      | None => nil
+      | Some ls => ls
+    end.
 
+Require Import FCF.CompFold.
+
+Lemma arrayLookup_Some_In_unzip : 
+  forall (A B : Set)(eqd : EqDec A)(arr : Array A B) a b,
+    (arr # a) = Some b ->
+    In a (fst (unzip arr)).
+
+Lemma notInArrayLookupNone : 
+  forall (A B : Set)(eqd : EqDec A)(arr : Array A B) a,
+    (~ In a (fst (unzip arr))) ->
+    (arr # a) = None.
+
+Fixpoint arrayLookupOpt(A B : Set)(eqd : EqDec A)(ls : list (option (A * B)))(a : A) :=
+  match ls with
+    | nil => None
+      | o :: ls' =>
+        match o with
+          | None => arrayLookupOpt _ ls' a
+          | Some (a', b') =>
+            if (eqb a a') then (Some b') else (arrayLookupOpt _ ls' a)
+        end
+  end.
+
+Theorem list_pred_arrayLookupOpt : 
+  forall (A B C : Set)(P : B -> C -> Prop)(eqda : EqDec A)(ls1 : list (option (A * B)))(ls2 : list (option (A * C))),
+    list_pred (fun o1 o2 =>
+                 match o1 with
+                   | None => o2 = None
+                   | Some x =>
+                     match o2 with
+                       | None => False
+                       | Some y =>
+                         fst x = fst y /\ P (snd x) (snd y)
+                     end
+                 end) ls1 ls2 ->
+    forall a, 
+      match (arrayLookupOpt _ ls1 a) with
+        | None => (arrayLookupOpt _ ls2 a) = None
+        | Some x => exists y, (arrayLookupOpt _ ls2 a) = Some y /\ P x y
+      end.
+
+Theorem arrayLookupOpt_getSomes_eq : 
+  forall (A B : Set)(eqda : EqDec A)(ls : list (option (A * B)))(a : A),
+       arrayLookupOpt _ ls a = arrayLookup _ (getSomes ls) a.
+
+Theorem arrayLookup_app_Some : 
+  forall (A B : Set)(eqd : EqDec A)(ls1 ls2 : list (A * B))(a : A)(b : B),
+    arrayLookup eqd ls1 a = Some b ->
+    arrayLookup eqd (ls1 ++ ls2) a = Some b.
+
+Theorem arrayLookup_app_None : 
+  forall (A B : Set)(eqd : EqDec A)(ls1 ls2 : list (A * B))(a : A),
+    arrayLookup eqd ls1 a = None ->
+    arrayLookup eqd (ls1 ++ ls2) a =
+    arrayLookup eqd ls2 a.
+
+Theorem arrayLookupList_pred : 
+  forall (A B : Set) (eqda : EqDec A)P (ls : list (A * list B)) a,
+    (forall x, In x ls -> P (snd x)) ->
+    P nil ->
+    P (arrayLookupList _ ls a).
+
+Theorem arrayLookup_Some_impl_In : 
+  forall (A B : Set)(eqd : EqDec A)(ls : list (A * B)) a b,
+    arrayLookup _ ls a = Some b ->
+    In (a, b) ls.
+
+Theorem list_pred_impl_arrayLookup : 
+  forall (A B C : Set) P (eqda : EqDec A)(ls1 : list (A * B))(ls2 : list (A * C)),
+    list_pred (fun x y => fst x = fst y /\ P (snd x) (snd y)) ls1 ls2 ->
+    (forall v z, arrayLookup _ ls1 v = Some z -> exists z', arrayLookup _ ls2 v = Some z' /\ P z z') /\
+    (forall v, arrayLookup _ ls1 v = None -> arrayLookup _ ls2 v = None).
+
+Theorem arrayLookup_In_NoDup : 
+  forall (A B : Set)(eqda : EqDec A)(ls : list (A * B)) a b,
+    In (a, b) ls ->
+    NoDup (fst (split ls)) ->
+    arrayLookup _ ls a = Some b.
+
+Theorem arrayLookup_None_not_In : 
+  forall (A B : Set)(eqda : EqDec A)(ls : list (A * B)) a,
+    arrayLookup _ ls a = None ->
+    In a (fst (split ls)) -> False.
+
+Theorem arrayLookup_pair_None : 
+  forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B) (ls : list (A * B * C)) a b,
+    (forall x, In x ls -> fst (fst x) <> a) ->
+    arrayLookup _ ls (a, b) = None.
+
+Theorem arrayLookup_pair_flatten_none : 
+  forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B) keys (ls : list (list (A * B * C))) a b,
+    list_pred (fun a b => forall x, In x b -> fst (fst x) = a) keys ls ->
+    (~ In a keys) ->
+    arrayLookup (pair_EqDec eqda eqdb) (flatten ls) (a, b) = None.
+
+Theorem arrayLookup_flatten_eq :
+  forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls : list (list (A * B * C))) keys a b,
+    list_pred (fun a b => forall x, In x b -> fst (fst x) = a) keys ls ->
+    NoDup keys ->
+    arrayLookup _ (flatten ls) (a, b) = 
+    arrayLookup _ (arrayLookupList _ (combine keys ls) a) (a, b).
+
+Theorem arrayLookup_pair_snd : 
+  forall (A B C : Set)(eqda : EqDec A)(eqdb : EqDec B)(ls1 : list (A * B * C))(ls2 : list (B * C)) a b,
+    list_pred (fun x y => fst (fst x) = a /\ snd (fst x) = fst y /\ snd x = snd y) ls1 ls2 ->
+    arrayLookup _ ls1 (a, b) = 
+    arrayLookup _ ls2 b.
+
+Theorem arrayLookup_pred_2 : 
+  forall (A B C: Set)(eqda : EqDec A) (P : list B -> list C -> Prop) (ls1 : list (A * list B))(ls2 : list (A * list C)) a,
+    list_pred (fun x y => (fst x = a \/ fst y = a) -> (fst x = a /\ fst y = a /\ P (snd x) (snd y))) ls1 ls2 ->
+    P nil nil ->
+    P (arrayLookupList _ ls1 a) (arrayLookupList _ ls2 a).
+
+Theorem In_arrayLookupList : 
+  forall (A B : Set)(eqda : EqDec A)(a : A)(b : B) ls,
+    In b (arrayLookupList _ ls a) ->
+    exists ls', In (a, ls') ls /\
+                In b ls'.
+
+Theorem arrayLookupList_pred'
+: forall (A B : Set) (eqda : EqDec A) (P : list B -> Type)
+         (ls : list (A * list B)) (a : A),
+    (forall x : list B, In (a, x) ls -> P x) ->
+    (arrayLookup _ ls a = None -> P nil) ->
+    P (arrayLookupList eqda ls a).
+Theorem arrayLookup_allNats_eq : 
+  forall (B : Set)(ls : list (nat * B)) i,
+    fst (split ls) = allNatsLt (length ls) ->
+    arrayLookup _ ls i =
+    match nth_option ls i with
+      | Some (_, v) => Some v
+              | None => None
+    end. *)
+Require Export FCF.Hybrid.
+(* FCF.Hybrid:
+Set Implicit Arguments.
+
+Require Import FCF.FCF.
+Require Import FCF.CompFold.
+
+Open Scope list_scope.
+
+Section DistSingle.
+
+  Variable A B : Set.
+  Hypothesis B_EqDec : EqDec B.
+  Variable c1 c2 : A -> Comp B.
+  Variable A_State : Set.
+  Variable A1 : Comp (A * A_State).
+  Variable A2 : A_State -> B -> Comp bool.
+
+  Definition DistSingle_G(c : A -> Comp B) :=
+    [a, s_A] <-$2 A1;
+    b <-$ c a;
+    A2 s_A b.
+
+  Definition DistSingle_Adv :=
+    | Pr[DistSingle_G c1] - Pr[DistSingle_G c2] |.
+
+End DistSingle.
+
+Section ListHybrid.
+
+  Variable A B State : Set.
+  Variable defA : A.
+  Variable c1 c2 : A -> Comp B.
+  Hypothesis c1_wf : forall a, well_formed_comp (c1 a).
+  Hypothesis c2_wf : forall a, well_formed_comp (c2 a).
+  Hypothesis A_EqDec : EqDec A.
+  Hypothesis B_EqDec : EqDec B.
+  Hypothesis State_EqDec : EqDec State.
+  Variable A1 : Comp ((list A) * State).
+  Variable A2 : State -> list B -> Comp bool.
+
+  Variable maxA : nat.
+  Hypothesis maxA_correct : 
+    forall ls s_A, 
+      In (ls, s_A) (getSupport A1) ->
+      (length ls <= maxA)%nat.
+
+  Definition ListHybrid_G (c : A -> Comp B) :=
+    [lsA, s_A] <-$2 A1;
+    lsB <-$ compMap _ c lsA;
+    A2 s_A lsB.
+
+  Definition ListHybrid_Advantage :=
+    | Pr[ListHybrid_G c1] - Pr[ListHybrid_G c2] |.
+
+  Definition G_hybrid i :=
+    [lsA, s_A] <-$2 A1;
+    lsA1 <- firstn i lsA;
+    lsA2 <- skipn i lsA;
+    lsB1 <-$ compMap _ c1 lsA1;
+    lsB2 <-$ compMap _ c2 lsA2;
+    A2 s_A (lsB1 ++ lsB2).
+  
+  Theorem G_2_hybrid_eq : 
+    Pr[ListHybrid_G c2] == Pr[G_hybrid 0].
+
+  Theorem skipn_ge_nil : 
+    forall (A : Type)(ls : list A)(n : nat),
+      n >= length ls ->
+      skipn n ls = nil.
+
+  Theorem G_1_hybrid_eq : 
+    Pr[ListHybrid_G c1] == Pr[G_hybrid maxA].
+
+  Definition B1 i :=
+    [lsA, s_A] <-$2 A1;
+    lsA1 <- firstn i lsA;
+    a <- nth i lsA defA;
+    lsA2 <- skipn (S i) lsA;
+    incla <- if (lt_dec i (length lsA)) then true else false;
+    ret (a, (incla, lsA1, lsA2, s_A)).                                                
+
+  Definition B2 (e : bool * _ * _ * _) b :=
+      let '(incla, lsA1, lsA2, s_A) := e in 
+      lsB1 <-$ compMap _ c1 lsA1;
+        lsB2 <-$ compMap _ c2 lsA2;
+        lsB <- if incla then (lsB1 ++ (b :: lsB2)) else lsB1;
+      A2 s_A lsB.
+
+  Local Open Scope list_scope.
+
+  Theorem compMap_unroll : 
+    forall (A B : Set)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A)(def : A),
+      ls <> nil ->
+      comp_spec eq (compMap _ c ls) (x <-$ c (hd def ls); y <-$ compMap _ c (tl ls); ret (x :: y)).
+
+  Theorem skipn_lt_nil_false : 
+    forall (A : Type)(ls : list A)(n : nat),
+      n < length ls ->
+      skipn n ls = nil ->
+      False.
+
+  Theorem hd_skip_eq_nth : 
+    forall (A : Type)(def : A)(ls : list A)(n : nat),
+      hd def (skipn n ls) = nth n ls def.
+
+  Theorem tl_skipn_eq : 
+    forall (A : Type)(ls : list A)(n : nat),
+      tl (skipn n ls) = skipn (S n) ls.
+
+  Theorem skipn_gt_nil : 
+    forall (A : Type)(ls : list A)(n : nat),
+      n >= length ls ->
+      skipn n ls = nil.
+
+  Theorem G_hybrid_DistSingle_eq : 
+    forall i,
+      Pr[G_hybrid i] == Pr[DistSingle_G (B1 i) B2 c2].
+     
+  Theorem compMap_unroll_tl : 
+    forall (A B : Set)(def : A)(eqdb : EqDec B)(c : A -> Comp B)(ls : list A) n,
+      length ls = S n ->
+      comp_spec eq (compMap _ c ls) (y <-$ compMap _ c (firstn n ls); x <-$ c (nth n ls def); ret (y ++ x :: nil)).
+             
+  Theorem firstn_firstn : 
+    forall (A : Type)(ls : list A)(n1 n2 : nat),
+      (n1 <= n2)%nat ->
+      firstn n1 (firstn n2 ls) = firstn n1 ls.
+
+  Theorem nth_firstn : 
+    forall (A : Set)(def : A)(ls : list A)(n1 n2 : nat),
+      (n1 < n2)%nat ->
+      nth n1 (firstn n2 ls) def = nth n1 ls def.
+
+  Theorem G_hybrid_DistSingle_S_eq : 
+    forall i,
+      Pr[G_hybrid (S i)] == Pr[DistSingle_G (B1 i) B2 c1].
+        
+  Theorem hybrid_incr_close : 
+    forall i,
+  | Pr[G_hybrid i] - Pr[G_hybrid (S i)] | == DistSingle_Adv c1 c2 (B1 i) B2. 
+         
+  Theorem ratDistance_sequence_sum : 
+    forall (f : nat -> Rat)(n : nat),
+  | f O - f n | <= sumList (forNats n) (fun i => | f i - f (S i) |).
+  
+  Theorem Single_impl_ListHybrid_sum :
+    ListHybrid_Advantage
+    <=
+    sumList (forNats maxA) (fun i => DistSingle_Adv c1 c2 (B1 i) B2).
+
+  Variable maxDistance : Rat.
+  Hypothesis maxDistance_correct : 
+    forall i, DistSingle_Adv c1 c2 (B1 i) B2 <= maxDistance.
+
+  Theorem Single_impl_ListHybrid : 
+    ListHybrid_Advantage <= maxA / 1 * maxDistance.
+End ListHybrid. *)
+
+Local Open Scope list_scope.
+Local Open Scope array_scope.
 
 Definition oracleMap(D R S: Set)(eqds : EqDec S)(eqdr : EqDec R)(oracle : S  -> D -> Comp (R * S))(s : S)(ds : list D) :=
-
   compFold _ 
-
   (fun acc d => [rs, s] <-2 acc; [r, s] <-$2 oracle s d; ret (rs ++ r :: nil, s)) 
-
   (nil, s) ds.
 
-
-
 Theorem oracleMap_wf : 
-
   forall (D R S : Set)(eqds : EqDec S)(eqdr : EqDec R) (oracle : S -> D -> Comp (R * S))ds s,
-
   (forall s x, well_formed_comp (oracle s x)) ->
-
   well_formed_comp (@oracleMap D R S _ _ oracle s ds).
 
-
-
   intuition.
-
   unfold oracleMap.
-
   eapply compFold_wf; intuition.
-
   wftac.
-
-
 
 Qed.
 
-
-
 Section RandomFunc.
-
   
-
   Variable D R : Set.
-
   Variable RndR : Comp R.
-
-
 
   Hypothesis EqDec_D : EqDec D.
-
   Instance EqDec_R : EqDec R.
-
     eapply comp_EqDec.
-
     eauto.
-
   Qed.
 
-
-
   Hypothesis RndR_wf : well_formed_comp RndR.
-
   
-
   Definition randomFunc (f : (list (D * R))) (d : D) : Comp (R * list (D * R)) :=
-
       match (arrayLookup _ f d) with
-
         | None => (r <-$ RndR; ret (r, (d, r) :: f))
-
         | Some r => ret (r, f)
-
       end.  
-
   
-
   Lemma randomFunc_wf : forall f d, 
-
     well_formed_comp (randomFunc f d).
-
     
-
     intuition.
-
     unfold randomFunc.
-
     case_eq (f#d); intuition; wftac.
-
     
-
   Qed.    
-
   
-
   Hint Resolve randomFunc_wf : wftac.
 
-
-
   Definition RndFunc(lsd : list D) : Comp (list (D * R)) :=
-
     compFold _ (fun f d => r <-$ RndR; ret (d, r)::f) nil lsd. 
-
   
-
 End RandomFunc.
 
-
-
 Local Open Scope type_scope.
-
 Local Open Scope comp_scope.
 
-
-
 Section PRF_concrete.
-
   
-
   Variable D R Key : Set.
-
   Variable RndKey : Comp Key.
-
   Variable RndR : Comp R.
-
   Variable f : Key -> D -> R.
 
-
-
   Hypothesis D_EqDec : EqDec D.
-
   Hypothesis R_EqDec : EqDec R.
 
-
-
   Definition RndR_func : (list (D * R) -> D -> Comp (R * list (D * R))) :=
-
     (randomFunc RndR _).
 
-
-
   Section PRF_NA_concrete.
-
   
-
     Variable State : Set.
-
     Variable A1 : Comp (list D * State).
-
     Variable A2 : State -> list R -> Comp bool.
 
-
-
     Definition PRF_NA_G_A : Comp bool := 
-
       [lsD, s_A] <-$2 A1; 
-
       lsR <-$ (k <-$ RndKey; ret (map (f k) lsD));
-
       A2 s_A lsR.
-
     
-
     Definition PRF_NA_G_B : Comp bool := 
-
       [lsD, s_A] <-$2 A1;
-
       [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD;
-
       A2 s_A lsR.
-
     
-
     Definition PRF_NA_Advantage := 
-
     | Pr[PRF_NA_G_A] - Pr[PRF_NA_G_B] |.  
-
-
 
   End PRF_NA_concrete.
 
-
-
   Section PRF_NAI_concrete.
 
-
-
     Variable A_state : Set.
-
     Variable A1 : Comp ((list (list D)) * A_state).
-
     Variable A2 : A_state -> list (list R) -> Comp bool.
 
-
-
     Definition PRF_NAI_G0 :=
-
       [lsDs, s_A] <-$2 A1;
-
       lsRs <-$ compMap _ (fun lsD => k <-$ RndKey; ret (map (f k) lsD)) lsDs;
-
       A2 s_A lsRs.
-
-
 
     Definition PRF_NAI_G1 :=
-
       [lsDs, s_A] <-$2 A1;
-
       lsRs <-$ compMap _ (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR) lsDs;
-
       A2 s_A lsRs.
 
-
-
     Definition PRF_NAI_Advantage := 
-
     | Pr[PRF_NAI_G0] - Pr[PRF_NAI_G1] |.   
-
                          
-
   Section PRF_NA_impl_NAI.
 
-
-
     Variable maxLists : nat.
-
     Hypothesis maxLists_correct : 
-
       forall ls s_A, 
-
         In (ls, s_A) (getSupport A1) ->
-
         (length ls <= maxLists)%nat.
 
-
-
     Hypothesis A_state_EqDec : EqDec A_state.
-
     Hypothesis RndR_wf : well_formed_comp RndR.
-
     Hypothesis RndKey_wf : well_formed_comp RndKey.
 
-
-
     Variable maxDistance : Rat.
-
     Hypothesis maxDistance_correct : 
-
       forall i, 
-
       PRF_NA_Advantage (B1 nil _ _ A1 i) (B2 (fun lsD => k <-$ RndKey; ret (map (f k) lsD))
-
               (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR)
-
               _ A2) <= maxDistance.
 
-
-
     Theorem PRF_NAI_Advantage_eq_Hybrid:
-
       PRF_NAI_Advantage == ListHybrid_Advantage 
-
                              (fun lsD => k <-$ RndKey; ret (map (f k) lsD))
-
                              (fun lsD => [lsR, _] <-$2 oracleMap _ _ RndR_func nil lsD; ret lsR)
-
                              _ A1 A2.
 
-
-
       reflexivity.
 
-
-
     Qed.
-
-
 
     Theorem PRF_NA_impl_NAI : 
-
       PRF_NAI_Advantage <= (maxLists / 1 * maxDistance)%rat.
 
-
-
       rewrite PRF_NAI_Advantage_eq_Hybrid.
-
       rewrite Single_impl_ListHybrid.
-
       reflexivity.
-
       
-
       intuition.
-
       wftac.
 
-
-
       intuition.
-
       wftac.
-
       eapply oracleMap_wf.
-
       intuition.
-
       eapply randomFunc_wf; intuition.
-
       intuition.
 
-
-
       intuition.
-
-
 
       assert (DistSingle_Adv (fun lsD : list D => k <-$ RndKey; ret map (f k) lsD)
-
      (fun lsD : list D =>
-
       z <-$
-
       oracleMap (list_EqDec (pair_EqDec D_EqDec R_EqDec)) R_EqDec RndR_func
-
         nil lsD; [lsR, _]<-2 z; ret lsR)
-
      (B1 nil (list_EqDec D_EqDec) A_state_EqDec A1 i)
-
      (B2 (fun lsD : list D => k <-$ RndKey; ret map (f k) lsD)
-
         (fun lsD : list D =>
-
          z <-$
-
          oracleMap (list_EqDec (pair_EqDec D_EqDec R_EqDec)) R_EqDec
-
            RndR_func nil lsD; [lsR, _]<-2 z; ret lsR) 
-
         (list_EqDec R_EqDec) A2)
-
      ==
-
      PRF_NA_Advantage
-
                           (B1 nil (list_EqDec D_EqDec) A_state_EqDec A1 i)
-
                           (B2
-
                              (fun lsD : list D =>
-
                               k <-$ RndKey; ret map (f k) lsD)
-
                              (fun lsD : list D =>
-
                               z <-$
-
                               oracleMap
-
                                 (list_EqDec (pair_EqDec D_EqDec R_EqDec))
-
                                 R_EqDec RndR_func nil lsD;
-
                               [lsR, _]<-2 z; ret lsR) 
-
                              (list_EqDec R_EqDec) A2)
-
                           ).
-
       unfold DistSingle_Adv, PRF_NA_Advantage, DistSingle_G, PRF_NA_G_A, PRF_NA_G_B.
-
       eapply ratDistance_eqRat_compat;
-
         repeat (try comp_skip; try reflexivity; comp_simp; inline_first).
-
       rewrite H.
-
       clear H.
-
       intuition.
-
     Qed.
-
-
 
   End PRF_NA_impl_NAI.
 
-
-
   End PRF_NAI_concrete.
 
-
-
   Section PRF_Full_concrete.
-
     
-
     Variable A : OracleComp D R bool.
-
     
-
     Definition f_oracle(k : Key)(x : unit)(d : D) :=
-
       ret (f k d, tt).
-
     
-
     Definition PRF_G_A : Comp bool := 
-
       k <-$ RndKey;
-
       [b, _] <-$2 A _ _ (f_oracle k) tt;
-
       ret b.
-
     
-
     Definition PRF_G_B : Comp bool := 
-
       [b, _] <-$2 A _ _ (RndR_func) nil;
-
       ret b.
-
     
-
     Definition PRF_Advantage := 
-
     | Pr[PRF_G_A] - Pr[PRF_G_B] |.  
-
     
-
   End PRF_Full_concrete.
-
-
 
   Section PRF_Finite_concrete.
 
-
-
     Variable dom : list D.
-
     Variable def : R.
-
     Variable A : (D -> R) -> Comp bool.
 
-
-
     Definition PRF_Fin_G_A : Comp bool := 
-
       k <-$ RndKey;
-
       A (f k).
-
     
-
     Definition PRF_Fin_G_B : Comp bool := 
-
       f <-$ @RndFunc D R RndR _ dom;
-
       A (fun d => arrayLookupDef _ f d def).
 
-
-
     Definition PRF_Fin_Advantage := 
-
     | Pr[PRF_Fin_G_A] - Pr[PRF_Fin_G_B] |.
 
-
-
   End PRF_Finite_concrete.
-
   
-
 End PRF_concrete.
-
-
 
 Require Import FCF.Asymptotic.
 (* FCF.Asymptotic:
@@ -1522,7 +1653,6 @@ Theorem negligible_poly_num :
   forall f,
     polynomial f ->
     negligible (fun n => f n / expnat 2 n)%rat. *)
-
 Require Import FCF.Admissibility.
 (* FCF.Admissibility:
 Set Implicit Arguments.
@@ -1541,67 +1671,34 @@ Definition pred_comp_func_2_fam := forall (A B C : nat -> Set), (forall n, A n -
 Definition pred_oc_fam := forall (A B C : nat -> Set), (forall n, OracleComp (A n) (B n) (C n)) -> Prop.
 Definition pred_oc_func_2_fam := forall (A B C D E : nat -> Set), (forall n, A n -> B n -> OracleComp (C n) (D n) (E n)) -> Prop. *)
 
-
-
 Section PRF.
 
-
-
   Variable D R Key : DataTypeFamily.
-
   Variable RndKey : forall n, Comp (Key n).
-
   Variable RndR : forall n, Comp (R n).
-
   Variable f : forall n, Key n -> D n -> R n.
 
-
-
   Hypothesis D_EqDec : forall n, EqDec (D n).
-
   Hypothesis R_EqDec : forall n, EqDec (R n).
 
-
-
   Section PRF_NA.
-
     Variable admissible_A1 : pred_comp_fam.
-
     Variable admissible_A2 : pred_comp_func_2_fam.
-
     
-
     Definition PRF_NA :=
-
       forall (State : DataTypeFamily) A1 A2,
-
         admissible_A1 _ A1 -> 
-
         admissible_A2 State _ _ A2 ->
-
         negligible (fun n => PRF_NA_Advantage (RndKey n) (RndR n) (@f n) _ _ (A1 n) (@A2 n)).
-
   End PRF_NA.
 
-
-
   Section PRF_Full.
-
     Variable admissible_A : pred_oc_fam.
-
     
-
     Definition PRF :=
-
       forall (A : forall n, OracleComp (D n) (R n) bool),
-
         admissible_A _ _ _ A -> 
-
         negligible (fun n => PRF_Advantage (RndKey n) (RndR n) (@f n) _ _ (A n)).
-
   End PRF_Full.
-
       
-
 End PRF.
-

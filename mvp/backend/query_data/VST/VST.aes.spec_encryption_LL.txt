@@ -1,164 +1,179 @@
 Require Export aes.spec_utils_LL.
+(* aes.spec_utils_LL:
+Require Export List. Export ListNotations.
+Require Export ZArith.
+Local Open Scope Z_scope.
+Require Export compcert.lib.Integers.
+Require Export VST.floyd.sublist.
 
+Definition Nk := 8. 
+Definition Nr := 14. 
+Definition Nb := 4. 
+
+Definition get_uint32_le (arr: list Z) (i: Z) : int :=
+ (Int.or (Int.or (Int.or
+            (Int.repr (Znth  i    arr))
+   (Int.shl (Int.repr (Znth (i+1) arr)) (Int.repr  8)))
+   (Int.shl (Int.repr (Znth (i+2) arr)) (Int.repr 16)))
+   (Int.shl (Int.repr (Znth (i+3) arr)) (Int.repr 24))).
+
+Definition put_uint32_le (x : int) : list int :=
+  [ (Int.and           x                (Int.repr 255));
+    (Int.and (Int.shru x (Int.repr  8)) (Int.repr 255));
+    (Int.and (Int.shru x (Int.repr 16)) (Int.repr 255));
+    (Int.and (Int.shru x (Int.repr 24)) (Int.repr 255)) ].
+
+Definition byte0 (x : int) : Z :=
+  (Z.land (Int.unsigned x) (Int.unsigned (Int.repr 255))).
+Definition byte1 (x : int) : Z :=
+  (Z.land (Int.unsigned (Int.shru x (Int.repr 8))) (Int.unsigned (Int.repr 255))).
+Definition byte2 (x : int) : Z :=
+  (Z.land (Int.unsigned (Int.shru x (Int.repr 16))) (Int.unsigned (Int.repr 255))).
+Definition byte3 (x : int) : Z :=
+  (Z.land (Int.unsigned (Int.shru x (Int.repr 24))) (Int.unsigned (Int.repr 255))). *)
 Require Export aes.tablesLL.
+(* aes.tablesLL:
+Require Import List. Import ListNotations.
+Require Import ZArith.
+Local Open Scope Z_scope.
+Require Import Integers.
+Require Import VST.floyd.proofauto.
+Require Import aes.sbox.
+Require Import aes.GF_ops_LL.
+Require Import aes.list_utils.
 
+Definition rot8(i: int): int := 
+  Int.or (Int.and (Int.shl i (Int.repr 8)) (Int.repr (-1))) (Int.shru i (Int.repr 24)).
+
+Definition rotl1(b: int): int :=
+  Int.and (Int.or (Int.shl b (Int.repr 1)) (Int.shr b (Int.repr 7))) (Int.repr 255).
+
+Definition FSb := map Int.repr sbox.
+Definition RSb := map Int.repr inv_sbox.
+
+Definition calc_FT0(i: Z): int :=
+  (Int.xor (Int.xor (Int.xor 
+     (times2 (Znth i FSb)) 
+     (Int.shl (Znth i FSb) (Int.repr 8)))
+     (Int.shl (Znth i FSb) (Int.repr 16)))
+     (Int.shl (Int.and (Int.xor (times2 (Znth i FSb)) (Znth i FSb))
+                       (Int.repr 255))
+              (Int.repr 24))).
+Definition calc_FT1(i: Z): int := rot8 (calc_FT0 i).
+Definition calc_FT2(i: Z): int := rot8 (calc_FT1 i).
+Definition calc_FT3(i: Z): int := rot8 (calc_FT2 i).
+Definition calc_RT0(i: Z): int :=
+  Int.xor (Int.xor (Int.xor
+           (mul (Int.repr 14) (Int.repr (Int.unsigned (Znth i RSb))))
+  (Int.shl (mul (Int.repr  9) (Int.repr (Int.unsigned (Znth i RSb)))) (Int.repr  8)))
+  (Int.shl (mul (Int.repr 13) (Int.repr (Int.unsigned (Znth i RSb)))) (Int.repr 16)))
+  (Int.shl (mul (Int.repr 11) (Int.repr (Int.unsigned (Znth i RSb)))) (Int.repr 24)).
+Definition calc_RT1(i: Z): int := rot8 (calc_RT0 i).
+Definition calc_RT2(i: Z): int := rot8 (calc_RT1 i).
+Definition calc_RT3(i: Z): int := rot8 (calc_RT2 i).
+
+Global Opaque calc_FT0 calc_FT1 calc_FT2 calc_FT2 calc_RT0 calc_RT1 calc_RT2 calc_RT3.
+
+Definition FT0 := fill_list 256 calc_FT0.
+Definition FT1 := fill_list 256 calc_FT1.
+Definition FT2 := fill_list 256 calc_FT2.
+Definition FT3 := fill_list 256 calc_FT3.
+Definition RT0 := fill_list 256 calc_RT0.
+Definition RT1 := fill_list 256 calc_RT1.
+Definition RT2 := fill_list 256 calc_RT2.
+Definition RT3 := fill_list 256 calc_RT3.
+Definition RCON := repeat_op_table 10 Int.one times2.
+
+Global Opaque FSb FT0 FT1 FT2 FT3 RSb RT0 RT1 RT2 RT3 RCON.
+
+Definition calc_FSb_nonzero(i: Z): int :=
+  let x := pow3 (255 - log3 (Int.repr i)) in
+  (Int.xor (Int.xor (Int.xor (Int.xor        x 
+                                      (rotl1 x))
+                               (rotl1 (rotl1 x)))
+                        (rotl1 (rotl1 (rotl1 x))))
+        (Int.xor (rotl1 (rotl1 (rotl1 (rotl1 x)))) (Int.repr 99))).
+
+Lemma FSb_equiv: forall i,
+  1 <= i < 256 ->
+  calc_FSb_nonzero i = Znth i FSb. *)
 Local Open Scope Z.
 
-
-
 Definition mbed_tls_fround_col (col0 col1 col2 col3 : int) (rk : Z) : int :=
-
   (Int.xor (Int.xor (Int.xor (Int.xor (Int.repr rk)
-
     (Znth (byte0 col0) FT0))
-
     (Znth (byte1 col1) FT1))
-
     (Znth (byte2 col2) FT2))
-
     (Znth (byte3 col3) FT3)).
 
-
-
 Definition mbed_tls_final_fround_col (col0 col1 col2 col3 : int) (rk : Z) : int :=
-
   (Int.xor (Int.xor (Int.xor (Int.xor (Int.repr rk)
-
              (Znth (byte0 col0) FSb)              )
-
     (Int.shl (Znth (byte1 col1) FSb) (Int.repr 8)))
-
     (Int.shl (Znth (byte2 col2) FSb) (Int.repr 16)))
-
     (Int.shl (Znth (byte3 col3) FSb) (Int.repr 24))).
-
-
 
 Definition four_ints := (int * (int * (int * int)))%type.
 
-
-
 Definition col (i : Z) (s : four_ints) : int := match i with
-
 | 0 => fst s
-
 | 1 => fst (snd s)
-
 | 2 => fst (snd (snd s))
-
 | 3 => snd (snd (snd s))
-
 | _ => Int.zero 
-
 end.
-
-
 
 Lemma split_four_ints: forall (S: four_ints),
-
   S = (col 0 S, (col 1 S, (col 2 S, col 3 S))).
-
 Proof.
-
   intros. destruct S as [c1 [c2 [c3 c4]]]. reflexivity.
-
 Qed.
-
-
 
 Lemma split_four_ints_eq: forall S c0 c1 c2 c3,
-
   S = (c0, (c1, (c2, c3))) -> c0 = col 0 S /\ c1 = col 1 S /\ c2 = col 2 S /\ c3 = col 3 S.
-
 Proof.
-
   intros. destruct S as [d0 [d1 [d2 d3]]]. inversion H. auto.
-
 Qed.
 
-
-
 Definition mbed_tls_initial_add_round_key_col (col_id : Z) (plaintext : list Z) (rks : list Z) :=
-
   Int.xor (get_uint32_le plaintext (col_id * 4)) (Int.repr (Znth col_id rks)).
 
-
-
 Definition mbed_tls_fround (cols : four_ints) (rks : list Z) (i : Z) : four_ints :=
-
 match cols with (col0, (col1, (col2, col3))) =>
-
   ((mbed_tls_fround_col col0 col1 col2 col3 (Znth  i    rks)),
-
   ((mbed_tls_fround_col col1 col2 col3 col0 (Znth (i+1) rks)),
-
   ((mbed_tls_fround_col col2 col3 col0 col1 (Znth (i+2) rks)),
-
    (mbed_tls_fround_col col3 col0 col1 col2 (Znth (i+3) rks)))))
-
 end.
-
-
 
 Definition mbed_tls_final_fround (cols : four_ints) (rks : list Z) (i : Z) : four_ints :=
-
 match cols with (col0, (col1, (col2, col3))) =>
-
   ((mbed_tls_final_fround_col col0 col1 col2 col3 (Znth  i    rks)),
-
   ((mbed_tls_final_fround_col col1 col2 col3 col0 (Znth (i+1) rks)),
-
   ((mbed_tls_final_fround_col col2 col3 col0 col1 (Znth (i+2) rks)),
-
    (mbed_tls_final_fround_col col3 col0 col1 col2 (Znth (i+3) rks)))))
-
 end.
-
-
 
 Fixpoint mbed_tls_enc_rounds (n : nat) (state : four_ints) (rks : list Z) (i : Z) : four_ints :=
-
 match n with
-
 | O => state
-
 | S m => mbed_tls_fround (mbed_tls_enc_rounds m state rks i) rks (i+4*Z.of_nat m)
-
 end.
 
-
-
 Definition mbed_tls_initial_add_round_key (plaintext : list Z) (rks : list Z) : four_ints :=
-
 ((mbed_tls_initial_add_round_key_col 0 plaintext rks),
-
 ((mbed_tls_initial_add_round_key_col 1 plaintext rks),
-
 ((mbed_tls_initial_add_round_key_col 2 plaintext rks),
-
 ((mbed_tls_initial_add_round_key_col 3 plaintext rks))))).
 
-
-
 Definition output_four_ints_as_bytes (s : four_ints) :=
-
   (put_uint32_le (col 0 s)) ++
-
   (put_uint32_le (col 1 s)) ++
-
   (put_uint32_le (col 2 s)) ++
-
   (put_uint32_le (col 3 s)).
 
-
-
 Definition mbed_tls_aes_enc (plaintext : list Z) (rks : list Z) : list int :=
-
   let state0  := mbed_tls_initial_add_round_key plaintext rks in
-
   let state13 := mbed_tls_enc_rounds 13 state0 rks 4 in
-
   let state14 := mbed_tls_final_fround state13 rks 56 in
-
   output_four_ints_as_bytes state14.
-

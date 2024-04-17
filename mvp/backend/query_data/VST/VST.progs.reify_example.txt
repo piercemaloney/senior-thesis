@@ -1,4253 +1,750 @@
 Require Import MirrorShard.SepExpr.
-
 Require Import VST.veric.SeparationLogic.
-(* VST.veric.SeparationLogic:
-Require Import VST.veric.Clight_base.
-Require Export compcert.lib.Axioms.
-Require Import compcert.lib.Coqlib.
-Require Export compcert.lib.Integers.
-Require Export compcert.lib.Floats.
-Require Export compcert.lib.Maps.
-Require Export compcert.common.AST.
-Require Export compcert.common.Values.
-Require Export compcert.cfrontend.Ctypes.
-Require Export compcert.cfrontend.Clight.
-Require Export VST.sepcomp.Address.
-Require Export VST.msl.eq_dec.
-Require Export VST.msl.shares.
-Require Export VST.msl.predicates_rec.
-Require Export VST.msl.contractive.
-Require Export VST.msl.seplog.
-Require Export VST.msl.ghost_seplog.
-Require Export VST.msl.alg_seplog.
-Require Export VST.msl.log_normalize.
-Require Export VST.msl.wand_frame.
-Require Export VST.msl.wandQ_frame.
-Require Export VST.msl.ramification_lemmas.
-Require Export VST.veric.tycontext.
-Require Export VST.veric.change_compspecs.
-Require Export VST.veric.mpred.
-Require Export VST.veric.expr.
-Require Export VST.veric.expr_rel.
-Require Export VST.veric.Clight_lemmas.
-Require Export VST.veric.composite_compute.
-Require Export VST.veric.align_mem.
-Require Export VST.veric.shares.
-
-Require VST.veric.Clight_seplog.
-Require VST.veric.Clight_assert_lemmas.
-Require Import VST.msl.Coqlib2.
-Require Import VST.veric.juicy_extspec.
-Require Import VST.veric.valid_pointer.
-Require Import VST.veric.own.
-Require VST.veric.semax_prog.
-Require VST.veric.semax_ext.
-
-Instance Nveric: NatDed mpred := algNatDed compcert_rmaps.RML.R.rmap.
-Instance Sveric: SepLog mpred := algSepLog compcert_rmaps.RML.R.rmap.
-Instance Cveric: ClassicalSep mpred := algClassicalSep compcert_rmaps.RML.R.rmap.
-Instance Iveric: Indir mpred := algIndir compcert_rmaps.RML.R.rmap.
-Instance Rveric: RecIndir mpred := algRecIndir compcert_rmaps.RML.R.rmap.
-Instance SIveric: SepIndir mpred := algSepIndir compcert_rmaps.RML.R.rmap.
-Instance CSLveric: CorableSepLog mpred := algCorableSepLog compcert_rmaps.RML.R.rmap.
-Instance CIveric: CorableIndir mpred := algCorableIndir compcert_rmaps.RML.R.rmap.
-Instance SRveric: SepRec mpred := algSepRec compcert_rmaps.RML.R.rmap.
-Instance Bveric: BupdSepLog mpred gname compcert_rmaps.RML.R.preds :=
-  mkBSL _ _ _ _ _ bupd (@own) bupd_intro bupd_mono bupd_trans bupd_frame_r
-    (@ghost_alloc) (@ghost_op) (@ghost_valid_2) (@ghost_update_ND) (@ghost_dealloc).
-
-Instance LiftNatDed' T {ND: NatDed T}: NatDed (LiftEnviron T) := LiftNatDed _ _.
-Instance LiftSepLog' T {ND: NatDed T}{SL: SepLog T}: SepLog (LiftEnviron T) := LiftSepLog _ _.
-Instance LiftClassicalSep' T {ND: NatDed T}{SL: SepLog T}{CS: ClassicalSep T} :
-           ClassicalSep (LiftEnviron T) := LiftClassicalSep _ _.
-Instance LiftIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T} :
-           Indir (LiftEnviron T) := LiftIndir _ _.
-Instance LiftSepIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T}{SI: SepIndir T} :
-           SepIndir (LiftEnviron T) := LiftSepIndir _ _.
-Instance LiftCorableSepLog' T {ND: NatDed T}{SL: SepLog T}{CSL: CorableSepLog T} :
-           CorableSepLog (LiftEnviron T) := LiftCorableSepLog _ _.
-Instance LiftCorableIndir' T {ND: NatDed T}{SL: SepLog T}{IT: Indir T}{SI: SepIndir T}{CSL: CorableSepLog T}{CI: CorableIndir T} :
-           CorableIndir (LiftEnviron T) := LiftCorableIndir _ _.
-
-Definition local:  (environ -> Prop) -> environ->mpred :=  lift1 prop.
-
-Global Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
-
-Hint Resolve any_environ : typeclass_instances.
-
-Local Open Scope logic.
-
-Transparent mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
-
-Definition denote_tc_iszero v : mpred :=
-         match v with
-         | Vint i => prop (is_true (Int.eq i Int.zero))
-         | Vlong i => prop (is_true (Int64.eq i Int64.zero))
-         | _ => FF
-         end.
-
-Definition denote_tc_nonzero v : mpred :=
-         match v with
-         | Vint i => prop (i <> Int.zero)
-         | Vlong i =>prop (i <> Int64.zero)
-         | _ => FF end.
-
-Definition denote_tc_igt i v : mpred :=
-     match v with
-     | Vint i1 => prop (Int.unsigned i1 < Int.unsigned i)
-     | _ => FF
-     end.
-
-Definition denote_tc_lgt l v : mpred :=
-     match v with
-     | Vlong l1 => prop (Int64.unsigned l1 < Int64.unsigned l)
-     | _ => FF
-     end.
-
-Definition Zoffloat (f:float): option Z := 
-  match f with
-    | Fappli_IEEE.B754_finite s m (Zpos e) _ =>
-       Some (Fcore_Zaux.cond_Zopp s (Zpos m) * Zpower_pos 2 e)%Z
-    | Fappli_IEEE.B754_finite s m 0 _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m))
-    | Fappli_IEEE.B754_finite s m (Zneg e) _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m / Zpower_pos 2 e))
-    | Fappli_IEEE.B754_zero _ => Some 0
-    | _ => None
-  end.  
-
-Definition Zofsingle (f: float32): option Z := 
-  match f with
-    | Fappli_IEEE.B754_finite s m (Zpos e) _ =>
-       Some (Fcore_Zaux.cond_Zopp s (Zpos m) * Zpower_pos 2 e)%Z
-    | Fappli_IEEE.B754_finite s m 0 _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m))
-    | Fappli_IEEE.B754_finite s m (Zneg e) _ => Some (Fcore_Zaux.cond_Zopp s (Zpos m / Zpower_pos 2 e))
-    | Fappli_IEEE.B754_zero _ => Some 0
-    | _ => None
-  end.  
-
-Definition denote_tc_Zge z v : mpred :=
-          match v with
-                     | Vfloat f => match Zoffloat f with
-                                    | Some n => prop (z >= n)
-                                    | None => FF
-                                   end
-                     | Vsingle f => match Zofsingle f with
-                                    | Some n => prop (z >= n)
-                                    | None => FF
-                                   end
-                     | _ => FF
-                  end.
-
-Definition denote_tc_Zle z v : mpred :=
-          match v with
-                     | Vfloat f => match Zoffloat f with
-                                    | Some n => prop (z <= n)
-                                    | None => FF
-                                   end
-                     | Vsingle f => match Zofsingle f with
-                                    | Some n => prop (z <= n)
-                                    | None => FF
-                                   end
-                     | _ => FF
-                  end.
-
-Definition sameblock v1 v2 : bool :=
-         match v1, v2 with
-          | Vptr b1 _, Vptr b2 _ => peq b1 b2
-          | _, _ => false
-         end.
-
-Definition denote_tc_samebase v1 v2 : mpred :=
-       prop (is_true (sameblock v1 v2)).
-
-Definition denote_tc_nodivover v1 v2 : mpred :=
-match v1, v2 with
-          | Vint n1, Vint n2 => prop (~(n1 = Int.repr Int.min_signed /\ n2 = Int.mone))
-          | Vlong n1, Vlong n2 => prop (~(n1 = Int64.repr Int64.min_signed /\ n2 = Int64.mone))
-          | Vint n1, Vlong n2 => TT
-          | Vlong n1, Vint n2 => prop (~ (n1 = Int64.repr Int64.min_signed  /\ n2 = Int.mone))
-          | _ , _ => FF
-        end.
-
-Definition denote_tc_nosignedover (op: Z->Z->Z) v1 v2 : mpred :=
- match v1,v2 with
- | Vint n1, Vint n2 => 
-   prop (Int.min_signed <= op (Int.signed n1) (Int.signed n2) <= Int.max_signed)
- | Vlong n1, Vlong n2 =>
-   prop (Int64.min_signed <= op (Int64.signed n1) (Int64.signed n2) <= Int64.max_signed)
- | Vint n1, Vlong n2 =>
-   prop (Int64.min_signed <= op (Int.signed n1) (Int64.signed n2) <= Int64.max_signed)
- | Vlong n1, Vint n2 =>
-   prop (Int64.min_signed <= op (Int64.signed n1) (Int.signed n2) <= Int64.max_signed)
- | _, _ => FF
- end.
-
-Definition denote_tc_initialized id ty rho : mpred :=
-    prop (exists v, Map.get (te_of rho) id = Some v
-               /\ tc_val ty v).
-
-Definition denote_tc_isptr v : mpred :=
-  prop (isptr v).
-
-Definition denote_tc_isint v : mpred :=
-  prop (is_int I32 Signed v).
-
-Definition denote_tc_islong v : mpred :=
-  prop (is_long v).
-
-Definition test_eq_ptrs v1 v2 : mpred :=
-  if sameblock v1 v2
-  then (andp (weak_valid_pointer v1) (weak_valid_pointer v2))
-  else (andp (valid_pointer v1) (valid_pointer v2)).
-
-Definition test_order_ptrs v1 v2 : mpred :=
-  if sameblock v1 v2
-  then (andp (weak_valid_pointer v1) (weak_valid_pointer v2))
-  else FF.
-
-Definition denote_tc_test_eq v1 v2 : mpred :=
- match v1, v2 with
- | Vint i, Vint j => 
-     if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (prop (j = Int.zero))
- | Vlong i, Vlong j => 
-     if Archi.ptr64 then andp (prop (i = Int64.zero)) (prop (j = Int64.zero)) else FF
- | Vint i, Vptr _ _ =>
-      if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (weak_valid_pointer v2)
- | Vlong i, Vptr _ _ =>
-      if Archi.ptr64 then andp (prop (i = Int64.zero)) (weak_valid_pointer v2) else FF
- | Vptr _ _, Vint i =>
-      if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (weak_valid_pointer v1)
- | Vptr _ _, Vlong i =>
-      if Archi.ptr64 then andp (prop (i = Int64.zero)) (weak_valid_pointer v1) else FF
- | Vptr _ _, Vptr _ _ =>
-      test_eq_ptrs v1 v2
- | _, _ => FF
- end.
-
-Definition denote_tc_test_order v1 v2 : mpred :=
- match v1, v2 with
- | Vint i, Vint j => if Archi.ptr64 then FF else andp (prop (i = Int.zero)) (prop (j = Int.zero))
- | Vlong i, Vlong j => if Archi.ptr64 then andp (prop (i = Int64.zero)) (prop (j = Int64.zero)) else FF
- | Vptr _ _, Vptr _ _ =>
-      test_order_ptrs v1 v2
- | _, _ => FF
- end.
-
-Definition typecheck_error (e: tc_error) : Prop := False.
-Global Opaque typecheck_error.
-
-Definition fool := @map _ Type (fun it : ident * type => mpred).
-
-Fixpoint denote_tc_assert {CS: compspecs} (a: tc_assert) : environ -> mpred :=
-  match a with
-  | tc_FF msg => `(prop (typecheck_error msg))
-  | tc_TT => TT
-  | tc_andp' b c => fun rho => andp (denote_tc_assert b rho) (denote_tc_assert c rho)
-  | tc_orp' b c => `orp (denote_tc_assert b) (denote_tc_assert c)
-  | tc_nonzero' e => `denote_tc_nonzero (eval_expr e)
-  | tc_isptr e => `denote_tc_isptr (eval_expr e)
-  | tc_isint e => `denote_tc_isint (eval_expr e)
-  | tc_islong e => `denote_tc_islong (eval_expr e)
-  | tc_test_eq' e1 e2 => `denote_tc_test_eq (eval_expr e1) (eval_expr e2)
-  | tc_test_order' e1 e2 => `denote_tc_test_order (eval_expr e1) (eval_expr e2)
-  | tc_ilt' e i => `(denote_tc_igt i) (eval_expr e)
-  | tc_llt' e i => `(denote_tc_lgt i) (eval_expr e)
-  | tc_Zle e z => `(denote_tc_Zge z) (eval_expr e)
-  | tc_Zge e z => `(denote_tc_Zle z) (eval_expr e)
-  | tc_samebase e1 e2 => `denote_tc_samebase (eval_expr e1) (eval_expr e2)
-  | tc_nodivover' v1 v2 => `denote_tc_nodivover (eval_expr v1) (eval_expr v2)
-  | tc_initialized id ty => denote_tc_initialized id ty
-  | tc_iszero' e => `denote_tc_iszero (eval_expr e)
-  | tc_nosignedover op e1 e2 => `(denote_tc_nosignedover op) (eval_expr e1) (eval_expr e2)
- end.
-
-Definition fool' := @map _ Type (fun it : ident * type => mpred).
-
-Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric CSLveric CIveric SRveric Bveric.
-
-Definition cast_pointer_to_bool t1 t2 :=
- match t1 with (Tpointer _ _ | Tarray _ _ _ | Tfunction _ _ _) => 
-           match t2 with Tint IBool _ _ => true | _ => false end
- | _ => false
-end.
-
-Fixpoint ext_link_prog' (dl: list (ident * globdef fundef type)) (s: String.string) : option ident :=
- match dl with
- | (id, Gfun (External EF_malloc _ _ _)) :: dl' =>
-      if String.string_dec s "_malloc" then Some id else ext_link_prog' dl' s
- | (id, Gfun (External EF_free _ _ _)) :: dl' =>
-      if String.string_dec s "_free" then Some id else ext_link_prog' dl' s
- | (id, Gfun (External (EF_external s' _) _ _ _)) :: dl' =>
-      if String.string_dec s s' then Some id else ext_link_prog' dl' s
- | (id, Gfun (External (EF_builtin s' _) _ _ _)) :: dl' =>
-      if String.string_dec s s' then Some id else ext_link_prog' dl' s
- | _ :: dl' =>
-     ext_link_prog' dl' s
- | nil => None
- end.
-
-Definition ext_link_prog (p: program) (s: String.string) : ident :=
-  match ext_link_prog' (prog_defs p) s with Some id => id | None => 1%positive end.
-
-Definition closed_wrt_vars {B} (S: ident -> Prop) (F: environ -> B) : Prop :=
-  forall rho te',
-     (forall i, S i \/ Map.get (te_of rho) i = Map.get te' i) ->
-     F rho = F (mkEnviron (ge_of rho) (ve_of rho) te').
-
-Definition closed_wrt_lvars {B} (S: ident -> Prop) (F: environ -> B) : Prop :=
-  forall rho ve',
-     (forall i, S i \/ Map.get (ve_of rho) i = Map.get ve' i) ->
-     F rho = F (mkEnviron (ge_of rho) ve' (te_of rho)).
-
-Definition not_a_param (params: list (ident * type)) (i : ident) : Prop :=
-  ~ In i (map (@fst _ _) params).
-
-Definition is_a_local (vars: list (ident * type)) (i: ident) : Prop :=
-  In  i (map (@fst _ _) vars) .
-
-Definition precondition_closed (f: function) {A: rmaps.TypeTree}
-  (P: forall ts, functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts (AssertTT A)) mpred) : Prop :=
- forall ts x,
-  closed_wrt_vars (not_a_param (fn_params f)) (P ts x) /\
-  closed_wrt_lvars (is_a_local (fn_vars f)) (P ts x).
-
-Definition typed_true (t: type) (v: val)  : Prop :=  strict_bool_val v t
-= Some true.
-
-Definition typed_false (t: type)(v: val) : Prop :=  strict_bool_val v t =
-Some false.
-
-Definition subst {A} (x: ident) (v: environ -> val) (P: environ -> A) : environ -> A :=
-   fun s => P (env_set s x (v s)).
-
-Definition substopt {A} (ret: option ident) (v: environ -> val) (P: environ -> A)  : environ -> A :=
-   match ret with
-   | Some id => subst id v P
-   | None => P
-   end.
-
-Definition cast_expropt {CS: compspecs} (e: option expr) t : environ -> option val :=
- match e with Some e' => `Some (eval_expr (Ecast e' t))  | None => `None end.
-
-Definition typecheck_tid_ptr_compare
-Delta id :=
-match (temp_types Delta) ! id with
-| Some t => is_int_type t
-| None => false
-end.
-
-Definition mapsto (sh: Share.t) (t: type) (v1 v2 : val): mpred :=
-  match access_mode t with
-  | By_value ch =>
-   match type_is_volatile t with
-   | false =>
-    match v1 with
-     | Vptr b ofs =>
-       if readable_share_dec sh
-       then (!!tc_val t v2 &&
-             res_predicates.address_mapsto ch v2 sh (b, Ptrofs.unsigned ofs)) ||
-            (!! (v2 = Vundef) &&
-             EX v2':val, res_predicates.address_mapsto ch v2' sh (b, Ptrofs.unsigned ofs))
-       else !! (tc_val' t v2 /\ (Memdata.align_chunk ch | Ptrofs.unsigned ofs)) && res_predicates.nonlock_permission_bytes sh (b, Ptrofs.unsigned ofs) (Memdata.size_chunk ch)
-     | _ => FF
-    end
-    | _ => FF
-    end
-  | _ => FF
-  end.
-
-Definition mapsto_ sh t v1 := mapsto sh t v1 Vundef.
-
-Definition mapsto_zeros (n: Z) (sh: share) (a: val) : mpred :=
- match a with
-  | Vptr b z => 
-    !! (0 <= Ptrofs.unsigned z  /\ n + Ptrofs.unsigned z < Ptrofs.modulus)%Z &&
-    mapsto_memory_block.address_mapsto_zeros sh (nat_of_Z n) (b, Ptrofs.unsigned z)
-  | _ => FF
-  end.
-
-Definition init_data2pred (d: init_data)  (sh: share) (a: val) (rho: environ) : mpred :=
- match d with
-  | Init_int8 i => mapsto sh (Tint I8 Unsigned noattr) a (Vint (Int.zero_ext 8 i))
-  | Init_int16 i => mapsto sh (Tint I16 Unsigned noattr) a (Vint (Int.zero_ext 16 i))
-  | Init_int32 i => mapsto sh (Tint I32 Unsigned noattr) a (Vint i)
-  | Init_int64 i => mapsto sh (Tlong Unsigned noattr) a (Vlong i)
-  | Init_float32 r =>  mapsto sh (Tfloat F32 noattr) a (Vsingle r)
-  | Init_float64 r =>  mapsto sh (Tfloat F64 noattr) a (Vfloat r)
-  | Init_space n => mapsto_zeros n sh a
-  | Init_addrof symb ofs =>
-       match Map.get (ge_of rho) symb with
-       | Some b => mapsto sh (Tpointer Tvoid noattr) a (Vptr b ofs)
-       | _ => mapsto_ sh (Tpointer Tvoid noattr) a
-       end
- end.
-
-Definition init_data_size (i: init_data) : Z :=
-  match i with
-  | Init_int8 _ => 1
-  | Init_int16 _ => 2
-  | Init_int32 _ => 4
-  | Init_int64 _ => 8
-  | Init_float32 _ => 4
-  | Init_float64 _ => 8
-  | Init_addrof _ _ => if Archi.ptr64 then 8 else 4
-  | Init_space n => Z.max n 0
-  end.
-
-Fixpoint init_data_list_size (il: list init_data) {struct il} : Z :=
-  match il with
-  | nil => 0
-  | i :: il' => init_data_size i + init_data_list_size il'
-  end.
-
-Fixpoint init_data_list2pred  (dl: list init_data)
-                           (sh: share) (v: val)  : environ -> mpred :=
-  match dl with
-  | d::dl' => 
-      sepcon (init_data2pred d sh v) 
-                  (init_data_list2pred dl' sh (offset_val (init_data_size d) v))
-  | nil => emp
- end.
-
-Definition readonly2share (rdonly: bool) : share :=
-  if rdonly then Ers else Ews.
-
-Definition globals := ident -> val.
-
-Definition globvar2pred (gv: globals) (idv: ident * globvar type) : environ->mpred :=
-   if (gvar_volatile (snd idv))
-                       then  lift0 TT
-                       else    init_data_list2pred (gvar_init (snd idv))
-                                   (readonly2share (gvar_readonly (snd idv))) (gv (fst idv)).
-
-Definition globals_of_env (rho: environ) (i: ident) : val := 
-  match Map.get (ge_of rho) i with Some b => Vptr b Ptrofs.zero | None => Vundef end.
-
-Definition globvars2pred  (gv: globals)  (vl: list (ident * globvar type)) : environ->mpred :=
-  (lift2 andp) (fun rho => prop (gv = globals_of_env rho))
-  (fold_right sepcon emp (map (globvar2pred gv) vl)).
-
-Definition initializer_aligned (z: Z) (d: init_data) : bool :=
-  match d with
-  | Init_int16 n => Zeq_bool (z mod 2) 0
-  | Init_int32 n => Zeq_bool (z mod 4) 0
-  | Init_int64 n => Zeq_bool (z mod 8) 0
-  | Init_float32 n =>  Zeq_bool (z mod 4) 0
-  | Init_float64 n =>  Zeq_bool (z mod 8) 0
-  | Init_addrof symb ofs =>  Zeq_bool (z mod (size_chunk Mptr)) 0
-  | _ => true
-  end.
-
-Fixpoint initializers_aligned (z: Z) (dl: list init_data) : bool :=
-  match dl with
-  | nil => true
-  | d::dl' => andb (initializer_aligned z d) (initializers_aligned (z + init_data_size d) dl')
-  end.
-
-Definition funsig := (list (ident*type) * type)%type. 
-
-Definition memory_block (sh: share) (n: Z) (v: val) : mpred :=
- match v with
- | Vptr b ofs => (!! (Ptrofs.unsigned ofs + n < Ptrofs.modulus)) && mapsto_memory_block.memory_block' sh (nat_of_Z n) b (Ptrofs.unsigned ofs)
- | _ => FF
- end.
-
-Lemma memory_block_zero_Vptr: forall sh b z, memory_block sh 0 (Vptr b z) = emp.
-
-Lemma mapsto_mapsto_: forall sh t v v', mapsto sh t v v' |-- mapsto_ sh t v.
-
-Lemma mapsto_tc_val': forall sh t p v, mapsto sh t p v |-- !! tc_val' t v.
-
-Lemma memory_block_split:
-  forall (sh : share) (b : block) (ofs n m : Z),
-  0 <= n ->
-  0 <= m ->
-  n + m <= n + m + ofs < Ptrofs.modulus ->
-
-Lemma mapsto_share_join:
- forall sh1 sh2 sh t p v,
-   sepalg.join sh1 sh2 sh ->
-
-Lemma memory_block_share_join:
-  forall sh1 sh2 sh n p,
-   sepalg.join sh1 sh2 sh ->
-
-Lemma mapsto_conflict:
-  forall sh t v v2 v3,
-  sepalg.nonunit sh ->
-
-Lemma memory_block_conflict: forall sh n m p,
-  sepalg.nonunit sh ->
-
-Definition align_compatible {C: compspecs} t p :=
-  match p with
-  | Vptr b i_ofs => align_compatible_rec cenv_cs t (Ptrofs.unsigned i_ofs)
-  | _ => True
-  end.
-
-Definition size_compatible {C: compspecs} t p :=
-  match p with
-  | Vptr b i_ofs => Ptrofs.unsigned i_ofs + sizeof t < Ptrofs.modulus
-  | _ => True
-  end.
-
-Lemma mapsto_valid_pointer: forall {cs: compspecs} sh t p v i,
-  size_compatible t p ->
-  0 <= i < sizeof t ->
-  sepalg.nonidentity sh ->
-
-Lemma memory_block_valid_pointer: forall {cs: compspecs} sh n p i,
-  0 <= i < n ->
-  sepalg.nonidentity sh ->
-
-Lemma memory_block_weak_valid_pointer: forall {cs: compspecs} sh n p i,
-  0 <= i <= n -> 0 < n -> sepalg.nonidentity sh ->
-
-Lemma mapsto_zeros_memory_block: forall sh n p,
-  readable_share sh ->
-  mapsto_zeros n sh p |--
-  memory_block sh n p.
-
-Lemma mapsto_pointer_void:
-  forall sh t a, 
-    eqb_type (Tpointer t a) int_or_ptr_type = false ->
-    eqb_type (Tpointer Tvoid a) int_or_ptr_type = false ->
-    mapsto sh (Tpointer t a) = mapsto sh (Tpointer Tvoid a).
-
-Lemma mapsto_unsigned_signed:
- forall sign1 sign2 sh sz v i,
-  mapsto sh (Tint sz sign1 noattr) v (Vint (Cop.cast_int_int sz sign1 i)) =
-
-Lemma mapsto_tuint_tint:
-  forall sh, mapsto sh tuint = mapsto sh tint.
-
-Lemma mapsto_tuint_tptr_nullval:
-  forall sh p t, 
-  mapsto sh (Tpointer t noattr) p nullval = mapsto sh size_t p nullval.
-
-Lemma mapsto_size_t_tptr_nullval:
-  forall sh p t, mapsto sh (Tpointer t noattr) p nullval = mapsto sh size_t p nullval.
-
-Definition is_int32_noattr_type t :=
- match t with
- | Tint I32 _ {| attr_volatile := false; attr_alignas := None |} => True
- | _ => False
- end.
-
-Lemma mapsto_mapsto_int32:
-  forall sh t1 t2 p v,
-   is_int32_noattr_type t1 ->
-   is_int32_noattr_type t2 ->
-   mapsto sh t1 p v |-- mapsto sh t2 p v.
-
-Lemma mapsto_mapsto__int32:
-  forall sh t1 t2 p v,
-   is_int32_noattr_type t1 ->
-   is_int32_noattr_type t2 ->
-   mapsto sh t1 p v |-- mapsto_ sh t2 p.
-
-Lemma mapsto_null_mapsto_pointer:
-  forall t sh v,
-       Archi.ptr64 = false ->
-
-Definition eval_lvar (id: ident) (ty: type) (rho: environ) :=
- match Map.get (ve_of rho) id with
-| Some (b, ty') => if eqb_type ty ty' then Vptr b Ptrofs.zero else Vundef
-| None => Vundef
-end.
-
-Definition var_block (sh: Share.t) {cs: compspecs} (idt: ident * type) : environ -> mpred :=
-  !! (sizeof (snd idt) <= Ptrofs.max_unsigned) &&
-  `(memory_block sh (sizeof (snd idt)))
-             (eval_lvar (fst idt) (snd idt)).
-
-Definition stackframe_of {cs: compspecs} (f: Clight.function) : environ->mpred :=
-  fold_right sepcon emp (map (var_block Tsh) (fn_vars f)).
-
-Lemma  subst_derives {A}{NA: NatDed A}:
- forall a v (P Q: environ -> A), P |-- Q -> subst a v P |-- subst a v Q.
-
-Definition func_ptr (f: funspec) (v: val): mpred :=
-  EX b: block, !! (v = Vptr b Ptrofs.zero) && seplog.func_at f (b, 0).
-
-Lemma corable_func_ptr: forall f v, corable (func_ptr f v).
-
-Lemma func_ptr_isptr: forall spec f, func_ptr spec f |-- !! isptr f.
-
-Definition NDmk_funspec (f: funsig) (cc: calling_convention)
-  (A: Type) (Pre Post: A -> environ -> mpred): funspec :=
-  mk_funspec f cc (rmaps.ConstType A) (fun _ => Pre) (fun _ => Post)
-    (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Lemma approx_func_ptr: forall (A: Type) fsig0 cc (P Q: A -> environ -> mpred) (v: val) (n: nat),
-  compcert_rmaps.RML.R.approx n (func_ptr (NDmk_funspec fsig0 cc A P Q) v) = compcert_rmaps.RML.R.approx n (func_ptr (NDmk_funspec fsig0 cc A (fun a rho => compcert_rmaps.RML.R.approx n (P a rho)) (fun a rho => compcert_rmaps.RML.R.approx n (Q a rho))) v).
-
-Definition allp_fun_id (Delta : tycontext): environ -> mpred :=
-(ALL id : ident ,
- (ALL fs : funspec ,
-  !! ((glob_specs Delta) ! id = Some fs) -->
-  (EX b : block, local (`eq (fun rho => Map.get (ge_of rho) id) `(Some b)) && `(seplog.func_at fs (b, 0))))).
-
-Lemma corable_allp_fun_id: forall Delta rho,
-  corable (allp_fun_id Delta rho).
-
-Definition type_of_funsig (fsig: funsig) :=
-   Tfunction (type_of_params (fst fsig)) (snd fsig) cc_default.
-Definition fn_funsig (f: function) : funsig := (fn_params f, fn_return f).
-
-Definition tc_fn_return (Delta: tycontext) (ret: option ident) (t: type) :=
- match ret with
- | None => True
- | Some i => match (temp_types Delta) ! i with Some t' => t=t' | _ => False end
- end.
-
-Definition globals_only (rho: environ) : environ :=
-    mkEnviron (ge_of rho) (Map.empty _) (Map.empty _).
-
-Fixpoint make_args (il: list ident) (vl: list val) (rho: environ)  :=
-  match il, vl with
-  | nil, nil => globals_only rho
-  | i::il', v::vl' => env_set (make_args il' vl' rho) i v
-   | _ , _ => rho
- end.
-Definition make_args' (fsig: funsig) args rho :=
-   make_args (map (@fst _ _) (fst fsig)) (args rho) rho.
-
-Definition ret_temp : ident := 1%positive.
-
-Definition get_result1 (ret: ident) (rho: environ) : environ :=
-   make_args (ret_temp::nil) (eval_id ret rho :: nil) rho.
-
-Definition get_result (ret: option ident) : environ -> environ :=
- match ret with
- | None => make_args nil nil
- | Some x => get_result1 x
- end.
-
-Definition maybe_retval (Q: environ -> mpred) retty ret :=
- match ret with
- | Some id => fun rho => Q (get_result1 id rho)
- | None =>
-    match retty with
-    | Tvoid => (fun rho => Q (globals_only rho))
-    | _ => fun rho => EX v: val, Q (make_args (ret_temp::nil) (v::nil) rho)
-    end
- end.
-
-Definition bind_ret (vl: option val) (t: type) (Q: environ -> mpred) : environ -> mpred :=
-     match vl, t with
-     | None, Tvoid =>`Q (make_args nil nil)
-     | Some v, _ => @andp (environ->mpred) _ (!! tc_val t v)
-                             (`Q (make_args (ret_temp::nil) (v::nil)))
-     | _, _ => FF
-     end.
-
-Definition overridePost  (Q: environ->mpred)  (R: ret_assert) :=
- match R with 
-  {| RA_normal := _; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := Q; RA_break := b; RA_continue := c; RA_return := r |}
- end.
-
-Definition existential_ret_assert {A: Type} (R: A -> ret_assert) :=
-  {| RA_normal := fun rho => EX x:A, (R x).(RA_normal) rho;
-     RA_break := fun rho => EX x:A, (R x).(RA_break) rho;
-     RA_continue := fun rho => EX x:A, (R x).(RA_continue) rho;
-     RA_return := fun vl rho => EX x:A, (R x).(RA_return) vl rho
-   |}.
-
-Definition normal_ret_assert (Q: environ->mpred) : ret_assert :=
-  {| RA_normal := Q; RA_break := seplog.FF; RA_continue := seplog.FF; RA_return := fun _ => seplog.FF |}.
-
-Definition frame_ret_assert (R: ret_assert) (F: environ->mpred) : ret_assert :=
- match R with 
-  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := n * F; 
-     RA_break := b * F; 
-     RA_continue := c * F;
-     RA_return := fun vl => r vl * F |}
- end.
-
-Definition switch_ret_assert (R: ret_assert) : ret_assert :=
- match R with 
-  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := FF; 
-     RA_break := n; 
-     RA_continue := c;
-     RA_return := r |}
- end.
-
-Definition with_ge (ge: genviron) (G: environ->mpred) : mpred :=
-     G (mkEnviron ge (Map.empty _) (Map.empty _)).
-
-Fixpoint prog_funct' {F V} (l: list (ident * globdef F V)) : list (ident * F) :=
- match l with nil => nil | (i,Gfun f)::r => (i,f):: prog_funct' r | _::r => prog_funct' r
- end.
-
-Definition prog_funct (p: program) := prog_funct' (prog_defs p).
-
-Fixpoint prog_vars' {F V} (l: list (ident * globdef F V)) : list (ident * globvar V) :=
- match l with nil => nil | (i,Gvar v)::r => (i,v):: prog_vars' r | _::r => prog_vars' r
- end.
-
-Definition prog_vars (p: program) := prog_vars' (prog_defs p).
-
-Definition all_initializers_aligned (prog: program) :=
-  forallb (fun idv => andb (initializers_aligned 0 (gvar_init (snd idv)))
-                                 (Zlt_bool (init_data_list_size (gvar_init (snd idv))) Ptrofs.modulus))
-                      (prog_vars prog) = true.
-
-Definition loop1_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
- match R with 
-  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := Inv;
-     RA_break := n; 
-     RA_continue := Inv;
-     RA_return := r |}
- end.
-
-Definition loop2_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
- match R with 
-  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := Inv;
-     RA_break := n;
-     RA_continue := seplog.FF;
-     RA_return := r |}
- end.
-
-Definition function_body_ret_assert (ret: type) (Q: environ->mpred) : ret_assert :=
- {| RA_normal := seplog.FF;
-    RA_break := seplog.FF; 
-    RA_continue := seplog.FF;
-    RA_return := fun vl => bind_ret vl ret Q |}.
-
-Definition loop_nocontinue_ret_assert (Inv: environ->mpred) (R: ret_assert) : ret_assert :=
- match R with 
-  {| RA_normal := n; RA_break := b; RA_continue := c; RA_return := r |} =>
-  {| RA_normal := Inv;
-     RA_break := n; 
-     RA_continue := seplog.FF;
-     RA_return := r |}
- end.
-
-Definition tc_environ (Delta: tycontext) : environ -> Prop :=
-   fun rho => typecheck_environ Delta rho.
-
-Definition tc_temp_id  (id: ident)  (ty: type) {CS: compspecs} (Delta: tycontext)
-                       (e:expr): environ -> mpred :=
-      denote_tc_assert (typecheck_temp_id id ty Delta e).
-
-Definition typeof_temp (Delta: tycontext) (id: ident) : option type :=
- match (temp_types Delta) ! id with
- | Some t => Some t
- | None => None
- end.
-
-Definition tc_expr {CS: compspecs} (Delta: tycontext) (e: expr) : environ -> mpred :=
-    denote_tc_assert (typecheck_expr Delta e).
-
-Definition tc_exprlist {CS: compspecs} (Delta: tycontext) (t: list type) (e: list expr)  : environ -> mpred :=
-      denote_tc_assert (typecheck_exprlist Delta t e).
-
-Definition tc_lvalue {CS: compspecs} (Delta: tycontext) (e: expr) : environ -> mpred :=
-     denote_tc_assert (typecheck_lvalue Delta e).
-
-Definition tc_expropt {CS: compspecs} Delta (e: option expr) (t: type) : environ -> mpred :=
-   match e with None => `!!(t=Tvoid)
-                     | Some e' => tc_expr Delta (Ecast e' t)
-   end.
-
-Definition is_comparison op :=
-match op with
-  | Cop.Oeq | Cop.One | Cop.Olt | Cop.Ogt | Cop.Ole | Cop.Oge => true
-  | _ => false
-end.
-
-Definition blocks_match op v1 v2  :=
-match op with Cop.Olt | Cop.Ogt | Cop.Ole | Cop.Oge =>
-  match v1, v2 with
-    Vptr b _, Vptr b2 _ => b=b2
-    | _, _ => False
-  end
-| _ => True
-end.
-
-Definition cmp_ptr_no_mem c v1 v2  :=
-match v1, v2 with
-Vptr b o, Vptr b1 o1 =>
-  if peq b b1 then
-    Val.of_bool (Ptrofs.cmpu c o o1)
-  else
-    match Val.cmp_different_blocks c with
-    | Some b => Val.of_bool b
-    | None => Vundef
-    end
-| _, _ => Vundef
-end.
-
-Definition op_to_cmp cop :=
-match cop with
-| Cop.Oeq => Ceq | Cop.One =>  Cne
-| Cop.Olt => Clt | Cop.Ogt =>  Cgt
-| Cop.Ole => Cle | Cop.Oge =>  Cge
-| _ => Ceq 
-end.
-
-Fixpoint arglist (n: positive) (tl: typelist) : list (ident*type) :=
- match tl with
-  | Tnil => nil
-  | Tcons t tl' => (n,t):: arglist (n+1)%positive tl'
- end.
-
-Definition closed_wrt_modvars c (F: environ->mpred) : Prop :=
-    closed_wrt_vars (modifiedvars c) F.
-
-Definition initblocksize (V: Type)  (a: ident * globvar V)  : (ident * Z) :=
- match a with (id,l) => (id , init_data_list_size (gvar_init l)) end.
-
-Definition main_pre (prog: program) : list Type -> globals -> environ -> mpred :=
-(fun nil gv => globvars2pred gv (prog_vars prog)).
-
-Definition main_pre_ext {Espec: OracleKind} (prog: program) (ora: OK_ty) : list Type -> globals -> environ -> mpred :=
-(fun nil gv rho => globvars2pred gv (prog_vars prog) rho * has_ext ora).
-
-Definition main_post (prog: program) : list Type -> (ident->val) -> environ->mpred :=
-  (fun nil _ _ => TT).
-
-Definition main_spec' (prog: program) 
-    (post: list Type -> globals -> environ -> mpred): funspec :=
-  mk_funspec (nil, tint) cc_default
-     (rmaps.ConstType globals) (main_pre prog) post
-       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Definition main_spec (prog: program): funspec :=
-  mk_funspec (nil, tint) cc_default
-     (rmaps.ConstType globals) (main_pre prog) (main_post prog)
-       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Definition main_spec_ext' {Espec: OracleKind} (prog: program) (ora: OK_ty)
-    (post: list Type -> globals -> environ -> mpred): funspec :=
-  mk_funspec (nil, tint) cc_default
-     (rmaps.ConstType globals) (main_pre_ext prog ora) post
-       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Definition main_spec_ext {Espec: OracleKind} (prog: program) (ora: OK_ty) : funspec :=
-  mk_funspec (nil, tint) cc_default
-     (rmaps.ConstType globals) (main_pre_ext prog ora) (main_post prog)
-       (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Fixpoint match_globvars (gvs: list (ident * globvar type)) (V: varspecs) : bool :=
- match V with
- | nil => true
- | (id,t)::V' => match gvs with
-                       | nil => false
-                       | (j,g)::gvs' => if eqb_ident id j
-                                              then andb (eqb_type t (gvar_info g)) (match_globvars gvs' V')
-                                              else match_globvars gvs' V
-                      end
-  end.
-
-Definition int_range (sz: intsize) (sgn: signedness) (i: int) :=
- match sz, sgn with
- | I8, Signed => -128 <= Int.signed i < 128
- | I8, Unsigned => 0 <= Int.unsigned i < 256
- | I16, Signed => -32768 <= Int.signed i < 32768
- | I16, Unsigned => 0 <= Int.unsigned i < 65536
- | I32, Signed => -2147483648 <= Int.signed i < 2147483648
- | I32, Unsigned => 0 <= Int.unsigned i < 4294967296
- | IBool, _ => 0 <= Int.unsigned i < 256
-end.
-
-Lemma mapsto_value_range:
- forall sh v sz sgn i,
-   readable_share sh ->
-   mapsto sh (Tint sz sgn noattr) v (Vint i) =
-    !! int_range sz sgn i && mapsto sh (Tint sz sgn noattr) v (Vint i).
-
-Definition semax_body_params_ok f : bool :=
-   andb
-        (compute_list_norepet (map (@fst _ _) (fn_params f) ++ map (@fst _ _) (fn_temps f)))
-        (compute_list_norepet (map (@fst _ _) (fn_vars f))).
-
-Definition var_sizes_ok {cs: compspecs} (vars: list (ident*type)) :=
-   Forall (fun var : ident * type => sizeof (snd var) <= Ptrofs.max_unsigned)%Z vars.
-
-Definition make_ext_rval  (gx: genviron) (v: option val):=
-  match v with
-  | Some v' =>  mkEnviron gx (Map.empty _)
-                              (Map.set 1%positive v' (Map.empty _))
-  | None => mkEnviron gx (Map.empty _) (Map.empty _)
-  end.
-
-Definition tc_option_val (sig: type) (ret: option val) :=
-  match sig, ret with
-    | Tvoid, None => True
-    | Tvoid, Some _ => False
-    | ty, Some v => tc_val ty v
-    | _, _ => False
-  end.
-
-Fixpoint zip_with_tl {A : Type} (l1 : list A) (l2 : typelist) : list (A*type) :=
-  match l1, l2 with
-    | a::l1', Tcons b l2' => (a,b)::zip_with_tl l1' l2'
-    | _, _ => nil
-  end.
-
-Definition  funspecs_norepeat (fs : funspecs) := list_norepet (map fst fs).
-
-Require VST.veric.semax_ext.
-
-Definition add_funspecs (Espec : OracleKind)
-         (ext_link: Strings.String.string -> ident)
-         (fs : funspecs) : OracleKind :=
-   veric.semax_ext.add_funspecs Espec ext_link fs.
-
-Definition funsig2signature (s : funsig) cc : signature :=
-  mksignature (map typ_of_type (map snd (fst s))) (opttyp_of_type (snd s)) cc.
-
-Transparent mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric SRveric Bveric.
-
-Lemma typecheck_lvalue_sound {CS: compspecs} :
-  forall Delta rho e,
-    typecheck_environ Delta rho ->
-    tc_lvalue Delta e rho |-- !! is_pointer_or_null (eval_lvalue e rho).
-
-Lemma typecheck_expr_sound {CS: compspecs} :
-  forall Delta rho e,
-    typecheck_environ Delta rho ->
-    tc_expr Delta e rho |-- !! tc_val (typeof e) (eval_expr e rho).
-
-Lemma rel_expr_const_int: forall {CS: compspecs} i ty P rho,
-              P |-- rel_expr (Econst_int i ty) (Vint i) rho.
-
-Lemma rel_expr_const_float: forall {CS: compspecs}  f ty P rho,
-              P |-- rel_expr (Econst_float f ty) (Vfloat f) rho.
-
-Lemma rel_expr_const_single: forall {CS: compspecs}   f ty P rho,
-              P |-- rel_expr (Econst_single f ty) (Vsingle f) rho.
-
-Lemma rel_expr_const_long: forall {CS: compspecs}  i ty P rho,
-             P |--  rel_expr (Econst_long i ty) (Vlong i) rho.
-
-Lemma rel_expr_tempvar: forall {CS: compspecs}  id ty v P rho,
-          Map.get (te_of rho) id = Some v ->
-
-Lemma rel_expr_addrof: forall {CS: compspecs} a ty v P rho,
-               P |-- rel_lvalue a v rho ->
-               P |-- rel_expr (Eaddrof a ty) v rho.
-
-Lemma rel_expr_unop: forall {CS: compspecs}  P a1 v1 v ty op rho,
-                 P |-- rel_expr a1 v1 rho ->
-                 (forall m, Cop.sem_unary_operation op v1 (typeof a1) m = Some v) ->
-
-Lemma rel_expr_binop: forall {CS: compspecs}  a1 a2 v1 v2 v ty op P rho,
-                 P |-- rel_expr a1 v1 rho ->
-                 P |-- rel_expr  a2 v2 rho ->
-                 binop_stable cenv_cs op a1 a2 = true ->
-                 (forall m, Cop.sem_binary_operation cenv_cs op v1 (typeof a1) v2 (typeof a2) m = Some v) ->
-
-Lemma rel_expr_cast: forall {CS: compspecs}  a1 v1 v ty P rho,
-                 P |-- rel_expr a1 v1 rho ->
-                 (forall m, Cop.sem_cast v1 (typeof a1) ty m = Some v) ->
-
-Lemma rel_expr_lvalue_By_value: forall {CS: compspecs} ch a sh v1 v2 P rho,
-           access_mode (typeof a) = By_value ch ->
-           P |-- rel_lvalue a v1 rho ->
-           P |-- mapsto sh (typeof a) v1 v2 * TT  ->
-           v2 <> Vundef ->
-           readable_share sh ->
-           P |-- rel_expr a v2 rho.
-
-Lemma rel_expr_lvalue_By_reference: forall {CS: compspecs} a v1 P rho,
-           access_mode (typeof a) = By_reference ->
-           P |-- rel_lvalue a v1 rho ->
-           P |-- rel_expr a v1 rho.
-
-Lemma rel_lvalue_local: forall {CS: compspecs} id ty b P rho,
-                 P |-- !! (Map.get (ve_of rho) id = Some (b,ty)) ->
-
-Lemma rel_lvalue_global: forall {CS: compspecs} id ty b P rho,
-              P |-- !! (Map.get (ve_of rho) id = None /\ Map.get (ge_of rho) id = Some b) ->
-
-Lemma rel_lvalue_deref: forall {CS: compspecs} a b z ty P rho,
-              P |-- rel_expr a (Vptr b z) rho->
-              P |-- rel_lvalue (Ederef a ty) (Vptr b z) rho.
-
-Lemma rel_lvalue_field_struct: forall {CS: compspecs}  i ty a b z id att delta co P rho,
-               typeof a = Tstruct id att ->
-               cenv_cs ! id = Some co ->
-               field_offset cenv_cs i (co_members co) = Errors.OK delta ->
-
-Global Opaque mpred Nveric Sveric Cveric Iveric Rveric Sveric SIveric SRveric Bveric.
-Global Opaque rel_expr.
-Global Opaque rel_lvalue.
-
-Hint Resolve (@subp_sepcon mpred Nveric Iveric Sveric SIveric Rveric SRveric): contractive.
-
-Fixpoint unfold_Ssequence c :=
-  match c with
-  | Ssequence c1 c2 => unfold_Ssequence c1 ++ unfold_Ssequence c2
-  | _ => c :: nil
-  end.
-
-Fixpoint nocontinue s :=
- match s with
- | Ssequence s1 s2 => if nocontinue s1 then nocontinue s2 else false
- | Sifthenelse _ s1 s2 => if nocontinue s1 then nocontinue s2 else false
- | Sswitch _ sl => nocontinue_ls sl
- | Sgoto _ => false
- | Scontinue => false
- | Slabel _ s => nocontinue s
- | _ => true
-end
-with nocontinue_ls sl :=
- match sl with LSnil => true | LScons _ s sl' => if nocontinue s then nocontinue_ls sl' else false
- end.
-
-Module Type CLIGHT_SEPARATION_HOARE_LOGIC_DEF.
-
-Parameter semax: forall {CS: compspecs} {Espec: OracleKind},
-    tycontext -> (environ->mpred) -> statement -> ret_assert -> Prop.
-
-Parameter semax_func:
-    forall {Espec: OracleKind},
-    forall (V: varspecs) (G: funspecs) {C: compspecs} (fdecs: list (ident * fundef)) (G1: funspecs), Prop.
-
-Parameter semax_external:
-  forall {Hspec: OracleKind} (ids: list ident) (ef: external_function)
-  (A: rmaps.TypeTree)
-  (P Q: forall ts, functors.MixVariantFunctor._functor (rmaps.dependent_type_functor_rec ts (AssertTT A)) mpred),
-     Prop.
-
-End CLIGHT_SEPARATION_HOARE_LOGIC_DEF.
-
-Module DerivedDefs (Def: CLIGHT_SEPARATION_HOARE_LOGIC_DEF).
-
-Local Open Scope pred.
-
-Definition semax_body
-       (V: varspecs) (G: funspecs) {C: compspecs} (f: function) (spec: ident * funspec): Prop :=
-  match spec with (_, mk_funspec _ cc A P Q NEP NEQ) =>
-    forall Espec ts x, 
-      @Def.semax C Espec (func_tycontext f V G nil )
-          (P ts x *  stackframe_of f)
-          (Ssequence f.(fn_body) (Sreturn None))
-          (frame_ret_assert (function_body_ret_assert (fn_return f) (Q ts x)) (stackframe_of f))
- end.
-
-Definition semax_prog
-    {Espec: OracleKind} {C: compspecs}
-     (prog: program)  (V: varspecs) (G: funspecs) : Prop :=
-  compute_list_norepet (prog_defs_names prog) = true  /\
-  all_initializers_aligned prog /\
-  cenv_cs = prog_comp_env prog /\
-  @Def.semax_func Espec V G C (prog_funct prog) G /\
-  match_globvars (prog_vars prog) V = true /\
-  match initial_world.find_id prog.(prog_main) G with
-  | Some s => exists post, s = main_spec' prog post
-  | None => False
-  end.
-
-Definition semax_prog_ext
-    {Espec: OracleKind} {C: compspecs}
-     (prog: program) (z : OK_ty) (V: varspecs) (G: funspecs) : Prop :=
-  compute_list_norepet (prog_defs_names prog) = true  /\
-  all_initializers_aligned prog /\
-  cenv_cs = prog_comp_env prog /\
-  @Def.semax_func Espec V G C (prog_funct prog) G /\ *)
-
 Require Import VST.floyd.proofauto.
-(* VST.floyd.proofauto:
-From compcert Require Export common.AST cfrontend.Ctypes cfrontend.Clight.
-Export Cop.
-Require Export VST.floyd.base2.
-Require Export VST.floyd.functional_base.
-Require Export VST.floyd.client_lemmas.
-Require Export VST.floyd.go_lower.
-Require Export VST.floyd.closed_lemmas.
-Require Export VST.floyd.compare_lemmas.
-Require Export VST.floyd.semax_tactics.
-Require Export VST.floyd.forward.
-Require Export VST.floyd.subsume_funspec.
-Require Export VST.floyd.call_lemmas.
-Require Export VST.floyd.forward_lemmas.
-Require Export VST.floyd.for_lemmas.
-Require Export VST.floyd.nested_pred_lemmas.
-Require Export VST.floyd.nested_field_lemmas.
-Require Export VST.floyd.efield_lemmas.
-Require Export VST.floyd.mapsto_memory_block.
-Require Export VST.floyd.aggregate_type.
-Require VST.floyd.aggregate_pred. Export floyd.aggregate_pred.aggregate_pred.
-Require Export VST.floyd.reptype_lemmas.
-Require Export VST.floyd.simpl_reptype.
-Require Export VST.floyd.data_at_rec_lemmas.
-Require Export VST.floyd.field_at.
-Require Export VST.floyd.field_at_wand.
-Require Export VST.floyd.field_compat.
-Require Export VST.floyd.stronger.
-Require Export VST.floyd.loadstore_mapsto.
-Require Export VST.floyd.loadstore_field_at.
-Require Export VST.floyd.nested_loadstore.
-Require Export VST.floyd.local2ptree_denote.
-Require Export VST.floyd.local2ptree_eval.
-Require Export VST.floyd.local2ptree_typecheck.
-Require Export VST.floyd.proj_reptype_lemmas.
-Require Export VST.floyd.replace_refill_reptype_lemmas.
-Require Export VST.floyd.sc_set_load_store.
-Require Export VST.floyd.unfold_data_at.
-Require Export VST.floyd.entailer.
-Require Export VST.floyd.globals_lemmas.
-Require Export VST.floyd.diagnosis.
-Require Export VST.floyd.freezer.
-Require Export VST.floyd.deadvars.
-Require Export VST.floyd.hints.
-Require Export VST.floyd.Clightnotations.
-Require VST.msl.iter_sepcon.
-Require VST.msl.wand_frame.
-Require VST.msl.wandQ_frame.
-
-Arguments semax {CS} {Espec} Delta Pre%assert cmd%C Post%assert.
-Export ListNotations.
-Export Clight_Cop2.
-
-Hint Rewrite add_repr mul_repr sub_repr : entailer_rewrite.
-Hint Rewrite ptrofs_add_repr ptrofs_mul_repr ptrofs_sub_repr : entailer_rewrite.
-Hint Rewrite mul64_repr add64_repr sub64_repr or64_repr and64_repr : entailer_rewrite.
-Hint Rewrite neg_repr neg64_repr : entailer_rewrite.
-Hint Rewrite ptrofs_to_int_repr: entailer_rewrite norm.
-
-Lemma Vptrofs_unfold_false: 
-Archi.ptr64 = false -> Vptrofs = fun x => Vint (Ptrofs.to_int x).
-
-Lemma Vptrofs_unfold_true: 
-Archi.ptr64 = true -> Vptrofs = fun x => Vlong (Ptrofs.to_int64 x).
-
-Lemma modu_repr: forall x y, 
-   0 <= x <= Int.max_unsigned ->
-Hint Rewrite modu_repr using rep_omega : entailer_rewrite norm.
-
-Hint Rewrite Vptrofs_unfold_false using reflexivity: entailer_rewrite norm.
-Hint Rewrite Vptrofs_unfold_true using reflexivity: entailer_rewrite norm.
-
-Hint Extern 1 (Vundef = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = Vundef) => reflexivity : cancel.
-Hint Extern 1 (list_repeat _ Vundef = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = list_repeat _ Vundef) => reflexivity : cancel.
-Hint Extern 1 (Vundef :: _ = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = Vundef :: _) => reflexivity : cancel.
-Hint Extern 1 (@nil _ = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = @nil _) => reflexivity : cancel.
-
-Instance Inhabitant_mpred : Inhabitant mpred := @FF mpred Nveric.
-Instance Inhabitant_share : Inhabitant share := Share.bot.
-
-Arguments deref_noload ty v / .
-Arguments nested_field_array_type {cs} t gfs lo hi / .
-Arguments nested_field_type {cs} t gfs / .  
-Arguments nested_field_offset {cs} t gfs / .  
-Arguments Z.mul !x !y.
-Arguments Z.sub !m !n.
-Arguments Z.add !x !y.
-Global Transparent peq.
-Global Transparent Archi.ptr64.
-
-Ltac step :=
-first [ progress Intros
-       | let x := fresh "x" in Intros x
-       | forward
-       | forward_if
-       | forward_call
-       | rep_omega | cstring' | list_solve
-       | EExists
-       | progress (autorewrite with sublist in *|-)
-       | progress (autorewrite with sublist)
-       | progress (autorewrite with norm)
-       | cstring1
-       | deadvars!
-       | progress_entailer
-       ]. *)
-
 Require Import VST.progs.list_dt.
-(* VST.progs.list_dt:
-Require Import VST.floyd.base2.
-Require Import VST.floyd.client_lemmas.
-Require Import VST.floyd.closed_lemmas.
-Require Import VST.floyd.nested_pred_lemmas.
-Require Import VST.floyd.nested_field_lemmas.
-Require Import VST.floyd.efield_lemmas.
-Require Import VST.floyd.mapsto_memory_block.
-Require Import VST.floyd.reptype_lemmas.
-Require VST.floyd.aggregate_pred. Import VST.floyd.aggregate_pred.aggregate_pred.
-Require Import VST.floyd.data_at_rec_lemmas.
-Require Import VST.floyd.field_at.
-Require Import VST.floyd.nested_loadstore.
-
-Require Import VST.floyd.entailer.
-
-Lemma int64_eq_e: forall i j, Int64.eq i j = true -> i=j.
-
-Lemma ptrofs_eq_e: forall i j, Ptrofs.eq i j = true -> i=j.
-
-Lemma allp_andp1  {A}{ND: NatDed A}:  forall B (any: B) (p: B -> A) q, andp (allp p) q = (allp (fun x => andp (p x) q)).
-
-Lemma allp_andp2  {A}{ND: NatDed A}:  forall B (any: B) p (q: B -> A),
-     andp p (allp q) = (allp (fun x => andp p (q x))).
-
-Lemma valid_pointer_offset_val_zero:
-  forall p, valid_pointer (offset_val 0 p) = valid_pointer p.
-
-Local Open Scope logic.
-
-Class listspec {cs: compspecs} (list_structid: ident) (list_link: ident) (token: share -> val -> mpred):=
-  mk_listspec {
-   list_fields: members;
-   list_struct := Tstruct list_structid noattr;
-   list_members_eq: list_fields = co_members (get_co list_structid);
-   list_struct_complete_legal_cosu: complete_legal_cosu_type list_struct = true; 
-   list_link_type: nested_field_type list_struct (StructField list_link :: nil) = Tpointer list_struct noattr;
-   list_token := token
-}.
-
-Section LIST1.
-Context {cs: compspecs}.
-Context  {list_structid: ident} {list_link: ident} {list_token: share -> val -> mpred}.
-
-Fixpoint all_but_link (f: members) : members :=
- match f with
- | nil => nil
- | cons it f' => if ident_eq (fst it) list_link
-                               then f'
-                               else cons it (all_but_link f')
- end.
-
-Lemma list_link_size_in_range (ls: listspec list_structid list_link list_token):
-  0 < sizeof (nested_field_type list_struct (StructField list_link :: nil)) < Ptrofs.modulus.
-
-Definition elemtype (ls: listspec list_structid list_link list_token) :=
-  compact_prod
-  (map (fun it => reptype (field_type (fst it) list_fields)) (all_but_link list_fields)).
-
-Definition field_type'  (F: members) (it: ident * type) :=
-   reptype (field_type (fst it) F).
-
-Definition add_link_back' {F f: members}
-  (v: compact_prod (map (field_type' F) (all_but_link f))) :
-  compact_prod (map (field_type' F) f).
-
-Definition add_link_back
- (F f : members)
-  (v : compact_prod
-         (map (fun it : ident * type => reptype (field_type (fst it) F))
-            (all_but_link f)))
-  : compact_prod (map (fun it => reptype (field_type (fst it) F)) f)
-  :=
-list_rect
-  (fun f0 : list (ident * type) =>
-   compact_prod (map (field_type' F) (all_but_link f0)) ->
-   compact_prod (map (field_type' F) f0))
-  (fun _ : compact_prod (map (field_type' F) (all_but_link nil)) => tt)
-  (fun (it0 : ident * type) (f0 : list (ident * type))
-     (IHf : compact_prod (map (field_type' F) (all_but_link f0)) ->
-            compact_prod (map (field_type' F) f0))
-     (v0 : compact_prod (map (field_type' F) (all_but_link (it0 :: f0)))) =>
-   match
-     f0 as l
-     return
-       (compact_prod (map (field_type' F) (all_but_link (it0 :: l))) ->
-        (compact_prod (map (field_type' F) (all_but_link l)) ->
-         compact_prod (map (field_type' F) l)) ->
-        compact_prod (map (field_type' F) (it0 :: l)))
-   with
-   | nil =>
-       fun
-         (_ : compact_prod (map (field_type' F) (all_but_link (it0 :: nil))))
-         (_ : compact_prod (map (field_type' F) (all_but_link nil)) ->
-              compact_prod (map (field_type' F) nil)) =>
-       default_val (field_type (fst it0) F)
-   | it1 :: f1 =>
-       fun
-         (v1 : compact_prod
-                 (map (field_type' F) (all_but_link (it0 :: it1 :: f1))))
-         (IHf0 : compact_prod
-                   (map (field_type' F) (all_but_link (it1 :: f1))) ->
-                 compact_prod (map (field_type' F) (it1 :: f1))) =>
-       (if ident_eq (fst it0) list_link as s0
-         return
-           (compact_prod
-              (map (field_type' F)
-                 (if s0 then it1 :: f1 else it0 :: all_but_link (it1 :: f1))) ->
-            reptype (field_type (fst it0) F) *
-            compact_prod (map (field_type' F) (it1 :: f1)))
-        then
-         fun v2 : compact_prod (map (field_type' F) (it1 :: f1)) =>
-         (default_val (field_type (fst it0) F), v2)
-        else
-         fun
-           v2 : compact_prod
-                  (map (field_type' F) (it0 :: all_but_link (it1 :: f1))) =>
-         match
-           all_but_link (it1 :: f1) as l
-           return
-             (all_but_link (it1 :: f1) = l ->
-              compact_prod (map (field_type' F) (it0 :: l)) ->
-              (compact_prod (map (field_type' F) l) ->
-               compact_prod (map (field_type' F) (it1 :: f1))) ->
-              reptype (field_type (fst it0) F) *
-              compact_prod (map (field_type' F) (it1 :: f1)))
-         with
-         | nil =>
-             fun (Heqm0 : all_but_link (it1 :: f1) = nil)
-               (v3 : compact_prod (map (field_type' F) (it0 :: nil)))
-               (IHf1 : compact_prod (map (field_type' F) nil) ->
-                       compact_prod (map (field_type' F) (it1 :: f1))) =>
-             let s0 := ident_eq (fst it1) list_link in
-             (if s0
-               return
-                 ((if s0 then f1 else it1 :: all_but_link f1) = nil ->
-                  reptype (field_type (fst it0) F) *
-                  compact_prod (map (field_type' F) (it1 :: f1)))
-              then
-               fun Heqm1 : f1 = nil =>
-               eq_rect_r
-                 (fun f2 : members =>
-                  (compact_prod (map (field_type' F) nil) ->
-                   compact_prod (map (field_type' F) (it1 :: f2))) ->
-                  reptype (field_type (fst it0) F) *
-                  compact_prod (map (field_type' F) (it1 :: f2)))
-                 (fun
-                    _ : compact_prod (map (field_type' F) nil) ->
-                        compact_prod (map (field_type' F) (it1 :: nil)) =>
-                  (v3, default_val (field_type (fst it1) F)))
-                 Heqm1 IHf1
-              else
-               fun Heqm1 : it1 :: all_but_link f1 = nil =>
-                 False_rect
-                   (reptype (field_type (fst it0) F) *
-                    compact_prod (map (field_type' F) (it1 :: f1)))
-                 (eq_rect (it1 :: all_but_link f1)
-                    (fun e : members =>
-                     match e with
-                     | nil => False
-                     | _ :: _ => True
-                     end) I nil Heqm1)) Heqm0
-         | p :: m0 =>
-             fun (_ : all_but_link (it1 :: f1) = p :: m0)
-               (v3 : compact_prod (map (field_type' F) (it0 :: p :: m0)))
-               (IHf1 : compact_prod (map (field_type' F) (p :: m0)) ->
-                       compact_prod (map (field_type' F) (it1 :: f1))) =>
-             (fst v3, IHf1 (snd v3))
-         end eq_refl v2 IHf0) v1
-   end v0 IHf) f v.
-
-Definition list_data {ls: listspec list_structid list_link list_token} (v: elemtype ls): reptype list_struct.
-
-Definition list_cell' (ls: listspec list_structid list_link list_token) sh v p :=
-  (field_at_ sh list_struct (StructField list_link :: nil) p) -* (data_at sh list_struct (list_data v) p).
-
-Definition list_cell (ls: listspec list_structid list_link list_token) (sh: Share.t)
-   (v: elemtype ls) (p: val) : mpred :=
-   !! field_compatible list_struct nil p &&
-   struct_pred (all_but_link list_fields)
-              (fun it v => withspacer sh
-                (field_offset cenv_cs (fst it) list_fields + sizeof (field_type (fst it) list_fields))
-                (field_offset_next cenv_cs (fst it) list_fields (co_sizeof (get_co list_structid)))
-                (at_offset (data_at_rec sh (field_type (fst it) list_fields) v) (field_offset cenv_cs (fst it) list_fields)))
-     v p.
-
-Lemma struct_pred_type_changable:
-  forall m m' A F v v' p p',
-  m=m' ->
-  JMeq v v' ->
-  (forall it v, F it v p = F it v p') ->
-  @struct_pred m A F v p = @struct_pred m' A F v' p'.
-
-Lemma list_cell_link_join:
-  forall (LS: listspec list_structid list_link list_token) sh v p,
-   list_cell LS sh v p
-   * spacer sh  (field_offset cenv_cs list_link list_fields +
-                        sizeof (field_type list_link list_fields))
-                        (field_offset_next cenv_cs list_link list_fields
-                        (co_sizeof (get_co list_structid)))
-           (offset_val 0 p)
-   * field_at_ sh list_struct (StructField list_link :: nil) p
-     = data_at sh list_struct (list_data v) p.
-
-Lemma list_cell_link_join_nospacer:
-  forall (LS: listspec list_structid list_link list_token) sh v p,
-   field_offset cenv_cs list_link list_fields +
-                        sizeof (field_type list_link list_fields) =
-   field_offset_next cenv_cs list_link list_fields
-                        (co_sizeof (get_co list_structid)) ->
-   list_cell LS sh v p * field_at_ sh list_struct (StructField list_link :: nil) p
-     = data_at sh list_struct (list_data v) p.
-
-End LIST1.
-
-Module LsegGeneral.
-
-Section LIST2.
-Context {cs: compspecs}.
-Context  {list_structid: ident} {list_link: ident} {list_token: share -> val -> mpred}.
-
-Fixpoint lseg (ls: listspec list_structid list_link list_token) (dsh psh: share)
-            (contents: list (val * elemtype ls)) (x z: val) : mpred :=
- match contents with
- | (p,h)::hs => !! (p=x /\ ~ptr_eq x z) &&
-              EX y:val,  !! is_pointer_or_null y &&
-              list_token dsh x * list_cell ls dsh h x
-              * field_at psh list_struct (StructField list_link ::nil)
-                  (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x
-              * lseg ls dsh psh hs y z
- | nil => !! (ptr_eq x z) && emp
- end.
-
-Lemma lseg_unfold (ls: listspec list_structid list_link list_token): forall dsh psh contents v1 v2,
-    lseg ls dsh psh contents v1 v2 =
-     match contents with
-     | (p,h)::t => !! (p=v1 /\ ~ ptr_eq v1 v2) && EX tail: val,
-                      !! is_pointer_or_null tail &&
-                      list_token dsh v1 * list_cell ls dsh h v1
-                      * field_at psh list_struct (StructField list_link :: nil)
-                          (valinject (nested_field_type list_struct (StructField list_link :: nil)) tail) v1
-                      * lseg ls dsh psh t tail v2
-     | nil => !! (ptr_eq v1 v2) && emp
-     end.
-
-Lemma lseg_eq (ls: listspec list_structid list_link list_token):
-  forall dsh psh l v ,
-  is_pointer_or_null v ->
-    lseg ls dsh psh l v v = !!(l=nil) && emp.
-
-Definition lseg_cons (ls: listspec list_structid list_link list_token) dsh psh (l: list (val * elemtype ls)) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX h:(elemtype ls), EX r:list (val * elemtype ls), EX y:val,
-             !!(l=(x,h)::r  /\ is_pointer_or_null y) &&
-             list_token dsh x * list_cell ls dsh h x *
-             field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-             lseg ls dsh psh r y z.
-
-Lemma lseg_unroll (ls: listspec list_structid list_link list_token): forall dsh psh l x z ,
-    lseg ls dsh psh l x z =
-      (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons ls dsh psh l x z.
-
-Lemma lseg_unroll_nonempty1 (ls: listspec list_structid list_link list_token):
-   forall p P dsh psh h tail v1 v2,
-    ~ ptr_eq v1 v2 ->
-    is_pointer_or_null p ->
-    P |-- list_token dsh v1 * list_cell ls dsh h v1 *
-             (field_at psh list_struct (StructField list_link :: nil)
-                   (valinject (nested_field_type list_struct (StructField list_link :: nil)) p) v1 *
-               lseg ls dsh psh tail p v2) ->
-    P |-- lseg ls dsh psh ((v1,h)::tail) v1 v2.
-
-Lemma lseg_neq (ls: listspec list_structid list_link list_token):
-  forall dsh psh s v v2,
-    ptr_neq v v2 ->
-     lseg ls dsh psh s v v2 = lseg_cons ls dsh psh s v v2.
-
-Lemma lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall dsh psh s v,
-      typed_true (tptr list_struct) v ->
-     lseg ls dsh psh s v nullval = lseg_cons ls dsh psh s v nullval.
-
-Lemma unfold_lseg_neq (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R (v v2: val) dsh psh (s: list (val * elemtype ls)),
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s v v2 :: R))) |--
-                        !! (ptr_neq v v2) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s v v2 :: R))) |--
-     EX hryp: elemtype ls * list (val * elemtype ls) * val * val,
-      match hryp with (h,r,y,p) =>
-       !! (s=(p,h)::r /\ is_pointer_or_null y) &&
-       !! (p=v) &&
-      PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y v2 ::
-                  R)))
-        end.
-
-Lemma unfold_lseg_cons (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R e dsh psh s,
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s e nullval :: R))) |--
-                        !! (typed_true (tptr list_struct) e) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s e nullval :: R))) |--
-     EX hryp: elemtype ls * list (val * elemtype ls) * val * val,
-      match hryp with (h,r,y,p) =>
-       !! (s=(p,h)::r /\ is_pointer_or_null y) &&
-       !! (p=e)&&
-      PROPx P (LOCALx Q
-        (SEPx (list_token dsh e :: list_cell ls dsh h e ::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) e ::
-                  lseg ls dsh psh r y nullval ::
-                  R)))
-        end.
-
-Lemma semax_lseg_neq (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q dsh psh s v v2 R c Post,
-    ~ (ptr_eq v v2) ->
-  (forall (h: elemtype ls) (r: list (val * elemtype ls)) (y: val),
-    s=(v,h)::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v ::
-                  field_at psh list_struct (StructField list_link :: nil)
-                      (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y v2 ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls dsh psh s v v2 :: R))))
-       c Post.
-
-Lemma semax_lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q dsh psh s v R c Post,
-   ENTAIL Delta, PROPx P (LOCALx Q
-            (SEPx (lseg ls dsh psh s v nullval :: R))) |--
-                        !!(typed_true (tptr list_struct) v)  ->
-  (forall (h: elemtype ls) (r: list (val * elemtype ls)) (y: val),
-    s=(v,h)::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v ::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y nullval ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls dsh psh s v nullval :: R))))
-       c Post.
-
-Lemma lseg_nil_eq (ls: listspec list_structid list_link list_token):
-    forall dsh psh p q, lseg ls dsh psh nil p q = !! (ptr_eq p q) && emp.
-
-Lemma lseg_cons_eq (ls: listspec list_structid list_link list_token):
-     forall dsh psh h r x z ,
-    lseg ls dsh psh (h::r) x z =
-        !!(x = fst h /\ ~ ptr_eq x z) &&
-         (EX  y : val,
-          !!(is_pointer_or_null y) &&
-   list_token dsh x * list_cell ls dsh (snd h) x * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-   lseg ls dsh psh r y z).
-
-Definition lseg_cons_right (ls: listspec list_structid list_link list_token)
-           dsh psh (l: list (val * elemtype ls)) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX h:(elemtype ls), EX r:list (val * elemtype ls), EX y:val,
-             !!(l=r++(y,h)::nil /\ is_pointer_or_null y)  &&
-                       list_token dsh y * list_cell ls dsh h y *
-             field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) z) y *
-             lseg ls dsh psh r x y.
-
-Lemma lseg_cons_right_neq (ls: listspec list_structid list_link list_token): forall dsh psh l x h y w z,
-             sepalg.nonidentity psh ->
-
-Lemma lseg_cons_right_null (ls: listspec list_structid list_link list_token): forall dsh psh l x h y,
-             list_token dsh y * list_cell ls dsh h y * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) nullval) y *
-             lseg ls dsh psh l x y
-   |--   lseg ls dsh psh (l++(y,h)::nil) x nullval.
-
-Lemma lseg_cons_right_list (ls: listspec list_structid list_link list_token): forall dsh psh l l' x h y z,
-    sepalg.nonidentity psh ->
-
-Lemma lseg_unroll_right (ls: listspec list_structid list_link list_token): forall sh sh' l x z ,
-    lseg ls sh sh' l x z = (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons_right ls sh sh' l x z.
-Abort.  
-
-Lemma lseg_local_facts:
-  forall ls dsh psh contents p q,
-     lseg ls dsh psh contents p q |--
-     !! (is_pointer_or_null p /\ (p=q <-> contents=nil)).
-
-Definition lseg_cell  (ls: listspec list_structid list_link list_token)
-    (dsh psh : share)
-    (v: elemtype ls) (x y: val) :=
-   !!is_pointer_or_null y && list_token dsh x * list_cell ls dsh v x * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x.
-
-Lemma lseg_cons_eq2: forall
-  (ls : listspec list_structid list_link list_token) (dsh psh : share) (h : elemtype ls)
-   (r : list (val * elemtype ls))
-  (x x' z : val), lseg ls dsh psh ((x',h) :: r) x z =
-  !!(x=x' /\ ~ ptr_eq x z) && (EX  y : val, lseg_cell ls dsh psh h x y * lseg ls dsh psh r y z).
-
-Lemma list_append: forall {dsh psh: share}
-  {ls : listspec list_structid list_link list_token} (hd mid tl:val) ct1 ct2 P,
-  (forall x tl', lseg_cell ls dsh psh x tl tl' * P tl |-- FF) ->
-  (lseg ls dsh psh ct1 hd mid) * lseg ls dsh psh ct2 mid tl * P tl|--
-  (lseg ls dsh psh (ct1 ++ ct2) hd tl) * P tl.
-
-Lemma list_append_null:
-  forall
-   (ls: listspec list_structid list_link list_token)
-   (dsh psh: share)
-   (hd mid: val) ct1 ct2,
-   lseg ls dsh psh ct1 hd mid * lseg ls dsh psh ct2 mid nullval |--
-   lseg ls dsh psh (ct1++ct2) hd nullval.
-
-Lemma sizeof_list_struct_pos (LS: listspec list_structid list_link list_token) :
-   sizeof list_struct > 0.
-
-End LIST2.
-
-Hint Rewrite @lseg_nil_eq : norm.
-
-Hint Rewrite @lseg_eq using reflexivity: norm.
-
-Hint Resolve @lseg_local_facts : saturate_local.
-End LsegGeneral.
-
-Module LsegSpecial.
-
-Section LIST.
-Context {cs: compspecs}.
-Context  {list_structid: ident} {list_link: ident} {list_token: share -> val -> mpred}.
-
-Definition lseg (ls: listspec list_structid list_link list_token) (sh: share)
-   (contents: list (elemtype ls)) (x y: val) : mpred :=
-    EX al:list (val*elemtype ls),
-          !! (contents = map snd al) &&
-             LsegGeneral.lseg ls sh sh al x y.
-
-Lemma lseg_unfold (ls: listspec list_structid list_link list_token): forall sh contents v1 v2,
-    lseg ls sh contents v1 v2 =
-     match contents with
-     | h::t => !! (~ ptr_eq v1 v2) && EX tail: val,
-                      !! is_pointer_or_null tail &&
-                      list_token sh v1 * list_cell ls sh h v1
-                      * field_at sh list_struct (StructField list_link :: nil)
-                          (valinject (nested_field_type list_struct (StructField list_link :: nil)) tail) v1
-                      *  lseg ls sh t tail v2
-     | nil => !! (ptr_eq v1 v2) && emp
-     end.
-
-Lemma lseg_eq (ls: listspec list_structid list_link list_token):
-  forall sh l v ,
-  is_pointer_or_null v ->
-    lseg ls sh l v v = !!(l=nil) && emp.
-
-Definition lseg_cons (ls: listspec list_structid list_link list_token) sh (l: list (elemtype ls)) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX h:(elemtype ls), EX r:list (elemtype ls), EX y:val,
-             !!(l=h::r  /\ is_pointer_or_null y) &&
-             list_token sh x * list_cell ls sh h x *
-             field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-              lseg ls sh r y z.
-
-Lemma lseg_unroll (ls: listspec list_structid list_link list_token): forall sh l x z ,
-    lseg ls sh l x z =
-      (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons ls sh l x z.
-
-Lemma lseg_unroll_nonempty1 (ls: listspec list_structid list_link list_token):
-   forall p P sh h (tail: list (elemtype ls)) v1 v2,
-    ~ ptr_eq v1 v2 ->
-    is_pointer_or_null p ->
-    P |-- list_token sh v1 * list_cell ls sh h v1 *
-             (field_at sh list_struct (StructField list_link :: nil)
-                   (valinject (nested_field_type list_struct (StructField list_link :: nil)) p) v1 *
-               lseg ls sh tail p v2) ->
-    P |-- lseg ls sh (h::tail) v1 v2.
-
-Lemma lseg_neq (ls: listspec list_structid list_link list_token):
-  forall sh s v v2,
-    ptr_neq v v2 ->
-     lseg ls sh s v v2 = lseg_cons ls sh s v v2.
-
-Lemma lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall sh s v,
-      typed_true (tptr list_struct) v ->
-     lseg ls sh s v nullval = lseg_cons ls sh s v nullval.
-
-Lemma unfold_lseg_neq (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R (v v2: val) sh (s: list (elemtype ls)),
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls sh s v v2 :: R))) |--
-                        !! (ptr_neq v v2) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls sh s v v2 :: R))) |--
-     EX hryp: elemtype ls * list (elemtype ls) * val,
-      match hryp with (h,r,y) =>
-       !! (s=h::r /\ is_pointer_or_null y) &&
-      PROPx P (LOCALx Q
-        (SEPx (list_token sh v :: list_cell ls sh h v::
-                  field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                   lseg ls sh r y v2 ::
-                  R)))
-        end.
-
-Lemma unfold_lseg_cons (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R e sh s,
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls sh s e nullval :: R))) |--
-                        !!(typed_true (tptr list_struct) e) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls sh s e nullval :: R))) |--
-     EX hryp: elemtype ls * list (elemtype ls) * val,
-      match hryp with (h,r,y) =>
-       !! (s=h::r /\ is_pointer_or_null y) &&
-      PROPx P (LOCALx Q
-        (SEPx (list_token sh e :: list_cell ls sh h e ::
-                  field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) e ::
-                   lseg ls sh r y nullval ::
-                  R)))
-        end.
-
-Lemma semax_lseg_neq (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q sh s v v2 R c Post,
-    ~ (ptr_eq v v2) ->
-  (forall (h: elemtype ls) (r: list (elemtype ls)) (y: val),
-    s=h::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token sh v :: list_cell ls sh h v ::
-                  field_at sh list_struct (StructField list_link :: nil)
-                      (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                   lseg ls sh r y v2 ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls sh s v v2 :: R))))
-       c Post.
-
-Lemma semax_lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q sh s v R c Post,
-      ENTAIL Delta, PROPx P (LOCALx Q
-            (SEPx (lseg ls sh s v nullval :: R))) |--
-                        !!(typed_true (tptr list_struct) v)  ->
-  (forall (h: elemtype ls) (r: list (elemtype ls)) (y: val),
-    s=h::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token sh v :: list_cell ls sh h v ::
-                  field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                   lseg ls sh r y nullval ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls sh s v nullval :: R))))
-       c Post.
-
-Lemma lseg_nil_eq (ls: listspec list_structid list_link list_token):
-    forall sh p q, lseg ls sh nil p q = !! (ptr_eq p q) && emp.
-
-Lemma lseg_cons_eq (ls: listspec list_structid list_link list_token):
-     forall sh h r x z ,
-    lseg ls sh (h::r) x z =
-        !!(~ ptr_eq x z) &&
-         (EX  y : val,
-          !!(is_pointer_or_null y) &&
-   list_token sh x * list_cell ls sh h x * field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-   lseg ls sh r y z).
-
-Definition lseg_cons_right (ls: listspec list_structid list_link list_token)
-           sh (l: list (elemtype ls)) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX h:(elemtype ls), EX r:list (elemtype ls), EX y:val,
-             !!(l=r++(h::nil) /\ is_pointer_or_null y)  &&
-                       list_token sh y * list_cell ls sh h y *
-             field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) z) y *
-              lseg ls sh r x y.
-
-Lemma lseg_cons_right_neq (ls: listspec list_structid list_link list_token): forall sh l x h y w z,
-       sepalg.nonidentity sh ->
-
-Lemma lseg_cons_right_null (ls: listspec list_structid list_link list_token): forall sh l x h y,
-             list_token sh y * list_cell ls sh h y * field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) nullval) y *
-             lseg ls sh l x y
-   |--   lseg ls sh (l++h::nil) x nullval.
-
-Lemma lseg_cons_right_list (ls: listspec list_structid list_link list_token): forall sh l l' x h y z,
-              sepalg.nonidentity sh ->
-
-Lemma lseg_unroll_right (ls: listspec list_structid list_link list_token): forall sh l x z ,
-    lseg ls sh l x z = (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons_right ls sh l x z.
-Abort.  
-
-Lemma lseg_local_facts:
-  forall ls sh contents p q,
-     lseg ls sh contents p q |--
-     !! (is_pointer_or_null p /\ (p=q <-> contents=nil)).
-
-Definition lseg_cell (ls: listspec list_structid list_link list_token)
-    (sh : share)
-    (v: elemtype ls) (x y: val) :=
-   !!is_pointer_or_null y && list_token sh x * list_cell ls sh v x * field_at sh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x.
-
-Lemma lseg_cons_eq2: forall
-  (ls : listspec list_structid list_link list_token) (sh : share) (h : elemtype ls)
-   (r : list (elemtype ls))
-  (x z : val), lseg ls sh (h :: r) x z =
-  !!(~ ptr_eq x z) && (EX  y : val, lseg_cell ls sh h x y * lseg ls sh r y z).
-
-Lemma list_append: forall {sh: share}
-  {ls : listspec list_structid list_link list_token} (hd mid tl:val) ct1 ct2 P,
-  (forall x tl', lseg_cell ls sh x tl tl' * P tl |-- FF) ->
-  (lseg ls sh ct1 hd mid) * lseg ls sh ct2 mid tl * P tl|--
-  (lseg ls sh (ct1 ++ ct2) hd tl) * P tl.
-
-Lemma list_append_null:
-  forall
-   (ls: listspec list_structid list_link list_token)
-   (sh: share)
-   (hd mid: val) ct1 ct2,
-   lseg ls sh ct1 hd mid * lseg ls sh ct2 mid nullval |--
-   lseg ls sh (ct1++ct2) hd nullval.
-
-Lemma list_cell_valid_pointer:
-  forall (LS: listspec list_structid list_link list_token) (sh: Share.t) v p,
-
-Lemma lseg_valid_pointer:
-  forall (ls : listspec list_structid list_link list_token) sh contents p q R,
-   sepalg.nonidentity sh ->
-
-End LIST.
-
-Hint Rewrite @lseg_nil_eq : norm.
-Hint Rewrite @lseg_eq using reflexivity: norm.
-Hint Resolve @lseg_local_facts : saturate_local.
-
-Ltac resolve_lseg_valid_pointer :=
-match goal with
- | |- ?Q |-- valid_pointer ?p =>
-   match Q with context [lseg ?A ?B ?C p ?q] =>
-   repeat rewrite <- sepcon_assoc;
-   pull_right (lseg A B C p q);
-   apply lseg_valid_pointer; [auto | reflexivity | ];
-   auto 50 with valid_pointer
-   end
- end.
-
-Hint Extern 10 (_ |-- valid_pointer _) =>
-   resolve_lseg_valid_pointer : valid_pointer.
-
-Lemma list_cell_local_facts:
-  forall {cs: compspecs} {list_structid list_link: ident}{list_token}
-    (ls: listspec list_structid list_link list_token) sh v p,
-   list_cell ls sh v p |-- !! field_compatible list_struct nil p.
-Hint Resolve list_cell_local_facts : saturate_local.
-
-End LsegSpecial.
-
-Module Links.
-
-Section LIST2.
-Context {cs: compspecs}.
-Context  {list_structid: ident} {list_link: ident}{list_token: share -> val -> mpred}.
-
-Definition vund  (ls: listspec list_structid list_link list_token) : elemtype ls :=
- compact_prod_gen
-      (fun it => default_val (field_type (fst it) list_fields)) (@all_but_link list_link  list_fields).
-
-Definition lseg (ls: listspec list_structid list_link list_token) (dsh psh: share)
-            (contents: list val) (x z: val) : mpred :=
-  LsegGeneral.lseg ls dsh psh (map (fun v => (v, vund ls)) contents) x z.
-
-Lemma nonreadable_list_cell_eq:
-  forall (ls: listspec list_structid list_link list_token) sh v v' p,
-    ~ readable_share sh ->
-   list_cell ls sh v p = list_cell ls sh v' p.
-
-Lemma cell_share_join:
-  forall (ls: listspec list_structid list_link list_token) ash bsh psh p v,
-   sepalg.join ash bsh psh ->
-
-Lemma join_cell_link (ls: listspec list_structid list_link list_token):
-  forall v' ash bsh psh p v,
-   sepalg.join ash bsh psh ->
-
-Lemma lseg_unfold (ls: listspec list_structid list_link list_token): forall dsh psh contents v1 v2,
-    lseg ls dsh psh contents v1 v2 =
-     match contents with
-     | p::t => !! (p=v1 /\ ~ ptr_eq v1 v2) && EX tail: val,
-                      !! is_pointer_or_null tail &&
-                      list_token dsh v1 * list_cell ls dsh (vund ls) v1
-                      * field_at psh list_struct (StructField list_link :: nil)
-                          (valinject (nested_field_type list_struct (StructField list_link :: nil)) tail) v1
-                      * lseg ls dsh psh t tail v2
-     | nil => !! (ptr_eq v1 v2) && emp
-     end.
-
-Lemma lseg_eq (ls: listspec list_structid list_link list_token):
-  forall dsh psh l v ,
-  is_pointer_or_null v ->
-    lseg ls dsh psh l v v = !!(l=nil) && emp.
-
-Definition lseg_cons (ls: listspec list_structid list_link list_token) dsh psh
-           (l: list val) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX h:(elemtype ls), EX r:list val, EX y:val,
-             !!(l=x::r  /\ is_pointer_or_null y) &&
-             list_token dsh x * list_cell ls dsh h x *
-             field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-             lseg ls dsh psh r y z.
-
-Lemma lseg_unroll (ls: listspec list_structid list_link list_token): forall dsh psh l x z ,
-    ~ (readable_share dsh) ->
-    lseg ls dsh psh l x z =
-      (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons ls dsh psh l x z.
-
-Lemma lseg_unroll_nonempty1 (ls: listspec list_structid list_link list_token):
-   forall p P dsh psh h tail v1 v2,
-    ~ (readable_share dsh) ->
-    ~ ptr_eq v1 v2 ->
-    is_pointer_or_null p ->
-    P |-- list_token dsh v1 * list_cell ls dsh h v1 *
-             (field_at psh list_struct (StructField list_link :: nil)
-                   (valinject (nested_field_type list_struct (StructField list_link :: nil)) p) v1 *
-               lseg ls dsh psh tail p v2) ->
-    P |-- lseg ls dsh psh (v1::tail) v1 v2.
-
-Lemma lseg_neq (ls: listspec list_structid list_link list_token):
-  forall dsh psh s v v2,
-    ~ (readable_share dsh) ->
-    ptr_neq v v2 ->
-     lseg ls dsh psh s v v2 = lseg_cons ls dsh psh s v v2.
-
-Lemma lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall dsh psh s v,
-    ~ (readable_share dsh) ->
-      typed_true (tptr list_struct) v ->
-     lseg ls dsh psh s v nullval = lseg_cons ls dsh psh s v nullval.
-
-Lemma unfold_lseg_neq (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R (v v2: val) dsh psh (s: list val),
-    ~ (readable_share dsh) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s v v2 :: R))) |--
-                        !! (ptr_neq v v2) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s v v2 :: R))) |--
-     EX hryp: elemtype ls * list val * val * val,
-      match hryp with (h,r,y,p) =>
-       !! (s=p::r /\ is_pointer_or_null y) &&
-       !! (p=v) &&
-      PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y v2 ::
-                  R)))
-        end.
-
-Lemma unfold_lseg_cons (ls: listspec list_structid list_link list_token):
-   forall P Q1 Q R e dsh psh s,
-    ~ (readable_share dsh) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s e nullval :: R))) |--
-                        !! (typed_true (tptr list_struct) e) ->
-      PROPx P (LOCALx (Q1::Q) (SEPx (lseg ls dsh psh s e nullval :: R))) |--
-     EX hryp: elemtype ls * list val * val * val,
-      match hryp with (h,r,y,p) =>
-       !! (s=p::r /\ is_pointer_or_null y) &&
-       !! (p = e) &&
-      PROPx P (LOCALx Q
-        (SEPx (list_token dsh e :: list_cell ls dsh h e ::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) e ::
-                  lseg ls dsh psh r y nullval ::
-                  R)))
-        end.
-
-Lemma semax_lseg_neq (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q dsh psh s v v2 R c Post,
-    ~ (readable_share dsh) ->
-    ~ (ptr_eq v v2) ->
-  (forall (h: elemtype ls) (r: list val) (y: val),
-    s=v::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v ::
-                  field_at psh list_struct (StructField list_link :: nil)
-                      (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y v2 ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls dsh psh s v v2 :: R))))
-       c Post.
-
-Lemma semax_lseg_nonnull (ls: listspec list_structid list_link list_token):
-  forall (Espec: OracleKind)
-      Delta P Q dsh psh s v R c Post,
-    ~ (readable_share dsh) ->
-   ENTAIL Delta, PROPx P (LOCALx Q
-            (SEPx (lseg ls dsh psh s v nullval :: R))) |--
-                        !!(typed_true (tptr list_struct) v)  ->
-  (forall (h: elemtype ls) (r: list val) (y: val),
-    s=v::r -> is_pointer_or_null y ->
-    semax Delta
-        (PROPx P (LOCALx Q
-        (SEPx (list_token dsh v :: list_cell ls dsh h v ::
-                  field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) v ::
-                  lseg ls dsh psh r y nullval ::
-                  R)))) c Post) ->
-   semax Delta
-       (PROPx P (LOCALx Q (SEPx (lseg ls dsh psh s v nullval :: R))))
-       c Post.
-
-Lemma lseg_nil_eq (ls: listspec list_structid list_link list_token):
-    forall dsh psh p q,
-   lseg ls dsh psh nil p q = !! (ptr_eq p q) && emp.
-
-Lemma lseg_cons_eq (ls: listspec list_structid list_link list_token):
-     forall dsh psh h r x z ,
-     ~ (readable_share dsh) ->
-    lseg ls dsh psh (h::r) x z =
-        !!(x = h /\ ~ ptr_eq x z) &&
-         (EX  y : val,
-          !!(is_pointer_or_null y) &&
-   list_token dsh x * list_cell ls dsh (vund ls) x * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x *
-   lseg ls dsh psh r y z).
-
-Definition lseg_cons_right (ls: listspec list_structid list_link list_token)
-           dsh psh (l: list val) (x z: val) : mpred :=
-        !! (~ ptr_eq x z) &&
-       EX r:list val , EX y:val,
-             !!(l=r++y::nil /\ is_pointer_or_null y)  &&
-                       list_cell ls dsh (vund ls) y *
-             field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) z) y *
-             lseg ls dsh psh r x y.
-
-Lemma lseg_cons_right_neq (ls: listspec list_structid list_link list_token):
-      forall dsh psh l x h y w z,
-     sepalg.nonidentity psh ->
-
-Lemma lseg_cons_right_null (ls: listspec list_structid list_link list_token): forall dsh psh l x h y,
-     ~ (readable_share dsh) ->
-             list_token dsh y * list_cell ls dsh h y * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) nullval) y *
-             lseg ls dsh psh l x y
-   |--   lseg ls dsh psh (l++y::nil) x nullval.
-
-Lemma lseg_cons_right_list (ls: listspec list_structid list_link list_token):
-      forall dsh psh l l' x h y z,
-     sepalg.nonidentity psh ->
-
-Lemma lseg_unroll_right (ls: listspec list_structid list_link list_token): forall sh sh' l x z ,
-    lseg ls sh sh' l x z = (!! (ptr_eq x z) && !! (l=nil) && emp) || lseg_cons_right ls sh sh' l x z.
-Abort.  
-
-Lemma lseg_local_facts:
-  forall ls dsh psh contents p q,
-     lseg ls dsh psh contents p q |--
-     !! (is_pointer_or_null p /\ (p=q <-> contents=nil)).
-
-Definition lseg_cell  (ls: listspec list_structid list_link list_token)
-    (dsh psh : share)
-    (v: elemtype ls) (x y: val) :=
-   !!is_pointer_or_null y && list_token dsh x * list_cell ls dsh v x * field_at psh list_struct (StructField list_link :: nil) (valinject (nested_field_type list_struct (StructField list_link :: nil)) y) x.
-
-Lemma lseg_cons_eq2: forall
-  (ls : listspec list_structid list_link list_token) (dsh psh : share) (h : elemtype ls)
-   (r : list val )  (x z : val),
-     ~ (readable_share dsh) ->
-  lseg ls dsh psh (x :: r) x z =
-  !!(~ ptr_eq x z) && (EX  y : val, lseg_cell ls dsh psh h x y * lseg ls dsh psh r y z).
-
-Lemma list_append: forall {dsh psh: share}
-  {ls : listspec list_structid list_link list_token} (hd mid tl:val) ct1 ct2 P,
-  (forall tl', lseg_cell ls dsh psh (vund ls) tl tl' * P tl |-- FF) ->
-  (lseg ls dsh psh ct1 hd mid) * lseg ls dsh psh ct2 mid tl * P tl|--
-  (lseg ls dsh psh (ct1 ++ ct2) hd tl) * P tl.
-
-Lemma list_append_null:
-  forall
-   (ls: listspec list_structid list_link list_token)
-   (dsh psh: share)
-   (hd mid: val) ct1 ct2,
-   lseg ls dsh psh ct1 hd mid * lseg ls dsh psh ct2 mid nullval |--
-   lseg ls dsh psh (ct1++ct2) hd nullval.
-
-Lemma list_cell_valid_pointer:
-  forall (LS: listspec list_structid list_link list_token) (dsh psh: Share.t) v p,
-
-Lemma list_cell_valid_pointerx:
-  forall (ls : listspec list_structid list_link list_token)  sh v p,
-   sh <> Share.bot ->
-   list_cell ls sh v p |-- valid_pointer p.
-Proof.
- intros.
- unfold list_cell.
-Abort.  
-Lemma lseg_valid_pointer:
-  forall (ls : listspec list_structid list_link list_token) dsh psh contents p q R,
-   sepalg.nonidentity dsh ->
-
-End LIST2.
-
-Lemma join_sub_Tsh:
-  forall sh, sepalg.join_sub sh Tsh.
-Hint Resolve join_sub_Tsh: valid_pointer.
-
-Hint Rewrite @lseg_nil_eq : norm.
-
-Hint Rewrite @lseg_eq using reflexivity: norm.
-
-Hint Resolve @lseg_local_facts : saturate_local.
-
-Hint Resolve denote_tc_test_eq_split : valid_pointer.
-
-Ltac resolve_lseg_valid_pointer :=
-match goal with
- | |- ?Q |-- valid_pointer ?p =>
-   match Q with context [lseg ?A ?B ?C ?D p ?q] =>
-   repeat rewrite <- sepcon_assoc;
-   pull_right (lseg A B C D p q);
-   apply lseg_valid_pointer; [auto | | | reflexivity | ];
-   auto 50 with valid_pointer
-   end
- end.
-
-Hint Extern 10 (_ |-- valid_pointer _) =>
-       resolve_lseg_valid_pointer : valid_pointer.
-
-Ltac resolve_list_cell_valid_pointer :=
- match goal with |- ?A |-- valid_pointer ?p =>
-  match A with context [@list_cell ?cs ?sid ?lid ?tok ?LS ?dsh ?v p] =>
-   match A with context [field_at ?psh ?t (StructField lid::nil) ?v' p] =>
-    apply derives_trans with
-      (@list_cell cs sid lid tok LS dsh v p *
-      field_at_ psh t (StructField lid::nil) p * TT);
-      [cancel
-      | apply sepcon_valid_pointer1;
-        apply list_cell_valid_pointer; [auto | | reflexivity]; auto with valid_pointer]
-   end
-  end
- end.
-
-Hint Extern 10 (_ |-- valid_pointer _) =>
-   resolve_list_cell_valid_pointer : valid_pointer.
-
-End Links.
-
-Arguments elemtype {cs} {list_structid} {list_link} {list_token} ls / . *)
-
 Require Import VST.progs.queue.
-(* VST.progs.queue:
-From Coq Require Import String List ZArith.
-From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.
-Local Open Scope Z_scope.
-
-Module Info.
-  Definition version := "3.3"%string.
-  Definition build_number := ""%string.
-  Definition build_tag := ""%string.
-  Definition arch := "x86"%string.
-  Definition model := "32sse2"%string.
-  Definition abi := "standard"%string.
-  Definition bitsize := 32.
-  Definition big_endian := false.
-  Definition source_file := "progs/queue.c"%string.
-  Definition normalized := true.
-End Info.
-
-Definition _Q : ident := 66%positive.
-Definition ___builtin_ais_annot : ident := 8%positive.
-Definition ___builtin_annot : ident := 15%positive.
-Definition ___builtin_annot_intval : ident := 16%positive.
-Definition ___builtin_bswap : ident := 9%positive.
-Definition ___builtin_bswap16 : ident := 11%positive.
-Definition ___builtin_bswap32 : ident := 10%positive.
-Definition ___builtin_bswap64 : ident := 41%positive.
-Definition ___builtin_clz : ident := 42%positive.
-Definition ___builtin_clzl : ident := 43%positive.
-Definition ___builtin_clzll : ident := 44%positive.
-Definition ___builtin_ctz : ident := 45%positive.
-Definition ___builtin_ctzl : ident := 46%positive.
-Definition ___builtin_ctzll : ident := 47%positive.
-Definition ___builtin_debug : ident := 59%positive.
-Definition ___builtin_fabs : ident := 12%positive.
-Definition ___builtin_fmadd : ident := 50%positive.
-Definition ___builtin_fmax : ident := 48%positive.
-Definition ___builtin_fmin : ident := 49%positive.
-Definition ___builtin_fmsub : ident := 51%positive.
-Definition ___builtin_fnmadd : ident := 52%positive.
-Definition ___builtin_fnmsub : ident := 53%positive.
-Definition ___builtin_fsqrt : ident := 13%positive.
-Definition ___builtin_membar : ident := 17%positive.
-Definition ___builtin_memcpy_aligned : ident := 14%positive.
-Definition ___builtin_nop : ident := 58%positive.
-Definition ___builtin_read16_reversed : ident := 54%positive.
-Definition ___builtin_read32_reversed : ident := 55%positive.
-Definition ___builtin_va_arg : ident := 19%positive.
-Definition ___builtin_va_copy : ident := 20%positive.
-Definition ___builtin_va_end : ident := 21%positive.
-Definition ___builtin_va_start : ident := 18%positive.
-Definition ___builtin_write16_reversed : ident := 56%positive.
-Definition ___builtin_write32_reversed : ident := 57%positive.
-Definition ___compcert_i64_dtos : ident := 26%positive.
-Definition ___compcert_i64_dtou : ident := 27%positive.
-Definition ___compcert_i64_sar : ident := 38%positive.
-Definition ___compcert_i64_sdiv : ident := 32%positive.
-Definition ___compcert_i64_shl : ident := 36%positive.
-Definition ___compcert_i64_shr : ident := 37%positive.
-Definition ___compcert_i64_smod : ident := 34%positive.
-Definition ___compcert_i64_smulh : ident := 39%positive.
-Definition ___compcert_i64_stod : ident := 28%positive.
-Definition ___compcert_i64_stof : ident := 30%positive.
-Definition ___compcert_i64_udiv : ident := 33%positive.
-Definition ___compcert_i64_umod : ident := 35%positive.
-Definition ___compcert_i64_umulh : ident := 40%positive.
-Definition ___compcert_i64_utod : ident := 29%positive.
-Definition ___compcert_i64_utof : ident := 31%positive.
-Definition ___compcert_va_composite : ident := 25%positive.
-Definition ___compcert_va_float64 : ident := 24%positive.
-Definition ___compcert_va_int32 : ident := 22%positive.
-Definition ___compcert_va_int64 : ident := 23%positive.
-Definition _a : ident := 1%positive.
-Definition _b : ident := 2%positive.
-Definition _elem : ident := 3%positive.
-Definition _exit : ident := 62%positive.
-Definition _fifo : ident := 7%positive.
-Definition _fifo_empty : ident := 71%positive.
-Definition _fifo_get : ident := 72%positive.
-Definition _fifo_new : ident := 67%positive.
-Definition _fifo_put : ident := 70%positive.
-Definition _free : ident := 61%positive.
-Definition _h : ident := 68%positive.
-Definition _head : ident := 5%positive.
-Definition _i : ident := 74%positive.
-Definition _j : ident := 75%positive.
-Definition _main : ident := 76%positive.
-Definition _make_elem : ident := 73%positive.
-Definition _malloc : ident := 60%positive.
-Definition _n : ident := 63%positive.
-Definition _next : ident := 4%positive.
-Definition _p : ident := 64%positive.
-Definition _surely_malloc : ident := 65%positive.
-Definition _t : ident := 69%positive.
-Definition _tail : ident := 6%positive.
-Definition _t'1 : ident := 77%positive.
-Definition _t'2 : ident := 78%positive.
-Definition _t'3 : ident := 79%positive.
-Definition _t'4 : ident := 80%positive.
-
-Definition f_surely_malloc := {|
-  fn_return := (tptr tvoid);
-  fn_callconv := cc_default;
-  fn_params := ((_n, tuint) :: nil);
-  fn_vars := nil;
-  fn_temps := ((_p, (tptr tvoid)) :: (_t'1, (tptr tvoid)) :: nil);
-  fn_body :=
-(Ssequence
-  (Ssequence
-    (Scall (Some _t'1)
-      (Evar _malloc (Tfunction (Tcons tuint Tnil) (tptr tvoid) cc_default))
-      ((Etempvar _n tuint) :: nil))
-    (Sset _p (Etempvar _t'1 (tptr tvoid))))
-  (Ssequence
-    (Sifthenelse (Eunop Onotbool (Etempvar _p (tptr tvoid)) tint)
-      (Scall None (Evar _exit (Tfunction (Tcons tint Tnil) tvoid cc_default))
-        ((Econst_int (Int.repr 1) tint) :: nil))
-      Sskip)
-    (Sreturn (Some (Etempvar _p (tptr tvoid))))))
-|}.
-
-Definition f_fifo_new := {|
-  fn_return := (tptr (Tstruct _fifo noattr));
-  fn_callconv := cc_default;
-  fn_params := nil;
-  fn_vars := nil;
-  fn_temps := ((_Q, (tptr (Tstruct _fifo noattr))) :: (_t'1, (tptr tvoid)) ::
-               nil);
-  fn_body :=
-(Ssequence
-  (Ssequence
-    (Scall (Some _t'1)
-      (Evar _surely_malloc (Tfunction (Tcons tuint Tnil) (tptr tvoid)
-                             cc_default))
-      ((Esizeof (Tstruct _fifo noattr) tuint) :: nil))
-    (Sset _Q
-      (Ecast (Etempvar _t'1 (tptr tvoid)) (tptr (Tstruct _fifo noattr)))))
-  (Ssequence
-    (Sassign
-      (Efield
-        (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-          (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr)))
-      (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)))
-    (Ssequence
-      (Sassign
-        (Efield
-          (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-            (Tstruct _fifo noattr)) _tail (tptr (Tstruct _elem noattr)))
-        (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)))
-      (Sreturn (Some (Etempvar _Q (tptr (Tstruct _fifo noattr))))))))
-|}.
-
-Definition f_fifo_put := {|
-  fn_return := tvoid;
-  fn_callconv := cc_default;
-  fn_params := ((_Q, (tptr (Tstruct _fifo noattr))) ::
-                (_p, (tptr (Tstruct _elem noattr))) :: nil);
-  fn_vars := nil;
-  fn_temps := ((_h, (tptr (Tstruct _elem noattr))) ::
-               (_t, (tptr (Tstruct _elem noattr))) :: nil);
-  fn_body :=
-(Ssequence
-  (Sassign
-    (Efield
-      (Ederef (Etempvar _p (tptr (Tstruct _elem noattr)))
-        (Tstruct _elem noattr)) _next (tptr (Tstruct _elem noattr)))
-    (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)))
-  (Ssequence
-    (Sset _h
-      (Efield
-        (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-          (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr))))
-    (Sifthenelse (Ebinop Oeq (Etempvar _h (tptr (Tstruct _elem noattr)))
-                   (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint)
-      (Ssequence
-        (Sassign
-          (Efield
-            (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-              (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr)))
-          (Etempvar _p (tptr (Tstruct _elem noattr))))
-        (Sassign
-          (Efield
-            (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-              (Tstruct _fifo noattr)) _tail (tptr (Tstruct _elem noattr)))
-          (Etempvar _p (tptr (Tstruct _elem noattr)))))
-      (Ssequence
-        (Sset _t
-          (Efield
-            (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-              (Tstruct _fifo noattr)) _tail (tptr (Tstruct _elem noattr))))
-        (Ssequence
-          (Sassign
-            (Efield
-              (Ederef (Etempvar _t (tptr (Tstruct _elem noattr)))
-                (Tstruct _elem noattr)) _next (tptr (Tstruct _elem noattr)))
-            (Etempvar _p (tptr (Tstruct _elem noattr))))
-          (Sassign
-            (Efield
-              (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-                (Tstruct _fifo noattr)) _tail (tptr (Tstruct _elem noattr)))
-            (Etempvar _p (tptr (Tstruct _elem noattr)))))))))
-|}.
-
-Definition f_fifo_empty := {|
-  fn_return := tint;
-  fn_callconv := cc_default;
-  fn_params := ((_Q, (tptr (Tstruct _fifo noattr))) :: nil);
-  fn_vars := nil;
-  fn_temps := ((_h, (tptr (Tstruct _elem noattr))) :: nil);
-  fn_body :=
-(Ssequence
-  (Sset _h
-    (Efield
-      (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-        (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr))))
-  (Sreturn (Some (Ebinop Oeq (Etempvar _h (tptr (Tstruct _elem noattr)))
-                   (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))))
-|}.
-
-Definition f_fifo_get := {|
-  fn_return := (tptr (Tstruct _elem noattr));
-  fn_callconv := cc_default;
-  fn_params := ((_Q, (tptr (Tstruct _fifo noattr))) :: nil);
-  fn_vars := nil;
-  fn_temps := ((_h, (tptr (Tstruct _elem noattr))) ::
-               (_n, (tptr (Tstruct _elem noattr))) :: nil);
-  fn_body :=
-(Ssequence
-  (Sset _h
-    (Efield
-      (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-        (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr))))
-  (Ssequence
-    (Sset _n
-      (Efield
-        (Ederef (Etempvar _h (tptr (Tstruct _elem noattr)))
-          (Tstruct _elem noattr)) _next (tptr (Tstruct _elem noattr))))
-    (Ssequence
-      (Sassign
-        (Efield
-          (Ederef (Etempvar _Q (tptr (Tstruct _fifo noattr)))
-            (Tstruct _fifo noattr)) _head (tptr (Tstruct _elem noattr)))
-        (Etempvar _n (tptr (Tstruct _elem noattr))))
-      (Sreturn (Some (Etempvar _h (tptr (Tstruct _elem noattr))))))))
-|}.
-
-Definition f_make_elem := {|
-  fn_return := (tptr (Tstruct _elem noattr));
-  fn_callconv := cc_default;
-  fn_params := ((_a, tint) :: (_b, tint) :: nil);
-  fn_vars := nil;
-  fn_temps := ((_p, (tptr (Tstruct _elem noattr))) :: (_t'1, (tptr tvoid)) ::
-               nil);
-  fn_body :=
-(Ssequence
-  (Ssequence
-    (Scall (Some _t'1)
-      (Evar _surely_malloc (Tfunction (Tcons tuint Tnil) (tptr tvoid)
-                             cc_default))
-      ((Esizeof (Tstruct _elem noattr) tuint) :: nil))
-    (Sset _p (Etempvar _t'1 (tptr tvoid))))
-  (Ssequence
-    (Sassign
-      (Efield
-        (Ederef (Etempvar _p (tptr (Tstruct _elem noattr)))
-          (Tstruct _elem noattr)) _a tint) (Etempvar _a tint))
-    (Ssequence
-      (Sassign
-        (Efield
-          (Ederef (Etempvar _p (tptr (Tstruct _elem noattr)))
-            (Tstruct _elem noattr)) _b tint) (Etempvar _b tint))
-      (Sreturn (Some (Etempvar _p (tptr (Tstruct _elem noattr))))))))
-|}.
-
-Definition f_main := {|
-  fn_return := tint;
-  fn_callconv := cc_default;
-  fn_params := nil;
-  fn_vars := nil;
-  fn_temps := ((_i, tint) :: (_j, tint) ::
-               (_Q, (tptr (Tstruct _fifo noattr))) ::
-               (_p, (tptr (Tstruct _elem noattr))) ::
-               (_t'4, (tptr (Tstruct _elem noattr))) ::
-               (_t'3, (tptr (Tstruct _elem noattr))) ::
-               (_t'2, (tptr (Tstruct _elem noattr))) ::
-               (_t'1, (tptr (Tstruct _fifo noattr))) :: nil);
-  fn_body :=
-(Ssequence
-  (Ssequence
-    (Ssequence
-      (Scall (Some _t'1)
-        (Evar _fifo_new (Tfunction Tnil (tptr (Tstruct _fifo noattr))
-                          cc_default)) nil)
-      (Sset _Q (Etempvar _t'1 (tptr (Tstruct _fifo noattr)))))
-    (Ssequence
-      (Ssequence
-        (Scall (Some _t'2)
-          (Evar _make_elem (Tfunction (Tcons tint (Tcons tint Tnil))
-                             (tptr (Tstruct _elem noattr)) cc_default))
-          ((Econst_int (Int.repr 1) tint) ::
-           (Econst_int (Int.repr 10) tint) :: nil))
-        (Sset _p (Etempvar _t'2 (tptr (Tstruct _elem noattr)))))
-      (Ssequence
-        (Scall None
-          (Evar _fifo_put (Tfunction
-                            (Tcons (tptr (Tstruct _fifo noattr))
-                              (Tcons (tptr (Tstruct _elem noattr)) Tnil))
-                            tvoid cc_default))
-          ((Etempvar _Q (tptr (Tstruct _fifo noattr))) ::
-           (Etempvar _p (tptr (Tstruct _elem noattr))) :: nil))
-        (Ssequence
-          (Ssequence
-            (Scall (Some _t'3)
-              (Evar _make_elem (Tfunction (Tcons tint (Tcons tint Tnil))
-                                 (tptr (Tstruct _elem noattr)) cc_default))
-              ((Econst_int (Int.repr 2) tint) ::
-               (Econst_int (Int.repr 20) tint) :: nil))
-            (Sset _p (Etempvar _t'3 (tptr (Tstruct _elem noattr)))))
-          (Ssequence
-            (Scall None
-              (Evar _fifo_put (Tfunction
-                                (Tcons (tptr (Tstruct _fifo noattr))
-                                  (Tcons (tptr (Tstruct _elem noattr)) Tnil))
-                                tvoid cc_default))
-              ((Etempvar _Q (tptr (Tstruct _fifo noattr))) ::
-               (Etempvar _p (tptr (Tstruct _elem noattr))) :: nil))
-            (Ssequence
-              (Ssequence
-                (Scall (Some _t'4)
-                  (Evar _fifo_get (Tfunction
-                                    (Tcons (tptr (Tstruct _fifo noattr))
-                                      Tnil) (tptr (Tstruct _elem noattr))
-                                    cc_default))
-                  ((Etempvar _Q (tptr (Tstruct _fifo noattr))) :: nil))
-                (Sset _p (Etempvar _t'4 (tptr (Tstruct _elem noattr)))))
-              (Ssequence
-                (Sset _i
-                  (Efield
-                    (Ederef (Etempvar _p (tptr (Tstruct _elem noattr)))
-                      (Tstruct _elem noattr)) _a tint))
-                (Ssequence
-                  (Sset _j
-                    (Efield
-                      (Ederef (Etempvar _p (tptr (Tstruct _elem noattr)))
-                        (Tstruct _elem noattr)) _b tint))
-                  (Ssequence
-                    (Scall None
-                      (Evar _free (Tfunction (Tcons (tptr tvoid) Tnil) tvoid
-                                    cc_default))
-                      ((Etempvar _p (tptr (Tstruct _elem noattr))) :: nil))
-                    (Sreturn (Some (Ebinop Oadd (Etempvar _i tint)
-                                     (Etempvar _j tint) tint))))))))))))
-  (Sreturn (Some (Econst_int (Int.repr 0) tint))))
-|}.
-
-Definition composites : list composite_definition :=
-(Composite _elem Struct
-   ((_a, tint) :: (_b, tint) :: (_next, (tptr (Tstruct _elem noattr))) ::
-    nil)
-   noattr ::
- Composite _fifo Struct
-   ((_head, (tptr (Tstruct _elem noattr))) ::
-    (_tail, (tptr (Tstruct _elem noattr))) :: nil)
-   noattr :: nil).
-
-Definition global_definitions : list (ident * globdef fundef type) :=
-((___builtin_ais_annot,
-   Gfun(External (EF_builtin "__builtin_ais_annot"
-                   (mksignature (AST.Tint :: nil) None
-                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
-     (Tcons (tptr tschar) Tnil) tvoid
-     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
- (___builtin_bswap,
-   Gfun(External (EF_builtin "__builtin_bswap"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tuint cc_default)) ::
- (___builtin_bswap32,
-   Gfun(External (EF_builtin "__builtin_bswap32"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tuint cc_default)) ::
- (___builtin_bswap16,
-   Gfun(External (EF_builtin "__builtin_bswap16"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tushort Tnil) tushort cc_default)) ::
- (___builtin_fabs,
-   Gfun(External (EF_builtin "__builtin_fabs"
-                   (mksignature (AST.Tfloat :: nil) (Some AST.Tfloat)
-                     cc_default)) (Tcons tdouble Tnil) tdouble cc_default)) ::
- (___builtin_fsqrt,
-   Gfun(External (EF_builtin "__builtin_fsqrt"
-                   (mksignature (AST.Tfloat :: nil) (Some AST.Tfloat)
-                     cc_default)) (Tcons tdouble Tnil) tdouble cc_default)) ::
- (___builtin_memcpy_aligned,
-   Gfun(External (EF_builtin "__builtin_memcpy_aligned"
-                   (mksignature
-                     (AST.Tint :: AST.Tint :: AST.Tint :: AST.Tint :: nil)
-                     None cc_default))
-     (Tcons (tptr tvoid)
-       (Tcons (tptr tvoid) (Tcons tuint (Tcons tuint Tnil)))) tvoid
-     cc_default)) ::
- (___builtin_annot,
-   Gfun(External (EF_builtin "__builtin_annot"
-                   (mksignature (AST.Tint :: nil) None
-                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
-     (Tcons (tptr tschar) Tnil) tvoid
-     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
- (___builtin_annot_intval,
-   Gfun(External (EF_builtin "__builtin_annot_intval"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) (Some AST.Tint)
-                     cc_default)) (Tcons (tptr tschar) (Tcons tint Tnil))
-     tint cc_default)) ::
- (___builtin_membar,
-   Gfun(External (EF_builtin "__builtin_membar"
-                   (mksignature nil None cc_default)) Tnil tvoid cc_default)) ::
- (___builtin_va_start,
-   Gfun(External (EF_builtin "__builtin_va_start"
-                   (mksignature (AST.Tint :: nil) None cc_default))
-     (Tcons (tptr tvoid) Tnil) tvoid cc_default)) ::
- (___builtin_va_arg,
-   Gfun(External (EF_builtin "__builtin_va_arg"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) None
-                     cc_default)) (Tcons (tptr tvoid) (Tcons tuint Tnil))
-     tvoid cc_default)) ::
- (___builtin_va_copy,
-   Gfun(External (EF_builtin "__builtin_va_copy"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) None
-                     cc_default))
-     (Tcons (tptr tvoid) (Tcons (tptr tvoid) Tnil)) tvoid cc_default)) ::
- (___builtin_va_end,
-   Gfun(External (EF_builtin "__builtin_va_end"
-                   (mksignature (AST.Tint :: nil) None cc_default))
-     (Tcons (tptr tvoid) Tnil) tvoid cc_default)) ::
- (___compcert_va_int32,
-   Gfun(External (EF_external "__compcert_va_int32"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons (tptr tvoid) Tnil) tuint cc_default)) ::
- (___compcert_va_int64,
-   Gfun(External (EF_external "__compcert_va_int64"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tlong)
-                     cc_default)) (Tcons (tptr tvoid) Tnil) tulong
-     cc_default)) ::
- (___compcert_va_float64,
-   Gfun(External (EF_external "__compcert_va_float64"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tfloat)
-                     cc_default)) (Tcons (tptr tvoid) Tnil) tdouble
-     cc_default)) ::
- (___compcert_va_composite,
-   Gfun(External (EF_external "__compcert_va_composite"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) (Some AST.Tint)
-                     cc_default)) (Tcons (tptr tvoid) (Tcons tuint Tnil))
-     (tptr tvoid) cc_default)) ::
- (___compcert_i64_dtos,
-   Gfun(External (EF_runtime "__compcert_i64_dtos"
-                   (mksignature (AST.Tfloat :: nil) (Some AST.Tlong)
-                     cc_default)) (Tcons tdouble Tnil) tlong cc_default)) ::
- (___compcert_i64_dtou,
-   Gfun(External (EF_runtime "__compcert_i64_dtou"
-                   (mksignature (AST.Tfloat :: nil) (Some AST.Tlong)
-                     cc_default)) (Tcons tdouble Tnil) tulong cc_default)) ::
- (___compcert_i64_stod,
-   Gfun(External (EF_runtime "__compcert_i64_stod"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tfloat)
-                     cc_default)) (Tcons tlong Tnil) tdouble cc_default)) ::
- (___compcert_i64_utod,
-   Gfun(External (EF_runtime "__compcert_i64_utod"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tfloat)
-                     cc_default)) (Tcons tulong Tnil) tdouble cc_default)) ::
- (___compcert_i64_stof,
-   Gfun(External (EF_runtime "__compcert_i64_stof"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tsingle)
-                     cc_default)) (Tcons tlong Tnil) tfloat cc_default)) ::
- (___compcert_i64_utof,
-   Gfun(External (EF_runtime "__compcert_i64_utof"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tsingle)
-                     cc_default)) (Tcons tulong Tnil) tfloat cc_default)) ::
- (___compcert_i64_sdiv,
-   Gfun(External (EF_runtime "__compcert_i64_sdiv"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
- (___compcert_i64_udiv,
-   Gfun(External (EF_runtime "__compcert_i64_udiv"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
- (___compcert_i64_smod,
-   Gfun(External (EF_runtime "__compcert_i64_smod"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
- (___compcert_i64_umod,
-   Gfun(External (EF_runtime "__compcert_i64_umod"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
- (___compcert_i64_shl,
-   Gfun(External (EF_runtime "__compcert_i64_shl"
-                   (mksignature (AST.Tlong :: AST.Tint :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tlong (Tcons tint Tnil)) tlong cc_default)) ::
- (___compcert_i64_shr,
-   Gfun(External (EF_runtime "__compcert_i64_shr"
-                   (mksignature (AST.Tlong :: AST.Tint :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tulong (Tcons tint Tnil)) tulong cc_default)) ::
- (___compcert_i64_sar,
-   Gfun(External (EF_runtime "__compcert_i64_sar"
-                   (mksignature (AST.Tlong :: AST.Tint :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tlong (Tcons tint Tnil)) tlong cc_default)) ::
- (___compcert_i64_smulh,
-   Gfun(External (EF_runtime "__compcert_i64_smulh"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tlong (Tcons tlong Tnil)) tlong cc_default)) ::
- (___compcert_i64_umulh,
-   Gfun(External (EF_runtime "__compcert_i64_umulh"
-                   (mksignature (AST.Tlong :: AST.Tlong :: nil)
-                     (Some AST.Tlong) cc_default))
-     (Tcons tulong (Tcons tulong Tnil)) tulong cc_default)) ::
- (___builtin_bswap64,
-   Gfun(External (EF_builtin "__builtin_bswap64"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tlong)
-                     cc_default)) (Tcons tulong Tnil) tulong cc_default)) ::
- (___builtin_clz,
-   Gfun(External (EF_builtin "__builtin_clz"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tint cc_default)) ::
- (___builtin_clzl,
-   Gfun(External (EF_builtin "__builtin_clzl"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tint cc_default)) ::
- (___builtin_clzll,
-   Gfun(External (EF_builtin "__builtin_clzll"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tint)
-                     cc_default)) (Tcons tulong Tnil) tint cc_default)) ::
- (___builtin_ctz,
-   Gfun(External (EF_builtin "__builtin_ctz"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tint cc_default)) ::
- (___builtin_ctzl,
-   Gfun(External (EF_builtin "__builtin_ctzl"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons tuint Tnil) tint cc_default)) ::
- (___builtin_ctzll,
-   Gfun(External (EF_builtin "__builtin_ctzll"
-                   (mksignature (AST.Tlong :: nil) (Some AST.Tint)
-                     cc_default)) (Tcons tulong Tnil) tint cc_default)) ::
- (___builtin_fmax,
-   Gfun(External (EF_builtin "__builtin_fmax"
-                   (mksignature (AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble Tnil)) tdouble cc_default)) ::
- (___builtin_fmin,
-   Gfun(External (EF_builtin "__builtin_fmin"
-                   (mksignature (AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble Tnil)) tdouble cc_default)) ::
- (___builtin_fmadd,
-   Gfun(External (EF_builtin "__builtin_fmadd"
-                   (mksignature
-                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
-     cc_default)) ::
- (___builtin_fmsub,
-   Gfun(External (EF_builtin "__builtin_fmsub"
-                   (mksignature
-                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
-     cc_default)) ::
- (___builtin_fnmadd,
-   Gfun(External (EF_builtin "__builtin_fnmadd"
-                   (mksignature
-                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
-     cc_default)) ::
- (___builtin_fnmsub,
-   Gfun(External (EF_builtin "__builtin_fnmsub"
-                   (mksignature
-                     (AST.Tfloat :: AST.Tfloat :: AST.Tfloat :: nil)
-                     (Some AST.Tfloat) cc_default))
-     (Tcons tdouble (Tcons tdouble (Tcons tdouble Tnil))) tdouble
-     cc_default)) ::
- (___builtin_read16_reversed,
-   Gfun(External (EF_builtin "__builtin_read16_reversed"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons (tptr tushort) Tnil) tushort cc_default)) ::
- (___builtin_read32_reversed,
-   Gfun(External (EF_builtin "__builtin_read32_reversed"
-                   (mksignature (AST.Tint :: nil) (Some AST.Tint) cc_default))
-     (Tcons (tptr tuint) Tnil) tuint cc_default)) ::
- (___builtin_write16_reversed,
-   Gfun(External (EF_builtin "__builtin_write16_reversed"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) None
-                     cc_default)) (Tcons (tptr tushort) (Tcons tushort Tnil))
-     tvoid cc_default)) ::
- (___builtin_write32_reversed,
-   Gfun(External (EF_builtin "__builtin_write32_reversed"
-                   (mksignature (AST.Tint :: AST.Tint :: nil) None
-                     cc_default)) (Tcons (tptr tuint) (Tcons tuint Tnil))
-     tvoid cc_default)) ::
- (___builtin_nop,
-   Gfun(External (EF_builtin "__builtin_nop"
-                   (mksignature nil None cc_default)) Tnil tvoid cc_default)) ::
- (___builtin_debug,
-   Gfun(External (EF_external "__builtin_debug"
-                   (mksignature (AST.Tint :: nil) None
-                     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|}))
-     (Tcons tint Tnil) tvoid
-     {|cc_vararg:=true; cc_unproto:=false; cc_structret:=false|})) ::
- (_malloc,
-   Gfun(External EF_malloc (Tcons tuint Tnil) (tptr tvoid) cc_default)) ::
- (_free, Gfun(External EF_free (Tcons (tptr tvoid) Tnil) tvoid cc_default)) ::
- (_exit,
-   Gfun(External (EF_external "exit"
-                   (mksignature (AST.Tint :: nil) None cc_default))
-     (Tcons tint Tnil) tvoid cc_default)) ::
- (_surely_malloc, Gfun(Internal f_surely_malloc)) ::
- (_fifo_new, Gfun(Internal f_fifo_new)) ::
- (_fifo_put, Gfun(Internal f_fifo_put)) ::
- (_fifo_empty, Gfun(Internal f_fifo_empty)) ::
- (_fifo_get, Gfun(Internal f_fifo_get)) ::
- (_make_elem, Gfun(Internal f_make_elem)) ::
- (_main, Gfun(Internal f_main)) :: nil).
-
-Definition public_idents : list ident :=
-(_main :: _make_elem :: _fifo_get :: _fifo_empty :: _fifo_put :: _fifo_new ::
- _surely_malloc :: _exit :: _free :: _malloc :: ___builtin_debug ::
- ___builtin_nop :: ___builtin_write32_reversed ::
- ___builtin_write16_reversed :: ___builtin_read32_reversed ::
- ___builtin_read16_reversed :: ___builtin_fnmsub :: ___builtin_fnmadd ::
- ___builtin_fmsub :: ___builtin_fmadd :: ___builtin_fmin ::
- ___builtin_fmax :: ___builtin_ctzll :: ___builtin_ctzl :: ___builtin_ctz ::
- ___builtin_clzll :: ___builtin_clzl :: ___builtin_clz ::
- ___builtin_bswap64 :: ___compcert_i64_umulh :: ___compcert_i64_smulh ::
- ___compcert_i64_sar :: ___compcert_i64_shr :: ___compcert_i64_shl ::
- ___compcert_i64_umod :: ___compcert_i64_smod :: ___compcert_i64_udiv ::
- ___compcert_i64_sdiv :: ___compcert_i64_utof :: ___compcert_i64_stof ::
- ___compcert_i64_utod :: ___compcert_i64_stod :: ___compcert_i64_dtou ::
- ___compcert_i64_dtos :: ___compcert_va_composite ::
- ___compcert_va_float64 :: ___compcert_va_int64 :: ___compcert_va_int32 ::
- ___builtin_va_end :: ___builtin_va_copy :: ___builtin_va_arg ::
- ___builtin_va_start :: ___builtin_membar :: ___builtin_annot_intval ::
- ___builtin_annot :: ___builtin_memcpy_aligned :: ___builtin_fsqrt ::
- ___builtin_fabs :: ___builtin_bswap16 :: ___builtin_bswap32 ::
- ___builtin_bswap :: ___builtin_ais_annot :: nil).
-
-Definition prog : Clight.program := 
-  mkprogram composites global_definitions public_idents _main Logic.I. *)
-
 Local Open Scope logic.
-
-
 
 Module VericSepLogic <: SepTheory.SepTheory.
 
-
-
 Definition hprop := mpred.
-
 Definition himp := derives.
-
 Definition heq := fun p1 p2 => derives p1 p2 /\ derives p2 p1.
-
 Definition Refl_himp := derives_refl.
-
 Definition Trans_himp := derives_trans.
 
-
-
 Lemma Refl_heq : Reflexive heq.
-
 Proof.
-
 intros.
-
 unfold heq; split; apply derives_refl; auto.
-
 Qed.
-
-
 
 Lemma Sym_heq : Symmetric heq.
-
 Proof.
-
 unfold heq, Symmetric. intros.
-
 info intuition.
-
 Qed.
-
-
 
 Lemma Trans_heq : Transitive heq.
-
 Proof.
-
 unfold heq, Transitive; intros.
-
 intuition; eapply derives_trans; eauto.
-
 Qed.
-
-
 
 Local Notation "a ===> b" := (himp a b) (at level 60).
-
 Local Notation "a <===> b" := (heq a b) (at level 60).
 
-
-
 Lemma heq_defn : forall a b, (a ===> b /\ b ===> a) <-> a <===> b.
-
 Proof.
-
 intros. unfold heq, himp; intuition.
-
 Qed.
-
-
 
 Lemma heq_himp : forall a b, a <===> b -> a ===> b.
-
 Proof. intros.
-
 unfold heq, himp in *; intuition.
-
 Qed.
-
-
 
 Definition emp := emp.
 
-
-
 Definition inj := fun p => (prop p && emp).
-
-
 
 Definition star := sepcon.
 
-
-
 Definition ex := @exp mpred Nveric.
 
-
-
 Lemma himp_star_comm : forall P Q,
-
     (star P Q) ===> (star Q P).
-
 Proof.
-
 intros. unfold star, himp. cancel.
-
 Qed.
-
-
 
 Lemma heq_star_comm : forall P Q,
-
     (star P Q) <===> (star Q P).
-
 Proof.
-
 intros. split; unfold star; cancel.
-
 Qed.
-
-
 
 Lemma heq_star_assoc : forall P Q R,
-
   (star (star P Q) R) <===> (star P (star Q R)).
-
 Proof.
-
 split; unfold star; cancel.
-
 Qed.
-
-
 
 Lemma heq_star_emp_l : forall P, (star emp P) <===> P.
-
 Proof.
-
 split; unfold star; cancel.
-
 Qed.
-
-
 
 Lemma heq_star_emp_r : forall P, (star P emp) <===> P.
-
 Proof.
-
 split; unfold star; cancel.
-
 Qed.
-
-
 
 Lemma himp_star_frame : forall P Q R S,
-
   P ===> Q -> R ===> S -> (star P R) ===> (star Q S).
-
 Proof.
-
 intros. unfold star. unfold himp in *. apply sepcon_derives; auto.
-
 Qed.
-
-
 
 Ltac sep_solve :=
-
   unfold star, himp, heq, emp, inj, ex in *; intuition; cancel; auto.
 
-
-
 Lemma heq_star_frame : forall P Q R S,
-
   P <===> Q -> R <===> S -> (star P R) <===> (star Q S).
-
 Proof.
-
 intros; sep_solve.
-
 Qed.
-
-
 
 Lemma himp_subst_p : forall P Q R S,
-
   P ===> S -> (star S Q) ===> R ->
-
   (star P Q) ===> R.
-
 Proof.
-
 sep_solve.
-
 eapply derives_trans in H0. apply H0. cancel.
-
 Qed.
-
-
 
 Lemma himp_subst_c : forall P Q R S,
-
   S ===> Q -> P ===> (star S R) ->
-
   P ===> (star Q R).
-
 Proof.
-
 sep_solve.
-
 eapply derives_trans; eauto; cancel.
-
 Qed.
-
-
 
 Lemma heq_subst : forall P Q R S,
-
   P <===> S -> (star S Q) <===> R ->
-
   (star P Q) <===> R.
-
 Proof.
-
 sep_solve.
-
 eapply derives_trans in H; eauto; cancel.
-
 eapply derives_trans; eauto; cancel.
-
 Qed.
-
-
 
 Lemma himp_star_cancel : forall P Q R,
-
   Q ===> R -> (star P Q) ===> (star P R).
-
 Proof.
-
 sep_solve.
-
 Qed.
-
-
 
 Lemma heq_star_cancel : forall P Q R,
-
   Q <===> R -> (star P Q) <===> (star P R).
-
 Proof.
-
 sep_solve.
-
 Qed.
-
-
 
 Lemma himp_star_pure_p : forall P Q F,
-
   (star (inj F) P) ===> Q -> (F -> P ===> Q).
-
 Proof.
-
 sep_solve.
-
 eapply derives_trans in H; eauto; entailer!.
-
 Qed.
-
-
 
 Lemma himp_star_pure_c : forall P Q (F : Prop),
-
   (F -> P ===> Q) -> (star (inj F) P) ===> Q.
-
 Proof.
-
 intros.
-
 sep_solve. entailer!.
-
 Qed.
-
-
 
   Lemma himp_star_pure_cc : forall P Q (p : Prop),
-
     p ->
-
     P ===> Q ->
-
     P ===> (star (inj p) Q).
-
 Proof.
-
 sep_solve. entailer!.
-
 Qed.
-
-
 
   Lemma himp_ex_p : forall T (P : T -> _) Q,
-
             (forall v, (P v) ===> Q) -> (ex T P) ===> Q.
-
   Proof. sep_solve. apply exp_left. auto.
-
 Qed.
-
-
 
   Lemma himp_ex_c : forall T (P : T -> _) Q,
-
     (exists v, Q ===> (P v)) -> Q ===> (ex T P).
-
   Proof.
-
  sep_solve. destruct H. eapply exp_right.  apply H.
-
 Qed.
-
-
 
   Lemma heq_ex : forall T (P Q : T -> _),
-
     (forall v, P v <===> Q v) ->
-
     ex T P <===> ex T Q.
-
 Proof.
-
 sep_solve; apply exp_left;  intros;
-
 specialize (H x); destruct H; apply (exp_right x);
-
 auto.
-
 Qed.
-
-
 
   Lemma himp_ex : forall T (P Q : T -> _),
-
     (forall v, P v ===> Q v) ->
-
     ex T P ===> ex T Q.
-
 Proof.
-
 sep_solve. apply exp_left. intros.
-
 specialize (H x). apply (exp_right x). auto.
-
 Qed.
-
-
 
   Lemma heq_ex_star : forall T (P : T -> _) Q,
-
     (star (ex T P) Q) <===> (ex T (fun x => star (P x) Q)).
-
 Proof.
-
 sep_solve. entailer!.
-
 entailer!. apply (exp_right x). auto.
-
 Qed.
-
-
 
   Lemma himp_ex_star : forall T (P : T -> _) Q,
-
     (star (ex T P) Q) ===> (ex T (fun x => star (P x) Q)).
-
 Proof.
-
 sep_solve. entailer!.
-
 Qed.
-
-
 
 End VericSepLogic.
 
-
-
 Check derives_extract_prop.
-
 Print SepExpr.SepExpr.
-
 Module Sep := SepExpr.Make VericSepLogic.
 
-
-
 Lemma isnil: forall {T: Type} (s: list T), {s=nil}+{s<>nil}.
-
 Proof. intros. destruct s; [left|right]; auto. intro Hx; inv Hx. Qed.
-
-
 
 Check (isnil nil).
 
-
-
 Instance QS: listspec t_struct_elem _next.
-
 Proof. eapply mk_listspec; reflexivity. Defined.
 
-
-
 Definition link := field_at Tsh t_struct_elem _next.
-
 Definition link_ := field_at_ Tsh t_struct_elem _next.
 
-
-
 Definition fifo (contents: list val) (p: val) : mpred:=
-
   EX ht: (val*val), let (hd,tl) := ht in
-
       field_at Tsh t_struct_fifo _head p hd *
-
       field_at Tsh t_struct_fifo _tail p tl *
-
       if isnil contents
-
       then (!!(hd=nullval) && emp)
-
       else (EX prefix: list val,
-
               !!(contents = prefix++tl::nil)
-
             &&  (links QS Tsh prefix hd tl * link tl nullval)).
 
-
-
 Definition elemrep (rep: elemtype QS) (p: val) : mpred :=
-
   field_at Tsh t_struct_elem _a p (Vint (fst rep)) *
-
   (field_at Tsh t_struct_elem _b p (Vint (snd rep)) *
-
    (field_at_ Tsh t_struct_elem _next p)).
 
-
-
 Lemma link_local_facts:
-
  forall x y, link x y |-- !! (isptr x /\ is_pointer_or_null y).
-
 Proof.
-
  intros. unfold link.
-
  eapply derives_trans; [eapply field_at_local_facts; reflexivity |].
-
  apply prop_derives.
-
  simpl. intuition.
-
 Qed.
-
-
 
 Hint Resolve link_local_facts : saturate_local.
 
-
-
 Lemma link__local_facts:
-
  forall x, link_ x |-- !! isptr x.
-
 Proof.
-
 intros.
-
 unfold link_.
-
 eapply derives_trans; [eapply field_at__local_facts; reflexivity | ].
-
 apply prop_derives; intuition.
-
 Qed.
-
-
 
 Hint Resolve link__local_facts : saturate_local.
 
-
-
 Definition Delta :=
-
   @abbreviate tycontext
-
     (initialized _h
-
        (@PTree.Node (type * bool)
-
           (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
              (@None (type * bool))
-
              (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                 (@None (type * bool))
-
                 (@PTree.Node (type * bool)
-
                    (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                       (@Some (type * bool) (tptr t_struct_elem, false))
-
                       (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                    (@PTree.Leaf (type * bool))))) (@None (type * bool))
-
           (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
              (@None (type * bool))
-
              (@PTree.Node (type * bool)
-
                 (@PTree.Node (type * bool)
-
                    (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                       (@Some (type * bool) (tptr t_struct_fifo, true))
-
                       (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                    (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                 (@PTree.Leaf (type * bool)))), PTree.empty type, tint,
-
        @PTree.Node global_spec
-
          (@PTree.Node global_spec
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tvoid),
-
                          (2%positive, tptr tvoid), (3%positive, tuint),
-
                          (4%positive, tuint)](fun _ : environ => !!False)
-
                          POST  [tvoid](fun _ : environ => !!False))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  p0 : val * list val, p : val PRE
-
                             [(_Q, tptr t_struct_fifo),
-
                             (_p, tptr t_struct_elem)]
-
                             (let (q0, contents0) := p0 in
-
                              PROP  ()
-
                              LOCAL  (`(@eq val q0) (eval_id _Q);
-
                              `(@eq val p) (eval_id _p))
-
                              SEP  (`(fifo contents0 q0); `(link_ p))) POST
-
                             [tvoid]
-
                             (let (q0, contents0) := p0 in
-
                              `(fifo (contents0 ++ p :: @nil val) q0)))))
-
                      (@PTree.Leaf global_spec))) (@None global_spec)
-
                (@PTree.Node global_spec
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH _ : unit PRE  []
-
                             (fun _ : environ => @emp mpred Nveric Sveric)
-
                             POST  [tptr t_struct_fifo]
-
                             `(fifo (@nil val)) retval)))
-
                      (@PTree.Leaf global_spec)) (@None global_spec)
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  a : int, b : int PRE  [(_a, tint),
-
                             (_b, tint)]
-
                             PROP  ()
-
                             LOCAL  (`(@eq val (Vint a)) (eval_id _a);
-
                             `(@eq val (Vint b)) (eval_id _b))  SEP() POST
-
                             [tptr t_struct_elem]`(elemrep (a, b)) retval)))
-
                      (@PTree.Leaf global_spec)))) (@None global_spec)
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH n : int PRE  [(1%positive, tint)]
-
                          PROP  (4 <= Int.signed n)
-
                          LOCAL  (`(@eq val (Vint n)) (eval_id 1%positive))
-
                          SEP() POST  [tptr tvoid]`(memory_block Tsh n) retval)))
-
                   (@PTree.Leaf global_spec)) (@None global_spec)
-
                (@PTree.Leaf global_spec))) (@None global_spec)
-
          (@PTree.Node global_spec
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tschar),
-
                          (2%positive, tint)](fun _ : environ => !!False)
-
                          POST  [tint](fun _ : environ => !!False))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  q0 : val, contents0 : list val PRE
-
                             [(_Q, tptr t_struct_fifo)]
-
                             PROP  ()
-
                             LOCAL  (`(@eq val q0) (eval_id _Q))
-
                             SEP  (`(fifo contents0 q0)) POST  [tint]
-
                             (fun x0 : environ =>
-
                              local
-
                                (`(@eq val
-
                                     (if @isnil val contents0
-
                                      then Vtrue
-
                                      else Vfalse)) retval) x0 &&
-
                              `(fifo contents0 q0) x0))))
-
                      (@PTree.Leaf global_spec))) (@None global_spec)
-
                (@PTree.Leaf global_spec)) (@None global_spec)
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tvoid),
-
                          (2%positive, tint)]
-
                          PROP  ()
-
                          LOCAL ()
-
                          SEP
-
                          (`(memory_block Tsh)
-
                             (`force_int (eval_id 2%positive))
-
                             (eval_id 1%positive)) POST  [tvoid]
-
                          (fun _ : environ => @emp mpred Nveric Sveric))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  p0 : val * list val, p : val PRE
-
                             [(_Q, tptr t_struct_fifo)]
-
                             (let (q0, contents0) := p0 in
-
                              PROP  ()
-
                              LOCAL  (`(@eq val q0) (eval_id _Q))
-
                              SEP  (`(fifo (p :: contents0) q0))) POST
-
                             [tptr t_struct_elem]
-
                             (let (q0, contents0) := p0 in
-
                              fun rho : environ =>
-
                              local (`(@eq val p) retval) rho &&
-
                              `(fifo contents0 q0) rho * `link_ retval rho))))
-
                      (@PTree.Leaf global_spec)))
-
                (@Some global_spec
-
                   (Global_func
-
                      (WITH _ : unit PRE  [(1%positive, tdouble)]
-
                       (fun _ : environ => !!False) POST  [tdouble]
-
                       (fun _ : environ => !!False))))
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@None global_spec)
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH u : unit PRE  []main_pre prog u POST  [tint]
-
                             main_post prog u))) (@PTree.Leaf global_spec))))))).
 
-
-
 Parameter tycontext_eq : tycontext -> tycontext -> bool.
-
 Axiom typecontext_eq_correct : forall x y, tycontext_eq x y = true -> x = y.
 
-
-
 Definition tycontext_type :=
-
  ({| Expr.Impl := tycontext
-
        ; Expr.Eqb := tycontext_eq
-
        ; Expr.Eqb_correct := typecontext_eq_correct
-
    |}).
 
-
-
 Parameter expr_eq : option expr -> option expr -> bool.
-
 Axiom expr_eq_correct : forall x y, expr_eq x y = true -> x = y.
 
-
-
 Definition c_option_expr_type :=
-
  ({| Expr.Impl := option expr
-
      ; Expr.Eqb := expr_eq
-
      ; Expr.Eqb_correct := expr_eq_correct |}).
 
-
-
 SearchAbout type.
-
 Definition c_type_type :=
-
  ({| Expr.Impl := type
-
      ; Expr.Eqb := type_eq
-
      ; Expr.Eqb_correct := environ_lemmas.type_eq_true |}).
 
-
-
 Parameter environ_eq : environ -> environ -> bool.
-
 Axiom environ_eq_correct : forall x y, environ_eq x y = true -> x = y.
 
-
-
 Definition environ_type :=
-
  ({| Expr.Impl := environ
-
      ; Expr.Eqb := environ_eq
-
      ; Expr.Eqb_correct := environ_eq_correct |}).
 
-
-
 Definition environ2prop_type : Expr.type.
-
   refine ({| Expr.Impl := environ -> Prop
-
            ; Expr.Eqb := fun _ _ => false
-
            ; Expr.Eqb_correct := _
-
           |}).
-
   intros. congruence.
-
 Defined.
 
-
-
 Definition our_types := cons tycontext_type
-
                        (cons c_option_expr_type
-
                        (cons c_type_type
-
                        (cons environ_type
-
                        (cons Expr.Prop_type
-
                        (cons environ2prop_type nil))))).
-
-
 
 Definition tycontext_type_var := Expr.tvType 0.
 
-
-
 Definition c_option_expr_type_var := Expr.tvType 1.
-
-
 
 Definition c_type_type_var := Expr.tvType 2.
 
-
-
 Definition environ_type_var := Expr.tvType 3.
-
-
 
 Definition prop_type_var := Expr.tvType 4.
 
-
-
 Definition environ2prop_type_var := Expr.tvType 5.
-
-
 
 Definition delta_const := @Expr.Const our_types tycontext_type_var Delta.
 
-
-
 Definition c_option_expr_const := @Expr.Const our_types c_option_expr_type_var
-
 (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint)).
 
-
-
 Definition ret_type_signature :=
-
 Expr.Sig our_types (cons tycontext_type_var nil)
-
   c_type_type_var ret_type.
 
-
-
 Definition tc_expropt_signature_lifted : Expr.signature our_types :=
-
 Expr.Sig our_types (cons tycontext_type_var (cons c_option_expr_type_var (cons c_type_type_var nil))) environ2prop_type_var tc_expropt.
 
-
-
 Definition tc_expropt_signature : Expr.signature our_types :=
-
 Expr.Sig our_types (cons tycontext_type_var (cons c_option_expr_type_var (cons c_type_type_var (cons environ_type_var nil)))) prop_type_var tc_expropt.
 
-
-
 Definition environ_signature (rho: environ) : Expr.signature our_types :=
-
 Expr.Sig our_types (nil) (environ_type_var) (rho).
 
-
-
 Definition functions (rho:environ) := cons ret_type_signature
-
                        (cons tc_expropt_signature
-
                        (cons tc_expropt_signature_lifted
-
                        (cons (environ_signature rho) nil))).
 
-
-
 Definition ret_type_delta : Expr.expr our_types.
-
 eapply Expr.Func. apply 0%nat. apply (cons delta_const nil).
-
 Defined.
-
-
 
 Definition tc_expropt_application_lifted : Expr.expr our_types.
-
 eapply Expr.Func.
-
 apply 2%nat.
-
 apply (cons delta_const (cons c_option_expr_const (cons ret_type_delta nil))).
-
 Defined.
-
-
 
 Definition tc_expropt_application_unlifted : Expr.expr our_types.
-
 eapply Expr.Func.
-
 apply 1%nat.
-
 apply (cons delta_const (cons c_option_expr_const (cons ret_type_delta
-
                                                        (cons (Expr.Func 3%nat nil) nil)))).
-
 Defined.
 
-
-
 Definition reflected_tc_expropt :=
-
 (tc_expropt Delta
-
          (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
          (ret_type Delta)).
 
-
-
 Definition reflected_tc_expropt_unlifted :=
-
 forall rho,
-
 (tc_expropt Delta
-
          (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
          (ret_type Delta) rho).
-
-
 
 Lemma tc_expropt_true :
-
 forall rho,
-
 tc_environ Delta rho ->
-
 (tc_expropt Delta
-
          (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
          (ret_type Delta) rho).
-
 Proof.
-
 intros. simpl.
-
 unfold tc_expr. simpl. super_unfold_lift.
-
 pose (funcs := functions rho).
-
 assert  (Some (tc_expropt Delta
-
      (Some
-
         (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
            (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
      (ret_type Delta) rho) =
-
 Expr.exprD funcs nil nil tc_expropt_application_unlifted prop_type_var).
-
 auto.
-
-
 
 Definition prove_goal (exp : Expr.expr our_types) := false.
 
-
-
 Definition work_on_goal (exp : Expr.expr our_types) := exp.
 
-
-
 Lemma work_on_goal_sound :
-
 forall exp exp2 f p p2,
-
 work_on_goal exp = exp2 ->
-
 Expr.exprD f nil nil exp prop_type_var = Some p ->
-
 (Expr.exprD f nil nil exp2 prop_type_var = Some p2 /\ (p2 -> p)).
-
 Proof. admit.
-
 Qed.
-
-
 
 Lemma prove_goal_sound :
-
 forall exp f p,
-
 prove_goal exp = true ->
-
 Expr.exprD f nil nil exp prop_type_var = Some p ->
-
 p.
-
 Proof.
-
 intros. inv H.
-
 Qed.
-
-
 
 assert ((prove_goal tc_expropt_application_unlifted = true)) by admit.
-
 eapply prove_goal_sound.
-
 apply H1.
-
 symmetry in H0. apply H0.
-
 Qed.
 
-
-
 Lemma goal_1 :
-
 name _Q ->
-
 name _h ->
-
 forall (q : val) (contents : list val) (hd tl : val),
-
 let Delta :=
-
   @abbreviate tycontext
-
     (initialized _h
-
        (@PTree.Node (type * bool)
-
           (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
              (@None (type * bool))
-
              (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                 (@None (type * bool))
-
                 (@PTree.Node (type * bool)
-
                    (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                       (@Some (type * bool) (tptr t_struct_elem, false))
-
                       (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                    (@PTree.Leaf (type * bool))))) (@None (type * bool))
-
           (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
              (@None (type * bool))
-
              (@PTree.Node (type * bool)
-
                 (@PTree.Node (type * bool)
-
                    (@PTree.Node (type * bool) (@PTree.Leaf (type * bool))
-
                       (@Some (type * bool) (tptr t_struct_fifo, true))
-
                       (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                    (@PTree.Leaf (type * bool))) (@None (type * bool))
-
                 (@PTree.Leaf (type * bool)))), PTree.empty type, tint,
-
        @PTree.Node global_spec
-
          (@PTree.Node global_spec
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tvoid),
-
                          (2%positive, tptr tvoid), (3%positive, tuint),
-
                          (4%positive, tuint)](fun _ : environ => !!False)
-
                          POST  [tvoid](fun _ : environ => !!False))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  p0 : val * list val, p : val PRE
-
                             [(_Q, tptr t_struct_fifo),
-
                             (_p, tptr t_struct_elem)]
-
                             (let (q0, contents0) := p0 in
-
                              PROP  ()
-
                              LOCAL  (`(@eq val q0) (eval_id _Q);
-
                              `(@eq val p) (eval_id _p))
-
                              SEP  (`(fifo contents0 q0); `(link_ p))) POST
-
                             [tvoid]
-
                             (let (q0, contents0) := p0 in
-
                              `(fifo (contents0 ++ p :: @nil val) q0)))))
-
                      (@PTree.Leaf global_spec))) (@None global_spec)
-
                (@PTree.Node global_spec
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH _ : unit PRE  []
-
                             (fun _ : environ => @emp mpred Nveric Sveric)
-
                             POST  [tptr t_struct_fifo]
-
                             `(fifo (@nil val)) retval)))
-
                      (@PTree.Leaf global_spec)) (@None global_spec)
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  a : int, b : int PRE  [(_a, tint),
-
                             (_b, tint)]
-
                             PROP  ()
-
                             LOCAL  (`(@eq val (Vint a)) (eval_id _a);
-
                             `(@eq val (Vint b)) (eval_id _b))  SEP() POST
-
                             [tptr t_struct_elem]`(elemrep (a, b)) retval)))
-
                      (@PTree.Leaf global_spec)))) (@None global_spec)
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH n : int PRE  [(1%positive, tint)]
-
                          PROP  (4 <= Int.signed n)
-
                          LOCAL  (`(@eq val (Vint n)) (eval_id 1%positive))
-
                          SEP() POST  [tptr tvoid]`(memory_block Tsh n) retval)))
-
                   (@PTree.Leaf global_spec)) (@None global_spec)
-
                (@PTree.Leaf global_spec))) (@None global_spec)
-
          (@PTree.Node global_spec
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tschar),
-
                          (2%positive, tint)](fun _ : environ => !!False)
-
                          POST  [tint](fun _ : environ => !!False))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  q0 : val, contents0 : list val PRE
-
                             [(_Q, tptr t_struct_fifo)]
-
                             PROP  ()
-
                             LOCAL  (`(@eq val q0) (eval_id _Q))
-
                             SEP  (`(fifo contents0 q0)) POST  [tint]
-
                             (fun x0 : environ =>
-
                              local
-
                                (`(@eq val
-
                                     (if @isnil val contents0
-
                                      then Vtrue
-
                                      else Vfalse)) retval) x0 &&
-
                              `(fifo contents0 q0) x0))))
-
                      (@PTree.Leaf global_spec))) (@None global_spec)
-
                (@PTree.Leaf global_spec)) (@None global_spec)
-
             (@PTree.Node global_spec
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@Some global_spec
-
                      (Global_func
-
                         (WITH _ : unit PRE  [(1%positive, tptr tvoid),
-
                          (2%positive, tint)]
-
                          PROP  ()
-
                          LOCAL ()
-
                          SEP
-
                          (`(memory_block Tsh)
-
                             (`force_int (eval_id 2%positive))
-
                             (eval_id 1%positive)) POST  [tvoid]
-
                          (fun _ : environ => @emp mpred Nveric Sveric))))
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH  p0 : val * list val, p : val PRE
-
                             [(_Q, tptr t_struct_fifo)]
-
                             (let (q0, contents0) := p0 in
-
                              PROP  ()
-
                              LOCAL  (`(@eq val q0) (eval_id _Q))
-
                              SEP  (`(fifo (p :: contents0) q0))) POST
-
                             [tptr t_struct_elem]
-
                             (let (q0, contents0) := p0 in
-
                              fun rho : environ =>
-
                              local (`(@eq val p) retval) rho &&
-
                              `(fifo contents0 q0) rho * `link_ retval rho))))
-
                      (@PTree.Leaf global_spec)))
-
                (@Some global_spec
-
                   (Global_func
-
                      (WITH _ : unit PRE  [(1%positive, tdouble)]
-
                       (fun _ : environ => !!False) POST  [tdouble]
-
                       (fun _ : environ => !!False))))
-
                (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                   (@None global_spec)
-
                   (@PTree.Node global_spec (@PTree.Leaf global_spec)
-
                      (@Some global_spec
-
                         (Global_func
-
                            (WITH u : unit PRE  []main_pre prog u POST  [tint]
-
                             main_post prog u))) (@PTree.Leaf global_spec))))))) in
-
 PROP  ()
-
 LOCAL  (tc_environ Delta; `(@eq val hd) (eval_id _h);
-
 `(@eq val q) (eval_id _Q))
-
 SEP  (`(field_at Tsh t_struct_fifo _head q hd);
-
 `(field_at Tsh t_struct_fifo _tail q tl);
-
 `(if @isnil val contents
-
   then !!(hd = nullval) && @emp mpred Nveric Sveric
-
   else
-
    EX  prefix : list val,
-
    !!(contents = prefix ++ tl :: @nil val) &&
-
    (@links t_struct_elem _next QS Tsh prefix hd tl * link tl nullval)))
-
 |-- local
-
       (tc_expropt Delta
-
          (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
          (ret_type Delta)) &&
-
     `(function_body_ret_assert tint
-
         (local
-
            (`(@eq val (if @isnil val contents then Vtrue else Vfalse)) retval) &&
-
          `(fifo contents q)) EK_return)
-
       (cast_expropt
-
          (@Some expr
-
             (Ebinop Oeq (Etempvar _h (tptr t_struct_elem))
-
                (Ecast (Econst_int (Int.repr 0) tint) (tptr tvoid)) tint))
-
          (ret_type Delta)) (@id environ)
-
 . Proof. intros Q h.
-
  ungather_entail.
-
 unfold fifo.
-
 go_lower.
-
-
 
 Check Expr.Func.
 
-
-
 Definition saturate (exps: ((list Expr.expr) * Expr.expr)) : bool :=
-
 let exps := (assumptions, goal) in
-
 match with
-
  ...
-
 | Exps.Func n exps =>
-
      if eqb_nat n 5 then
-
              sat
-
      else
-
          ....
 
-
-
 entailer.
-
 apply exp_right with (h,tl).
-
 entailer.
-
 if_tac; entailer; elim_hyps; simpl; auto.
-
 destruct prefix; entailer1.
-
 Qed.
-
-
 

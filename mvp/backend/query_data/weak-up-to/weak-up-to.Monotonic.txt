@@ -1,286 +1,297 @@
 
-
 Require Export Settings.
-
+(* Settings:
+Require Export Functions.
+Require Export Reductions.
 Set Implicit Arguments.
-
-
 
 Section Global.
 
-  
-
   Variable A: Type.
 
-
-
-  Section A.
-
-
+  Section Sim.
 
     Variables X Y: Type.
-
-    
-
     Variable TX: reduction_t A X.
-
     Variable TY: reduction_t A Y.
-
     
-
-    Section A'.
-
-
-
-      Variable R: relation2 X Y.
-
-      Variable E: relation2 X X.
-
-      Variable T: relation2 Y Y.
-
-      
-
-      Lemma identity_mon: monotonic TX TY (identity (X:=X) (Y:=Y)).
-
-      Proof. apply mkmon; intros; unfold identity; auto; intro; auto. Qed.
-
-
-
-      Lemma constant_mon: simulation TX TY R -> monotonic TX TY (constant R).
-
-      Proof.
-
-        intro H; apply mkmon; intros; unfold constant, evolve_t, evolve_a; auto.
-
-        intros U V K; auto.
-
-      Qed.
-
-        
-
-      Lemma chaining_r_mon: simulation TY TY T -> monotonic TX TY (chaining_r T).
-
-      Proof.
-
-        intro H; apply mkmon; unfold chaining_r; intros U V HUV.
-
-        intros x y L; destruct L as [ w ]; exists w; auto.
-
-        intros HUV' x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ];
-
-  	destruct (HUV _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ];
-
-  	  destruct (weak_strong H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ].
-
-        exists y'; auto; exists w'; auto.
-
-        intros HUV' a x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ];
-
-  	destruct (HUV _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ];
-
-  	  destruct (weak_strong H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ].
-
-        exists y'; auto; exists w'; auto.
-
-      Qed.
-
-      
-
-      Lemma chaining_l_mon: expansion1 TX TX E -> monotonic TX TY (chaining_l E).
-
-      Proof.
-
-	clear R.
-
-        intro HS; split.
-
-        intros R S H x y XY; destruct XY as [ w XW WY ]; exists w; auto.
-
-        intros R S H H' x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ].
-
-        destruct (HS _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ].
-
-        celim Hww'; intro Hww'.
-
-	exists y; auto; exists w'; auto; destruct Hww'; apply H'; auto.
-
-        destruct (H _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ]; exists y'; auto; exists w'; auto.
-
-        intros R S H H' a x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ].
-
-        destruct (HS _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ].
-
-        destruct (H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ]; exists y'; auto; exists w'; auto.
-
-      Qed.
-
-
-
-    End A'.
-
-
-
-    Variables F G: function X Y.
-
-    Hypothesis HF: monotonic TX TY F.
-
-    Hypothesis HG: monotonic TX TY G.
-
-
-
-    Lemma Comp_mon: monotonic TX TY (Comp G F).
-
-    Proof.
-
-      unfold Comp; split.
-
-      intros R S HRS; apply (mon_m HG (mon_m HF HRS)).
-
-      intros R S H H'; apply (mon_t HG (mon_t HF H H') (mon_m HF H')).
-
-      intros R S H H'; apply (mon_a HG).
-
-      intro l; destruct l.
-
-      apply (mon_t HF (H _) H').
-
-      apply (mon_a HF H H').
-
-      apply (mon_m HF H').      
-
-    Qed.
-
-
-
-    Lemma Union2_mon: monotonic TX TY (Union2 F G).
-
-    Proof.
-
-      unfold Union2; split.
-
-      intros R S HRS x y H; destruct H; [ left; apply (mon_m HF HRS) | right; apply (mon_m HG HRS) ]; auto.
-
-      intros R S H H' x x' y Hxx' xRy; celim xRy; intro xRy;
-
-	[ destruct (mon_t HF H H' _ _ _ Hxx' xRy) as [ y' ] 
-
-        | destruct (mon_t HG H H' _ _ _ Hxx' xRy) as [ y' ] ]; 
-
-	exists y'; auto; [ left | right ]; auto.
-
-      intros R S H H' a x x' y Hxx' xRy; celim xRy; intro xRy;
-
-	[ destruct (mon_a HF H H' _ _ _ _ Hxx' xRy) as [ y' ] 
-
-        | destruct (mon_a HG H H' _ _ _ _ Hxx' xRy) as [ y' ] ]; 
-
-	exists y'; auto; [ left | right ]; auto.
-
-    Qed.
-
+    Definition evolve_1 l R S := diagram (TX l) R (Weak TY l) S.
+    Definition evolve_t   R S := evolve_1 (T A) R S.
+    Definition evolve_a   R S := forall a, evolve_1 (L a) R S .
+    Definition evolve     R S := forall l, evolve_1 l R S.
+
+    Definition simulation_t R := evolve_t R R.
+    Definition simulation   R := evolve   R R.
+
+    Definition expansion1   R := diagram_r TX R (EWeak TY) R.
+    Definition wexpansion1  R := diagram_r TX R (REWeak TY) R.
     
+    Variable F: function X Y.
 
-    Section Union.
+    Record monotonic: Prop := mkmon {
+      mon_m:> increasing F;
+      mon_t:  forall R S, evolve_t R S -> incl R S -> evolve_t (F R) (F S);
+      mon_a:  forall R S, evolve   R S -> incl R S -> evolve_a (F R) (F S)
+    }.
+    
+    Record wmonotonic: Prop := mkwmon {
+      wmon_m:> increasing F;
+      wmon_t:  forall R, simulation_t R -> simulation_t (F R);
+      wmon_a:  forall R S, simulation_t R -> simulation_t S -> evolve_a R S -> incl R S -> evolve_a (F R) (F S)
+    }.
 
+    Variable B: relation X.
+    Record controlled: Prop := mkctrl {
+      ctrl_t:  forall R, evolve_t R (comp (star B) R) -> simulation_t (comp (star B) R);
+      ctrl_a:  forall R S, evolve_t R (comp (star B) R) -> simulation_t S -> 
+	                  evolve_a R S -> incl R S -> evolve_a (comp (star B) R) (comp (star B) S)
+    }.
+    
+    Lemma weak_strong_t: forall R, simulation_t R -> diagram (Weak TX (T A)) R (Weak TY (T A)) R.
+    Lemma weak_strong: forall R, simulation R -> diagram_r (Weak TX) R (Weak TY) R.
 
+    Lemma union2_evolve: forall l R R' S, evolve_1 l R S -> evolve_1 l R' S -> evolve_1 l (union2 R R') S.
+    Lemma union2_evolve_left: forall l R S S', evolve_1 l R S -> evolve_1 l R (union2 S S').
+    Lemma union2_evolve_right: forall l R S S', evolve_1 l R S' -> evolve_1 l R (union2 S S').
+    Lemma union_evolve: forall l I R S, 
+      (forall i:I, evolve_1 l (R i) S) -> evolve_1 l (union R) S.
+    Lemma evolve_union: forall l J R S, 
+      (exists j:J, evolve_1 l R (S j)) -> evolve_1 l R (union S).
 
-      Variable I: Type.
+    Lemma incl_evolve: forall l R R' S, incl R R' -> evolve_1 l R' S -> evolve_1 l R S.
+    Lemma evolve_incl: forall l S R S', incl S S' -> evolve_1 l R S -> evolve_1 l R S'.
+      
+    Lemma simulation_eeq: forall R S, eeq R S -> simulation R -> simulation S.
+    Lemma simulation_t_eeq: forall R S, eeq R S -> simulation_t R -> simulation_t S.
 
-      Variable H: I -> function X Y.
+  End Sim.
 
-      Hypothesis HH: forall i, monotonic TX TY (H i).
-
-
-
-      Lemma Union_mon: monotonic TX TY (Union H).
-
-      Proof.
-
-	unfold Union; split.
-
-	intros R S HRS x y K; destruct K as [ i ]; exists i; apply (mon_m (HH i) HRS); auto.
-
-	intros R S HR HR' x x' y Hxx' xRy; destruct xRy as [ i xRy ];
-
-	  destruct (mon_t (HH i) HR HR' _ _ _ Hxx' xRy) as [ y' ]; 
-
-	    exists y'; auto; exists i; auto.
-
-	intros R S HR HR' a x x' y Hxx' xRy; destruct xRy as [ i xRy ];
-
-	  destruct (mon_a (HH i) HR HR' _ _ _ _ Hxx' xRy) as [ y' ];
-
-	    exists y'; auto; exists i; auto.
-
-      Qed.
-
-
-
-    End Union.
-
-
-
-  End A.
-
-
-
-  Section B.
-
-
+  Section Bi.
 
     Variables X Y: Type.
-
     Variable TX: reduction_t A X.
-
     Variable TY: reduction_t A Y.
 
+    Definition bisimulation R := simulation  TX TY R /\ simulation TY TX (trans R).
+    Definition expansion    R := expansion1  TX TY R /\ simulation TY TX (trans R).
+    Definition wexpansion   R := wexpansion1 TX TY R /\ simulation TY TX (trans R).
 
+    Definition bisim   := union_st bisimulation.
+    Definition expand  := union_st expansion.
+    Definition wexpand := union_st wexpansion.
 
-    Variables F G: function X Y.
+    Lemma bisimulation_bisim: bisimulation bisim.
+    Lemma expansion_expand: expansion expand.
+    Lemma wexpansion_wexpand: wexpansion wexpand.
 
-    Hypothesis HF: monotonic TX TY F.
+    Lemma expand_wexpand: incl expand wexpand.
+    Lemma wexpand_bisim: incl wexpand bisim.
 
-    Hypothesis HG: monotonic TX TY G.
+  End Bi.
 
+  Section Composition.
+   
+    Variables X Y Z: Type.
+    Variable TX: reduction_t A X.
+    Variable TY: reduction_t A Y.
+    Variable TZ: reduction_t A Z.
+    
+    Variable R: relation2 X Y.
+    Variable S: relation2 Y Z.
+    
+    Lemma simulation_comp: simulation TX TY R -> simulation TY TZ S -> simulation TX TZ (comp R S).
 
+    Lemma expansion1_comp: expansion1 TX TY R -> expansion1 TY TZ S -> expansion1 TX TZ (comp R S).
 
-    Lemma UExp_mon: forall n, monotonic TX TY (fun R => UExp F R n).
+    Let wexpansion1_t: wexpansion1 TY TZ S -> 
+      forall x x' y, star (TY (T _)) x x' -> S x y -> exists2 y', star (TZ (T _)) y y' & S x' y'.
 
-    Proof.
+    Lemma wexpansion1_comp: wexpansion1 TX TY R -> wexpansion1 TY TZ S -> wexpansion1 TX TZ (comp R S).
 
-      intro n; induction n as [ | n IH ].
+  End Composition.
 
-      apply (identity_mon TX TY).
+  Section BiComposition.
+   
+    Variables X Y Z: Type.
+    Variable TX: reduction_t A X.
+    Variable TY: reduction_t A Y.
+    Variable TZ: reduction_t A Z.
+    
+    Variable R: relation2 X Y.
+    Variable S: relation2 Y Z.
+    
+    Lemma bisimulation_comp: bisimulation TX TY R -> bisimulation TY TZ S -> bisimulation TX TZ (comp R S).
 
-      simpl; fold (Union2 (fun R => UExp F R n) (fun R => F (UExp F R n))).
+    Lemma expansion_comp: expansion TX TY R -> expansion TY TZ S -> expansion TX TZ (comp R S).
 
-      apply Union2_mon; auto.
+    Lemma wexpansion_comp: wexpansion TX TY R -> wexpansion TY TZ S -> wexpansion TX TZ (comp R S).
 
-      fold (Comp F (fun R => UExp F R n)).
+  End BiComposition.
 
-      apply Comp_mon; auto.
+  Section Properties.
 
-    Qed.
+    Variable X: Type.
+    Variable TX: reduction_t A X.
 
-    Lemma UIter_mon: monotonic TX TY (UIter F).
+    Lemma bisim_sym: symmetric (bisim TX TX).
 
-    Proof.
+    Lemma bisim_refl: reflexive (bisim TX TX).
 
-      unfold UIter.
+    Lemma bisim_trans: transitive (bisim TX TX).
 
-      change (fun R => union (UExp F R)) with (Union (fun n => (fun R => UExp F R n))).
+    Definition bicontrolled R := controlled TX TX R /\ incl R (bisim TX TX).
 
-      apply Union_mon; intro i; apply UExp_mon.
+    Lemma expand_refl: reflexive (expand TX TX).
 
-    Qed.
+    Lemma expand_trans: transitive (expand TX TX).
 
+    Lemma wexpand_refl: reflexive (wexpand TX TX).
 
+    Lemma wexpand_trans: transitive (wexpand TX TX).
 
-  End B.
-
-  
+  End Properties.
 
 End Global.
 
+Ltac union_evolve n := unfold UIter, simulation_t, evolve_t; apply union_evolve; intro n; apply evolve_union. *)
+Set Implicit Arguments.
 
+Section Global.
+  
+  Variable A: Type.
+
+  Section A.
+
+    Variables X Y: Type.
+    
+    Variable TX: reduction_t A X.
+    Variable TY: reduction_t A Y.
+    
+    Section A'.
+
+      Variable R: relation2 X Y.
+      Variable E: relation2 X X.
+      Variable T: relation2 Y Y.
+      
+      Lemma identity_mon: monotonic TX TY (identity (X:=X) (Y:=Y)).
+      Proof. apply mkmon; intros; unfold identity; auto; intro; auto. Qed.
+
+      Lemma constant_mon: simulation TX TY R -> monotonic TX TY (constant R).
+      Proof.
+        intro H; apply mkmon; intros; unfold constant, evolve_t, evolve_a; auto.
+        intros U V K; auto.
+      Qed.
+        
+      Lemma chaining_r_mon: simulation TY TY T -> monotonic TX TY (chaining_r T).
+      Proof.
+        intro H; apply mkmon; unfold chaining_r; intros U V HUV.
+        intros x y L; destruct L as [ w ]; exists w; auto.
+        intros HUV' x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ];
+  	destruct (HUV _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ];
+  	  destruct (weak_strong H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ].
+        exists y'; auto; exists w'; auto.
+        intros HUV' a x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ];
+  	destruct (HUV _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ];
+  	  destruct (weak_strong H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ].
+        exists y'; auto; exists w'; auto.
+      Qed.
+      
+      Lemma chaining_l_mon: expansion1 TX TX E -> monotonic TX TY (chaining_l E).
+      Proof.
+	clear R.
+        intro HS; split.
+        intros R S H x y XY; destruct XY as [ w XW WY ]; exists w; auto.
+        intros R S H H' x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ].
+        destruct (HS _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ].
+        celim Hww'; intro Hww'.
+	exists y; auto; exists w'; auto; destruct Hww'; apply H'; auto.
+        destruct (H _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ]; exists y'; auto; exists w'; auto.
+        intros R S H H' a x x' y Hxx' xRy; destruct xRy as [ w xRw wRy ].
+        destruct (HS _ _ _ _ Hxx' xRw) as [ w' Hww' x'Rw' ].
+        destruct (H _ _ _ _ Hww' wRy) as [ y' Hyy' w'Ry' ]; exists y'; auto; exists w'; auto.
+      Qed.
+
+    End A'.
+
+    Variables F G: function X Y.
+    Hypothesis HF: monotonic TX TY F.
+    Hypothesis HG: monotonic TX TY G.
+
+    Lemma Comp_mon: monotonic TX TY (Comp G F).
+    Proof.
+      unfold Comp; split.
+      intros R S HRS; apply (mon_m HG (mon_m HF HRS)).
+      intros R S H H'; apply (mon_t HG (mon_t HF H H') (mon_m HF H')).
+      intros R S H H'; apply (mon_a HG).
+      intro l; destruct l.
+      apply (mon_t HF (H _) H').
+      apply (mon_a HF H H').
+      apply (mon_m HF H').      
+    Qed.
+
+    Lemma Union2_mon: monotonic TX TY (Union2 F G).
+    Proof.
+      unfold Union2; split.
+      intros R S HRS x y H; destruct H; [ left; apply (mon_m HF HRS) | right; apply (mon_m HG HRS) ]; auto.
+      intros R S H H' x x' y Hxx' xRy; celim xRy; intro xRy;
+	[ destruct (mon_t HF H H' _ _ _ Hxx' xRy) as [ y' ] 
+        | destruct (mon_t HG H H' _ _ _ Hxx' xRy) as [ y' ] ]; 
+	exists y'; auto; [ left | right ]; auto.
+      intros R S H H' a x x' y Hxx' xRy; celim xRy; intro xRy;
+	[ destruct (mon_a HF H H' _ _ _ _ Hxx' xRy) as [ y' ] 
+        | destruct (mon_a HG H H' _ _ _ _ Hxx' xRy) as [ y' ] ]; 
+	exists y'; auto; [ left | right ]; auto.
+    Qed.
+    
+    Section Union.
+
+      Variable I: Type.
+      Variable H: I -> function X Y.
+      Hypothesis HH: forall i, monotonic TX TY (H i).
+
+      Lemma Union_mon: monotonic TX TY (Union H).
+      Proof.
+	unfold Union; split.
+	intros R S HRS x y K; destruct K as [ i ]; exists i; apply (mon_m (HH i) HRS); auto.
+	intros R S HR HR' x x' y Hxx' xRy; destruct xRy as [ i xRy ];
+	  destruct (mon_t (HH i) HR HR' _ _ _ Hxx' xRy) as [ y' ]; 
+	    exists y'; auto; exists i; auto.
+	intros R S HR HR' a x x' y Hxx' xRy; destruct xRy as [ i xRy ];
+	  destruct (mon_a (HH i) HR HR' _ _ _ _ Hxx' xRy) as [ y' ];
+	    exists y'; auto; exists i; auto.
+      Qed.
+
+    End Union.
+
+  End A.
+
+  Section B.
+
+    Variables X Y: Type.
+    Variable TX: reduction_t A X.
+    Variable TY: reduction_t A Y.
+
+    Variables F G: function X Y.
+    Hypothesis HF: monotonic TX TY F.
+    Hypothesis HG: monotonic TX TY G.
+
+    Lemma UExp_mon: forall n, monotonic TX TY (fun R => UExp F R n).
+    Proof.
+      intro n; induction n as [ | n IH ].
+      apply (identity_mon TX TY).
+      simpl; fold (Union2 (fun R => UExp F R n) (fun R => F (UExp F R n))).
+      apply Union2_mon; auto.
+      fold (Comp F (fun R => UExp F R n)).
+      apply Comp_mon; auto.
+    Qed.
+    Lemma UIter_mon: monotonic TX TY (UIter F).
+    Proof.
+      unfold UIter.
+      change (fun R => union (UExp F R)) with (Union (fun n => (fun R => UExp F R n))).
+      apply Union_mon; intro i; apply UExp_mon.
+    Qed.
+
+  End B.
+  
+End Global.
 

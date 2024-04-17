@@ -1,330 +1,423 @@
 Require Export ChargeCore.Logics.ILogic.
+(* ChargeCore.Logics.ILogic:
+Require Import Setoid Morphisms RelationClasses Program.Basics Omega.
 
+Set Implicit Arguments.
+Unset Strict Implicit.
+Set Maximal Implicit Insertion.
+
+Global Instance ge_Pre: PreOrder ge.
+
+Class ILogicOps (A : Type) : Type := {
+  lentails: A -> A -> Prop;
+  ltrue: A;
+  lfalse: A;
+  limpl: A -> A -> A;
+  land: A -> A -> A;
+  lor: A -> A -> A;
+  lforall: forall {T : Type}, (T -> A) -> A;
+  lexists: forall {T : Type}, (T -> A) -> A
+}.
+
+Infix "|--"  := lentails (at level 80, no associativity).
+Infix "//\\"   := land (at level 75, right associativity).
+Infix "\\//"   := lor (at level 76, right associativity).
+Infix "-->>"   := limpl (at level 77, right associativity).
+Notation "'Forall' x : T , p" :=
+  (lforall (fun x : T => p)) (at level 78, x ident, right associativity).
+Notation "'Forall' x , p" :=
+  (lforall (fun x => p)) (at level 78, x ident, right associativity, only parsing).
+Notation "'Exists' x : T , p" :=
+  (lexists (fun x : T => p)) (at level 78, x ident, right associativity).
+Notation "'Exists' x , p" :=
+  (lexists (fun x => p)) (at level 78, x ident, right associativity, only parsing).
+
+Section ILogicEquiv.
+  Context {A : Type} `{IL: ILogicOps A}.
+
+  Definition lequiv P Q := P |-- Q /\ Q |-- P.
+End ILogicEquiv.
+
+Infix "-|-"  := lequiv (at level 85, no associativity).
+
+Class ILogic {A : Type} {ILOps: ILogicOps A} : Type := {
+  lentailsPre:> PreOrder lentails;
+  ltrueR: forall (C : A), C |-- ltrue;
+  lfalseL: forall (C : A), lfalse |-- C;
+  lforallL: forall (T : Type) x (P: T -> A) C, P x |-- C -> lforall P |-- C;
+  lforallR: forall (T : Type) (P: T -> A) C, (forall x, C |-- P x) -> C |-- lforall P;
+  lexistsL: forall (T : Type) (P: T -> A) C, (forall x, P x |-- C) -> lexists P |-- C;
+  lexistsR: forall (T : Type) (x : T) (P: T -> A) C, C |-- P x -> C |-- lexists P;
+  landL1: forall (P Q C : A), P |-- C  ->  P //\\ Q |-- C;
+  landL2: forall (P Q C : A), Q |-- C  ->  P //\\ Q |-- C;
+  lorR1:  forall (P Q C : A), C |-- P  ->  C |-- P \\// Q;
+  lorR2:  forall (P Q C : A), C |-- Q  ->  C |-- P \\// Q;
+  landR:  forall (P Q C : A), C |-- P  ->  C |-- Q  ->  C |-- P //\\ Q;
+  lorL:   forall (P Q C : A), P |-- C  ->  Q |-- C  ->  P \\// Q |-- C;
+  landAdj: forall (P Q C : A), C |-- (P -->> Q) -> C //\\ P |-- Q;
+  limplAdj: forall (P Q C : A), C //\\ P |-- Q -> C |-- (P -->> Q)
+}.
+
+Arguments ILogic _ {ILOps}.
+Arguments lforallL {A ILOps ILogic} [T] x P C _.
+Arguments lexistsR {A ILOps ILogic} [T] x P C _.
+
+Notation "|--  P" := (ltrue |-- P) (at level 85, no associativity).
+Hint Extern 0 (?x |-- ?x) => reflexivity.
+Hint Extern 0 (_ |-- ltrue) => apply ltrueR.
+Hint Extern 0 (lfalse |-- _) => apply lfalseL.
+Hint Extern 0 (?P |-- ?Q) => (is_evar P; reflexivity) || (is_evar Q; reflexivity).
+
+Section ILogicEquiv2.
+  Context {A : Type} `{IL: ILogic A}.
+
+  Global Instance lequivEquivalence : Equivalence lequiv.
+
+End ILogicEquiv2.
+
+Section ILogicEquivOps.
+  Context {A : Type} `{IL: ILogic A}.
+
+  Lemma land_is_forall P Q :
+    P //\\ Q -|- Forall b : bool, if b then P else Q.
+
+  Lemma lor_is_exists P Q:
+    P \\// Q -|- Exists b : bool, if b then P else Q.
+
+  Lemma ltrue_is_forall:
+    ltrue -|- Forall x: Empty_set, Empty_set_rect _ x.
+
+  Lemma lfalse_is_exists:
+    lfalse -|- Exists x: Empty_set, Empty_set_rect _ x.
+
+End ILogicEquivOps.
+
+Section ILogicMorphisms.
+  Context {A T : Type} `{IL: ILogic A}.
+
+  Global Instance lequiv_lentails : subrelation lequiv lentails.
+  Global Instance lequiv_flip_lentails: subrelation lequiv (flip lentails).
+
+  Global Instance lforall_lentails_m:
+    Proper (pointwise_relation T lentails ++> lentails) lforall.
+
+  Global Instance lforall_lequiv_m:
+    Proper (pointwise_relation T lequiv ++> lequiv) lforall.
+
+  Global Instance lexists_lentails_m:
+    Proper (pointwise_relation T lentails ++> lentails) lexists.
+
+  Global Instance lexists_lequiv_m:
+    Proper (pointwise_relation T lequiv ++> lequiv) lexists.
+
+  Global Instance : Proper (lequiv ==> lequiv ==> iff) lequiv.
+
+  Global Instance lequiv_lentails_m : Proper (lequiv ==> lequiv ==> iff) lentails.
+
+  Global Instance lentails_lentails_m: Proper (lentails --> lentails ++> impl) lentails.
+
+  Global Instance land_lentails_m:
+    Proper (lentails ++> lentails ++> lentails) land.
+
+  Global Instance land_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) land.
+
+  Global Instance lor_lentails_m:
+    Proper (lentails ++> lentails ++> lentails) lor.
+
+  Global Instance lor_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) lor.
+
+  Global Instance limpl_lentails_m:
+    Proper (lentails --> lentails ++> lentails) limpl.
+
+  Global Instance limpl_lequiv_m:
+    Proper (lequiv ==> lequiv ==> lequiv) limpl.
+
+End ILogicMorphisms.
+
+Hint Extern 0 (?x -|- ?x) => reflexivity.
+Hint Extern 0 (?P -|- ?Q) => (is_evar P; reflexivity) || (is_evar Q; reflexivity).
+
+Lemma lforwardL {A} `{IL: ILogic A} {Q R}:
+    Q |-- R -> forall P G,
+    P |-- Q ->
+    (P |-- R -> G) ->
+    G.
+
+Tactic Notation "lforwardL" hyp(H) :=
+  eapply (lforwardL H); clear H; [|intros H].
+
+Section ILogicFacts.
+  Context {A T : Type} `{IL: ILogic A}.
+
+  Ltac landR :=
+    repeat match goal with
+    | |- _ |-- _ //\\ _ => apply landR
+    end.
+
+  Ltac landL :=
+    repeat match goal with
+    | |- ?L1 //\\ ?L2 |-- ?R =>
+        match L1 with
+        | context [R] => apply landL1
+        | _ =>
+          match L2 with
+          | context [R] => apply landL2
+          end
+        end
+    end.
+    
+  Lemma lentails_refl P : P |-- P.
+
+  Lemma landC P Q: P //\\ Q -|- Q //\\ P.
+
+  Lemma landA P Q R: (P //\\ Q) //\\ R -|- P //\\ (Q //\\ R).
+
+  Lemma lorC P Q : P \\// Q -|- Q \\// P.
+
+  Lemma lorA P Q R : (P \\// Q) \\// R -|- P \\// (Q \\// R).
+
+  Lemma limplValid P Q:
+    |-- P -->> Q <->
+    P |-- Q.
+
+  Lemma limplL P Q CL CR (HP: CL |-- P) (HR: Q //\\ CL |-- CR) :
+    (P -->> Q) //\\ CL |-- CR.
+
+  Lemma limplAdj2 P Q R : P -->> Q -->> R -|- P //\\ Q -->> R.
+
+  Lemma landexistsDL1 (f : T -> A) (P : A) :
+    lexists f //\\ P |-- Exists a, (f a //\\ P).
+
+  Lemma landexistsDL2 (f : T -> A) (P : A) :
+    P //\\ lexists f |-- Exists a, (P //\\ f a).
+  
+  Lemma landexistsDR1 (f : T -> A) (P : A) :
+     Exists a, (f a //\\ P) |-- lexists f //\\ P.
+
+  Lemma landexistsDR2 (f : T -> A) (P : A) :
+     Exists a, (P //\\ f a) |-- P //\\ lexists f.
+  
+  Lemma landexistsD1 (f : T -> A) (P : A) :
+    (Exists a, f a) //\\ P -|- Exists a, (f a //\\ P).
+
+  Lemma lorexistsDL (f : T -> A) (P : A) {H : Inhabited T} :
+    (Exists a, f a) \\// P |-- Exists a, (f a \\// P).
+
+  Lemma lorexistsDR (f : T -> A) (P : A) :
+     Exists a, (f a \\// P) |-- (Exists a, f a) \\// P.
+
+  Lemma lorexistsD (f : T -> A) (P : A) {H : Inhabited T} :
+    (Exists a, f a) \\// P -|- Exists a, (f a \\// P).
+
+  Lemma landforallDL (f : T -> A) (P : A) :
+    (Forall a, f a) //\\ P |-- Forall a, (f a //\\ P).
+
+  Lemma landforallDR {H: Inhabited T} (f : T -> A) (P : A) :
+    Forall a, (f a //\\ P) |-- (Forall a, f a) //\\ P.
+
+  Lemma landforallD (f : T -> A) (P : A) {H : Inhabited T} :
+    (Forall a, f a) //\\ P -|- Forall a, (f a //\\ P).
+
+  Lemma lorforallDL (f : T -> A) (P : A) :
+    (Forall a, f a) \\// P |-- Forall a, (f a \\// P).
+
+  Lemma limplTrue P : ltrue -->> P -|- P.
+
+  Lemma limplexistsE (P : T -> A) (Q : A) :
+    (Exists x, P x) -->> Q -|- Forall x, (P x -->> Q).
+
+  Lemma limplforallER (P : T -> A) (Q : A) :
+    Exists x, (P x -->> Q) |-- (Forall x, P x) -->> Q.
+
+  Lemma lforallR2 (P : A) (Q : T -> A) (H : P |-- lforall Q) :
+  	forall x, P |-- Q x.
+
+  Lemma lexistsL2 (P : T -> A) (Q : A) (H : lexists P |-- Q) :
+  	forall x, P x |-- Q.
+
+  Lemma landtrueL : forall a, ltrue //\\ a -|- a.
+
+  Lemma landtrueR : forall a, a //\\ ltrue -|- a.
+
+  Lemma curry : forall a b c, (a //\\ b) -->> c -|- a -->> (b -->> c).
+
+End ILogicFacts.
+
+Global Instance ILogicOps_Prop : ILogicOps Prop := {|
+  lentails P Q := (P : Prop) -> Q;
+  ltrue        := True;
+  lfalse       := False;
+  limpl    P Q := P -> Q;
+  land     P Q := P /\ Q;
+  lor      P Q := P \/ Q;
+  lforall  T F := forall x:T, F x;
+  lexists  T F := exists x:T, F x
+ |}.
+
+Global Instance ILogic_Prop : ILogic Prop. *)
 Require ChargeCore.Tactics.Lemmas.
-
-
 
 Ltac charge_split := simple eapply landR.
 
-
-
 Ltac charge_search_prems found :=
-
   match goal with
-
   | |- ?X |-- ?Y =>
-
     solve [ found
-
           | apply landL1 ; charge_search_prems found
-
           | apply landL2 ; charge_search_prems found ]
-
   end.
 
-
-
 Ltac charge_assumption :=
-
   charge_search_prems reflexivity.
 
-
-
 Ltac charge_intro :=
-
   first [ apply lforallR; intro
-
         | apply Lemmas.limplAdj_true
-
         | apply limplAdj ].
 
-
-
 Ltac charge_intros :=
-
   repeat match goal with
-
          | |- _ |-- _ -->> _ =>
-
            charge_intro
-
          | |- _ |-- @lforall _ _ _ _ =>
-
            charge_intro
-
          end.
 
-
-
 Ltac charge_revert :=
-
   first [ simple eapply landAdj
-
         | simple eapply Lemmas.landAdj_true ].
-
-
 
 Ltac charge_trivial := apply ltrueR.
 
-
-
 Ltac charge_use :=
-
   first [ eapply Lemmas.lapply; [ charge_assumption | ]
-
         | eapply Lemmas.lapply2; [ charge_assumption | | ]
-
         | eapply Lemmas.lapply3; [ charge_assumption | | | ]
-
         | eapply Lemmas.lapply4; [ charge_assumption | | | | ]
-
         | eapply Lemmas.lapply5; [ charge_assumption | | | | | ] ].
 
-
-
 Ltac ends_with H ABC C :=
-
   let rec go k ABC :=
-
    (match ABC with
-
     | _ -->> ?BC =>
-
         let k' x :=
-
          (k x;
-
           lazymatch type of H with
-
           | ltrue |-- _ -->> _ =>
-
             simple apply Lemmas.landAdj_true in H
-
           | ?C |-- ?P -->> ?Q =>
-
             eapply (@landAdj _ _ _ P Q C) in H
-
           end)
-
         in
-
         go k' BC
-
     | _ => k tt
-
     end)
-
   in
-
   go ltac:(fun _ => idtac) ABC.
 
-
-
 Ltac charge_apply H :=
-
   match type of H with
-
   | _ |-- ?X =>
-
     match goal with
-
     | |- _ |-- ?Y =>
-
       ends_with H X Y ; etransitivity ; [ | eapply H ]
-
     end
-
   end.
-
-
 
 Ltac inst_hyp H k :=
-
   match type of H with
-
   | _ |-- _ => k H
-
   | forall x : ?T, _ =>
-
     let xv := fresh "xv" in
-
     evar (xv : T) ;
-
     let q := eval cbv delta [ xv ] in xv in
-
     clear xv ;
-
     inst_hyp (H q) k
-
   end.
-
-
 
 Ltac charge_eapply H :=
-
   let k x :=
-
       generalize x ;
-
       let XX := fresh "XX" in
-
       intro XX ;
-
       match type of XX with
-
       | ?Y |-- ?X =>
-
         try (is_evar Y ;
-
              let z := constr:(@eq_refl _ Y : Y = ltrue) in
-
              idtac) ;
-
         match goal with
-
         | |- _ |-- ?Y =>
-
           ends_with XX X Y ; etransitivity ; [ | eapply XX ] ; clear XX
-
         end
-
       end
-
   in
-
   inst_hyp H k.
 
-
-
 Ltac charge_simple_split :=
-
   match goal with
-
   | |- _ |-- _ //\\ _ => charge_split
-
   end.
-
-
 
 Ltac charge_left :=
-
   match goal with
-
   | |- _ |-- _ \\// _ => apply lorR1
-
   end.
-
-
 
 Ltac charge_right :=
-
   match goal with
-
   | |- _ |-- _ \\// _ => apply lorR2
-
   end.
 
-
-
 Ltac charge_tauto :=
-
   repeat charge_simple_split ;
-
   solve [ charge_assumption
-
         | charge_trivial
-
         | match goal with
-
           | H : _ |-- _ |- _ =>
-
             charge_apply H ; charge_tauto
-
           end
-
         | charge_intro; repeat charge_intro; charge_tauto
-
         | charge_left ; solve [ charge_tauto ]
-
         | charge_right ; solve [ charge_tauto ]
-
         | charge_split; solve [ charge_tauto ]
-
         | charge_use ; charge_tauto
-
         | charge_split ; solve [ charge_tauto ] ].
 
-
-
 Ltac charge_fwd :=
-
   let rec search_it fin :=
-
     match goal with
-
     | |- ?A //\\ ?B |-- ?G =>
-
       first [ simple eapply (Lemmas.land_limpl_specializeR_ap _ _ B G); [ charge_tauto | search_it ltac:(idtac) ]
-
             | simple apply (Lemmas.land_lexistsR_ap _ _ G B) ; [ intro; search_it ltac:(idtac) ] ]
-
     | |- ?A //\\ _ //\\ ?B |-- ?G =>
-
       first [ simple apply (Lemmas.land_limpl_specialize_ap _ _ A B G); [ charge_tauto | search_it ltac:(idtac) ]
-
             | simple apply (Lemmas.land_lexists_ap _ _ A B G) ; [ intro; search_it ltac:(idtac) ]
-
             | simple apply (Lemmas.landA_ap A _ B G) ; search_it fin ]
-
     | |- ?A //\\ ?B |-- ?G =>
-
       first [ simple eapply (Lemmas.land_limpl_specializeL_ap _ _ A G); [ charge_tauto | search_it ltac:(idtac) ]
-
             | simple apply (Lemmas.land_lexistsL_ap _ _ G A) ; [ intro; search_it ltac:(idtac) ]
-
             | fin ]
-
     | |- _ => fin
-
     end
-
   in
-
   repeat rewrite landA ;
-
   search_it ltac:(idtac).
 
-
-
 Ltac charge_exfalso :=
-
   etransitivity; [ | eapply lfalseL ].
 
-
-
 Ltac charge_assert H :=
-
   apply Lemmas.lcut with (R:=H).
 
-
-
 Ltac charge_exists x :=
-
   apply (@lexistsR _ _ _ _ x).
 
-
-
 Ltac charge_cases :=
-
   repeat first [ rewrite Lemmas.land_lor_distr_R
-
                | rewrite Lemmas.land_lor_distr_L ] ;
-
   repeat apply lorL.
 
-
-
 Ltac charge_clear :=
-
   eapply Lemmas.forget_prem.
-

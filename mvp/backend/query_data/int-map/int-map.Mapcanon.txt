@@ -1,19 +1,433 @@
 
-
 Require Import Bool.
-
 Require Import Sumbool.
-
 Require Import Arith.
-
 Require Import NArith.
-
 Require Import Ndigits.
-
+Require Import Ndec.
+Require Import Map.
+(* Map:
+Require Import Bool.
+Require Import Sumbool.
+Require Import NArith.
+Require Import Ndigits.
 Require Import Ndec.
 
-Require Import Map.
+Global Set Asymmetric Patterns.
 
+Definition ad := N. 
+
+Section MapDefs.
+
+  Variable A : Type.  
+
+  Inductive Map :=
+    | M0 : Map
+    | M1 : ad -> A -> Map
+    | M2 : Map -> Map -> Map.
+
+  Lemma option_sum : forall o:option A, {y : A | o = Some y} + {o = None}.
+
+  Fixpoint MapGet (m:Map) : ad -> option A :=
+    match m with
+    | M0 => fun a:ad => None
+    | M1 x y => fun a:ad => if Neqb x a then Some y else None
+    | M2 m1 m2 =>
+        fun a:ad =>
+          match a with
+          | N0 => MapGet m1 N0
+          | Npos xH => MapGet m2 N0
+          | Npos (xO p) => MapGet m1 (Npos p)
+          | Npos (xI p) => MapGet m2 (Npos p)
+          end
+    end.
+
+  Definition newMap := M0.
+
+  Definition MapSingleton := M1.
+
+  Definition eqm (g g':ad -> option A) := forall a:ad, g a = g' a.
+
+  Lemma newMap_semantics : eqm (MapGet newMap) (fun a:ad => None).
+
+  Lemma MapSingleton_semantics :
+   forall (a:ad) (y:A),
+     eqm (MapGet (MapSingleton a y))
+       (fun a':ad => if Neqb a a' then Some y else None).
+
+  Lemma M1_semantics_1 : forall (a:ad) (y:A), MapGet (M1 a y) a = Some y.
+
+  Lemma M1_semantics_2 :
+   forall (a a':ad) (y:A), Neqb a a' = false -> MapGet (M1 a y) a' = None.
+
+  Lemma Map2_semantics_1 :
+   forall m m':Map,
+     eqm (MapGet m) (fun a:ad => MapGet (M2 m m') (Ndouble a)).
+
+  Lemma Map2_semantics_1_eq :
+   forall (m m':Map) (f:ad -> option A),
+     eqm (MapGet (M2 m m')) f -> eqm (MapGet m) (fun a:ad => f (Ndouble a)).
+
+  Lemma Map2_semantics_2 :
+   forall m m':Map,
+     eqm (MapGet m') (fun a:ad => MapGet (M2 m m') (Ndouble_plus_one a)).
+
+  Lemma Map2_semantics_2_eq :
+   forall (m m':Map) (f:ad -> option A),
+     eqm (MapGet (M2 m m')) f ->
+     eqm (MapGet m') (fun a:ad => f (Ndouble_plus_one a)).
+
+  Lemma MapGet_M2_bit_0_0 :
+   forall a:ad,
+     Nbit0 a = false ->
+     forall m m':Map, MapGet (M2 m m') a = MapGet m (Ndiv2 a).
+
+  Lemma MapGet_M2_bit_0_1 :
+   forall a:ad,
+     Nbit0 a = true ->
+     forall m m':Map, MapGet (M2 m m') a = MapGet m' (Ndiv2 a).
+
+  Lemma MapGet_M2_bit_0_if :
+   forall (m m':Map) (a:ad),
+     MapGet (M2 m m') a =
+     (if Nbit0 a then MapGet m' (Ndiv2 a) else MapGet m (Ndiv2 a)).
+
+  Lemma MapGet_M2_bit_0 :
+   forall (m m' m'':Map) (a:ad),
+     (if Nbit0 a then MapGet (M2 m' m) a else MapGet (M2 m m'') a) =
+     MapGet m (Ndiv2 a).
+
+  Lemma Map2_semantics_3 :
+   forall m m':Map,
+     eqm (MapGet (M2 m m'))
+       (fun a:ad =>
+          match Nbit0 a with
+          | false => MapGet m (Ndiv2 a)
+          | true => MapGet m' (Ndiv2 a)
+          end).
+
+  Lemma Map2_semantics_3_eq :
+   forall (m m':Map) (f f':ad -> option A),
+     eqm (MapGet m) f ->
+     eqm (MapGet m') f' ->
+     eqm (MapGet (M2 m m'))
+       (fun a:ad =>
+          match Nbit0 a with
+          | false => f (Ndiv2 a)
+          | true => f' (Ndiv2 a)
+          end).
+
+  Fixpoint MapPut1 (a:ad) (y:A) (a':ad) (y':A) (p:positive) {struct p} :
+   Map :=
+    match p with
+    | xO p' =>
+        let m := MapPut1 (Ndiv2 a) y (Ndiv2 a') y' p' in
+        match Nbit0 a with
+        | false => M2 m M0
+        | true => M2 M0 m
+        end
+    | _ =>
+        match Nbit0 a with
+        | false => M2 (M1 (Ndiv2 a) y) (M1 (Ndiv2 a') y')
+        | true => M2 (M1 (Ndiv2 a') y') (M1 (Ndiv2 a) y)
+        end
+    end.
+
+  Lemma MapGet_if_commute :
+   forall (b:bool) (m m':Map) (a:ad),
+     MapGet (if b then m else m') a = (if b then MapGet m a else MapGet m' a).
+
+  Lemma MapGet_if_same :
+   forall (m:Map) (b:bool) (a:ad), MapGet (if b then m else m) a = MapGet m a.
+
+  Lemma MapGet_M2_bit_0_2 :
+   forall (m m' m'':Map) (a:ad),
+     MapGet (if Nbit0 a then M2 m m' else M2 m' m'') a =
+     MapGet m' (Ndiv2 a).
+
+  Lemma MapPut1_semantics_1 :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p -> MapGet (MapPut1 a y a' y' p) a = Some y.
+
+  Lemma MapPut1_semantics_2 :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p -> MapGet (MapPut1 a y a' y' p) a' = Some y'.
+
+  Lemma MapGet_M2_both_None :
+   forall (m m':Map) (a:ad),
+     MapGet m (Ndiv2 a) = None ->
+     MapGet m' (Ndiv2 a) = None -> MapGet (M2 m m') a = None.
+ 
+  Lemma MapPut1_semantics_3 :
+   forall (p:positive) (a a' a0:ad) (y y':A),
+     Nxor a a' = Npos p ->
+     Neqb a a0 = false ->
+     Neqb a' a0 = false -> MapGet (MapPut1 a y a' y' p) a0 = None.
+
+  Lemma MapPut1_semantics :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p ->
+     eqm (MapGet (MapPut1 a y a' y' p))
+       (fun a0:ad =>
+          if Neqb a a0
+          then Some y
+          else if Neqb a' a0 then Some y' else None).
+
+  Lemma MapPut1_semantics' :
+   forall (p:positive) (a a':ad) (y y':A),
+     Nxor a a' = Npos p ->
+     eqm (MapGet (MapPut1 a y a' y' p))
+       (fun a0:ad =>
+          if Neqb a' a0
+          then Some y'
+          else if Neqb a a0 then Some y else None).
+
+  Fixpoint MapPut (m:Map) : ad -> A -> Map :=
+    match m with
+    | M0 => M1
+    | M1 a y =>
+        fun (a':ad) (y':A) =>
+          match Nxor a a' with
+          | N0 => M1 a' y'
+          | Npos p => MapPut1 a y a' y' p
+          end
+    | M2 m1 m2 =>
+        fun (a:ad) (y:A) =>
+          match a with
+          | N0 => M2 (MapPut m1 N0 y) m2
+          | Npos xH => M2 m1 (MapPut m2 N0 y)
+          | Npos (xO p) => M2 (MapPut m1 (Npos p) y) m2
+          | Npos (xI p) => M2 m1 (MapPut m2 (Npos p) y)
+          end
+    end.
+
+  Lemma MapPut_semantics_1 :
+   forall (a:ad) (y:A) (a0:ad),
+     MapGet (MapPut M0 a y) a0 = MapGet (M1 a y) a0.
+
+  Lemma MapPut_semantics_2_1 :
+   forall (a:ad) (y y':A) (a0:ad),
+     MapGet (MapPut (M1 a y) a y') a0 =
+     (if Neqb a a0 then Some y' else None).
+
+  Lemma MapPut_semantics_2_2 :
+   forall (a a':ad) (y y':A) (a0 a'':ad),
+     Nxor a a' = a'' ->
+     MapGet (MapPut (M1 a y) a' y') a0 =
+     (if Neqb a' a0 then Some y' else if Neqb a a0 then Some y else None).
+
+  Lemma MapPut_semantics_2 :
+   forall (a a':ad) (y y':A) (a0:ad),
+     MapGet (MapPut (M1 a y) a' y') a0 =
+     (if Neqb a' a0 then Some y' else if Neqb a a0 then Some y else None).
+
+  Lemma MapPut_semantics_3_1 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapPut (M2 m m') a y =
+     (if Nbit0 a
+      then M2 m (MapPut m' (Ndiv2 a) y)
+      else M2 (MapPut m (Ndiv2 a) y) m').
+
+  Lemma MapPut_semantics :
+   forall (m:Map) (a:ad) (y:A),
+     eqm (MapGet (MapPut m a y))
+       (fun a':ad => if Neqb a a' then Some y else MapGet m a').
+
+  Fixpoint MapPut_behind (m:Map) : ad -> A -> Map :=
+    match m with
+    | M0 => M1
+    | M1 a y =>
+        fun (a':ad) (y':A) =>
+          match Nxor a a' with
+          | N0 => m
+          | Npos p => MapPut1 a y a' y' p
+          end
+    | M2 m1 m2 =>
+        fun (a:ad) (y:A) =>
+          match a with
+          | N0 => M2 (MapPut_behind m1 N0 y) m2
+          | Npos xH => M2 m1 (MapPut_behind m2 N0 y)
+          | Npos (xO p) => M2 (MapPut_behind m1 (Npos p) y) m2
+          | Npos (xI p) => M2 m1 (MapPut_behind m2 (Npos p) y)
+          end
+    end.
+
+  Lemma MapPut_behind_semantics_3_1 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapPut_behind (M2 m m') a y =
+     (if Nbit0 a
+      then M2 m (MapPut_behind m' (Ndiv2 a) y)
+      else M2 (MapPut_behind m (Ndiv2 a) y) m').
+
+  Lemma MapPut_behind_as_before_1 :
+   forall a a' a0:ad,
+     Neqb a' a0 = false ->
+     forall y y':A,
+       MapGet (MapPut (M1 a y) a' y') a0 =
+       MapGet (MapPut_behind (M1 a y) a' y') a0.
+
+  Lemma MapPut_behind_as_before :
+   forall (m:Map) (a:ad) (y:A) (a0:ad),
+     Neqb a a0 = false ->
+     MapGet (MapPut m a y) a0 = MapGet (MapPut_behind m a y) a0.
+
+  Lemma MapPut_behind_new :
+   forall (m:Map) (a:ad) (y:A),
+     MapGet (MapPut_behind m a y) a =
+     match MapGet m a with
+     | Some y' => Some y'
+     | _ => Some y
+     end.
+
+  Lemma MapPut_behind_semantics :
+   forall (m:Map) (a:ad) (y:A),
+     eqm (MapGet (MapPut_behind m a y))
+       (fun a':ad =>
+          match MapGet m a' with
+          | Some y' => Some y'
+          | _ => if Neqb a a' then Some y else None
+          end).
+
+  Definition makeM2 (m m':Map) :=
+    match m, m' with
+    | M0, M0 => M0
+    | M0, M1 a y => M1 (Ndouble_plus_one a) y
+    | M1 a y, M0 => M1 (Ndouble a) y
+    | _, _ => M2 m m'
+    end.
+
+  Lemma makeM2_M2 :
+   forall m m':Map, eqm (MapGet (makeM2 m m')) (MapGet (M2 m m')).
+
+  Fixpoint MapRemove (m:Map) : ad -> Map :=
+    match m with
+    | M0 => fun _:ad => M0
+    | M1 a y =>
+        fun a':ad => match Neqb a a' with
+                     | true => M0
+                     | false => m
+                     end
+    | M2 m1 m2 =>
+        fun a:ad =>
+          if Nbit0 a
+          then makeM2 m1 (MapRemove m2 (Ndiv2 a))
+          else makeM2 (MapRemove m1 (Ndiv2 a)) m2
+    end.
+
+  Lemma MapRemove_semantics :
+   forall (m:Map) (a:ad),
+     eqm (MapGet (MapRemove m a))
+       (fun a':ad => if Neqb a a' then None else MapGet m a').
+
+  Fixpoint MapCard (m:Map) : nat :=
+    match m with
+    | M0 => 0
+    | M1 _ _ => 1
+    | M2 m m' => MapCard m + MapCard m'
+    end.
+
+  Fixpoint MapMerge (m:Map) : Map -> Map :=
+    match m with
+    | M0 => fun m':Map => m'
+    | M1 a y => fun m':Map => MapPut_behind m' a y
+    | M2 m1 m2 =>
+        fun m':Map =>
+          match m' with
+          | M0 => m
+          | M1 a' y' => MapPut m a' y'
+          | M2 m'1 m'2 => M2 (MapMerge m1 m'1) (MapMerge m2 m'2)
+          end
+    end.
+
+  Lemma MapMerge_semantics :
+   forall m m':Map,
+     eqm (MapGet (MapMerge m m'))
+       (fun a0:ad =>
+          match MapGet m' a0 with
+          | Some y' => Some y'
+          | None => MapGet m a0
+          end).
+
+  Fixpoint MapDelta (m:Map) : Map -> Map :=
+    match m with
+    | M0 => fun m':Map => m'
+    | M1 a y =>
+        fun m':Map =>
+          match MapGet m' a with
+          | None => MapPut m' a y
+          | _ => MapRemove m' a
+          end
+    | M2 m1 m2 =>
+        fun m':Map =>
+          match m' with
+          | M0 => m
+          | M1 a' y' =>
+              match MapGet m a' with
+              | None => MapPut m a' y'
+              | _ => MapRemove m a'
+              end
+          | M2 m'1 m'2 => makeM2 (MapDelta m1 m'1) (MapDelta m2 m'2)
+          end
+    end.
+
+  Lemma MapDelta_semantics_comm :
+   forall m m':Map, eqm (MapGet (MapDelta m m')) (MapGet (MapDelta m' m)).
+
+  Lemma MapDelta_semantics_1_1 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad),
+     MapGet (M1 a y) a0 = None ->
+     MapGet m' a0 = None -> MapGet (MapDelta (M1 a y) m') a0 = None.
+
+  Lemma MapDelta_semantics_1 :
+   forall (m m':Map) (a:ad),
+     MapGet m a = None ->
+     MapGet m' a = None -> MapGet (MapDelta m m') a = None.
+
+  Lemma MapDelta_semantics_2_1 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad) (y0:A),
+     MapGet (M1 a y) a0 = None ->
+     MapGet m' a0 = Some y0 -> MapGet (MapDelta (M1 a y) m') a0 = Some y0.
+
+  Lemma MapDelta_semantics_2_2 :
+   forall (a:ad) (y:A) (m':Map) (a0:ad) (y0:A),
+     MapGet (M1 a y) a0 = Some y0 ->
+     MapGet m' a0 = None -> MapGet (MapDelta (M1 a y) m') a0 = Some y0.
+
+  Lemma MapDelta_semantics_2 :
+   forall (m m':Map) (a:ad) (y:A),
+     MapGet m a = None ->
+     MapGet m' a = Some y -> MapGet (MapDelta m m') a = Some y.
+
+  Lemma MapDelta_semantics_3_1 :
+   forall (a0:ad) (y0:A) (m':Map) (a:ad) (y y':A),
+     MapGet (M1 a0 y0) a = Some y ->
+     MapGet m' a = Some y' -> MapGet (MapDelta (M1 a0 y0) m') a = None.
+
+  Lemma MapDelta_semantics_3 :
+   forall (m m':Map) (a:ad) (y y':A),
+     MapGet m a = Some y ->
+     MapGet m' a = Some y' -> MapGet (MapDelta m m') a = None.
+
+  Lemma MapDelta_semantics :
+   forall m m':Map,
+     eqm (MapGet (MapDelta m m'))
+       (fun a0:ad =>
+          match MapGet m a0, MapGet m' a0 with
+          | None, Some y' => Some y'
+          | Some y, None => Some y
+          | _, _ => None
+          end).
+
+  Definition MapEmptyp (m:Map) := match m with
+                                  | M0 => true
+                                  | _ => false
+                                  end.
+
+  Lemma MapEmptyp_correct : MapEmptyp M0 = true.
+
+  Lemma MapEmptyp_complete : forall m:Map, MapEmptyp m = true -> m = M0.
+
+End MapDefs. *)
 Require Import Mapaxioms.
 (* Mapaxioms:
 Require Import Bool.
@@ -351,7 +765,6 @@ Lemma FSetInter_Union_r :
  forall s s' s'':FSet,
    eqmap unit (FSetInter s (FSetUnion s' s''))
      (FSetUnion (FSetInter s s') (FSetInter s s'')). *)
-
 Require Import Mapiter.
 (* Mapiter:
 Require Import Bool.
@@ -636,7 +1049,6 @@ Section MapIter.
      eqm A (alist_semantics (aapp l l')) (alist_semantics (aapp l' l)).
 
 End MapIter. *)
-
 Require Import Fset.
 (* Fset:
 Require Import Bool.
@@ -829,9 +1241,7 @@ Section FSetDefs.
 End FSetDefs.
 
 Lemma FSet_Dom : forall s:FSet, MapDom unit s = s. *)
-
 Require Import List.
-
 Require Import Lsort.
 (* Lsort:
 Require Import Bool.
@@ -999,7 +1409,6 @@ Section LSort.
      alist_sorted_2 l -> alist_sorted_2 l' -> l = l'.
 
 End LSort. *)
-
 Require Import Mapsubset.
 (* Mapsubset:
 Require Import Bool.
@@ -1282,7 +1691,6 @@ Section MapDisjointExtra.
      MapDisjoint _ _ m m''' -> MapDisjoint _ _ m m''.
 
 End MapDisjointExtra. *)
-
 Require Import Mapcard.
 (* Mapcard:
 Require Import Bool.
@@ -1507,758 +1915,380 @@ Section MapCard3.
 
 End MapCard3. *)
 
-
-
 Section MapCanon.
-
-
 
   Variable A : Type.
 
-
-
   Inductive mapcanon : Map A -> Prop :=
-
     | M0_canon : mapcanon (M0 A)
-
     | M1_canon : forall (a:ad) (y:A), mapcanon (M1 A a y)
-
     | M2_canon :
-
         forall m1 m2:Map A,
-
           mapcanon m1 ->
-
           mapcanon m2 -> 2 <= MapCard A (M2 A m1 m2) -> mapcanon (M2 A m1 m2).
 
-
-
   Lemma mapcanon_M2 :
-
    forall m1 m2:Map A, mapcanon (M2 A m1 m2) -> 2 <= MapCard A (M2 A m1 m2).
-
   Proof.
-
     intros. inversion H. assumption.
-
   Qed.
-
-
 
   Lemma mapcanon_M2_1 :
-
    forall m1 m2:Map A, mapcanon (M2 A m1 m2) -> mapcanon m1.
-
   Proof.
-
     intros. inversion H. assumption.
-
   Qed.
-
-
 
   Lemma mapcanon_M2_2 :
-
    forall m1 m2:Map A, mapcanon (M2 A m1 m2) -> mapcanon m2.
-
   Proof.
-
     intros. inversion H. assumption.
-
   Qed.
-
-
 
   Lemma M2_eqmap_1 :
-
    forall m0 m1 m2 m3:Map A,
-
      eqmap A (M2 A m0 m1) (M2 A m2 m3) -> eqmap A m0 m2.
-
   Proof.
-
     unfold eqmap, eqm in |- *. intros. rewrite <- (Ndouble_div2 a).
-
     rewrite <- (MapGet_M2_bit_0_0 A _ (Ndouble_bit0 a) m0 m1).
-
     rewrite <- (MapGet_M2_bit_0_0 A _ (Ndouble_bit0 a) m2 m3).
-
     exact (H (Ndouble a)).
-
   Qed.
-
-
 
   Lemma M2_eqmap_2 :
-
    forall m0 m1 m2 m3:Map A,
-
      eqmap A (M2 A m0 m1) (M2 A m2 m3) -> eqmap A m1 m3.
-
   Proof.
-
     unfold eqmap, eqm in |- *. intros. rewrite <- (Ndouble_plus_one_div2 a).
-
     rewrite <- (MapGet_M2_bit_0_1 A _ (Ndouble_plus_one_bit0 a) m0 m1).
-
     rewrite <- (MapGet_M2_bit_0_1 A _ (Ndouble_plus_one_bit0 a) m2 m3).
-
     exact (H (Ndouble_plus_one a)).
-
   Qed.
-
-
 
   Lemma mapcanon_unique :
-
    forall m m':Map A, mapcanon m -> mapcanon m' -> eqmap A m m' -> m = m'.
-
   Proof.
-
     simple induction m. simple induction m'. trivial.
-
     intros a y H H0 H1. cut (None = MapGet A (M1 A a y) a). simpl in |- *. rewrite (Neqb_correct a).
-
     intro. discriminate H2.
-
     exact (H1 a).
-
     intros. cut (2 <= MapCard A (M0 A)). intro. elim (le_Sn_O _ H4).
-
     rewrite (MapCard_ext A _ _ H3). exact (mapcanon_M2 _ _ H2).
-
     intros a y. simple induction m'. intros. cut (MapGet A (M1 A a y) a = None). simpl in |- *.
-
     rewrite (Neqb_correct a). intro. discriminate H2.
-
     exact (H1 a).
-
     intros a0 y0 H H0 H1. cut (MapGet A (M1 A a y) a = MapGet A (M1 A a0 y0) a). simpl in |- *.
-
     rewrite (Neqb_correct a). intro. elim (sumbool_of_bool (Neqb a0 a)). intro H3.
-
     rewrite H3 in H2. inversion H2. rewrite (Neqb_complete _ _ H3). reflexivity.
-
     intro H3. rewrite H3 in H2. discriminate H2.
-
     exact (H1 a).
-
     intros. cut (2 <= MapCard A (M1 A a y)). intro. elim (le_Sn_O _ (le_S_n _ _ H4)).
-
     rewrite (MapCard_ext A _ _ H3). exact (mapcanon_M2 _ _ H2).
-
     simple induction m'. intros. cut (2 <= MapCard A (M0 A)). intro. elim (le_Sn_O _ H4).
-
     rewrite <- (MapCard_ext A _ _ H3). exact (mapcanon_M2 _ _ H1).
-
     intros a y H1 H2 H3. cut (2 <= MapCard A (M1 A a y)). intro.
-
     elim (le_Sn_O _ (le_S_n _ _ H4)).
-
     rewrite <- (MapCard_ext A _ _ H3). exact (mapcanon_M2 _ _ H1).
-
     intros. rewrite (H m2). rewrite (H0 m3). reflexivity.
-
     exact (mapcanon_M2_2 _ _ H3).
-
     exact (mapcanon_M2_2 _ _ H4).
-
     exact (M2_eqmap_2 _ _ _ _ H5).
-
     exact (mapcanon_M2_1 _ _ H3).
-
     exact (mapcanon_M2_1 _ _ H4).
-
     exact (M2_eqmap_1 _ _ _ _ H5).
-
   Qed.
-
-
 
   Lemma MapPut1_canon :
-
    forall (p:positive) (a a':ad) (y y':A), mapcanon (MapPut1 A a y a' y' p).
-
   Proof.
-
     simple induction p. simpl in |- *. intros. case (Nbit0 a). apply M2_canon. apply M1_canon.
-
     apply M1_canon.
-
     apply le_n.
-
     apply M2_canon. apply M1_canon.
-
     apply M1_canon.
-
     apply le_n.
-
     simpl in |- *. intros. case (Nbit0 a). apply M2_canon. apply M0_canon.
-
     apply H.
-
     simpl in |- *. rewrite MapCard_Put1_equals_2. apply le_n.
-
     apply M2_canon. apply H.
-
     apply M0_canon.
-
     simpl in |- *. rewrite MapCard_Put1_equals_2. apply le_n.
-
     simpl in |- *. simpl in |- *. intros. case (Nbit0 a). apply M2_canon. apply M1_canon.
-
     apply M1_canon.
-
     simpl in |- *. apply le_n.
-
     apply M2_canon. apply M1_canon.
-
     apply M1_canon.
-
     simpl in |- *. apply le_n.
-
   Qed.
-
-
 
   Lemma MapPut_canon :
-
    forall m:Map A,
-
      mapcanon m -> forall (a:ad) (y:A), mapcanon (MapPut A m a y).
-
   Proof.
-
     simple induction m. intros. simpl in |- *. apply M1_canon.
-
     intros a0 y0 H a y. simpl in |- *. case (Nxor a0 a). apply M1_canon.
-
     intro. apply MapPut1_canon.
-
     intros. simpl in |- *. elim a. apply M2_canon. apply H. exact (mapcanon_M2_1 m0 m1 H1).
-
     exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1). exact (mapcanon_M2 _ _ H1).
-
     apply plus_le_compat. exact (MapCard_Put_lb A m0 N0 y).
-
     apply le_n.
-
     intro. case p. intro. apply M2_canon. exact (mapcanon_M2_1 m0 m1 H1).
-
     apply H0. exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_l. exact (MapCard_Put_lb A m1 (Npos p0) y).
-
     intro. apply M2_canon. apply H. exact (mapcanon_M2_1 m0 m1 H1).
-
     exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_r. exact (MapCard_Put_lb A m0 (Npos p0) y).
-
     apply M2_canon. apply (mapcanon_M2_1 m0 m1 H1).
-
     apply H0. apply (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_l. exact (MapCard_Put_lb A m1 N0 y).
-
   Qed.
-
-
 
   Lemma MapPut_behind_canon :
-
    forall m:Map A,
-
      mapcanon m -> forall (a:ad) (y:A), mapcanon (MapPut_behind A m a y).
-
   Proof.
-
     simple induction m. intros. simpl in |- *. apply M1_canon.
-
     intros a0 y0 H a y. simpl in |- *. case (Nxor a0 a). apply M1_canon.
-
     intro. apply MapPut1_canon.
-
     intros. simpl in |- *. elim a. apply M2_canon. apply H. exact (mapcanon_M2_1 m0 m1 H1).
-
     exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1). exact (mapcanon_M2 _ _ H1).
-
     apply plus_le_compat. rewrite MapCard_Put_behind_Put. exact (MapCard_Put_lb A m0 N0 y).
-
     apply le_n.
-
     intro. case p. intro. apply M2_canon. exact (mapcanon_M2_1 m0 m1 H1).
-
     apply H0. exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_l. rewrite MapCard_Put_behind_Put. exact (MapCard_Put_lb A m1 (Npos p0) y).
-
     intro. apply M2_canon. apply H. exact (mapcanon_M2_1 m0 m1 H1).
-
     exact (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_r. rewrite MapCard_Put_behind_Put. exact (MapCard_Put_lb A m0 (Npos p0) y).
-
     apply M2_canon. apply (mapcanon_M2_1 m0 m1 H1).
-
     apply H0. apply (mapcanon_M2_2 m0 m1 H1).
-
     simpl in |- *. apply le_trans with (m := MapCard A m0 + MapCard A m1).
-
     exact (mapcanon_M2 m0 m1 H1).
-
     apply plus_le_compat_l. rewrite MapCard_Put_behind_Put. exact (MapCard_Put_lb A m1 N0 y).
-
   Qed.
-
-
 
   Lemma makeM2_canon :
-
    forall m m':Map A, mapcanon m -> mapcanon m' -> mapcanon (makeM2 A m m').
-
   Proof.
-
     intro. case m. intro. case m'. intros. exact M0_canon.
-
     intros a y H H0. exact (M1_canon (Ndouble_plus_one a) y).
-
     intros. simpl in |- *. apply M2_canon; try assumption. exact (mapcanon_M2 m0 m1 H0).
-
     intros a y m'. case m'. intros. exact (M1_canon (Ndouble a) y).
-
     intros a0 y0 H H0. simpl in |- *. apply M2_canon; try assumption. apply le_n.
-
     intros. simpl in |- *. apply M2_canon; try assumption.
-
     apply le_trans with (m := MapCard A (M2 A m0 m1)). exact (mapcanon_M2 _ _ H0).
-
     exact (le_plus_r (MapCard A (M1 A a y)) (MapCard A (M2 A m0 m1))).
-
     simpl in |- *. intros. apply M2_canon; try assumption.
-
     apply le_trans with (m := MapCard A (M2 A m0 m1)). exact (mapcanon_M2 _ _ H).
-
     exact (le_plus_l (MapCard A (M2 A m0 m1)) (MapCard A m')).
-
   Qed.
-
-
 
   Fixpoint MapCanonicalize (m:Map A) : Map A :=
-
     match m with
-
     | M2 m0 m1 => makeM2 A (MapCanonicalize m0) (MapCanonicalize m1)
-
     | _ => m
-
     end.
 
-
-
   Lemma mapcanon_exists_1 : forall m:Map A, eqmap A m (MapCanonicalize m).
-
   Proof.
-
     simple induction m. apply eqmap_refl.
-
     intros. apply eqmap_refl.
-
     intros. simpl in |- *. unfold eqmap, eqm in |- *. intro.
-
     rewrite (makeM2_M2 A (MapCanonicalize m0) (MapCanonicalize m1) a).
-
     rewrite MapGet_M2_bit_0_if. rewrite MapGet_M2_bit_0_if.
-
     rewrite <- (H (Ndiv2 a)). rewrite <- (H0 (Ndiv2 a)). reflexivity.
-
   Qed.
-
-
 
   Lemma mapcanon_exists_2 : forall m:Map A, mapcanon (MapCanonicalize m).
-
   Proof.
-
     simple induction m. apply M0_canon.
-
     intros. simpl in |- *. apply M1_canon.
-
     intros. simpl in |- *. apply makeM2_canon; assumption.
-
   Qed.
-
-
 
   Lemma mapcanon_exists :
-
    forall m:Map A, {m' : Map A | eqmap A m m' /\ mapcanon m'}.
-
   Proof.
-
     intro. split with (MapCanonicalize m). split. apply mapcanon_exists_1.
-
     apply mapcanon_exists_2.
-
   Qed.
-
-
 
   Lemma MapRemove_canon :
-
    forall m:Map A, mapcanon m -> forall a:ad, mapcanon (MapRemove A m a).
-
   Proof.
-
     simple induction m. intros. exact M0_canon.
-
     intros a y H a0. simpl in |- *. case (Neqb a a0). exact M0_canon.
-
     assumption.
-
     intros. simpl in |- *. case (Nbit0 a). apply makeM2_canon. exact (mapcanon_M2_1 _ _ H1).
-
     apply H0. exact (mapcanon_M2_2 _ _ H1).
-
     apply makeM2_canon. apply H. exact (mapcanon_M2_1 _ _ H1).
-
     exact (mapcanon_M2_2 _ _ H1).
-
   Qed.
-
-
 
   Lemma MapMerge_canon :
-
    forall m m':Map A, mapcanon m -> mapcanon m' -> mapcanon (MapMerge A m m').
-
   Proof.
-
     simple induction m. intros. exact H0.
-
     simpl in |- *. intros a y m' H H0. exact (MapPut_behind_canon m' H0 a y).
-
     simple induction m'. intros. exact H1.
-
     intros a y H1 H2. unfold MapMerge in |- *. exact (MapPut_canon _ H1 a y).
-
     intros. simpl in |- *. apply M2_canon. apply H. exact (mapcanon_M2_1 _ _ H3).
-
     exact (mapcanon_M2_1 _ _ H4).
-
     apply H0. exact (mapcanon_M2_2 _ _ H3).
-
     exact (mapcanon_M2_2 _ _ H4).
-
     change (2 <= MapCard A (MapMerge A (M2 A m0 m1) (M2 A m2 m3))) in |- *.
-
     apply le_trans with (m := MapCard A (M2 A m0 m1)). exact (mapcanon_M2 _ _ H3).
-
     exact (MapMerge_Card_lb_l A (M2 A m0 m1) (M2 A m2 m3)).
-
   Qed.
-
-
 
   Lemma MapDelta_canon :
-
    forall m m':Map A, mapcanon m -> mapcanon m' -> mapcanon (MapDelta A m m').
-
   Proof.
-
     simple induction m. intros. exact H0.
-
     simpl in |- *. intros a y m' H H0. case (MapGet A m' a).
-
     intro. exact (MapRemove_canon m' H0 a).
-
     exact (MapPut_canon m' H0 a y).
-
     simple induction m'. intros. exact H1.
-
     unfold MapDelta in |- *. intros a y H1 H2. case (MapGet A (M2 A m0 m1) a). 
-
     intro. exact (MapRemove_canon _ H1 a).
-
     exact (MapPut_canon _ H1 a y).
-
     intros. simpl in |- *. apply makeM2_canon. apply H. exact (mapcanon_M2_1 _ _ H3).
-
     exact (mapcanon_M2_1 _ _ H4).
-
     apply H0. exact (mapcanon_M2_2 _ _ H3).
-
     exact (mapcanon_M2_2 _ _ H4).
-
   Qed.
-
-
 
   Variable B : Type.
 
-
-
   Lemma MapDomRestrTo_canon :
-
    forall m:Map A,
-
      mapcanon m -> forall m':Map B, mapcanon (MapDomRestrTo A B m m').
-
   Proof.
-
     simple induction m. intros. exact M0_canon.
-
     simpl in |- *. intros a y H m'. case (MapGet B m' a). 
-
     intro. apply M1_canon.
-
     exact M0_canon.
-
     simple induction m'. exact M0_canon.
-
     unfold MapDomRestrTo in |- *. intros a y. case (MapGet A (M2 A m0 m1) a). 
-
     intro. apply M1_canon.
-
     exact M0_canon.
-
     intros. simpl in |- *. apply makeM2_canon. apply H. exact (mapcanon_M2_1 m0 m1 H1).
-
     apply H0. exact (mapcanon_M2_2 m0 m1 H1).
-
   Qed.
-
-
 
   Lemma MapDomRestrBy_canon :
-
    forall m:Map A,
-
      mapcanon m -> forall m':Map B, mapcanon (MapDomRestrBy A B m m').
-
   Proof.
-
     simple induction m. intros. exact M0_canon.
-
     simpl in |- *. intros a y H m'. case (MapGet B m' a); try assumption.
-
     intro. exact M0_canon.
-
     simple induction m'. exact H1.
-
     intros a y. simpl in |- *. case (Nbit0 a). apply makeM2_canon. exact (mapcanon_M2_1 _ _ H1).
-
     apply MapRemove_canon. exact (mapcanon_M2_2 _ _ H1).
-
     apply makeM2_canon. apply MapRemove_canon. exact (mapcanon_M2_1 _ _ H1).
-
     exact (mapcanon_M2_2 _ _ H1).
-
     intros. simpl in |- *. apply makeM2_canon. apply H. exact (mapcanon_M2_1 _ _ H1).
-
     apply H0. exact (mapcanon_M2_2 _ _ H1).
-
   Qed.
-
-
 
   Lemma Map_of_alist_canon : forall l:alist A, mapcanon (Map_of_alist A l).
-
   Proof.
-
     simple induction l. exact M0_canon.
-
     intro r. elim r. intros a y l0 H. simpl in |- *. apply MapPut_canon. assumption.
-
   Qed.
-
-
 
   Lemma MapSubset_c_1 :
-
    forall (m:Map A) (m':Map B),
-
      mapcanon m -> MapSubset A B m m' -> MapDomRestrBy A B m m' = M0 A.
-
   Proof.
-
     intros. apply mapcanon_unique. apply MapDomRestrBy_canon. assumption.
-
     apply M0_canon.
-
     exact (MapSubset_imp_2 _ _ m m' H0).
-
   Qed.
-
-
 
   Lemma MapSubset_c_2 :
-
    forall (m:Map A) (m':Map B),
-
      MapDomRestrBy A B m m' = M0 A -> MapSubset A B m m'.
-
   Proof.
-
     intros. apply MapSubset_2_imp. unfold MapSubset_2 in |- *. rewrite H. apply eqmap_refl.
-
   Qed.
-
-
 
 End MapCanon.
 
-
-
 Section FSetCanon.
-
-
 
   Variable A : Type.
 
-
-
   Lemma MapDom_canon :
-
    forall m:Map A, mapcanon A m -> mapcanon unit (MapDom A m).
-
   Proof.
-
     simple induction m. intro. exact (M0_canon unit).
-
     intros a y H. exact (M1_canon unit a _).
-
     intros. simpl in |- *. apply M2_canon. apply H. exact (mapcanon_M2_1 A _ _ H1).
-
     apply H0. exact (mapcanon_M2_2 A _ _ H1).
-
     change (2 <= MapCard unit (MapDom A (M2 A m0 m1))) in |- *. rewrite <- MapCard_Dom.
-
     exact (mapcanon_M2 A _ _ H1).
-
   Qed.
-
-
 
 End FSetCanon.
 
-
-
 Section MapFoldCanon.
-
-
 
   Variables A B : Type.
 
-
-
   Lemma MapFold_canon_1 :
-
    forall m0:Map B,
-
      mapcanon B m0 ->
-
      forall op:Map B -> Map B -> Map B,
-
        (forall m1:Map B,
-
           mapcanon B m1 ->
-
           forall m2:Map B, mapcanon B m2 -> mapcanon B (op m1 m2)) ->
-
        forall f:ad -> A -> Map B,
-
          (forall (a:ad) (y:A), mapcanon B (f a y)) ->
-
          forall (m:Map A) (pf:ad -> ad),
-
            mapcanon B (MapFold1 A (Map B) m0 op f pf m).
-
   Proof.
-
     simple induction m. intro. exact H.
-
     intros a y pf. simpl in |- *. apply H1.
-
     intros. simpl in |- *. apply H0. apply H2.
-
     apply H3.
-
   Qed.
-
-
 
   Lemma MapFold_canon :
-
    forall m0:Map B,
-
      mapcanon B m0 ->
-
      forall op:Map B -> Map B -> Map B,
-
        (forall m1:Map B,
-
           mapcanon B m1 ->
-
           forall m2:Map B, mapcanon B m2 -> mapcanon B (op m1 m2)) ->
-
        forall f:ad -> A -> Map B,
-
          (forall (a:ad) (y:A), mapcanon B (f a y)) ->
-
          forall m:Map A, mapcanon B (MapFold A (Map B) m0 op f m).
-
   Proof.
-
     intros. exact (MapFold_canon_1 m0 H op H0 f H1 m (fun a:ad => a)).
-
   Qed.
-
-
 
   Lemma MapCollect_canon :
-
    forall f:ad -> A -> Map B,
-
      (forall (a:ad) (y:A), mapcanon B (f a y)) ->
-
      forall m:Map A, mapcanon B (MapCollect A B f m).
-
   Proof.
-
     intros. rewrite MapCollect_as_Fold. apply MapFold_canon. apply M0_canon.
-
     intros. exact (MapMerge_canon B m1 m2 H0 H1).
-
     assumption.
-
   Qed.
-
-
 
 End MapFoldCanon.

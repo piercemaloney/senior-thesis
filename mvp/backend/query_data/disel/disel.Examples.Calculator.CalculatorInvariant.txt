@@ -1,21 +1,12 @@
 From mathcomp.ssreflect
-
 Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
-
 From mathcomp
-
 Require Import path.
-
 Require Import Eqdep.
-
 Require Import Relation_Operators.
-
 From fcsl
-
 Require Import axioms pred prelude ordtype finmap pcm unionmap heap.
-
 From DiSeL
-
 Require Import Freshness State EqTypeX Protocols Worlds NetworkSem Rely.
 (* Freshness:
 From mathcomp.ssreflect
@@ -852,9 +843,7 @@ Notation msgs i l := (dsoup (getStatelet i l)).
 Lemma rely_loc' l i j : network_rely i j -> loc j l = loc i l.
 
 End Rely. *)
-
 From DiSeL
-
 Require Import Actions Injection Process Always HoareTriples InferenceRules.
 (* Actions:
 From mathcomp.ssreflect
@@ -2177,13 +2166,383 @@ Lemma with_inv_rule i (r : cont A) :
         verify i (with_inv ii e) r.
 
 End InductiveInvLemmas. *)
-
 From DiSeL
-
 Require Import InductiveInv StatePredicates.
-
+(* InductiveInv:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+From fcsl
+Require Import axioms pred prelude ordtype finmap pcm unionmap heap.
 From DiSeL
+Require Import Freshness State EqTypeX Protocols Worlds NetworkSem Rely.
+Require FunctionalExtensionality.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
 
+Module ProtocolWithInvariant.
+Section ProtocolWithInvariant.
+
+Variable p : protocol.
+
+Notation l := (plab p).
+Notation coh := (coh p).
+
+Variable I : dstatelet -> pred nid -> Prop.
+
+Variable d0 : dstatelet.
+
+Definition W := mkWorld p.
+
+Notation toSt d := (l \\-> d).
+
+Definition cohI :=
+  [Pred d | coh d /\ I d (nodes p d)].
+
+Lemma cohIVd d : cohI d -> valid (dstate d).
+
+Lemma cohIVs d : cohI d -> valid (dsoup d).
+
+Lemma cohIDom d : cohI d -> dom (dstate d) =i nodes p d.
+
+Definition CohI := CohPred (CohPredMixin cohIVd cohIVs cohIDom).
+
+Lemma st_helper d : (getStatelet (toSt d) l) = d.
+
+Lemma cohSt d : coh d -> Coh W (toSt d).
+
+Section SendInvWrapper.
+
+Variable st : send_trans coh.
+
+Definition send_safeI this to d m :=
+  send_safe st this to d m /\ I d (nodes p d).
+
+Lemma s_safe_cohI this to d m : send_safeI this to d m -> CohI d.
+
+Lemma s_safe_inI this to d m : send_safeI this to d m ->
+                               this \in nodes p d /\ to \in nodes p d.
+
+Definition send_stepI: send_step_t (send_safeI) :=
+  fun this to d msg S => (@send_step _ _ st this to d msg (proj1 S)).
+
+Lemma s_safe_defI this to d msg :
+  send_safeI this to d msg <->
+  exists b pf, @send_stepI this to d msg pf = Some b.
+
+Definition S_inv := forall this to d msg (S : send_safe st this to d msg) b,
+    I d (nodes p d) -> Some b = send_step S ->
+    let: f' := upd this b (dstate d) in
+    let: s' := (post_msg (dsoup d) (Msg (TMsg (t_snd st) msg) this to true)).1 in
+    let: d' := DStatelet f' s' in
+    (forall z, z == this = false -> getLocal z d' = getLocal z d) ->
+    I d' (nodes p d').
+
+Hypothesis HIstep : S_inv.
+
+Lemma s_step_cohI : s_step_coh_t CohI (t_snd st) send_stepI.
+
+Definition snd_transI := SendTrans s_safe_cohI s_safe_inI s_safe_defI s_step_cohI.
+
+End SendInvWrapper.
+
+Section ReceiveInvWrapper.
+
+Variable rt : receive_trans coh.
+
+Definition receive_stepI: receive_step_t CohI :=
+  fun this from m d C pf => receive_step rt from m (proj1 C) pf.
+
+Definition R_inv := forall d from this i (C : coh d) m
+                           (pf: this \in nodes p d),
+    I d (nodes p d) ->
+    find i (dsoup d) = Some (Msg m from this true) ->
+    this \in dom (dstate d) ->
+    msg_wf rt C this from m -> tag m = t_rcv rt ->
+    let: loc' := receive_step rt from m C pf in
+    let: s'' := consume_msg (dsoup d) i in
+    let: f' := upd this loc' (dstate d) in
+    let: d' := (DStatelet f' s'') in
+    (forall z, z == this = false -> getLocal z d' = getLocal z d) ->
+    I d' (nodes p d').
+
+Hypothesis HIstep : R_inv.
+
+Notation msg_wfI := (fun d (C : CohI d) => msg_wf rt (proj1 C)).
+
+Lemma r_step_cohI :
+  r_step_coh_t msg_wfI (t_rcv rt) receive_stepI.
+
+Definition rcv_transI := @ReceiveTrans _ CohI _ msg_wfI _ r_step_cohI.
+
+End ReceiveInvWrapper.
+
+Structure SendInv := SI {
+  st : send_trans coh;
+  st_inv : S_inv st;
+}.
+
+Structure ReceiveInv := RI {
+  rt : receive_trans coh;
+  rt_inv : R_inv rt;
+}.
+
+Structure InductiveInv := II {
+  sts : seq SendInv;
+  rts : seq ReceiveInv;
+  _ : map st sts = snd_trans p;
+  _ : map rt rts = rcv_trans p
+}.
+
+Definition stsI sts := map (fun stt =>
+                          @snd_transI (st stt) (@st_inv stt)) sts.
+Definition rtsI rts := map (fun rtt =>
+                          @rcv_transI (rt rtt) (@rt_inv rtt)) rts.
+
+Import FunctionalExtensionality.
+
+Variable ii : InductiveInv.
+
+Lemma us : uniq (map (@t_snd _ _) (stsI (sts ii))).
+
+Lemma ur : uniq (map (@t_rcv _ _) (rtsI (rts ii))).
+
+Definition ProtocolWithIndInv := @Protocol _ l _ _ _ us ur.
+
+Lemma stIn (s : SendInv) :
+  s \In (sts ii) ->
+  (snd_transI (@st_inv s)) \In (snd_trans ProtocolWithIndInv).
+
+Lemma rtIn (r : ReceiveInv) :
+  r \In (rts ii) ->
+  (rcv_transI (@rt_inv r)) \In (rcv_trans ProtocolWithIndInv).
+
+Lemma getInvSendTrans st z to msg s1 h :
+  st \In (snd_trans ProtocolWithIndInv) ->
+  forall (S : send_safe st z to (getStatelet s1 (plab p)) msg),
+  Some h = send_step S ->
+  exists st', [/\ st' \In get_st (mkWorld p) (plab p),
+     t_snd st' = t_snd st,
+     all_hooks_fire (mkWorld p) (plab p) (t_snd st') s1 z msg to &          
+     exists S': (send_safe st' z to (getStatelet s1 (plab p)) msg),
+       Some h = send_step S'].
+
+End ProtocolWithInvariant.
+
+Section InductiveInvConj.
+
+Variable p : protocol.
+
+Definition s_inv_conj (I1 I2 : dstatelet -> pred nid -> Prop)
+           (st : send_trans (coh p)) :=
+  S_inv (fun d n => I1 d n /\ I2 d n) st.
+
+Lemma s_inv_conjC I1 I2 st :
+  s_inv_conj I1 I2 st <-> s_inv_conj I2 I1 st.
+
+Lemma s_inv_conjA I1 I2 I3 st :
+  s_inv_conj I1 (fun d n => I2 d n /\ I3 d n) st <->
+  s_inv_conj (fun d n => I1 d n /\ I2 d n) I3 st.
+
+Definition r_inv_conj (I1 I2 : dstatelet -> pred nid -> Prop)
+           (rt : receive_trans (coh p)) :=
+  R_inv (fun d n => I1 d n /\ I2 d n) rt.
+
+Lemma r_inv_conjC I1 I2 rt :
+  r_inv_conj I1 I2 rt <-> r_inv_conj I2 I1 rt.
+
+Lemma r_inv_conjA I1 I2 I3 rt :
+  r_inv_conj I1 (fun d n => I2 d n /\ I3 d n) rt <->
+  r_inv_conj (fun d n => I1 d n /\ I2 d n) I3 rt.
+
+End InductiveInvConj.
+
+End ProtocolWithInvariant.
+
+Module PWIExports.
+Section PWIExports.
+
+Import ProtocolWithInvariant.
+
+Definition st_helper := st_helper.
+Definition cohSt := cohSt.
+
+Definition S_inv := ProtocolWithInvariant.S_inv.
+Definition R_inv := ProtocolWithInvariant.R_inv.
+
+Definition SendInv := SendInv.
+Definition SI := SI.
+Definition ReceiveInv := ReceiveInv.
+Definition RI := RI.
+
+Definition InductiveInv := InductiveInv.
+
+Lemma with_inv_coh pr I (ii : InductiveInv pr I) s:
+  s \In Coh (mkWorld (ProtocolWithIndInv ii)) ->    
+  s \In Coh (mkWorld pr).
+
+Lemma with_inv_nodes pr I (ii : InductiveInv pr I) l :
+  nodes (getProtocol (mkWorld (ProtocolWithIndInv ii)) l) =
+  nodes (getProtocol (mkWorld pr) l).
+
+Lemma with_inv_labE pr I (ii : InductiveInv pr I):
+  plab (ProtocolWithIndInv ii) = plab pr.
+
+Lemma with_inv_step pr I (ii : InductiveInv pr I) z s1 s2:
+  s1 \In Coh (mkWorld (ProtocolWithIndInv ii)) ->
+  network_step (mkWorld pr) z s1 s2 ->
+  network_step (mkWorld (ProtocolWithIndInv ii)) z s1 s2.
+
+Lemma with_inv_step' pr I (ii : InductiveInv pr I) z s1 s2:
+  network_step (mkWorld (ProtocolWithIndInv ii)) z s1 s2 ->
+  network_step (mkWorld pr) z s1 s2.
+
+Lemma with_inv_rely' pr I (ii : InductiveInv pr I) z s1 s2:
+  network_rely (mkWorld (ProtocolWithIndInv ii)) z s1 s2 ->
+  network_rely (mkWorld pr) z s1 s2.
+
+Definition ProtocolWithIndInv := ProtocolWithIndInv.
+
+End PWIExports.
+End PWIExports.
+
+Export PWIExports. *)
+(* StatePredicates:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+From fcsl
+Require Import pred prelude ordtype finmap pcm unionmap heap.
+From DiSeL
+Require Import Freshness State EqTypeX DepMaps.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Section SoupPredicates.
+
+Definition msg_in_soup (from to : nid) (criterion : nat -> seq nat -> bool)
+           (d : soup) : Prop :=
+  (exists! i, exists t c,
+        find i d = Some (Msg (TMsg t c) from to true)) /\
+  forall i t c,
+    find i d = Some (Msg (TMsg t c) from to true) ->
+    criterion t c.
+
+Definition msg_spec from to tg cnt :=
+  msg_in_soup from to (fun x y => (x == tg) && (y == cnt)).
+
+Definition no_msg_from (from : nid) (d : soup) : Prop :=
+  forall i to tms b, find i d = Some (Msg tms from to b) -> b = false.
+
+Definition no_msg_to (to : nid) (d : soup) : Prop :=
+  forall i from tms b, find i d = Some (Msg tms from to b) -> b = false.
+
+Lemma no_msg_from_post (from from' to : nid) (s : soup) tms :
+  valid s ->
+  no_msg_from from s -> from' != from ->
+  no_msg_from from (post_msg s (Msg tms from' to true)).1.
+
+Lemma no_msg_from_consume from from' to s i m :
+  find i s = Some {| content := m; from := from'; to := to; active := true |} ->
+  valid s ->
+  no_msg_from from s ->
+  no_msg_from from (consume_msg s i).
+
+Definition no_msg_from_to from to (d : soup) :=
+  forall i tms b,
+    find i d = Some (Msg tms from to b) -> b = false.
+
+Lemma no_msg_from_to_consume from to s i:
+  valid s ->
+  no_msg_from_to from to s ->
+  no_msg_from_to from to (consume_msg s i).
+
+Lemma msg_spec_consume s from to tg cnt cnt' i :
+  valid s -> 
+  find i s = Some {| content := TMsg tg cnt';
+                     from := from; to := to; active := true |} ->
+  msg_spec from to tg cnt s ->
+  no_msg_from_to from to (consume_msg s i).
+
+Lemma msg_specE_consume s pt from to to' tg cnt i m :
+  valid s ->
+  find i s =
+  Some {| content := m; from := from; to := to'; active := true |} ->
+  (pt != from) || (to != to') ->
+  msg_spec pt to tg cnt s ->
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Lemma msg_specE_consume1 s pt from to to' tg cnt i m :
+  valid s ->
+  find i s =
+  Some {| content := m; from := from; to := to'; active := true |} ->
+  (pt != from) ->
+  msg_spec pt to tg cnt s ->
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Lemma msg_specE_consume2 s pt from to to' tg cnt i m :
+  valid s ->
+  find i s =
+  Some {| content := m; from := from; to := to'; active := true |} ->
+  (to != to') ->
+  msg_spec pt to tg cnt s ->
+  msg_spec pt to tg cnt (consume_msg s i).
+
+Definition no_msg_from_imp from to d :
+  no_msg_from from d -> no_msg_from_to from to d.
+
+Lemma no_msg_from_toE from to s tms to':
+  valid s -> 
+  no_msg_from_to from to s -> to == to' = false ->
+  no_msg_from_to from to (post_msg s (Msg tms from to' true)).1.
+
+Lemma no_msg_from_toE' from to s tms from' to':
+  valid s -> 
+  no_msg_from_to from to s -> from' == from = false ->
+  no_msg_from_to from to (post_msg s (Msg tms from' to' true)).1.
+
+Lemma msg_specE s from to tg cnt :
+  valid s ->
+  no_msg_from_to from to s ->
+  msg_spec from to tg cnt (post_msg s (Msg (TMsg tg cnt) from to true)).1.
+
+Lemma msg_specE' s from to to' tg cnt tms :
+  valid s -> to == to' = false ->
+  msg_spec from to tg cnt s ->
+  msg_spec from to tg cnt (post_msg s (Msg tms from to' true)).1.
+
+Lemma msg_specE'' s from from' to to' tg cnt tms :
+  valid s -> from == from' = false ->
+  msg_spec from to tg cnt s ->
+  msg_spec from to tg cnt (post_msg s (Msg tms from' to' true)).1.
+
+End SoupPredicates.
+
+Lemma has_all_true xs (ps : seq nid) x:
+  perm_eq [seq i.1 | i <- xs] ps ->
+
+Lemma has_some_false (xs : seq (nid * bool)) ps x:
+  perm_eq [seq i.1 | i <- xs] ps ->
+
+Definition no_msg_from_to' from to
+           (criterion : nat -> seq nat -> bool) (d : soup) :=
+  forall i t c,
+    find i d = Some (Msg (TMsg t c) from to true) ->
+    ~~criterion t c.
+
+Lemma no_msg_from_to_consume' from to cond s i:
+  valid s ->
+  no_msg_from_to' from to cond s ->
+  no_msg_from_to' from to cond (consume_msg s i). *)
+From DiSeL
 Require Import CalculatorProtocol.
 (* CalculatorProtocol:
 From mathcomp.ssreflect
@@ -2445,261 +2804,131 @@ End CalculatorProtocol.
 
 Export CalculatorProtocol.Exports. *)
 
-
-
 Section CalculatorInductiveInv.
-
-
 
 Variable l : Label.
 
-
-
 Variable f : input -> option nat.
-
 Variable prec : input -> bool.
-
 Hypothesis prec_valid :
-
   forall i, prec i -> exists v, f i = Some v.
 
-
-
 Variable cs: seq nid.
-
 Variable cls : seq nid.
-
-
 
 Notation nodes := (cs ++ cls).
 
-
-
 Hypothesis Huniq : uniq nodes.
 
-
-
 Notation cal := (CalculatorProtocol f prec cs cls l).
-
 Notation sts := (snd_trans cal).
-
 Notation rts := (rcv_trans cal).
 
-
-
 Definition reqs := cstate.
-
 Notation coh := (coh cal).
-
-
 
 Notation loc n d := (getLocal n d).
 
-
-
 Lemma nodes_falso z : z \in cs -> z \in cls -> False.
-
 Proof.
-
 move=>H1 H2.
-
 move: (Huniq); rewrite cat_uniq=>/andP[_]/andP[/negP H]_.
-
 by apply: H; apply/hasP; exists z.
-
 Qed.
-
-
 
 Definition CalcInv d :=
-
   forall (C: coh d) n to v args i s',
-
     n \in cls -> to \in cs -> 
-
     dsoup d = i \\-> (Msg (TMsg resp (v::args)) to n true) \+ s' ->
-
     f args = Some v.
 
-
-
 Notation cal' := (CalculatorProtocol f prec cs cls l).
-
 Notation coh' := (coh cal).
-
 Notation Sinv := (@S_inv cal (fun d _ => CalcInv d)).
-
 Notation Rinv := (@R_inv cal (fun d _ => CalcInv d)).
-
 Notation PI := pf_irr.
 
-
-
 Program Definition s1: Sinv (server_send_trans f prec cs cls).
-
 Proof.
-
 move=>this to d msg S b.
-
 move=>/= Hi E G C' n to' v' args' i s1 N1 N2/= Es.
-
 case: (S)=>_[_][C]/hasP[[[me cc]args]]_.
-
 case/andP=>/eqP Z1/andP[/eqP Y]/eqP Z2. 
-
 move: (cohVs C')=>V; rewrite joinC/= in Es V.
-
 move: (cancel2 V Es)=>/=; case: ifP.
-
 - move=>_; case. case=>Z3 Z4 Z5 Z6; subst s1 to to' msg.
-
   by simpl in Y; case: Z2=>->.
-
 move=>_[E1]/=E2 E3; subst to. clear Es V.
-
 by apply: (Hi C n to' v' args' i _ _ _ E2).
-
 Qed.
-
-
 
 Program Definition s2: Sinv (client_send_trans prec cs cls).
-
 Proof.
-
 move=>this to d msg S b.
-
 move=>/= Hi E G C' n to' v' args' i s1 N1 N2/= Es.
-
 move: (cohVs C')=>V; rewrite joinC/= in Es V.
-
 move: (cancel2 V Es)=>/=; case: ifP; last first.
-
 - move=>_[E1]/=E2 E3; clear Es V.
-
   by case: (S)=>_[_]C _; apply: (Hi C n to' v' args' i _ _ _ E2).
-
 move/eqP=>Z; subst i; by case; discriminate.
-
 Qed.
-
-
 
 Program Definition r1: Rinv (server_recv_trans prec cs cls).
-
 Proof.
-
 move=>d from this i C m pf Hi F D Hw Et _.
-
 move=> C' n to v args i' s1 N1 N2/=Es.
-
 suff Es' : exists s', dsoup d =
-
        i' \\-> {| content := {| tag := resp; tms_cont := v :: args |};
-
                   from := to;  to := n;
-
                   active := true |} \+ s'.
-
 by case: Es'=>s' Es'; apply: (Hi C n to v args i' _ N1 N2 Es').
-
 case B: (i \in dom (dsoup d)); last first.
-
 by move: dom_find B Es; rewrite /consume_msg; case=>//->_->; exists s1.
-
 move/um_eta: B=>[vm][_]S1.
-
 move: (cohVs C)=>V; rewrite S1 in V.
-
 rewrite S1 joinC consumeUn ?eqxx joinC// in Es. 
-
 suff V': valid (i \\-> mark_msg vm \+
-
                 free (cT:=union_mapUMC mid (msg TaggedMessage)) i (dsoup d)).
-
 - move: (cancel2 V' Es); case: ifP=>B.
-
   - move/eqP:B=>B{S1 V V' Es}; subst i'.
-
     by case: vm=>????/=; rewrite /mark_msg/=; case; discriminate.
-
   by case=>_ X2 _; rewrite X2 joinCA in S1; rewrite S1; eexists _. 
-
 move: (consume_valid i V).
-
 rewrite /consume_msg/= findUnL// ?domPt inE/= eqxx findPt/=. 
-
 by rewrite updUnL/= domPt/=!inE eqxx !updPt/=.
-
 Qed.
-
-
 
 Program Definition r2: Rinv (client_recv_trans prec cs cls).
-
 Proof.
-
 move=>d from this i C m pf Hi F D Hw Et _.
-
 move=> C' n to v args i' s1 N1 N2/=Es.
-
 suff Es' : exists s', dsoup d =
-
        i' \\-> {| content := {| tag := resp; tms_cont := v :: args |};
-
                   from := to;  to := n;
-
                   active := true |} \+ s'.
-
 by case: Es'=>s' Es'; apply: (Hi C n to v args i' _ N1 N2 Es').
-
 case B: (i \in dom (dsoup d)); last first.
-
 by move: dom_find B Es; rewrite /consume_msg; case=>//->_->; exists s1.
-
 move/um_eta: B=>[vm][_]S1.
-
 move: (cohVs C)=>V; rewrite S1 in V.
-
 rewrite S1 joinC consumeUn ?eqxx joinC// in Es. 
-
 suff V': valid (i \\-> mark_msg vm \+
-
                 free (cT:=union_mapUMC mid (msg TaggedMessage)) i (dsoup d)).
-
 - move: (cancel2 V' Es); case: ifP=>B.
-
   - move/eqP:B=>B{S1 V V' Es}; subst i'.
-
     by case: vm=>????/=; rewrite /mark_msg/=; case; discriminate.
-
   by case=>_ X2 _; rewrite X2 joinCA in S1; rewrite S1; eexists _. 
-
 move: (consume_valid i V).
-
 rewrite /consume_msg/= findUnL// ?domPt inE/= eqxx findPt/=. 
-
 by rewrite updUnL/= domPt/=!inE eqxx !updPt/=.
-
 Qed.
 
-
-
 Definition sts' := [:: SI s1; SI s2].
-
 Definition rts' := [:: RI r1; RI r2].
-
-
 
 Program Definition ii := @ProtocolWithInvariant.II _ _ sts' rts' _ _.
 
-
-
 Definition cal_with_inv := ProtocolWithIndInv ii.
 
-
-
 End CalculatorInductiveInv.
-
-
 

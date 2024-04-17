@@ -1,137 +1,196 @@
 
-
 Require Export ClosestProp.
-
-Section F2.
-
+(* ClosestProp:
+Require Export FroundProp.
+Require Export Closest.
+Section Fclosestp2.
 Variable b : Fbound.
-
+Variable radix : Z.
 Variable precision : nat.
-
  
-
-Let radix := 2%Z.
-
- 
-
 Let FtoRradix := FtoR radix.
-
-Local Coercion FtoRradix : float >-> R.
-
+Coercion FtoRradix : float >-> R.
+Hypothesis radixMoreThanOne : (1 < radix)%Z.
  
-
-Theorem TwoMoreThanOne : (1 < radix)%Z.
-
-unfold radix in |- *; red in |- *; simpl in |- *; auto.
-
-Qed.
-
-Hint Resolve TwoMoreThanOne.
-
-Hypothesis precisionNotZero : 1 < precision.
-
+Let radixMoreThanZERO := Zlt_1_O _ (Zlt_le_weak _ _ radixMoreThanOne).
+Hint Resolve radixMoreThanZERO: zarith.
+Hypothesis precisionGreaterThanOne : 1 < precision.
 Hypothesis pGivesBound : Zpos (vNum b) = Zpower_nat radix precision.
-
  
-
-Theorem FevenNormMin : Even (nNormMin 2%nat precision).
-
-unfold nNormMin in |- *.
-
-generalize precisionNotZero; case precision.
-
-intros H'2; Contradict H'2; auto with zarith.
-
-intros n; case n.
-
-intros H'2; Contradict H'2; auto with zarith.
-
-intros n0 H'2; replace (pred (S (S n0))) with (S n0).
-
-apply EvenExp; auto.
-
-exists 1%Z; ring.
-
-simpl in |- *; auto.
-
-Qed.
-
+Theorem ClosestOpp :
+ forall (p : float) (r : R),
+ Closest b radix r p -> Closest b radix (- r) (Fopp p).
  
-
-Theorem EvenFNSuccFNSuccMid :
-
- forall p : float,
-
+Theorem ClosestFabs :
+ forall (p : float) (r : R),
+ Closest b radix r p -> Closest b radix (Rabs r) (Fabs p).
+ 
+Theorem ClosestUlp :
+ forall (p : R) (q : float),
+ Closest b radix p q -> (2%nat * Rabs (p - q) <= Fulp b radix precision q)%R.
+ 
+Theorem ClosestExp :
+ forall (p : R) (q : float),
+ Closest b radix p q -> (2%nat * Rabs (p - q) <= powerRZ radix (Fexp q))%R.
+ 
+Theorem ClosestErrorExpStrict :
+ forall (p q : float) (x : R),
  Fbounded b p ->
-
- FNeven b radix precision p ->
-
- Fminus radix (FNSucc b radix precision (FNSucc b radix precision p))
-
-   (FNSucc b radix precision p) = Fminus radix (FNSucc b radix precision p) p
-
- :>R.
-
-intros p H' H'0.
-
-unfold FtoRradix in |- *; apply FNSuccFNSuccMid; auto.
-
-red in |- *; intros H'1;
-
- absurd (FNodd b radix precision (FNSucc b radix precision p)); 
-
- auto.
-
-unfold FNodd in |- *.
-
-rewrite FcanonicFnormalizeEq; auto with float arith.
-
-unfold Fodd in |- *.
-
-rewrite H'1.
-
-apply EvenNOdd; auto with float arith.
-
-apply FevenNormMin; auto with float arith.
-
-apply FNevenSuc; auto.
-
-red in |- *; intros H'1;
-
- absurd (FNodd b radix precision (FNSucc b radix precision p));
-
- auto with float arith.
-
-unfold FNodd in |- *.
-
-rewrite FcanonicFnormalizeEq; auto with float arith.
-
-unfold Fodd in |- *.
-
-rewrite H'1.
-
-apply EvenNOdd.
-
-apply EvenOpp; apply FevenNormMin.
-
-Qed.
-
+ Fbounded b q ->
+ Closest b radix x p ->
+ q = (x - p)%R :>R -> q <> 0%R :>R -> (Fexp q < Fexp p)%Z.
  
-
-Theorem AScal2 :
-
- forall p : float, Float (Fnum p) (Fexp p + 1%nat) = (radix * p)%R :>R.
-
-intros p.
-
-unfold FtoRradix in |- *; rewrite FvalScale; auto.
-
-replace (powerRZ radix 1%nat) with (INR 2); [ idtac | simpl in |- *; unfold radix; ring ];
-
- auto.
-
+Theorem ClosestIdem :
+ forall p q : float, Fbounded b p -> Closest b radix p q -> p = q :>R.
+ 
+Theorem ClosestM1 :
+ forall (r1 r2 : R) (min max p q : float),
+ isMin b radix r1 min ->
+ isMax b radix r1 max ->
+ (min + max < 2%nat * r2)%R ->
+ Closest b radix r1 p -> Closest b radix r2 q -> (p <= q)%R.
+ 
+Theorem FmultRadixInv :
+ forall (x z : float) (y : R),
+ Fbounded b x ->
+ Closest b radix y z -> (/ 2%nat * x < y)%R -> (/ 2%nat * x <= z)%R.
+ 
+Theorem ClosestErrorBound :
+ forall (p q : float) (x : R),
+ Fbounded b p ->
+ Closest b radix x p ->
+ q = (x - p)%R :>R -> (Rabs q <= Float 1%nat (Fexp p) * / 2%nat)%R.
+ 
+Theorem ClosestErrorExp :
+ forall (p q : float) (x : R),
+ Fbounded b p ->
+ Fbounded b q ->
+ Closest b radix x p ->
+ q = (x - p)%R :>R ->
+ exists error : float,
+   Fbounded b error /\
+   error = q :>R /\ (Fexp error <= Zmax (Fexp p - precision) (- dExp b))%Z.
+ 
+Theorem ClosestErrorBoundNormal_aux :
+ forall (x : R) (p : float),
+ Closest b radix x p ->
+ Fnormal radix b (Fnormalize radix b precision p) ->
+ (Rabs (x - p) <= Rabs p * (/ 2%nat * (radix * / Zpos (vNum b))))%R.
+ 
+Theorem ClosestErrorBound2 :
+ forall (x : R) (p : float),
+ Closest b radix x p ->
+ (Rabs (x - p) <=
+  Rmax (Rabs p * (/ 2%nat * (radix * / Zpos (vNum b))))
+    (/ 2%nat * powerRZ radix (- dExp b)))%R.
+ 
+Theorem ClosestErrorBoundNormal :
+ forall (x : R) (p : float),
+ Closest b radix x p ->
+ Fnormal radix b (Fnormalize radix b precision p) ->
+ (Rabs (x - p) <= Rabs p * (/ 2%nat * powerRZ radix (Zsucc (- precision))))%R.
+ 
+Theorem ClosestPropHigham25 :
+ forall (x : R) (p : float),
+ Closest b radix x p ->
+ exists delta : R,
+   (exists nu : R,
+      (x / (1 + delta) + nu)%R = FtoRradix p /\
+      (Rabs delta <= / 2%nat * powerRZ radix (Zsucc (- precision)))%R /\
+      (Rabs nu <= / 2%nat * powerRZ radix (- dExp b))%R /\
+      (delta * nu)%R = 0%R /\
+      (Fnormal radix b (Fnormalize radix b precision p) -> nu = 0%R) /\
+      (Fsubnormal radix b (Fnormalize radix b precision p) -> delta = 0%R)).
+ 
+Theorem FpredUlpPos :
+ forall x : float,
+ Fcanonic radix b x ->
+ (0 < x)%R ->
+ (FPred b radix precision x +
+  Fulp b radix precision (FPred b radix precision x))%R = x.
+ 
+Theorem FulpFPredLe :
+ forall f : float,
+ Fbounded b f ->
+ Fcanonic radix b f ->
+ (Fulp b radix precision f <=
+  radix * Fulp b radix precision (FPred b radix precision f))%R.
+ 
+Theorem ClosestErrorBoundNormal2_aux :
+ forall (x : R) (p : float),
+ Closest b radix x p ->
+ Fnormal radix b p ->
+ Fnormal radix b (Fnormalize radix b precision (FPred b radix precision p)) ->
+ (0 < x)%R ->
+ (x < p)%R ->
+ (Rabs (x - p) <= Rabs x * (/ 2%nat * powerRZ radix (Zsucc (- precision))))%R.
+ 
+End Fclosestp2.
+Hint Resolve ClosestOpp ClosestFabs ClosestUlp: float. *)
+Section F2.
+Variable b : Fbound.
+Variable precision : nat.
+ 
+Let radix := 2%Z.
+ 
+Let FtoRradix := FtoR radix.
+Local Coercion FtoRradix : float >-> R.
+ 
+Theorem TwoMoreThanOne : (1 < radix)%Z.
+unfold radix in |- *; red in |- *; simpl in |- *; auto.
 Qed.
-
+Hint Resolve TwoMoreThanOne.
+Hypothesis precisionNotZero : 1 < precision.
+Hypothesis pGivesBound : Zpos (vNum b) = Zpower_nat radix precision.
+ 
+Theorem FevenNormMin : Even (nNormMin 2%nat precision).
+unfold nNormMin in |- *.
+generalize precisionNotZero; case precision.
+intros H'2; Contradict H'2; auto with zarith.
+intros n; case n.
+intros H'2; Contradict H'2; auto with zarith.
+intros n0 H'2; replace (pred (S (S n0))) with (S n0).
+apply EvenExp; auto.
+exists 1%Z; ring.
+simpl in |- *; auto.
+Qed.
+ 
+Theorem EvenFNSuccFNSuccMid :
+ forall p : float,
+ Fbounded b p ->
+ FNeven b radix precision p ->
+ Fminus radix (FNSucc b radix precision (FNSucc b radix precision p))
+   (FNSucc b radix precision p) = Fminus radix (FNSucc b radix precision p) p
+ :>R.
+intros p H' H'0.
+unfold FtoRradix in |- *; apply FNSuccFNSuccMid; auto.
+red in |- *; intros H'1;
+ absurd (FNodd b radix precision (FNSucc b radix precision p)); 
+ auto.
+unfold FNodd in |- *.
+rewrite FcanonicFnormalizeEq; auto with float arith.
+unfold Fodd in |- *.
+rewrite H'1.
+apply EvenNOdd; auto with float arith.
+apply FevenNormMin; auto with float arith.
+apply FNevenSuc; auto.
+red in |- *; intros H'1;
+ absurd (FNodd b radix precision (FNSucc b radix precision p));
+ auto with float arith.
+unfold FNodd in |- *.
+rewrite FcanonicFnormalizeEq; auto with float arith.
+unfold Fodd in |- *.
+rewrite H'1.
+apply EvenNOdd.
+apply EvenOpp; apply FevenNormMin.
+Qed.
+ 
+Theorem AScal2 :
+ forall p : float, Float (Fnum p) (Fexp p + 1%nat) = (radix * p)%R :>R.
+intros p.
+unfold FtoRradix in |- *; rewrite FvalScale; auto.
+replace (powerRZ radix 1%nat) with (INR 2); [ idtac | simpl in |- *; unfold radix; ring ];
+ auto.
+Qed.
 End F2.
-
 Hint Resolve FevenNormMin: float.

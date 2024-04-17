@@ -1,1703 +1,850 @@
 
-
 Require Import Coq.Strings.String.
 
-
-
 Require Import compcert.common.AST.
-
 Require Import compcert.common.Globalenvs.
-
 Require Import compcert.common.Memory.
-
 Require Import compcert.common.Values.
-
 Require Import compcert.cfrontend.Clight.
 
-
-
 Require Import VST.veric.tycontext.
-
 Require Import VST.veric.semax_prog.
 
-
-
 Require Import VST.concurrency.juicy.semax_initial.
-
 Require Import VST.concurrency.juicy.semax_conc.
-
 Require Import VST.concurrency.juicy.semax_to_juicy_machine.
-
 Require Import VST.concurrency.common.permissions.
 
-
-
 Require Import VST.concurrency.juicy.erasure_signature.
-
 Require Import VST.concurrency.juicy.erasure_proof.
-
 Require Import VST.concurrency.juicy.erasure_safety.
 
-
-
 Require Import VST.concurrency.compiler.safety.
-
 Require Import VST.concurrency.compiler.coinductive_safety.
 
-
-
 Require Import Omega.
-
 Require Import VST.concurrency.common.ssromega.
-
 Set Bullet Behavior "Strict Subproofs".
-
-
 
 Require Import Coq.Logic.Classical_Prop.
 
-
-
 Section SafetyEquivalence.
 
-
-
   Import HybridMachineSig.HybridMachineSig.
-
   Import HybridCoarseMachine.
-
   Import threadPool.
-
   Context (resources:semantics.Resources)
-
           (Sem:semantics.Semantics)
-
           (TP: threadPool.ThreadPool.ThreadPool).
-
   Definition CoreSem:= semantics.csem (event_semantics.msem (@semantics.semSem Sem)).
-
   Context (Machine: MachineSig).
-
   Existing Instance Machine.
-
   Existing Instance DilMem.
-
   Existing Instance scheduler.
 
-
-
 Ltac fold_ids:=
-
   repeat match goal with
-
          | [ U: schedule |-  _ ] =>
-
            match goal with
-
            | [  |- context[yield U] ] => fail 1
-
            | [  |- context[U] ] => replace U with (yield U) by auto 
-
            end 
-
          | [ m: mem |-  _ ] =>
-
            match goal with
-
            | [  |- context[diluteMem m] ] => fail 1
-
            | [  |- context[m] ] => replace m with (diluteMem m) by auto 
-
            end 
-
          end.
-
   
-
   Definition correct_schedule (tp:  ThreadPool.t) U : Prop:=
-
     match schedPeek U with
-
     | Some i => unique_Krun tp i
-
     | None => True
-
     end.
-
   
-
   Definition bounded_mem (m: mem) := bounded_maps.bounded_map (snd (getMaxPerm m)) .
 
-
-
   Definition kstate:Type:= (event_trace * ThreadPool.t * mem).
-
   Definition cstate2kstate (st:MachState) (m:mem): kstate:=
-
     (snd (fst st), snd st, m).
-
   Definition kstate2cstate (st:kstate) U: MachState:=
-
     (U, fst (fst st), snd (fst st)).
-
   Ltac simpl_state:=
-
     unfold kstate2cstate, cstate2kstate in *; simpl in *.
 
-
-
   Inductive sem_with_halt: MachState -> mem -> MachState -> mem -> Prop:=
-
   | halted_step st m:
-
       is_true (ssrbool.isSome (halted_machine st)) -> sem_with_halt st m st m
-
   | step_step st m st' m' :
-
       MachStep st m st' m' ->
-
       sem_with_halt st m st' m'.
-
   Definition kstep (st: kstate) U st' U': Prop:=
-
     sem_with_halt (kstate2cstate st U) (snd st) (kstate2cstate st' U') (snd st').
 
-
-
   Definition valid (kst:kstate) U := correct_schedule (snd (fst kst)) U.
-
   
-
   Definition valid_bound st U :=
-
     valid st U /\ bounded_mem (snd st).
-
   Definition ksafe_kstep (st : MachState) (m : mem) : nat -> Prop :=
-
     ksafe _ _ (kstep) valid (cstate2kstate st m) (fst (fst st)).
-
   Definition safe_kstep (st : MachState) (m : mem) : Prop :=
-
     safe _ _ (kstep) valid (cstate2kstate st m) (fst (fst st)).
-
-
 
 Section Csafe_KSafe.
 
-
-
   Inductive CoreOrAngel: MachState -> MachState -> Prop:=
-
   | IsCore st tr tp':
-
       CoreOrAngel st (fst (fst st), seq.cat (snd (fst st)) tr, tp')
-
   | IsAngel st tr tp':
-
       CoreOrAngel st (schedSkip (fst (fst st)), seq.cat (snd (fst st)) tr, tp').
-
  Lemma step_CoreOrAngel: forall st m st' m',
-
       MachStep st m st' m' ->
-
       CoreOrAngel st st'.
-
   Proof.
-
     intros. inversion H;
-
     destruct st' as ((?&?)&?);
-
     simpl in *; subst;
-
     match goal with
-
     | [  |- context[seq.cat _ _] ] => econstructor
-
     
-
     | _ => replace (snd (fst st)) with (seq.cat (snd (fst st)) nil) by apply seq.cats0;
-
             econstructor
-
     end.
-
   Qed.
-
-
 
     Lemma csafe_monotone:
-
     forall n U tr tp m,
-
     csafe (U, tr, tp) m (S n) ->
-
     csafe (U, tr, tp) m (n) .
-
   Proof.
-
     induction n; [econstructor|].
-
     intros.
-
     inversion H; simpl in *; subst.
-
     - econstructor 2; auto.
-
     - econstructor 3; eauto.
-
     - econstructor 4; eauto.
-
   Qed.
-
-
 
   Inductive has_unique_running tp:Prop :=
-
   | HasUniqueRun i (cnti : ThreadPool.containsThread tp i) q:
-
       ThreadPool.getThreadC cnti = Krun q ->
-
       has_unique_running tp.
-
   
-
   Lemma schedPeek_Skip:
-
     forall U tid
-
       ( HschedN : schedPeek U = Some tid)
-
       ( HschedS : schedSkip U = U),
-
       False.
-
   Proof.
-
     intros. apply schedSkip_id in HschedS; subst.
-
     inversion HschedN.
-
   Qed.
-
   
-
   Lemma unique_Krun_update:
-
     forall st tid,
-
       unique_Krun st tid ->
-
       forall (cnt: ThreadPool.containsThread st tid) c_new m_new cnt,
-
         unique_Krun (ThreadPool.updThread(tid:=tid)(tp:=st) cnt (Krun c_new) m_new) tid.
-
   Proof.
-
     intros.
-
     unfold unique_Krun in *.
-
     intros.
-
     destruct (Nat.eq_dec j tid).
-
     - subst.
-
       destruct (Nat.eq_dec tid tid); subst;
-
         now auto.
-
     - pose proof cnti as cnti'.
-
       eapply ThreadPool.cntUpdate' in cnti'.
-
       eapply (H _ cnti' q).
-
       erewrite <- ThreadPool.gsoThreadCode with (cntj' := cnti) by eauto.
-
       assumption.
 
-
-
   Qed.
-
       
-
   Lemma unique_Krun_updateC:
-
     forall st tid,
-
       unique_Krun st tid ->
-
       forall (cnt: ThreadPool.containsThread st tid) c_new  cnt,
-
         unique_Krun (ThreadPool.updThreadC(tp:=st)(tid:=tid) cnt (Krun c_new)) tid.
-
   Proof.
-
     intros.
-
     unfold unique_Krun in *.
-
     intros.
-
     destruct (Nat.eq_dec j tid).
-
     - subst.
-
       destruct (Nat.eq_dec tid tid); subst;
-
         now auto.
-
     - pose proof cnti as cnti'.
-
       eapply ThreadPool.cntUpdateC' in cnti'.
-
       eapply (H _ cnti' q).
-
       erewrite ThreadPool.gsoThreadCC with (cntj' := cnti) by eauto.
-
       assumption.
-
-      
-  Qed.
-
-
+        Qed.
 
   Lemma MachStep_preserve_unique:
-
     forall U tr st tr' st' m m',
-
       valid (tr, st, m) U -> 
-
       MachStep (U,tr,st) m (U,tr',st') m' ->
-
       has_unique_running st'.
-
   Proof.
-
     intros.
-
     inversion H0; simpl in *; subst;
-
       try solve[exfalso; eapply schedPeek_Skip; eauto].
-
     -  inversion Htstep; subst.
-
       eapply (HasUniqueRun _ _ ltac:(eapply ThreadPool.cntUpdate)).
-
       eapply ThreadPool.gssThreadCode.
-
     -  inversion Htstep; subst.
-
       
-
       eapply (HasUniqueRun _ _ ltac:(eapply ThreadPool.cntUpdateC)).
-
       eapply ThreadPool.gssThreadCC.
-
     - 
-
       pose proof Htstep as Htstep'.
-
       eapply threadStep_at_Krun in Htstep'.
-
       destruct Htstep' as [q Hget].
-
       eapply threadStep_equal_run with (j := tid) in Htstep.
-
       destruct Htstep as [Hget_eq _].
-
       specialize (Hget_eq ltac:(do 2 eexists; eauto)).
-
       destruct Hget_eq as [? [? ?]].
-
       econstructor;
-
         now eauto.
-
       Unshelve. all:auto.
-
   Qed.
-
-
 
     Lemma CoreStep_preserve_valid:
-
     forall U tr st tr' st' m m',
-
       valid (tr, st, m) U ->
-
       MachStep (U,tr,st) m (U,tr',st') m' ->
-
       valid (tr', st', m') U.
-
   Proof.
-
     intros.
-
     unfold valid, correct_schedule in *.
-
     inversion H0; simpl in *; subst;
-
       try solve[exfalso; eapply schedPeek_Skip; eauto];
-
       try (erewrite HschedN in *).
-
     - 
-
       inversion Htstep; subst.
-
       intros j cntj' q Hget'.
-
       destruct (Nat.eq_dec tid j); [now auto|].
-
       assert (cntj : ThreadPool.containsThread st j)
-
         by (eapply ThreadPool.cntUpdate'; eauto).
-
       erewrite @ThreadPool.gsoThreadCode with (cntj := cntj) in Hget' by eauto.
-
       specialize (H _ _ _ Hget').
-
       destruct (Nat.eq_dec tid j);
-
         now eauto.
-
     -  inversion Htstep; subst.
-
       intros j cntj' q' Hget'.
-
       destruct (Nat.eq_dec tid j); [auto|].
-
       assert (cntj : ThreadPool.containsThread st j)
-
         by (eapply ThreadPool.cntUpdateC'; eauto).
-
       erewrite <- @ThreadPool.gsoThreadCC with (cntj := cntj) in Hget' by eauto.
-
       specialize (H _ _ _ Hget').
-
       destruct (Nat.eq_dec tid j);
-
         now eauto.
-
     - 
-
       pose proof Htstep as Htstep'.
-
       intros j cntj' q' Hget'.
-
       eapply @threadStep_equal_run with (j := j) in Htstep.
-
       destruct Htstep as [_ Hget_eq].
-
       specialize (Hget_eq ltac:(do 2 eexists; eauto)).
-
       destruct Hget_eq as [cntj [q Hgetj]].
-
       specialize (H _ _ _ Hgetj).
-
       assumption.
-
   Qed.
-
-
 
   Lemma AngelStep_preserve_valid:
-
     forall U U' tr st tr' st' m m',
-
       valid (tr, st, m) U ->
-
       MachStep (U,tr,st) m (schedSkip U,tr',st') m' ->
-
       valid (tr', st', m') U'.
-
   Proof.
-
     intros.
-
     inversion H0; subst; simpl in *;
-
       try (exfalso; eapply schedPeek_Skip; now eauto);
-
       subst.
-
     - 
-
       inversion Htstep; subst.
-
       unfold valid, correct_schedule in *.
-
       destruct (schedPeek U') eqn:HU'; auto.
-
       rewrite HschedN in H.
-
       simpl in *.
-
       intros j cntj' q' Hget'.
-
       destruct (Nat.eq_dec tid j); subst.
-
       + rewrite ThreadPool.gssThreadCC in Hget'.
-
         discriminate.
-
       + assert (cntj: ThreadPool.containsThread st j)
-
           by (eapply ThreadPool.cntUpdateC'; eauto).
-
         erewrite <- @ThreadPool.gsoThreadCC with (cntj := cntj) in Hget' by eauto.
-
         specialize (H _ _ _ Hget').
-
         destruct (Nat.eq_dec tid j); subst;
-
           simpl in *; exfalso;
-
             now auto.
-
     - 
-
       unfold valid, correct_schedule in *.
-
       rewrite HschedN in H.
-
       simpl in *.
-
       destruct (schedPeek U') eqn:?; auto.
-
       intros j cntj' q' Hget'.
-
       destruct (syncstep_equal_run _ _ _ _ _ _ _ _ _ Htstep j) as [? Hrun'].
-
       destruct (Hrun' ltac:(do 2 eexists; eauto)) as [cntj [q Hget]].
-
       specialize (H _ _ _ Hget).
-
       destruct (Nat.eq_dec tid j); subst;
-
         [|exfalso; simpl in *; now auto].
-
       eapply @syncstep_not_running with (cntj:= cntj) (q:=q) in Htstep.
-
       exfalso;
-
         now auto.
-
     - unfold valid, correct_schedule in *.
-
       rewrite HschedN in H.
-
       simpl in *.
-
       destruct (schedPeek U'); auto.
-
       intros j cntj' q' Hget'.
-
       specialize (H _ _ _ Hget').
-
       destruct (Nat.eq_dec tid j); subst;
-
         simpl in *; exfalso; now auto.
-
   Qed.
-
   
-
   Lemma ksafe_csafe_equiv':
-
     forall st_ m tr,
-
       (forall n U, valid (tr, st_, m) U -> ksafe_kstep (U, tr, st_) m n) ->
-
       (forall n U, valid (tr, st_, m) U -> csafe (U, tr, st_) m n).
-
   Proof.
-
     intros st m tr HH n U.
-
     specialize (HH n).
-
     revert st m tr HH U.
-
     induction n; intros.
-
     - econstructor.
-
     - assert (H':=H).
-
       eapply HH in H.
-
       inversion H; subst; simpl in *.
-
       inversion H1; subst.
-
       +  econstructor 2; auto.
-
       +  simpl_state.
-
         destruct st' as ((?&?)&?); simpl in *; subst.
-
         
-
         assert (step_cases:= (step_CoreOrAngel _ _ _ _ H0)); inversion step_cases; subst.
-
         * eapply CoreSafe; simpl.
-
           -- eassumption.
-
           -- eapply IHn.
-
              unfold ksafe_kstep, cstate2kstate.
-
              assumption.
-
              eapply CoreStep_preserve_valid in H0;
-
                eauto.
-
         *   simpl_state.
-
          eapply AngelSafe; simpl.
-
            -- eassumption.
-
            -- intros.
-
               eapply IHn.
-
               unfold ksafe_kstep, cstate2kstate.
-
               assumption.
-
               eapply AngelStep_preserve_valid;
-
                 now eauto.
-
   Qed.
-
-
 
   Lemma ksafe_csafe_equiv:
-
     forall tp m tr,
-
       (forall U, valid (tr, tp, m) U) ->
-
       (forall n U, ksafe_kstep (U, tr, tp) m n) ->
-
       (forall n U, csafe (U, tr, tp) m n).
 
-
-
   Proof. intros ? ? ? H ? ? ?. apply ksafe_csafe_equiv'; try apply H.
-
          auto.
-
   Qed.
-
-
 
   Lemma valid_unique_running:
-
     forall tp tr m U U' tid tid',
-
       schedPeek U = Some tid ->
-
       schedPeek U' = Some tid' ->
-
       valid (tr, tp, m) U ->
-
       valid (tr, tp, m) U' ->
-
       has_unique_running tp ->
-
       tid = tid'.
-
   Proof.
-
     unfold valid, correct_schedule; simpl.
-
     intros.
-
     destruct (schedPeek U); inversion H;
-
       destruct (schedPeek U'); inversion H0; subst.
-
     unfold unique_Krun in *.
-
     inversion H3.
-
     specialize (H1 _ _ _ H4).
-
     specialize (H2 _ _ _ H4).
-
     destruct (Nat.eq_dec tid i), (Nat.eq_dec tid' i);
-
       subst; auto;
-
         simpl in *;
-
         try (exfalso; now auto).
-
   Qed.
-
-
 
   Lemma csafe_first_tid:
-
     forall n U U' tr tp m,
-
       csafe (U, tr, tp) m n ->
-
       schedPeek U = schedPeek U' -> 
-
       csafe (U', tr, tp) m n.
-
   Proof.
-
     induction n; subst.
-
     - constructor 1.
-
     - intros. inversion H; subst.
-
       + econstructor 2; eauto.
-
         unfold halted_machine in *; simpl in *.
-
         destruct (schedPeek U); try solve [inversion H1].
-
         rewrite <- H0; eauto.
-
       + econstructor 3; eauto; simpl in *.
-
         inversion Hstep; simpl in *; subst;
-
           try match goal with
-
               | [ H: schedPeek ?U = Some _, H0: schedSkip U = U |- _ ] =>
-
                 apply schedPeek_Skip in H; eauto; inversion H
-
               end.
-
         * rewrite <- H6. fold_ids.
-
           econstructor 1; simpl; eauto.
-
           rewrite <- H0; eauto.
-
         * rewrite <- H6. fold_ids. 
-
           econstructor 2; simpl; eauto.
-
           rewrite <- H0; eauto.
-
         * unfold MachStep; simpl. fold_ids.
-
           econstructor 3; simpl; eauto.
-
           rewrite <- H0; eauto.
-
       + econstructor 4; eauto; simpl in *.
-
         inversion Hstep; simpl in *; subst;
-
           try match goal with
-
               | [ H: schedPeek ?U = Some _, H0: ?U = schedSkip ?U |- _ ] =>
-
                 eapply schedPeek_Skip in H; eauto; inversion H
-
               end.
-
         * rewrite <- H6; econstructor 4; subst; simpl in *; subst; eauto.
-
           rewrite <- H0; eauto. 
-
         * econstructor 5; subst; simpl in *; subst; eauto.
-
           rewrite <- H0; eauto. 
-
         * rewrite <- H6; econstructor 6; subst; simpl in *; subst; eauto.
-
           rewrite <- H0; eauto. 
-
+    Qed.
   
-  Qed.
-
-  
-
   Lemma csafe_unique_running:
-
     forall U tr tp m n tid,
-
       schedPeek U = Some tid ->
-
       has_unique_running tp ->
-
       valid (tr, tp, m) U ->
-
       csafe (U, tr, tp) m n ->
-
       forall U', valid (tr, tp, m) U' ->
-
             csafe (U', tr, tp) m n.
-
   Proof.
-
     intros.
-
     destruct (schedPeek U') eqn:UU.
-
     2: econstructor; unfold halted_machine; simpl; try rewrite UU; auto.
-
     eapply csafe_first_tid; eauto.
-
     rewrite H, UU; f_equal.
-
     eapply valid_unique_running; eauto.
-
   Qed.
-
   
-
   Lemma csafe_ksafe_equiv:
-
     forall st_ m tr,
-
       (forall n U, valid (tr, st_, m) U -> csafe (U, tr, st_) m n) ->
-
       (forall n U, valid (tr, st_, m) U -> ksafe_kstep (U, tr, st_) m n).
-
   Proof.
-
     intros st m tr HH n U.
-
     specialize (HH n).
-
     revert st m tr HH U.
-
     induction n; intros.
-
     - econstructor.
-
     - assert (H':=H).
-
       eapply HH in H.
-
       inversion H; subst; simpl in *.
-
       + 
-
         econstructor.
-
         * constructor. simpl_state; auto.
-
         * eapply IHn; simpl; eauto.
-
           intros ? H1.
-
           apply HH in H1.
-
           eapply csafe_monotone; eauto.
-
       + 
-
         econstructor.
-
         * constructor 2; simpl_state.
-
           instantiate(1:=( seq.cat tr tr0, tp', m')); simpl.
-
           eauto.
-
         * eapply IHn.
-
           simpl.
-
           assert (Hsched: exists tid, schedPeek U = Some tid)
-
             by (inversion Hstep; subst;
-
                 eexists; eauto).
-
           destruct Hsched.
-
           eapply csafe_unique_running;
-
             now eauto using MachStep_preserve_unique, CoreStep_preserve_valid.
-
       +  
-
         econstructor.
-
         * constructor 2; simpl_state.
-
           instantiate(1:=( seq.cat tr tr0, tp', m')); simpl.
-
           eauto.
-
         * eapply IHn.
-
           eauto.
-
   Qed.
-
-
 
   Lemma csafe_ksafe_equiv_trick:
-
     forall st_ m tr,
-
       (forall U, valid (tr, st_, m) U) ->
-
       (forall n U, csafe (U, tr, st_) m n) ->
-
       (forall n U, ksafe_kstep (U, tr, st_) m n).
-
   Proof.
-
     intros ? ? ? ? VALID H ?;
-
     apply csafe_ksafe_equiv; try apply VALID; auto.
-
   Qed.    
-
-
 
 End Csafe_KSafe.
 
-
-
 Section Safety_Explicity_Safety.
 
-
-
   Definition explicit_safety (U:schedule)  (tr:event_trace) (st:machine_state) (m:mem): Prop:=
-
     exp_safety _ _ (fun U stm => is_true (ssrbool.isSome (halted_machine (U, fst(fst stm), snd(fst stm)))))
-
                    (fun U stm stm' => internal_step U (snd(fst stm)) (snd stm) (snd(fst stm')) (snd stm'))
-
                    (fun U stm U' stm' => external_step U (fst(fst stm)) (snd(fst stm)) (snd stm) U' (fst(fst stm')) (snd(fst stm')) (snd stm'))
-
                    (fun U stm => @valid (fst(fst stm),snd(fst stm), snd stm) U) U (tr,st,m).
 
-
-
   Definition explicit_safety_bounded (U:schedule)  (tr:event_trace)(st:machine_state) (m:mem): Prop:=
-
     exp_safety _ _ (fun U stm => is_true (ssrbool.isSome (halted_machine (U, fst(fst stm), snd(fst stm)))))
-
                    (fun U stm stm' => internal_step U (snd(fst stm)) (snd stm) (snd(fst stm')) (snd stm'))
-
                    (fun U stm U' stm' => external_step U (fst(fst stm))  (snd(fst stm)) (snd stm) U' (fst(fst stm')) (snd(fst stm')) (snd stm'))
-
                    (fun U stm => @valid_bound (fst(fst stm),snd(fst stm), snd stm) U) U (tr,st,m).
 
-
-
   Section TracesIrrelevant.
-
     
-
         Lemma kstep_trace_irr: forall U U' tr1 tr1' tr2 tp tp' m m',
-
             kstep (tr1, tp, m) U (tr1', tp', m') U' -> exists tr2', kstep (tr2, tp, m) U (tr2', tp', m') U'.
-
         Proof.
-
           intros. inversion H; simpl in *; subst.
-
           - exists tr2. 
-
             constructor; eauto.
-
           - unfold kstate2cstate in *; simpl in *.
-
             inversion H0; simpl in *; subst;
-
               try solve[exists tr2; econstructor 2; econstructor; eauto].
-
             + exists tr2; econstructor 2. simpl_state; eauto. fold_ids.
-
               econstructor; eauto.
-
             + exists (seq.cat tr2
-
                         (List.map
-
                            (fun mev : event_semantics.mem_event =>
-
                               HybridMachineSig.Events.internal tid mev) ev)).
-
               simpl. econstructor. unfold kstate2cstate; simpl.
-
               unfold MachStep in *; simpl in *.
-
               fold_ids.
-
               auto.
-
               econstructor; eauto.
-
             + exists (seq.cat tr2 (HybridMachineSig.Events.external tid ev :: nil)).
-
               simpl. econstructor. unfold kstate2cstate; simpl.
-
               unfold MachStep in *; simpl in *.
-
               econstructor; eauto.
-
         Qed.
-
               
-
         Lemma safe_kstep_trace_irr: forall U tr tr' tp m,
-
             safe_kstep (U,tr,tp) m -> safe_kstep (U,tr',tp) m.
-
         Proof.
-
           unfold safe_kstep; simpl.
-
           unfold cstate2kstate, kstate2cstate in *; simpl in *.
-
           cofix foo.
-
           intros. inversion H.
-
           destruct st' as ((?&?)&?).
-
           destruct (kstep_trace_irr _ _ _ _ tr' _ _ _ _ H0) as (tr2' &STEP).
-
           econstructor; eauto.
 
-
-
         Qed.
-
-
 
             Lemma external_step_trace_irr: forall U U' tr1 tr1' tr2 tp tp' m m',
-
             external_step U tr1 tp m U' tr1' tp' m' -> exists tr2', external_step U tr2 tp m U' tr2' tp' m'.
-
         Proof.
-
           intros. inversion H; simpl in *; subst.
-
           - exists tr2. fold_ids.
-
             econstructor; eauto.
-
           - exists tr2. econstructor 2; eauto.
-
           - exists tr2. econstructor 3; eauto.
-
           - exists (seq.cat tr2
-
            (HybridMachineSig.Events.external tid ev :: nil)).
-
             econstructor 4; eauto.
-
           - exists tr2. econstructor 5; eauto.
-
           
-
         Qed.
-
         
-
         Lemma explicit_safety_trace_irr: forall U tr tr' tp m,
-
            explicit_safety U tr tp m -> explicit_safety U tr' tp m.
-
         Proof.
-
           cofix COFIX.
-
           intros. inversion H; simpl in *.
-
           - econstructor; eauto.
-
           - econstructor 2; eauto.
-
           - destruct (external_step_trace_irr _ _ _ _ tr' _ _ _ _ H0) as (?&STEP). 
-
             
-
             destruct y' as ((y1&y2)&y3); simpl in *.
-
             econstructor 3; simpl.
-
             + instantiate(1:= (x, y2, y3)).
-
               eauto.
-
             + simpl in *.
-
               intros. eapply COFIX.
-
               eapply H1 in H2.
-
               eapply H2.
-
         Qed.        
-
   End TracesIrrelevant.
 
-
-
   Lemma explicit_safety_schedule_irr:
-
     forall U U' tr tp m,
-
       schedPeek U = schedPeek U' ->
-
       explicit_safety U tr tp m -> explicit_safety U' tr tp m.
-
   Proof.
-
     cofix COFIX.
-
     intros. inversion H0; simpl in *.
-
     - econstructor.
-
       simpl in *.
-
       unfold halted_machine in *. simpl in *.
-
       rewrite <- H.
-
       assumption.
-
     - econstructor 2; eauto.
-
       simpl.
-
       inversion H1; subst.
-
       rewrite H in HschedN.
-
       rewrite <- H7.
-
       econstructor; eauto.
-
     - inversion H1;
-
         try match goal with
-
             | [H: schedSkip _ = _ |- _] =>
-
               econstructor 3 with (x' := schedSkip U')
-
             | [ |- _] =>
-
               econstructor 3 with (x' := U')
-
             end; subst;
-
         try match goal with
-
             | [H: diluteMem _ = _ |- _] =>
-
               rewrite <- H; clear H
-
             end; eauto;
-
           [econstructor 1 |
-
            econstructor 2 |
-
            econstructor 3 |
-
            |
-
-           econstructor 5 
-];
-
+           econstructor 5 ];
           try (rewrite <- H); eauto.
-
       rewrite <- H9.
-
       econstructor 4; try (rewrite <- H); eauto.
-
   Qed.
-
   
-
   Inductive InternalOrExternal: MachState -> mem -> MachState -> mem -> Prop:=
-
   | IsInternal st st' m m':
-
       internal_step (fst (fst st)) (snd st) m (snd st') m'  ->
-
       InternalOrExternal st m st' m'
-
   | IsExternal st st' m m':
-
       external_step (fst (fst st)) (snd (fst st)) (snd st) m (fst (fst st')) (snd (fst st')) (snd st') m'  ->
-
       InternalOrExternal st m st' m'.
-
       
-
   Lemma step_InternalOrExternal: forall st m st' m',
-
       MachStep st m st' m' ->
-
       InternalOrExternal st m st' m'.
-
   Proof.
-
     intros. inversion H;
-
     destruct st' as ((?&?)&?);
-
     simpl in *; subst.
-
     - constructor 2. fold_ids. econstructor; eauto.
-
     - constructor 2. econstructor 2; eauto.
-
     - constructor 1. 
-
       destruct st as ((?&?)&?); simpl in *.
-
       eapply thread_step' in Htstep; eauto.
-
     - constructor 2; econstructor 3; eauto.
-
     - constructor 2; econstructor 4; eauto.
-
     - constructor 2; econstructor 5; eauto.
-
    
-
   Qed.
-
   
-
   Lemma safety_equivalence21: forall st m tr,
-
       (forall U, valid (tr, st, m) U ->
-
              safe_kstep (U, tr, st) m) ->
-
       forall U, valid (tr, st, m) U ->
-
             explicit_safety U tr st m.
-
   Proof.
-
     cofix COFIX.
-
     intros st m tr sns_all U sns.
-
     eapply sns_all in sns.
-
     inversion sns.
-
     unfold cstate2kstate in H; simpl in H.
-
     inversion H; subst.
-
     -  unfold kstate2cstate in *; simpl in *; subst.
-
       eapply halted_safety; simpl; assumption.
-
     -  destruct st' as [[tr' tp] m'].
-
       unfold cstate2kstate, kstate2cstate in *; simpl in *; subst.
-
       assert (step_cases:= (step_InternalOrExternal _ _ _ _ H1)); inversion step_cases; subst.
-
       +  eapply (internal_safety).
-
         instantiate (1:=(tr,tp,m')); simpl in *; eauto.
-
         unfold cstate2kstate, kstate2cstate in *; simpl in *; subst.
-
         
-
         intros.
-
         eapply COFIX; eauto.
-
         intros.
-
-
 
         unfold safe_kstep, cstate2kstate, kstate2cstate in *; simpl in *; subst.
-
         eapply safe_kstep_trace_irr.
-
         
-
         eapply H0.
-
         simpl; eauto.
-
       +   eapply (external_safety).
-
         instantiate (1:=(tr',tp,m')); simpl in *; eauto.
-
         unfold cstate2kstate, kstate2cstate in *; simpl in *; subst.
-
         
-
         intros.
-
         eapply COFIX; eauto.
-
   Qed.
-
-
 
   Lemma safety_equivalence22: forall st m tr,
-
       (forall U, valid (tr, st, m) U ->
-
            explicit_safety U tr st m) ->
-
            (forall U, valid (tr, st, m) U ->
-
                  safe_kstep (U, tr, st) m).
-
   Proof.
-
     cofix COFIX.
-
     intros st m tr es_all U es.
-
     eapply es_all in es.
-
     inversion es.
-
     - econstructor; eauto.
-
       + econstructor. simpl; eauto.
-
       + unfold cstate2kstate; simpl; intros U'' VAL.
-
         apply COFIX; eauto.
-
     - eapply step_equivalence2 in H. destruct H as (?&H); simpl in *.
-
       econstructor.
-
       + econstructor 2.
-
         unfold kstate2cstate, cstate2kstate in *; simpl in *.
-
         instantiate(1:=((seq.cat tr x) , snd(fst y'), snd y')); simpl in *.
-
         instantiate(1:=U).
-
         destruct y' as ((?&?)&?).
-
         eapply H. 
-
       + intros. destruct y' as ((?&?)&?).
-
         simpl in *; apply COFIX; intros; eauto.
-
         eapply H0 in H2. simpl in *.
-
         eapply explicit_safety_trace_irr.
-
         eapply H2.
-
     - eapply step_equivalence3 in H. destruct H as (?&?&STEP); simpl in *.
-
       destruct y' as ((y1&y2)&y3); simpl in *.
-
       econstructor.
-
       + econstructor 2.
-
         unfold kstate2cstate, cstate2kstate in *; simpl in *.
-
         instantiate(1:=(y1 , y2, y3)); simpl in *.
-
         instantiate(1:=x').
-
         eapply STEP.
-
       + intros. simpl in *; apply COFIX; intros; eauto.
-
         eapply H0 in H2. simpl in *.
-
         eapply explicit_safety_trace_irr.
-
         eapply H2.
-
   Qed.
-
   Lemma safety_equivalence2: forall st m tr,
-
       (forall U, valid (tr, st, m) U ->
-
              safe_kstep (U, tr, st) m) <->
-
       (forall U, valid (tr, st, m) U ->
-
             explicit_safety U tr st m).
-
   Proof.
-
     intros st m tr; split;
-
            [eapply safety_equivalence21 | apply safety_equivalence22].
-
   Qed.  
-
   
-
 End  Safety_Explicity_Safety.
-
-
 
 Section Csafe_Safety.
 
-
-
 Context (finit_branch_kstep:(forall x : kstate,
-
         finite_on_x
-
           (possible_image
-
              (fun (x0 : kstate) (y : schedule) (x' : kstate) =>
-
                 exists y' : schedule, kstep x0 y x' y') valid x))).
 
-
-
 Lemma finite_state_preservation:
-
   forall P0 P' : SST kstate,
-
     konig.finite P0 -> SST_step kstate schedule kstep valid P0 P' -> konig.finite P'.
-
 Proof.
-
   
-
 Admitted.
-
     
-
 Lemma csafe_safety_trick:
-
   forall tr tp m,
-
        (forall U : schedule, valid (tr, tp,m) U) ->
-
        (forall (n : nat) U, csafe (U, tr, tp) m n) ->
-
        forall U : schedule, safe kstate schedule kstep valid (tr,tp,m) U.
-
 Proof.
-
   intros ??????.
-
   eapply ksafe_safe; eauto.
-
   - eapply finite_state_preservation.
-
   - exact classic.
-
   - eapply csafe_ksafe_equiv_trick; eauto.
-
 Qed.
-
-
 
 Lemma csafe_safety:
-
   forall tr tp m,
-
        (forall (n : nat) U, valid (tr, tp,m) U -> csafe (U, tr, tp) m n) ->
-
        forall U : schedule, valid (tr, tp,m) U -> safe kstate schedule kstep valid (tr,tp,m) U.
-
 Proof.
-
   intros ??????.
-
   eapply ksafe_safe'; eauto.
-
   - eapply finite_state_preservation.
-
   - exact classic.
-
   - eapply csafe_ksafe_equiv; eauto.
-
 Qed.
-
-
 
 Lemma safety_csafe_trick:
-
   forall tr tp m,
-
     (forall U : schedule, valid (tr, tp,m) U) ->
-
     (forall U : schedule, safe kstate schedule kstep valid (tr,tp,m) U) ->
-
     (forall (n : nat) U, csafe (U, tr, tp) m n).
-
 Proof.
-
   unfold kstate2cstate; simpl.
-
   intros ???????.
-
   eapply ksafe_csafe_equiv; eauto.
-
   unfold ksafe_kstep.
-
   simpl_state.
-
   eapply safe_ksafe; eauto.
-
 Qed.
-
-
 
 Lemma safety_csafe:
-
   forall tr tp m,
-
     (forall U : schedule, valid (tr, tp,m) U -> safe kstate schedule kstep valid (tr,tp,m) U) ->
-
     (forall (n : nat) U, valid (tr, tp,m) U -> csafe (U, tr, tp) m n).
-
 Proof.
-
   unfold kstate2cstate; simpl.
-
   intros ???????.
-
   eapply ksafe_csafe_equiv'; eauto.
-
   unfold ksafe_kstep.
-
   simpl_state.
-
   intros.
-
   eapply safe_ksafe'; eauto.
-
 Qed.
-
-
 
 Lemma csafe_explicit_safety:
-
   forall tr tp m,
-
        (forall (n : nat) U, valid (tr, tp,m) U -> csafe (U, tr, tp) m n) ->
-
        forall U, valid (tr, tp,m) U -> explicit_safety U tr tp m.
-
 Proof.
-
   intros ??????.
-
   eapply safety_equivalence2; eauto.
-
   intros.
-
   eapply csafe_safety; eauto; simpl.
-
 Qed.
-
-
 
 Lemma explicit_safety_csafe:
-
   forall tr tp m,
-
     (forall U : schedule, valid (tr, tp,m) U -> explicit_safety U tr tp m) ->
-
     (forall (n : nat) U, valid (tr, tp,m) U -> csafe (U, tr, tp) m n).
-
 Proof.
-
   intros.
-
   eapply safety_csafe; eauto.
-
   intros.
-
   eapply safety_equivalence22; eauto.
-
 Qed.
-
-
 
 Lemma csafe_explicit_safety':
-
   forall tr tp m,
-
        (forall U : schedule, valid (tr, tp,m) U) ->
-
        (forall (n : nat) U, csafe (U, tr, tp) m n) ->
-
        forall U : schedule, explicit_safety U tr tp m.
-
 Proof.
-
   intros ??????.
-
   eapply safety_equivalence2; eauto.
-
   intros.
-
   eapply csafe_safety; eauto.
-
 Qed.
-
-
 
 Lemma explicit_safety_csafe':
-
   forall tr tp m,
-
     (forall U : schedule, valid (tr, tp,m) U) ->
-
     (forall U : schedule, explicit_safety U tr tp m) ->
-
     (forall (n : nat) U, csafe (U, tr, tp) m n).
-
 Proof.
-
   intros.
-
   eapply safety_csafe_trick; eauto.
-
   intros.
-
   eapply safety_equivalence22; eauto.
-
 Qed.
-
-
 
 End Csafe_Safety.
 
-
-
 End SafetyEquivalence.
-
-
 

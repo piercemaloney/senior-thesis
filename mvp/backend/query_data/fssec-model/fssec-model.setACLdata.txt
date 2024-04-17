@@ -1,91 +1,324 @@
 Require Export SFSstate. 
-
+(* SFSstate:
+Require Export ListFunctions. 
  
-
-Section setACLdata. 
-
+Set Implicit Arguments.
+Unset Strict Implicit. 
  
+Definition SECLEV := nat. 
+Parameter CATEGORY : Set. 
 
-Variable s : SFSstate. 
-
+Record SecClass : Set := sclass {level : SECLEV; categs : set CATEGORY}. 
  
+Definition eq_sc (a b : SecClass) : Prop :=
+  level a = level b /\ categs a = categs b. 
+ 
+Definition le_sc (a b : SecClass) : Prop :=
+  level a <= level b /\ Included (categs a) (categs b). 
+ 
+Hint Unfold eq_sc le_sc. 
+ 
+Parameter SUBJECT GRPNAME : Set. 
+Parameter root secofr : SUBJECT. 
+ 
+Axiom SUBeq_dec : forall x y : SUBJECT, {x = y} + {x <> y}. 
+Axiom GRPeq_dec : forall x y : GRPNAME, {x = y} + {x <> y}. 
+ 
+Hint Resolve SUBeq_dec GRPeq_dec. 
+ 
+Parameter OBJNAME BYTE : Set. 
+ 
+Axiom OBJNAMEeq_dec : forall x y : OBJNAME, {x = y} + {x <> y}. 
+Axiom BYTEeq_dec : forall x y : BYTE, {x = y} + {x <> y}. 
+ 
+Hint Resolve OBJNAMEeq_dec BYTEeq_dec. 
+ 
+Inductive OBJTYPE : Set :=
+  | File : OBJTYPE
+  | Directory : OBJTYPE. 
+ 
+Lemma OBJTYPEeq_dec : forall x y : OBJTYPE, {x = y} + {x <> y}. 
+ 
+Hint Resolve OBJTYPEeq_dec. 
+ 
+Definition FILECONT := list BYTE. 
+ 
+Lemma FILECONTeq_dec : forall x y : FILECONT, {x = y} + {x <> y}. 
+ 
+Hint Resolve FILECONTeq_dec. 
+ 
+Definition DIRCONT := list OBJNAME. 
 
-Definition ChangeUserR (u : SUBJECT) (x : set SUBJECT) 
+Lemma DIRCONTeq_dec : forall x y : DIRCONT, {x = y} + {x <> y}. 
+ 
+Hint Resolve DIRCONTeq_dec. 
+ 
+Definition OBJECT := (OBJNAME * OBJTYPE)%type. 
+ 
+Lemma OBJeq_dec : forall x y : OBJECT, {x = y} + {x <> y}. 
+ 
+Parameter MyDir : OBJNAME -> OBJECT. 
+ 
+Definition ObjName (o : OBJECT) : OBJNAME := fst o. 
+ 
+Definition ObjType (o : OBJECT) : OBJTYPE := snd o. 
+ 
+Record RIGHTS : Set := allowedTo {read_right : bool; write_right : bool}. 
 
-  (oct : RIGHTS) : set SUBJECT :=
+Record PERMS : Set := rwx {ownerp : RIGHTS; groupp : RIGHTS; otherp : RIGHTS}. 
+ 
+Record AccessCtrlListData : Set := acldata
+  {owner : SUBJECT;
+   group : GRPNAME;
+   UsersReaders : set SUBJECT;
+   GroupReaders : set GRPNAME;
+   UsersWriters : set SUBJECT;
+   GroupWriters : set GRPNAME;
+   UsersOwners : set SUBJECT;
+   GroupOwners : set GRPNAME}. 
+ 
+Record ReadersWriters : Set := mkRW
+  {ActReaders : set SUBJECT; ActWriters : set SUBJECT}. 
+ 
+Axiom RWeq_dec : forall x1 x2 : ReadersWriters, {x1 = x2} + {x1 <> x2}. 
+ 
+Record SFSstate : Set := mkSFS
+  {groups : GRPNAME -> set SUBJECT;
+   primaryGrp : SUBJECT -> GRPNAME;
+   subjectSC : set (SUBJECT * SecClass);
+   AllGrp : GRPNAME;
+   RootGrp : GRPNAME;
+   SecAdmGrp : GRPNAME;
+   objectSC : set (OBJECT * SecClass);
+   acl : set (OBJECT * AccessCtrlListData);
+   secmat : set (OBJECT * ReadersWriters);
+   files : set (OBJECT * FILECONT);
+   directories : set (OBJECT * DIRCONT)}. 
+ 
+Axiom SSCeq_dec : forall x1 x2 : SUBJECT * SecClass, {x1 = x2} + {x1 <> x2}. 
+Axiom OSCeq_dec : forall x1 x2 : OBJECT * SecClass, {x1 = x2} + {x1 <> x2}. 
+Axiom
+  ACLeq_dec :
+    forall x1 x2 : OBJECT * AccessCtrlListData, {x1 = x2} + {x1 <> x2}. 
+Axiom
+  SECMATeq_dec :
+    forall x1 x2 : OBJECT * ReadersWriters, {x1 = x2} + {x1 <> x2}. 
+Axiom OBJFeq_dec : forall x1 x2 : OBJECT * FILECONT, {x1 = x2} + {x1 <> x2}. 
+Axiom OBJDeq_dec : forall x1 x2 : OBJECT * DIRCONT, {x1 = x2} + {x1 <> x2}. 
+ 
+Hint Resolve SSCeq_dec OSCeq_dec ACLeq_dec SECMATeq_dec RWeq_dec. 
+ 
+Section PartialFunctions.
 
-  match oct with
+Variable X Y : Set. 
+ 
+Hypothesis Xeq_dec : forall x1 x2 : X, {x1 = x2} + {x1 <> x2}. 
+Hypothesis Yeq_dec : forall x1 x2 : Y, {x1 = x2} + {x1 <> x2}. 
+Hypothesis XYeq_dec : forall x1 x2 : X * Y, {x1 = x2} + {x1 <> x2}. 
 
-  | allowedTo false false => set_remove SUBeq_dec u x
-
-  | allowedTo false true => set_remove SUBeq_dec u x
-
-  | allowedTo true false => set_add SUBeq_dec u x
-
-  | allowedTo true true => set_add SUBeq_dec u x
-
+Fixpoint DOM (f : set (X * Y)) : set X :=
+  match f with
+  | nil => nil (A:=X)
+  | (x, y) :: g => set_add Xeq_dec x (DOM g)
   end. 
 
+Fixpoint RAN (f : set (X * Y)) : set Y :=
+  match f with
+  | nil => nil (A:=Y)
+  | (x, y) :: g => set_add Yeq_dec y (RAN g)
+  end. 
 
+Fixpoint PARTFUNC (f : set (X * Y)) : X -> Exc Y :=
+  fun x : X =>
+  match f with
+  | nil => None (A:=Y)
+  | (x1, y) :: g =>
+      match Xeq_dec x x1 with
+      | left _ => Some y
+      | right _ => PARTFUNC g x
+      end
+  end. 
+ 
+Fixpoint IsPARTFUNC (f : set (X * Y)) : Prop :=
+  match f with
+  | nil => True
+  | a :: l =>
+      match set_In_dec Xeq_dec (fst a) (DOM l) with
+      | left _ => False
+      | right _ => IsPARTFUNC l
+      end
+  end. 
+ 
+Lemma AddEq :
+ forall (a b : X) (y : Y) (f : set (X * Y)),
+ a <> b -> PARTFUNC f a = PARTFUNC (set_add XYeq_dec (b, y) f) a. 
+ 
+Lemma AddEq1 :
+ forall (x : X) (y : Y) (f : set (X * Y)),
+ ~ set_In x (DOM f) -> value y = PARTFUNC (set_add XYeq_dec (x, y) f) x. 
+ 
+Lemma RemEq :
+ forall (a b : X) (y : Y) (f : set (X * Y)),
+ a <> b -> PARTFUNC f a = PARTFUNC (set_remove XYeq_dec (b, y) f) a. 
+ 
+Lemma AddRemEq :
+ forall (a b : X) (y z : Y) (f : set (X * Y)),
+ a <> b ->
+ PARTFUNC f a =
+ PARTFUNC (set_add XYeq_dec (b, z) (set_remove XYeq_dec (b, y) f)) a. 
+ 
+Lemma NotInDOMIsUndef :
+ forall (o : X) (f : set (X * Y)), ~ set_In o (DOM f) -> PARTFUNC f o = None. 
+ 
+Hint Resolve NotInDOMIsUndef.    
+ 
+Lemma InDOMIsNotUndef :
+ forall (o : X) (f : set (X * Y)), set_In o (DOM f) -> PARTFUNC f o <> None. 
+ 
+Lemma InDOMWhenAdd :
+ forall (x : X) (y : Y) (f : set (X * Y)),
+ set_In x (DOM (set_add XYeq_dec (x, y) f)). 
+ 
+Lemma DOMFuncRel :
+ forall (a : X * Y) (f : set (X * Y)),
+ ~ set_In (fst a) (DOM f) -> f = set_remove XYeq_dec a f. 
+ 
+Hint Resolve DOMFuncRel. 
+ 
+Lemma DOMFuncRel2 :
+ forall (z : X * Y) (f : set (X * Y)), set_In z f -> set_In (fst z) (DOM f). 
+ 
+Hint Resolve DOMFuncRel2. 
+ 
+Lemma DOMFuncRel3 :
+ forall (x : X) (y : Y) (f : set (X * Y)),
+ IsPARTFUNC f ->
+ set_In (x, y) f -> ~ set_In x (DOM (set_remove XYeq_dec (x, y) f)). 
+ 
+Lemma DOMFuncRel4 :
+ forall (x : X) (f : set (X * Y)),
+ match PARTFUNC f x with
+ | Some a => set_In (x, a) f
+ | None => ~ set_In x (DOM f)
+ end. 
+ 
+Lemma UndefWhenRem :
+ forall (x : X) (y : Y) (f : set (X * Y)),
+ IsPARTFUNC f ->
+ set_In (x, y) f -> PARTFUNC (set_remove XYeq_dec (x, y) f) x = None. 
+ 
+End PartialFunctions. 
+ 
+Hint Resolve AddEq RemEq AddRemEq NotInDOMIsUndef InDOMIsNotUndef
+  InDOMWhenAdd UndefWhenRem AddEq1 DOMFuncRel3. 
+ 
+Definition domf (f : set (OBJECT * FILECONT)) := DOM OBJeq_dec f. 
+ 
+Definition ffiles (f : set (OBJECT * FILECONT)) : OBJECT -> Exc FILECONT :=
+  PARTFUNC OBJeq_dec f. 
+ 
+Definition domd (f : set (OBJECT * DIRCONT)) := DOM OBJeq_dec f. 
+ 
+Definition fdirs (f : set (OBJECT * DIRCONT)) : OBJECT -> Exc DIRCONT :=
+  PARTFUNC OBJeq_dec f. 
+ 
+Definition domacl (f : set (OBJECT * AccessCtrlListData)) := DOM OBJeq_dec f. 
+ 
+Definition facl (f : set (OBJECT * AccessCtrlListData)) :
+  OBJECT -> Exc AccessCtrlListData := PARTFUNC OBJeq_dec f. 
+ 
+Definition domsecmat (f : set (OBJECT * ReadersWriters)) := DOM OBJeq_dec f. 
+ 
+Definition ransecmat (f : set (OBJECT * ReadersWriters)) := RAN RWeq_dec f. 
+ 
+Definition fsecmat (f : set (OBJECT * ReadersWriters)) :
+  OBJECT -> Exc ReadersWriters := PARTFUNC OBJeq_dec f. 
+ 
+Definition domOSC (f : set (OBJECT * SecClass)) := DOM OBJeq_dec f. 
+ 
+Definition fOSC (f : set (OBJECT * SecClass)) : OBJECT -> Exc SecClass :=
+  PARTFUNC OBJeq_dec f. 
+ 
+Definition domSSC (f : set (SUBJECT * SecClass)) := DOM SUBeq_dec f. 
+ 
+Definition fSSC (f : set (SUBJECT * SecClass)) : SUBJECT -> Exc SecClass :=
+  PARTFUNC SUBeq_dec f. 
+                 
+Parameter create_files : SUBJECT -> OBJNAME -> set (OBJECT * FILECONT). 
+Parameter create_directories : SUBJECT -> OBJNAME -> set (OBJECT * DIRCONT). 
+Parameter mkdir_directories : SUBJECT -> OBJNAME -> set (OBJECT * DIRCONT). 
+Parameter rmdir_directories : OBJECT -> set (OBJECT * DIRCONT). 
+Parameter unlink_files : OBJECT -> set (OBJECT * FILECONT). 
+Parameter unlink_directories : OBJECT -> set (OBJECT * DIRCONT). 
+Parameter write_files : OBJECT -> nat -> FILECONT -> set (OBJECT * FILECONT). 
+ 
+Inductive MODE : Set :=
+  | READ : MODE
+  | WRITE : MODE. 
+ 
+Inductive Operation : Set :=
+  | Aclstat : Operation
+  | AddUsrGrpToAcl : Operation
+  | Chmod : Operation
+  | Chobjsc : Operation
+  | Chown : Operation
+  | Chsubsc : Operation
+  | Close : Operation
+  | Create : Operation
+  | DelUsrGrpFromAcl : Operation
+  | Mkdir : Operation
+  | Open : Operation
+  | Oscstat : Operation
+  | Owner_Close : Operation
+  | Read : Operation
+  | Readdir : Operation
+  | Rmdir : Operation
+  | Sscstat : Operation
+  | Stat : Operation
+  | Unlink : Operation
+  | Write : Operation. *)
+ 
+Section setACLdata. 
+ 
+Variable s : SFSstate. 
+ 
+Definition ChangeUserR (u : SUBJECT) (x : set SUBJECT) 
+  (oct : RIGHTS) : set SUBJECT :=
+  match oct with
+  | allowedTo false false => set_remove SUBeq_dec u x
+  | allowedTo false true => set_remove SUBeq_dec u x
+  | allowedTo true false => set_add SUBeq_dec u x
+  | allowedTo true true => set_add SUBeq_dec u x
+  end. 
 
 Definition ChangeUserW (u : SUBJECT) (x : set SUBJECT) 
-
   (oct : RIGHTS) : set SUBJECT :=
-
   match oct with
-
   | allowedTo false false => set_remove SUBeq_dec u x
-
   | allowedTo false true => set_add SUBeq_dec u x
-
   | allowedTo true false => set_remove SUBeq_dec u x
-
   | allowedTo true true => set_add SUBeq_dec u x
-
   end. 
-
  
-
 Definition ChangeGroupR (g : GRPNAME) (oct : RIGHTS) 
-
   (x : set GRPNAME) : set GRPNAME :=
-
   match oct with
-
   | allowedTo false false => set_remove GRPeq_dec g x
-
   | allowedTo false true => set_remove GRPeq_dec g x
-
   | allowedTo true false => set_add GRPeq_dec g x
-
   | allowedTo true true => set_add GRPeq_dec g x
-
   end. 
-
  
-
 Definition ChangeGroupW (g : GRPNAME) (oct : RIGHTS) 
-
   (x : set GRPNAME) : set GRPNAME :=
-
   match oct with
-
   | allowedTo false false => set_remove GRPeq_dec g x
-
   | allowedTo false true => set_add GRPeq_dec g x
-
   | allowedTo true false => set_remove GRPeq_dec g x
-
   | allowedTo true true => set_add GRPeq_dec g x
-
   end. 
-
  
-
 Definition ChangeGroupO (g : GRPNAME) (x : set GRPNAME) : 
-
   set GRPNAME := set_add GRPeq_dec g x. 
-
-
 
 End setACLdata.

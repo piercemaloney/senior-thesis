@@ -1,364 +1,512 @@
 Require Export MetricSpaces.
+(* MetricSpaces:
+Require Export Reals.
+Require Export TopologicalSpaces.
+Require Export NeighborhoodBases.
+Require Import RationalsInReals.
+From ZornsLemma Require Export EnsemblesSpec.
 
+Open Scope R_scope.
 
-
-Section Completeness.
-
-
+Section metric.
 
 Variable X:Type.
-
 Variable d:X->X->R.
 
-Hypothesis d_metric: metric d.
+Record metric : Prop := {
+  metric_nonneg: forall x y:X, d x y >= 0;
+  metric_sym: forall x y:X, d x y = d y x;
+  triangle_inequality: forall x y z:X, d x z <= d x y + d y z;
+  metric_zero: forall x:X, d x x = 0;
+  metric_strict: forall x y:X, d x y = 0 -> x = y
+}.
 
+End metric.
 
+Arguments metric {X}.
 
-Definition cauchy (x:nat->X) : Prop :=
+Section metric_topology.
 
-  forall eps:R, eps > 0 -> exists N:nat, forall m n:nat,
+Variable X:Type.
+Variable d:X->X->R.
+Hypothesis d_is_metric: metric d.
 
-    (m >= N)%nat -> (n >= N)%nat -> d (x m) (x n) < eps.
+Definition open_ball (x0:X) (r:R) : Ensemble X :=
+  [ x:X | d x0 x < r ].
 
+Inductive metric_topology_neighborhood_basis (x:X) : Family X :=
+  | intro_open_ball: forall r:R, r > 0 ->
+    In (metric_topology_neighborhood_basis x) (open_ball x r).
 
+Definition MetricTopology : TopologicalSpace.
 
-Lemma convergent_sequence_is_cauchy:
+End metric_topology.
 
-  forall (x:Net nat_DS (MetricTopology d d_metric))
+Arguments metric_topology_neighborhood_basis {X}.
+Arguments MetricTopology {X}.
 
-    (x0:point_set (MetricTopology d d_metric)),
+Definition metrizes (X:TopologicalSpace)
+  (d:point_set X -> point_set X -> R) : Prop :=
+  forall x:point_set X, open_neighborhood_basis
+             (metric_topology_neighborhood_basis d x) x.
 
-  net_limit x x0 -> cauchy x.
+Inductive metrizable (X:TopologicalSpace) : Prop :=
+  | intro_metrizable: forall d:point_set X -> point_set X -> R,
+    metric d -> metrizes X d ->
+    metrizable X.
 
+Lemma MetricTopology_metrizable: forall (X:Type) (d:X->X->R)
+  (d_metric: metric d),
+  metrizes (MetricTopology d d_metric) d.
+
+Require Export Nets.
+
+Lemma metric_space_net_limit: forall (X:TopologicalSpace)
+  (d:point_set X -> point_set X -> R), metrizes X d ->
+  forall (I:DirectedSet) (x:Net I X) (x0:point_set X),
+  (forall eps:R, eps > 0 -> for large i:DS_set I, d x0 (x i) < eps) ->
+  net_limit x x0.
+
+Lemma metric_space_net_limit_converse: forall (X:TopologicalSpace)
+  (d:point_set X -> point_set X -> R), metrizes X d ->
+  forall (I:DirectedSet) (x:Net I X) (x0:point_set X),
+    net_limit x x0 -> forall eps:R, eps > 0 ->
+                         for large i:DS_set I, d x0 (x i) < eps.
+
+Lemma metric_space_net_cluster_point: forall (X:TopologicalSpace)
+  (d:point_set X -> point_set X -> R), metrizes X d ->
+  forall (I:DirectedSet) (x:Net I X) (x0:point_set X),
+  (forall eps:R, eps > 0 ->
+     exists arbitrarily large i:DS_set I, d x0 (x i) < eps) ->
+  net_cluster_point x x0.
+
+Lemma metric_space_net_cluster_point_converse: forall (X:TopologicalSpace)
+  (d:point_set X -> point_set X -> R), metrizes X d ->
+  forall (I:DirectedSet) (x:Net I X) (x0:point_set X),
+    net_cluster_point x x0 -> forall eps:R, eps > 0 ->
+                exists arbitrarily large i:DS_set I, d x0 (x i) < eps.
+
+Require Export Continuity.
+
+Lemma metric_space_fun_continuity_converse: forall (X Y:TopologicalSpace)
+  (f:point_set X->point_set Y) (x:point_set X)
+  (dX:point_set X -> point_set X -> R)
+  (dY:point_set Y -> point_set Y -> R),
+  metrizes X dX -> metrizes Y dY ->
+  continuous_at f x -> forall eps:R, eps > 0 ->
+                         exists delta:R, delta > 0 /\
+                         forall x':point_set X, dX x x' < delta ->
+                                        dY (f x) (f x') < eps.
+
+Lemma metric_space_fun_continuity: forall (X Y:TopologicalSpace)
+  (f:point_set X->point_set Y) (x:point_set X)
+  (dX:point_set X -> point_set X -> R)
+  (dY:point_set Y -> point_set Y -> R),
+  metrizes X dX -> metrizes Y dY ->
+  (forall eps:R, eps > 0 -> exists delta:R, delta > 0 /\
+                         forall x':point_set X, dX x x' < delta ->
+                                        dY (f x) (f x') < eps) ->
+  continuous_at f x.
+
+Require Export CountabilityAxioms.
+
+Lemma metrizable_impl_first_countable: forall X:TopologicalSpace,
+  metrizable X -> first_countable X.
+
+Lemma metrizable_separable_impl_second_countable:
+  forall X:TopologicalSpace, metrizable X -> separable X ->
+    second_countable X.
 Proof.
-
-pose proof (MetricTopology_metrizable X d d_metric).
-
-red in H.
-
 intros.
-
-destruct (H x0).
-
-red; intros.
-
-pose (U := open_ball _ d x0 (eps/2)).
-
-destruct (H0 U) as [N].
-
-Opaque In. apply open_neighborhood_basis_elements. Transparent In.
-
+destruct H.
+destruct H0.
+exists (Im [p:(Q*(point_set X))%type |
+            let (r,x):=p in (r>0)%Q /\ In S x]
+  (fun p:(Q*(point_set X))%type =>
+      let (r,x):=p in open_ball _ d x (Q2R r))).
 constructor.
-
-Require Import Fourier.
-
-fourier.
-
-constructor.
-
-rewrite metric_zero; trivial.
-
-fourier.
-
-simpl in N.
-
-exists N.
-
 intros.
-
-destruct (H2 m H3).
-
-destruct (H2 n H4).
-
-apply Rle_lt_trans with (d x0 (x m) + d x0 (x n)).
-
-rewrite (metric_sym _ _ d_metric x0 (x m)); trivial.
-
-apply triangle_inequality; trivial.
-
-fourier.
-
-Qed.
-
-
-
-Lemma cauchy_sequence_with_cluster_point_converges:
-
-  forall (x:Net nat_DS (MetricTopology d d_metric))
-
-    (x0:point_set (MetricTopology d d_metric)),
-
-  cauchy x -> net_cluster_point x x0 -> net_limit x x0.
-
-Proof.
-
-intros.
-
-apply metric_space_net_limit with d.
-
-apply MetricTopology_metrizable.
-
-intros.
-
-red; intros.
-
-destruct (H (eps/2)) as [N].
-
-fourier.
-
-pose (U := open_ball X d x0 (eps/2)).
-
-assert (open_neighborhood U x0 (X:=MetricTopology d d_metric)).
-
-apply MetricTopology_metrizable.
-
-constructor.
-
-fourier.
-
 destruct H3.
+destruct H3.
+destruct x as [r x].
+destruct H3.
+destruct (H1 x).
+destruct (open_neighborhood_basis_elements y).
+rewrite H4.
+constructor; trivial.
+assert (Q2R 0 = 0).
+unfold Q2R.
+simpl.
+ring.
+rewrite <- H6.
+apply Qlt_Rlt; trivial.
+assumption.
 
-destruct (H0 U H3 H4 N) as [m [? []]].
+intros.
+destruct (H1 x).
+destruct (open_neighborhood_basis_cond U) as [V [[r]]].
+split; trivial.
 
-simpl in H5.
+destruct (dense_meets_every_nonempty_open _ _ H2
+  (open_ball _ d x (r/2))).
+destruct (open_neighborhood_basis_elements
+  (open_ball _ d x (r/2))).
+constructor; trivial.
+apply Rmult_lt_0_compat; auto with real.
+destruct (open_neighborhood_basis_elements
+  (open_ball (point_set X) d x (r/2))).
+constructor; trivial.
+apply Rmult_lt_0_compat; auto with real.
+assumption.
+exists x.
+constructor.
+rewrite metric_zero.
+apply Rmult_lt_0_compat; auto with real.
+trivial.
 
-exists N; intros n ?.
+destruct H7.
+destruct H8.
 
-simpl in H7.
+destruct (rationals_dense_in_reals (d x x0) (r - d x x0)) as [r'].
+assert (d x x0 + d x x0 < r/2 + r/2).
+auto with *.
+assert (r/2 + r/2 = r).
+field.
+rewrite H10 in H9; clear H10.
+assert ((d x x0 + d x x0) - d x x0 < r - d x x0).
+unfold Rminus.
+auto with *.
+ring_simplify in H10.
+ring_simplify.
+assumption.
 
-apply Rle_lt_trans with (d x0 (x m) + d (x m) (x n)).
+exists (open_ball _ d x0 (Q2R r')); repeat split.
+exists ( (r', x0) ); auto.
+constructor; split; trivial.
+assert (Q2R r' > 0).
+apply Rgt_ge_trans with (d x x0).
+apply H9.
+apply metric_nonneg; trivial.
+apply Rlt_Qlt.
+unfold Q2R at 1.
+simpl.
+ring_simplify.
+assumption.
 
+red; intros y ?.
+destruct H10.
+apply H6.
+constructor.
+apply Rle_lt_trans with (d x x0 + d x0 y).
 apply triangle_inequality; trivial.
+apply Rlt_trans with (d x x0 + Q2R r').
+auto with *.
+destruct H9.
+assert (d x x0 + Q2R r' < d x x0 + (r - d x x0)).
+auto with *.
+ring_simplify in H12.
+assumption.
+destruct H9.
+rewrite metric_sym; trivial.
 
-assert (d (x m) (x n) < eps/2) by (apply H2; trivial).
+apply countable_img.
+destruct H0 as [h].
 
-fourier.
+destruct (Q_countable).
+destruct countable_nat_product as [g].
 
-Qed.
+red.
 
-
-
-Definition complete : Prop :=
-
-  forall x:nat->X, cauchy x ->
-
-    exists x0:X, net_limit x x0 (I:=nat_DS)
-
-      (X:=MetricTopology d d_metric).
-
-
-
-End Completeness.
-
-
-
-Arguments cauchy {X}.
-
-Arguments complete {X}.
-
-
-
-Section closed_subset_of_complete.
-
-
-
-Variable X:Type.
-
-Variable d:X->X->R.
-
-Hypothesis d_metric:metric d.
-
-Variable F:Ensemble X.
-
-
-
-Let FT := { x:X | In F x }.
-
-Let d_restriction := fun x y:FT => d (proj1_sig x) (proj1_sig y).
-
-
-
-Lemma d_restriction_metric: metric d_restriction.
-
-Proof.
-
+match goal with |- CountableT ?T =>
+exists (fun x:T =>
+  match x with
+  | exist (r, x0) (intro_characteristic_sat (conj r_pos i)) =>
+    g (h (exist _ x0 i), f r)
+  end)
+end.
+red; intros.
+destruct x1 as [[r1 x1] [[pos_r1 i1]]].
+destruct x2 as [[r2 x2] [[pos_r2 i2]]].
 From ZornsLemma Require Import Proj1SigInjective.
 
-constructor; intros; try destruct x; try destruct y; try destruct z;
+Lemma metrizable_Lindelof_impl_second_countable:
+  forall X:TopologicalSpace, metrizable X -> Lindelof X ->
+    second_countable X.
 
-  try apply subset_eq_compatT; apply d_metric; trivial.
+Section dist_to_set.
 
-Qed.
+Variable X:Type.
+Variable d:X->X->R.
+Hypothesis d_is_metric: metric d.
+Variable S:Ensemble X.
+Hypothesis S_nonempty: Inhabited S.
 
+Require Export SupInf.
 
+Definition dist_to_set (x:X) : R.
 
-Lemma closed_subset_of_complete_is_complete:
+Lemma dist_to_set_triangle_inequality: forall (x y:X),
+  dist_to_set y <= dist_to_set x + d x y.
 
-  complete d d_metric ->
+End dist_to_set.
 
-  closed F (X:=MetricTopology d d_metric) ->
+Arguments dist_to_set {X}.
+Arguments dist_to_set_triangle_inequality {X}.
 
-  complete d_restriction d_restriction_metric.
+Section dist_to_set_and_topology.
 
+Variable X:TopologicalSpace.
+Variable d:point_set X -> point_set X -> R.
+Hypothesis d_is_metric: metric d.
+Hypothesis d_metrizes_X: metrizes X d.
+Variable S:Ensemble (point_set X).
+Hypothesis S_nonempty: Inhabited S.
+
+Lemma dist_to_set_zero_impl_closure: forall x:point_set X,
+  dist_to_set d d_is_metric S S_nonempty x = 0 -> In (closure S) x.
+
+Lemma closure_impl_dist_to_set_zero: forall x:point_set X,
+  In (closure S) x -> dist_to_set d d_is_metric S S_nonempty x = 0.
+
+Variable T:Ensemble (point_set X).
+Hypothesis T_nonempty: Inhabited T.
+
+Lemma closer_to_S_than_T_open: open
+  [x:point_set X | dist_to_set d d_is_metric S S_nonempty x <
+                   dist_to_set d d_is_metric T T_nonempty x].
+
+End dist_to_set_and_topology.
+
+Require Export SeparatednessAxioms.
+
+Lemma metrizable_impl_normal_sep: forall X:TopologicalSpace,
+  metrizable X -> normal_sep X.
 Proof.
-
 intros.
-
+destruct H.
+split.
 red; intros.
-
-pose (y := fun n:nat => proj1_sig (x n)).
-
-destruct (H y) as [y0].
-
+assert (closure (Singleton x) = Singleton x).
+apply Extensionality_Ensembles; split.
 red; intros.
+assert (x0 = x).
+apply metric_strict with d; trivial.
+apply NNPP; intro.
+assert (d x0 x > 0).
+destruct (total_order_T (d x0 x) 0) as [[?|?]|?]; trivial.
+assert (0 < 0).
+apply Rle_lt_trans with (d x0 x); trivial.
+assert (d x0 x >= 0); auto with *.
+apply metric_nonneg; trivial.
+contradict H3; apply Rlt_irrefl.
+contradiction H2.
 
-destruct (H1 eps H2) as [N].
-
-exists N.
-
-exact H3.
-
-intros.
-
-assert (In F y0).
-
-rewrite <- (closure_fixes_closed _ H0); trivial.
-
-apply @net_limit_in_closure with (I:=nat_DS) (x:=y); trivial.
-
+assert (In (interior (Complement (Singleton x))) x0).
+exists (open_ball _ d x0 (d x0 x)).
+split.
+destruct (H0 x0).
+destruct (open_neighborhood_basis_elements
+  (open_ball (point_set X) d x0 (d x0 x))).
+constructor; trivial.
+split.
+assumption.
 red; intros.
+intro.
+destruct H7.
+destruct H6.
+revert H6; apply Rlt_irrefl.
+constructor.
+rewrite metric_zero; trivial.
 
-exists i; split.
+rewrite interior_complement in H4.
+contradiction H4.
 
-apply le_refl.
+rewrite H2; constructor.
 
-unfold y.
-
-destruct (x i); trivial.
-
-exists (exist _ y0 H3).
-
-apply metric_space_net_limit with d_restriction.
-
-apply MetricTopology_metrizable.
-
-intros.
-
-unfold d_restriction; simpl.
-
-apply metric_space_net_limit_converse with
-
-  (MetricTopology d d_metric); trivial.
-
-apply MetricTopology_metrizable.
-
-Qed.
-
-
-
-Lemma complete_subset_is_closed:
-
-  complete d_restriction d_restriction_metric ->
-
-  closed F (X:=MetricTopology d d_metric).
-
-Proof.
-
-intros.
-
-cut (Included (closure F (X:=MetricTopology d d_metric)) F).
-
-intros.
-
-assert (closure F (X:=MetricTopology d d_metric) = F).
-
-apply Extensionality_Ensembles.
-
-split; trivial; apply closure_inflationary.
+apply closure_inflationary.
 
 rewrite <- H1; apply closure_closed.
 
-red; intros.
-
-assert (exists y:Net nat_DS (MetricTopology d d_metric),
-
-  (forall n:nat, In F (y n)) /\ net_limit y x).
-
-apply first_countable_sequence_closure; trivial.
-
-apply metrizable_impl_first_countable.
-
-exists d; trivial; apply MetricTopology_metrizable.
-
-destruct H1 as [y []].
-
-pose (y' := ((fun n:nat => exist _ (y n) (H1 n)) :
-
-             Net nat_DS (MetricTopology d_restriction d_restriction_metric))).
-
-assert (cauchy d y).
-
-apply convergent_sequence_is_cauchy with d_metric x; trivial.
-
-assert (cauchy d_restriction y').
-
-red; intros.
-
-destruct (H3 eps H4) as [N].
-
-exists N; intros.
-
-unfold d_restriction; unfold y'; simpl.
-
-apply H5; trivial.
-
-destruct (H _ H4) as [[x0]].
-
-cut (net_limit y x0 (I:=nat_DS) (X:=MetricTopology d d_metric)).
-
 intros.
+From ZornsLemma Require Import DecidableDec. *)
 
-assert (x = x0).
+Section Completeness.
 
-assert (uniqueness (net_limit y (I:=nat_DS)
+Variable X:Type.
+Variable d:X->X->R.
+Hypothesis d_metric: metric d.
 
-                        (X:=MetricTopology d d_metric))).
+Definition cauchy (x:nat->X) : Prop :=
+  forall eps:R, eps > 0 -> exists N:nat, forall m n:nat,
+    (m >= N)%nat -> (n >= N)%nat -> d (x m) (x n) < eps.
 
-apply Hausdorff_impl_net_limit_unique.
-
-apply T3_sep_impl_Hausdorff.
-
-apply normal_sep_impl_T3_sep.
-
-apply metrizable_impl_normal_sep.
-
-exists d; trivial.
-
-apply MetricTopology_metrizable.
-
-apply H7; trivial.
-
-rewrite H7; trivial.
-
-
-
-apply metric_space_net_limit with d.
-
-apply MetricTopology_metrizable.
-
-exact (metric_space_net_limit_converse
-
-  (MetricTopology d_restriction d_restriction_metric)
-
-  d_restriction (MetricTopology_metrizable _ d_restriction
-
-                       d_restriction_metric)
-
-  nat_DS y' (exist (fun x:X => In F x) x0 i) H5).
-
+Lemma convergent_sequence_is_cauchy:
+  forall (x:Net nat_DS (MetricTopology d d_metric))
+    (x0:point_set (MetricTopology d d_metric)),
+  net_limit x x0 -> cauchy x.
+Proof.
+pose proof (MetricTopology_metrizable X d d_metric).
+red in H.
+intros.
+destruct (H x0).
+red; intros.
+pose (U := open_ball _ d x0 (eps/2)).
+destruct (H0 U) as [N].
+Opaque In. apply open_neighborhood_basis_elements. Transparent In.
+constructor.
+Require Import Fourier.
+fourier.
+constructor.
+rewrite metric_zero; trivial.
+fourier.
+simpl in N.
+exists N.
+intros.
+destruct (H2 m H3).
+destruct (H2 n H4).
+apply Rle_lt_trans with (d x0 (x m) + d x0 (x n)).
+rewrite (metric_sym _ _ d_metric x0 (x m)); trivial.
+apply triangle_inequality; trivial.
+fourier.
 Qed.
 
+Lemma cauchy_sequence_with_cluster_point_converges:
+  forall (x:Net nat_DS (MetricTopology d d_metric))
+    (x0:point_set (MetricTopology d d_metric)),
+  cauchy x -> net_cluster_point x x0 -> net_limit x x0.
+Proof.
+intros.
+apply metric_space_net_limit with d.
+apply MetricTopology_metrizable.
+intros.
+red; intros.
+destruct (H (eps/2)) as [N].
+fourier.
+pose (U := open_ball X d x0 (eps/2)).
+assert (open_neighborhood U x0 (X:=MetricTopology d d_metric)).
+apply MetricTopology_metrizable.
+constructor.
+fourier.
+destruct H3.
+destruct (H0 U H3 H4 N) as [m [? []]].
+simpl in H5.
+exists N; intros n ?.
+simpl in H7.
+apply Rle_lt_trans with (d x0 (x m) + d (x m) (x n)).
+apply triangle_inequality; trivial.
+assert (d (x m) (x n) < eps/2) by (apply H2; trivial).
+fourier.
+Qed.
 
+Definition complete : Prop :=
+  forall x:nat->X, cauchy x ->
+    exists x0:X, net_limit x x0 (I:=nat_DS)
+      (X:=MetricTopology d d_metric).
+
+End Completeness.
+
+Arguments cauchy {X}.
+Arguments complete {X}.
+
+Section closed_subset_of_complete.
+
+Variable X:Type.
+Variable d:X->X->R.
+Hypothesis d_metric:metric d.
+Variable F:Ensemble X.
+
+Let FT := { x:X | In F x }.
+Let d_restriction := fun x y:FT => d (proj1_sig x) (proj1_sig y).
+
+Lemma d_restriction_metric: metric d_restriction.
+Proof.
+From ZornsLemma Require Import Proj1SigInjective.
+constructor; intros; try destruct x; try destruct y; try destruct z;
+  try apply subset_eq_compatT; apply d_metric; trivial.
+Qed.
+
+Lemma closed_subset_of_complete_is_complete:
+  complete d d_metric ->
+  closed F (X:=MetricTopology d d_metric) ->
+  complete d_restriction d_restriction_metric.
+Proof.
+intros.
+red; intros.
+pose (y := fun n:nat => proj1_sig (x n)).
+destruct (H y) as [y0].
+red; intros.
+destruct (H1 eps H2) as [N].
+exists N.
+exact H3.
+intros.
+assert (In F y0).
+rewrite <- (closure_fixes_closed _ H0); trivial.
+apply @net_limit_in_closure with (I:=nat_DS) (x:=y); trivial.
+red; intros.
+exists i; split.
+apply le_refl.
+unfold y.
+destruct (x i); trivial.
+exists (exist _ y0 H3).
+apply metric_space_net_limit with d_restriction.
+apply MetricTopology_metrizable.
+intros.
+unfold d_restriction; simpl.
+apply metric_space_net_limit_converse with
+  (MetricTopology d d_metric); trivial.
+apply MetricTopology_metrizable.
+Qed.
+
+Lemma complete_subset_is_closed:
+  complete d_restriction d_restriction_metric ->
+  closed F (X:=MetricTopology d d_metric).
+Proof.
+intros.
+cut (Included (closure F (X:=MetricTopology d d_metric)) F).
+intros.
+assert (closure F (X:=MetricTopology d d_metric) = F).
+apply Extensionality_Ensembles.
+split; trivial; apply closure_inflationary.
+rewrite <- H1; apply closure_closed.
+red; intros.
+assert (exists y:Net nat_DS (MetricTopology d d_metric),
+  (forall n:nat, In F (y n)) /\ net_limit y x).
+apply first_countable_sequence_closure; trivial.
+apply metrizable_impl_first_countable.
+exists d; trivial; apply MetricTopology_metrizable.
+destruct H1 as [y []].
+pose (y' := ((fun n:nat => exist _ (y n) (H1 n)) :
+             Net nat_DS (MetricTopology d_restriction d_restriction_metric))).
+assert (cauchy d y).
+apply convergent_sequence_is_cauchy with d_metric x; trivial.
+assert (cauchy d_restriction y').
+red; intros.
+destruct (H3 eps H4) as [N].
+exists N; intros.
+unfold d_restriction; unfold y'; simpl.
+apply H5; trivial.
+destruct (H _ H4) as [[x0]].
+cut (net_limit y x0 (I:=nat_DS) (X:=MetricTopology d d_metric)).
+intros.
+assert (x = x0).
+assert (uniqueness (net_limit y (I:=nat_DS)
+                        (X:=MetricTopology d d_metric))).
+apply Hausdorff_impl_net_limit_unique.
+apply T3_sep_impl_Hausdorff.
+apply normal_sep_impl_T3_sep.
+apply metrizable_impl_normal_sep.
+exists d; trivial.
+apply MetricTopology_metrizable.
+apply H7; trivial.
+rewrite H7; trivial.
+
+apply metric_space_net_limit with d.
+apply MetricTopology_metrizable.
+exact (metric_space_net_limit_converse
+  (MetricTopology d_restriction d_restriction_metric)
+  d_restriction (MetricTopology_metrizable _ d_restriction
+                       d_restriction_metric)
+  nat_DS y' (exist (fun x:X => In F x) x0 i) H5).
+Qed.
 
 End closed_subset_of_complete.
-

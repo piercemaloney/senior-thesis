@@ -1,37 +1,574 @@
 Require Import MirrorCore.Lambda.ExprDsimul.
-
 Require Import MirrorCore.Lemma.
-
 Require Import MirrorCharge.RTac.ReifyLemma.
-
 Require Export MirrorCore.RTac.Repeat.
-
 Require Import MirrorCore.RTac.Then.
-
 Require Export MirrorCore.RTac.Try.
-
 Require Export MirrorCore.RTac.First.
-
 Require Import MirrorCore.RTac.Fail.
-
 Require Import MirrorCore.RTac.Simplify.
-
 Require Import MirrorCore.Lambda.RedAll.
-
 Require Import MirrorCore.Lambda.ExprUnify_simul.
-
 Require Import MirrorCore.RTac.RTac.
-
 Require Import MirrorCharge.RTac.Instantiate.
-
 Require Import MirrorCharge.RTac.Intro.
-
 Require Import MirrorCharge.RTac.Apply.
-
 Require Import MirrorCharge.RTac.EApply.
-
 Require Export mc_reify.funcs.
+(* mc_reify.funcs:
+Require Import MirrorCore.syms.SymEnv.
+Require Import MirrorCore.Lambda.ExprCore.
+Require Import ExtLib.Core.RelDec.
+Require Import MirrorCore.TypesI.
+Require Import ExtLib.Tactics.
+Require Import ExtLib.Data.Fun.
 
+Require Import VST.floyd_funcs.
+Require Import mc_reify.types.
+Require Import mc_reify.bool_funcs.
+Require Import MirrorCharge.ModularFunc.ILogicFunc.
+Require Import MirrorCharge.ModularFunc.BILogicFunc.
+Require Import VST.floyd.local2ptree.
+Require Import mc_reify.local2list.
+
+Inductive const :=
+| fN : nat -> const
+| fZ : Z -> const
+| fint : int -> const
+| fint64 : int64 -> const
+| fPos : positive -> const
+| fident : ident -> const
+| fCtype : type -> const
+| fCexpr : expr -> const
+| fComparison : comparison -> const
+| fbool : bool -> const
+| ffloat : float -> const
+| ffloat32 : float32 -> const
+| fenv : type_id_env -> const
+| fllrr : LLRR -> const
+.
+
+Definition typeof_const (c : const) : typ :=
+ match c with
+| fN _ => tynat
+| fZ _ => tyZ
+| fPos _ => typositive
+| fident _ => tyident
+| fCtype _ => tyc_type
+| fCexpr _ => tyc_expr
+| fComparison _ => tycomparison
+| fbool _ => tybool
+| fint _ => tyint
+| fint64 _ => tyint64
+| ffloat _ => tyfloat
+| ffloat32 _ => tyfloat32
+| fenv _ => tytype_id_env
+| fllrr _ => tyllrr
+end.
+
+Definition constD (c : const)
+: typD (typeof_const c) :=
+match c with
+| fN c | fZ c | fPos c | fident c | fCtype c | fCexpr c | fComparison c | fbool c | fint c
+| fint64 c | ffloat c | ffloat32 c | fenv c | fllrr c
+                                          => c
+end.
+
+Inductive z_op :=
+| fZ_lt
+| fZ_le
+| fZ_gt
+| fZ_ge
+| fZ_add
+| fZ_sub
+| fZ_mul
+| fZ_div
+| fZ_mod
+| fZ_land
+| fZ_max
+| fZ_opp.
+
+Definition typeof_z_op z : typ :=
+match z with
+| fZ_lt
+| fZ_le
+| fZ_gt
+| fZ_ge => (tyArr tyZ (tyArr tyZ typrop))
+| fZ_add
+| fZ_sub
+| fZ_mul
+| fZ_div
+| fZ_mod
+| fZ_land
+| fZ_max => (tyArr tyZ (tyArr tyZ tyZ))
+| fZ_opp => (tyArr tyZ tyZ)
+end.
+
+Definition z_opD (z : z_op) : typD  (typeof_z_op z) :=
+match z with
+| fZ_lt => Z.lt
+| fZ_le => Z.le
+| fZ_gt => Z.gt
+| fZ_ge => Z.ge
+| fZ_add => Z.add
+| fZ_sub => Z.sub
+| fZ_mul => Z.mul
+| fZ_div => Z.div
+| fZ_mod => Zmod
+| fZ_land => Z.land
+| fZ_max => Z.max
+| fZ_opp => Z.opp
+end.
+
+Inductive int_op :=
+| fint_add
+| fint_and
+| fint_lt
+| fint_ltu
+| fint_mul
+| fint_neg
+| fint_sub
+| fint_cmp
+| fint_cmpu
+| fint_repr
+| fint_signed
+| fint_unsigned
+| fint_max_unsigned
+| fint64_repr.
+
+Definition typeof_int_op i : typ :=
+match i with
+| fint_lt
+| fint_ltu => tyArr tyint (tyArr tyint tybool)
+| fint_mul
+| fint_sub
+| fint_add => tyArr tyint (tyArr tyint tyint)
+| fint_and => tyArr tyint (tyArr tyint tyint)
+| fint_neg => tyArr tyint tyint
+| fint_cmp
+| fint_cmpu => tyArr tycomparison (tyArr tyint (tyArr tyint tybool))
+| fint_repr => tyArr tyZ tyint
+| fint_signed
+| fint_unsigned  => tyArr tyint tyZ
+| fint_max_unsigned => tyZ
+| fint64_repr => tyArr tyZ tyint64
+end.
+
+Definition int_opD (i : int_op): typD  (typeof_int_op i) :=
+match i with
+| fint_add => Int.add
+| fint_and => Int.and
+| fint_lt => Int.lt
+| fint_ltu => Int.ltu
+| fint_mul => Int.mul
+| fint_neg => Int.neg
+| fint_sub => Int.sub
+| fint_cmp => Int.cmp
+| fint_cmpu => Int.cmpu
+| fint_repr => Int.repr
+| fint_signed => Int.signed
+| fint_unsigned => Int.unsigned
+| fint_max_unsigned => Int.max_unsigned
+| fint64_repr => Int64.repr
+end.
+
+Inductive values :=
+| fVint
+| fVfloat
+| fVlong
+| fVptr
+| fVundef
+| fVsingle.
+
+Definition typeof_value (v : values) :=
+match v with
+| fVint => tyArr tyint tyval
+| fVfloat => tyArr tyfloat tyval
+| fVlong => tyArr tyint64 tyval
+| fVptr => tyArr typositive (tyArr tyint tyval)
+| fVsingle => tyArr tyfloat32 tyval
+| fVundef => tyval
+end.
+
+Definition valueD  (v : values): typD  (typeof_value v) :=
+match v with
+| fVint => Vint
+| fVfloat => Vfloat
+| fVlong => Vlong
+| fVptr => Vptr
+| fVsingle => Vsingle
+| fVundef => Vundef
+end.
+
+Inductive eval :=
+| feval_cast : type -> type -> eval
+| fderef_noload : type -> eval
+| feval_field : type -> ident -> eval
+| feval_binop : binary_operation -> type -> type -> eval
+| feval_unop : unary_operation -> type -> eval
+| feval_id : ident -> eval.
+
+Definition typeof_eval (e : eval) :=
+ match e with
+| feval_cast _ _ => (tyArr tyval tyval)
+| fderef_noload _ => (tyArr tyval tyval)
+| feval_field _ _ => (tyArr tyval tyval)
+| feval_binop _ _ _=> (tyArr tyval (tyArr tyval tyval))
+| feval_unop _ _ => (tyArr tyval tyval)
+| feval_id _  => (tyArr tyenviron tyval)
+end.
+
+Definition evalD  (e : eval) : typD  (typeof_eval e) :=
+match e with
+| feval_id id => eval_id id
+| feval_cast t1 t2 => eval_cast t1 t2
+| fderef_noload t => deref_noload t
+| feval_field t id => eval_field t id
+| feval_binop op t1 t2 => eval_binop op t1 t2
+| feval_unop op t => eval_unop op t
+end.
+
+Inductive other :=
+| ftwo_power_nat
+| fforce_ptr
+| fand
+| falign
+| ftyped_true
+| feq : typ -> other
+| fnone : typ -> other
+| fsome : typ -> other
+| ftypeof
+| fTrue
+| fFalse
+.
+
+Definition typeof_other (o : other) :=
+match o with
+| ftwo_power_nat => tyArr tynat tyZ
+| fforce_ptr  => tyArr tyval tyval
+| fand => tyArr typrop (tyArr typrop typrop)
+| falign => tyArr tyZ (tyArr tyZ tyZ)
+| ftyped_true => tyArr tyc_type (tyArr tyval typrop)
+| feq t => tyArr t (tyArr t typrop)
+| fnone t => tyoption t
+| fsome t => tyArr t (tyoption t)
+| ftypeof => tyArr tyc_expr tyc_type
+| fTrue | fFalse => typrop
+end.
+
+Definition otherD  (o : other) : typD  (typeof_other o) :=
+match o with
+| ftwo_power_nat => (two_power_nat : typD (typeof_other ftwo_power_nat))
+| fforce_ptr => force_ptr
+| fand => and
+| falign => align
+| ftyped_true => typed_true
+| feq t => @eq (typD t)
+| fsome t => @Some (typD t)
+| fnone t => @None (typD t)
+| ftypeof => typeof
+| fTrue => True
+| fFalse => False
+end.
+
+Inductive data :=
+| fnil : typ -> data
+| fmap : typ -> typ -> data
+| ffold_right : typ -> typ -> data
+| ffold_left : typ -> typ -> data
+| fcons : typ -> data
+| fappend : typ -> data
+| fnth_error : typ -> nat -> data
+| freplace_nth : typ -> nat -> data
+| fpair : typ -> typ -> data
+| fget : typ -> positive -> data
+| fset : typ -> positive -> data
+| fleaf : typ -> data
+| fnode : typ -> data
+| fempty : typ -> data
+.
+
+Definition typeof_data (l : data) :=
+match l with
+| fmap a b => tyArr (tyArr a b) (tyArr (tylist a) (tylist b))
+| fnil a => (tylist a)
+| ffold_right a b => tyArr (tyArr b (tyArr a a)) (tyArr a (tyArr (tylist b) a))
+| ffold_left a b => tyArr (tyArr a (tyArr b a)) (tyArr (tylist b) (tyArr a a))
+| fcons a => tyArr a (tyArr (tylist a) (tylist a))
+| fappend a => tyArr (tylist a) (tyArr (tylist a) (tylist a))
+| fnth_error a _ => tyArr (tylist a) (tyoption a)
+| freplace_nth a _ => tyArr (tylist a) (tyArr a (tylist a))
+| fpair t1 t2 => tyArr t1 (tyArr t2 (typrod t1 t2))
+| fleaf t => typtree t
+| fnode t => tyArr (typtree t) (tyArr (tyoption t) (tyArr (typtree t) (typtree t)))
+| fset t _ => tyArr t (tyArr (typtree t) (typtree t))
+| fget t _ => (tyArr (typtree t) (tyoption t))
+| fempty t => typtree t
+end.
+
+Definition dataD (l : data) : typD (typeof_data l) :=
+match l with
+| fmap t1 t2 => @map (typD  t1) (typD  t2)
+| fnil t => (@nil (typD t) : typD (typeof_data (fnil t)))
+| ffold_right a b => @fold_right (typD a) (typD b)
+| ffold_left a b => @fold_left (typD a) (typD b)
+| fcons a => @cons (typD a)
+| fappend a => @app (typD a)
+| fnth_error a n => fun l => @nth_error (typD a) l n
+| freplace_nth a n => @canon.replace_nth (typD a) n
+| fpair a b => ((@pair (typD a) (typD b)) : typD (typeof_data (fpair a b)))
+| fleaf t => @PTree.Leaf (typD t)
+| fnode t => @PTree.Node (typD t)
+| fset t p => @PTree.set (typD t) p
+| fget t p => @PTree.get (typD t) p
+| fempty t => @PTree.empty (typD t)
+end.
+
+Inductive sep :=
+| flocal
+| fprop
+| fdata_at : type -> sep
+| ffield_at : type -> list gfield -> sep
+| fproj_val : type -> sep
+| fupd_val : type -> sep
+
+.
+
+Fixpoint reptyp (ty: type) : typ :=
+  match ty with
+  | Tvoid => tyunit
+  | Tint _ _ _ => tyval
+  | Tlong _ _ => tyval
+  | Tfloat _ _ => tyval
+  | Tpointer t1 a => tyval
+  | Tarray t1 sz a => tylist (reptyp t1)
+  | Tfunction t1 t2 _ => tyunit
+  | Tstruct id fld a => reptyp_structlist fld
+  | Tunion id fld a => reptyp_unionlist fld
+  | Tcomp_ptr id a => tyval
+  end
+with reptyp_structlist (fld: fieldlist) : typ :=
+  match fld with
+  | Fnil => tyunit
+  | Fcons id ty fld' =>
+    if is_Fnil fld'
+      then reptyp ty
+      else typrod (reptyp ty) (reptyp_structlist fld')
+  end
+with reptyp_unionlist (fld: fieldlist) : typ :=
+  match fld with
+  | Fnil => tyunit
+  | Fcons id ty fld' =>
+    if is_Fnil fld'
+      then reptyp ty
+      else tysum (reptyp ty) (reptyp_unionlist fld')
+  end.
+
+Definition typeof_sep (s : sep) : typ :=
+match s with
+| fdata_at t => tyArr tyshare (tyArr (reptyp t) (tyArr tyval tympred))
+| ffield_at t gfs => tyArr tyshare (tyArr (reptyp (nested_field_type2 t gfs)) (tyArr tyval tympred))
+
+| flocal => tyArr (tyArr tyenviron typrop) (tyArr tyenviron tympred)
+| fprop => tyArr typrop tympred
+| fproj_val t => tyArr (tylist tygfield)
+                 (tyArr (reptyp t) tyval)
+| fupd_val t => tyArr (tylist tygfield)
+                 (tyArr (reptyp t)
+                  (tyArr tyval (reptyp t)))
+end.
+
+Definition proj1T {A} {B} (x: A /\ B) :=
+  match x with
+  | conj y z => y
+  end.
+
+Definition proj2T {A} {B} (x: A /\ B) :=
+  match x with
+  | conj y z => z
+  end.
+
+Definition typD_reptyp_reptype: forall t, typD  (reptyp t) = reptype t.
+
+Definition reptyp_reptype ty (v: typD  (reptyp ty)): reptype ty :=
+  eq_rect_r (fun x => x) v (eq_sym (typD_reptyp_reptype ty)).
+
+Definition reptype_reptyp ty (v: reptype ty): typD  (reptyp ty) :=
+  eq_rect_r (fun x => x) v (typD_reptyp_reptype ty).
+
+Lemma reptyp_reptype_reptype_reptyp: forall t v, reptyp_reptype t (reptype_reptyp t v) = v.
+
+Definition sepD  (s : sep) : typD  (typeof_sep s).
+
+Inductive smx :=
+| fenviron : environ -> smx
+| fsemax
+| fstatement : statement -> smx
+| fretassert : ret_assert -> smx
+| ftycontext : PTree.t (type * bool) -> PTree.t type -> type -> PTree.t type ->  smx
+| fupdate_tycon
+
+| fnormal_ret_assert
+
+| fassertD
+| flocalD
+| fvaltree : PTree.t val -> smx
+| fdenote_tc_assert_b_norho
+| ftc_expr_b_norho
+| ftc_temp_id_b_norho : positive -> type ->  smx
+
+| flater
+| flater_lift
+| fnested_field_type2
+| fis_neutral_cast
+| fmsubst_efield_denote : list efield -> smx
+| flegal_nested_efield : list type -> smx
+| fmsubst_eval_LR
+| ftc_LR_b_norho
+| ftc_environ
+| ftc_efield_b_norho : list efield -> smx
+| fnested_efield
+| ftypeof_temp
+| ftc_val
+| flegal_nested_field
+| fstruct_field
+| funion_field
+| farray_subsc
+| fwritable_share
+| fTsh
+| fEws
+| ftype_is_by_value
+.
+
+Definition typeof_smx (t : smx) :=
+match t with
+| fsemax => tyArr tyOracleKind (tyArr tytycontext (tyArr (tyArr tyenviron tympred) (tyArr tystatement (tyArr tyret_assert typrop))))
+| fstatement s => tystatement
+| fretassert r => tyret_assert
+| ftycontext _ _ _ _ => tyArr (typtree tyfunspec) tytycontext
+
+| fnormal_ret_assert => tyArr (tyArr tyenviron tympred) (tyret_assert)
+| fenviron e => tyenviron
+| flocalD  => tyArr (typtree tyval)
+                    (tyArr (typtree (typrod tyc_type tyval)) (tylist (tyArr tyenviron typrop)))
+| fupdate_tycon => tyArr tytycontext (tyArr tystatement tytycontext)
+| fvaltree t => typtree tyval
+| fassertD => tyArr  (tylist typrop) (tyArr (tylist (tyArr tyenviron typrop)) (tyArr (tylist tympred) (tyArr tyenviron tympred)))
+| fdenote_tc_assert_b_norho => tyArr tytc_assert tybool
+| ftc_expr_b_norho => tyArr tytycontext (tyArr tyc_expr tybool)
+| ftc_temp_id_b_norho _ _  => tyArr tytycontext (tyArr tyc_expr tybool)
+
+| flater => tyArr tympred tympred
+| flater_lift => tyArr (tyArr tyenviron tympred) (tyArr tyenviron tympred)
+| fnested_field_type2 => tyArr tyc_type (tyArr (tylist tygfield) tyc_type)
+| fis_neutral_cast => tyArr tyc_type (tyArr tyc_type tybool)
+| fmsubst_efield_denote _ => tyArr (typtree tyval)
+                           (tyArr (typtree (typrod tyc_type tyval))
+                                 (tyoption (tylist tygfield)))
+| flegal_nested_efield _ => tyArr tytype_id_env
+                          (tyArr tyc_type
+                           (tyArr tyc_expr
+                            (tyArr (tylist tygfield)
+                              (tyArr tyllrr tybool))))
+| fmsubst_eval_LR => tyArr (typtree tyval)
+                     (tyArr (typtree (typrod tyc_type tyval))
+                      (tyArr tyc_expr
+                       (tyArr tyllrr (tyoption tyval))))
+| ftc_LR_b_norho => tyArr tytycontext (tyArr tyc_expr (tyArr tyllrr tybool))
+| ftc_environ => tyArr tytycontext (tyArr tyenviron typrop)
+| ftc_efield_b_norho efs => tyArr tytycontext tybool
+| fnested_efield => tyArr tyc_expr
+                    (tyArr (tylist tyefield)
+                     (tyArr (tylist tyc_type) tyc_expr))
+| ftypeof_temp => tyArr tytycontext (tyArr tyident (tyoption tyc_type))
+| ftc_val => tyArr tyc_type (tyArr tyval typrop)
+| flegal_nested_field => tyArr tyc_type (tyArr (tylist tygfield) typrop)
+| fstruct_field => tyArr tyident tygfield
+| funion_field => tyArr tyident tygfield
+| farray_subsc => tyArr tyZ tygfield
+| fwritable_share => tyArr tyshare typrop
+| fTsh => tyshare
+| fEws => tyshare
+| ftype_is_by_value => tyArr tyc_type tybool
+end.
+
+Definition smxD (t : smx) : typD (typeof_smx t) :=
+match t with
+| fsemax => (@semax : typD (typeof_smx fsemax))
+| fstatement s | fretassert s  => s
+| ftycontext t v r gt => fun gf => mk_tycontext t v r gt gf
+
+| fnormal_ret_assert => normal_ret_assert
+| fenviron e => (e : typD (typeof_smx (fenviron e)))
+| flocalD => localD
+| fupdate_tycon => update_tycon
+| fvaltree t => t
+| fassertD => assertD
+| fdenote_tc_assert_b_norho => (denote_tc_assert_b_norho : typD (typeof_smx fdenote_tc_assert_b_norho))
+| ftc_expr_b_norho => tc_expr_b_norho
+| ftc_temp_id_b_norho id ty  => tc_temp_id_b_norho id ty
+
+| flater => later
+| flater_lift => later
+| fnested_field_type2 => nested_field_type2
+| fis_neutral_cast => is_neutral_cast
+| fmsubst_efield_denote efs => (fun T1 T2 => msubst_efield_denote T1 T2 efs)
+| flegal_nested_efield tts => (fun e t_root e1 gfs => legal_nested_efield e t_root e1 gfs tts)
+| fmsubst_eval_LR => msubst_eval_LR
+| ftc_LR_b_norho => tc_LR_b_norho
+| ftc_environ => tc_environ
+| ftc_efield_b_norho efs => (fun tycon => tc_efield_b_norho tycon efs)
+| fnested_efield => nested_efield
+| ftypeof_temp => typeof_temp
+| ftc_val => tc_val
+| flegal_nested_field => legal_nested_field
+| fstruct_field => StructField
+| funion_field => UnionField
+| farray_subsc => ArraySubsc
+| fwritable_share => writable_share
+| fTsh => SeparationLogic.Tsh
+| fEws => assert_lemmas.Ews
+| ftype_is_by_value => client_lemmas.type_is_by_value
+end.
+
+Inductive func' :=
+| Const : const -> func'
+| Zop : z_op -> func'
+| Intop : int_op -> func'
+| Value : values -> func'
+| Eval_f : eval -> func'
+| Other : other -> func'
+| Sep : sep -> func'
+| Data : data -> func'
+| Smx : smx -> func'.
+
+Definition func := (SymEnv.func + @ilfunc typ + @bilfunc typ + func')%type.
+
+Definition typeof_func (f: func') : typ :=
+match f with
+| Const c => typeof_const c
+| Zop z => typeof_z_op z
+| Intop i => typeof_int_op i
+| Value v => typeof_value v
+| Eval_f e => typeof_eval e
+| Other o => typeof_other o
+| Sep s => typeof_sep s
+| Data l => typeof_data l
+| Smx t => typeof_smx t
+end.
+
+Definition funcD  (f : func') : typD  (typeof_func f) :=
+match f with
+| Const c => constD  c
+| Zop z => z_opD  z
+| Intop i => int_opD  i
+| Value v => valueD  v
+| Eval_f e => evalD  e
+| Other o => otherD  o
+| Sep s => sepD  s
+| Data l => dataD l
+| Smx t => smxD t
+end. *)
 Require Import mc_reify.types.
 (* mc_reify.types:
 Require Import MirrorCore.Lambda.ExprCore.
@@ -157,15 +694,10 @@ Instance Typ0_tyProp : Typ0 _ Prop :=
                      | _ => fun _ fa => fa
                    end
  |}. *)
-
 Require Import MirrorCharge.RTac.Tactics.
-
 Import ExprDenote.
-
 Require Import MirrorCharge.ModularFunc.ILogicFunc.
-
 Require Import MirrorCharge.ModularFunc.BILogicFunc.
-
 Require Import func_defs.
 (* func_defs:
 Require Import MirrorCharge.ModularFunc.ILogicFunc.
@@ -307,611 +839,930 @@ Definition goalD_aux tus tvs goal (us : HList.hlist typD tus) (vs : HList.hlist 
   end.
 
 End tbled. *)
-
 Require Import funcs.
+(* funcs:
+Require Import MirrorCore.syms.SymEnv.
+Require Import MirrorCore.Lambda.ExprCore.
+Require Import ExtLib.Core.RelDec.
+Require Import MirrorCore.TypesI.
+Require Import ExtLib.Tactics.
+Require Import ExtLib.Data.Fun.
 
+Require Import VST.floyd_funcs.
+Require Import mc_reify.types.
+Require Import mc_reify.bool_funcs.
+Require Import MirrorCharge.ModularFunc.ILogicFunc.
+Require Import MirrorCharge.ModularFunc.BILogicFunc.
+Require Import VST.floyd.local2ptree.
+Require Import mc_reify.local2list.
+
+Inductive const :=
+| fN : nat -> const
+| fZ : Z -> const
+| fint : int -> const
+| fint64 : int64 -> const
+| fPos : positive -> const
+| fident : ident -> const
+| fCtype : type -> const
+| fCexpr : expr -> const
+| fComparison : comparison -> const
+| fbool : bool -> const
+| ffloat : float -> const
+| ffloat32 : float32 -> const
+| fenv : type_id_env -> const
+| fllrr : LLRR -> const
+.
+
+Definition typeof_const (c : const) : typ :=
+ match c with
+| fN _ => tynat
+| fZ _ => tyZ
+| fPos _ => typositive
+| fident _ => tyident
+| fCtype _ => tyc_type
+| fCexpr _ => tyc_expr
+| fComparison _ => tycomparison
+| fbool _ => tybool
+| fint _ => tyint
+| fint64 _ => tyint64
+| ffloat _ => tyfloat
+| ffloat32 _ => tyfloat32
+| fenv _ => tytype_id_env
+| fllrr _ => tyllrr
+end.
+
+Definition constD (c : const)
+: typD (typeof_const c) :=
+match c with
+| fN c | fZ c | fPos c | fident c | fCtype c | fCexpr c | fComparison c | fbool c | fint c
+| fint64 c | ffloat c | ffloat32 c | fenv c | fllrr c
+                                          => c
+end.
+
+Inductive z_op :=
+| fZ_lt
+| fZ_le
+| fZ_gt
+| fZ_ge
+| fZ_add
+| fZ_sub
+| fZ_mul
+| fZ_div
+| fZ_mod
+| fZ_land
+| fZ_max
+| fZ_opp.
+
+Definition typeof_z_op z : typ :=
+match z with
+| fZ_lt
+| fZ_le
+| fZ_gt
+| fZ_ge => (tyArr tyZ (tyArr tyZ typrop))
+| fZ_add
+| fZ_sub
+| fZ_mul
+| fZ_div
+| fZ_mod
+| fZ_land
+| fZ_max => (tyArr tyZ (tyArr tyZ tyZ))
+| fZ_opp => (tyArr tyZ tyZ)
+end.
+
+Definition z_opD (z : z_op) : typD  (typeof_z_op z) :=
+match z with
+| fZ_lt => Z.lt
+| fZ_le => Z.le
+| fZ_gt => Z.gt
+| fZ_ge => Z.ge
+| fZ_add => Z.add
+| fZ_sub => Z.sub
+| fZ_mul => Z.mul
+| fZ_div => Z.div
+| fZ_mod => Zmod
+| fZ_land => Z.land
+| fZ_max => Z.max
+| fZ_opp => Z.opp
+end.
+
+Inductive int_op :=
+| fint_add
+| fint_and
+| fint_lt
+| fint_ltu
+| fint_mul
+| fint_neg
+| fint_sub
+| fint_cmp
+| fint_cmpu
+| fint_repr
+| fint_signed
+| fint_unsigned
+| fint_max_unsigned
+| fint64_repr.
+
+Definition typeof_int_op i : typ :=
+match i with
+| fint_lt
+| fint_ltu => tyArr tyint (tyArr tyint tybool)
+| fint_mul
+| fint_sub
+| fint_add => tyArr tyint (tyArr tyint tyint)
+| fint_and => tyArr tyint (tyArr tyint tyint)
+| fint_neg => tyArr tyint tyint
+| fint_cmp
+| fint_cmpu => tyArr tycomparison (tyArr tyint (tyArr tyint tybool))
+| fint_repr => tyArr tyZ tyint
+| fint_signed
+| fint_unsigned  => tyArr tyint tyZ
+| fint_max_unsigned => tyZ
+| fint64_repr => tyArr tyZ tyint64
+end.
+
+Definition int_opD (i : int_op): typD  (typeof_int_op i) :=
+match i with
+| fint_add => Int.add
+| fint_and => Int.and
+| fint_lt => Int.lt
+| fint_ltu => Int.ltu
+| fint_mul => Int.mul
+| fint_neg => Int.neg
+| fint_sub => Int.sub
+| fint_cmp => Int.cmp
+| fint_cmpu => Int.cmpu
+| fint_repr => Int.repr
+| fint_signed => Int.signed
+| fint_unsigned => Int.unsigned
+| fint_max_unsigned => Int.max_unsigned
+| fint64_repr => Int64.repr
+end.
+
+Inductive values :=
+| fVint
+| fVfloat
+| fVlong
+| fVptr
+| fVundef
+| fVsingle.
+
+Definition typeof_value (v : values) :=
+match v with
+| fVint => tyArr tyint tyval
+| fVfloat => tyArr tyfloat tyval
+| fVlong => tyArr tyint64 tyval
+| fVptr => tyArr typositive (tyArr tyint tyval)
+| fVsingle => tyArr tyfloat32 tyval
+| fVundef => tyval
+end.
+
+Definition valueD  (v : values): typD  (typeof_value v) :=
+match v with
+| fVint => Vint
+| fVfloat => Vfloat
+| fVlong => Vlong
+| fVptr => Vptr
+| fVsingle => Vsingle
+| fVundef => Vundef
+end.
+
+Inductive eval :=
+| feval_cast : type -> type -> eval
+| fderef_noload : type -> eval
+| feval_field : type -> ident -> eval
+| feval_binop : binary_operation -> type -> type -> eval
+| feval_unop : unary_operation -> type -> eval
+| feval_id : ident -> eval.
+
+Definition typeof_eval (e : eval) :=
+ match e with
+| feval_cast _ _ => (tyArr tyval tyval)
+| fderef_noload _ => (tyArr tyval tyval)
+| feval_field _ _ => (tyArr tyval tyval)
+| feval_binop _ _ _=> (tyArr tyval (tyArr tyval tyval))
+| feval_unop _ _ => (tyArr tyval tyval)
+| feval_id _  => (tyArr tyenviron tyval)
+end.
+
+Definition evalD  (e : eval) : typD  (typeof_eval e) :=
+match e with
+| feval_id id => eval_id id
+| feval_cast t1 t2 => eval_cast t1 t2
+| fderef_noload t => deref_noload t
+| feval_field t id => eval_field t id
+| feval_binop op t1 t2 => eval_binop op t1 t2
+| feval_unop op t => eval_unop op t
+end.
+
+Inductive other :=
+| ftwo_power_nat
+| fforce_ptr
+| fand
+| falign
+| ftyped_true
+| feq : typ -> other
+| fnone : typ -> other
+| fsome : typ -> other
+| ftypeof
+| fTrue
+| fFalse
+.
+
+Definition typeof_other (o : other) :=
+match o with
+| ftwo_power_nat => tyArr tynat tyZ
+| fforce_ptr  => tyArr tyval tyval
+| fand => tyArr typrop (tyArr typrop typrop)
+| falign => tyArr tyZ (tyArr tyZ tyZ)
+| ftyped_true => tyArr tyc_type (tyArr tyval typrop)
+| feq t => tyArr t (tyArr t typrop)
+| fnone t => tyoption t
+| fsome t => tyArr t (tyoption t)
+| ftypeof => tyArr tyc_expr tyc_type
+| fTrue | fFalse => typrop
+end.
+
+Definition otherD  (o : other) : typD  (typeof_other o) :=
+match o with
+| ftwo_power_nat => (two_power_nat : typD (typeof_other ftwo_power_nat))
+| fforce_ptr => force_ptr
+| fand => and
+| falign => align
+| ftyped_true => typed_true
+| feq t => @eq (typD t)
+| fsome t => @Some (typD t)
+| fnone t => @None (typD t)
+| ftypeof => typeof
+| fTrue => True
+| fFalse => False
+end.
+
+Inductive data :=
+| fnil : typ -> data
+| fmap : typ -> typ -> data
+| ffold_right : typ -> typ -> data
+| ffold_left : typ -> typ -> data
+| fcons : typ -> data
+| fappend : typ -> data
+| fnth_error : typ -> nat -> data
+| freplace_nth : typ -> nat -> data
+| fpair : typ -> typ -> data
+| fget : typ -> positive -> data
+| fset : typ -> positive -> data
+| fleaf : typ -> data
+| fnode : typ -> data
+| fempty : typ -> data
+.
+
+Definition typeof_data (l : data) :=
+match l with
+| fmap a b => tyArr (tyArr a b) (tyArr (tylist a) (tylist b))
+| fnil a => (tylist a)
+| ffold_right a b => tyArr (tyArr b (tyArr a a)) (tyArr a (tyArr (tylist b) a))
+| ffold_left a b => tyArr (tyArr a (tyArr b a)) (tyArr (tylist b) (tyArr a a))
+| fcons a => tyArr a (tyArr (tylist a) (tylist a))
+| fappend a => tyArr (tylist a) (tyArr (tylist a) (tylist a))
+| fnth_error a _ => tyArr (tylist a) (tyoption a)
+| freplace_nth a _ => tyArr (tylist a) (tyArr a (tylist a))
+| fpair t1 t2 => tyArr t1 (tyArr t2 (typrod t1 t2))
+| fleaf t => typtree t
+| fnode t => tyArr (typtree t) (tyArr (tyoption t) (tyArr (typtree t) (typtree t)))
+| fset t _ => tyArr t (tyArr (typtree t) (typtree t))
+| fget t _ => (tyArr (typtree t) (tyoption t))
+| fempty t => typtree t
+end.
+
+Definition dataD (l : data) : typD (typeof_data l) :=
+match l with
+| fmap t1 t2 => @map (typD  t1) (typD  t2)
+| fnil t => (@nil (typD t) : typD (typeof_data (fnil t)))
+| ffold_right a b => @fold_right (typD a) (typD b)
+| ffold_left a b => @fold_left (typD a) (typD b)
+| fcons a => @cons (typD a)
+| fappend a => @app (typD a)
+| fnth_error a n => fun l => @nth_error (typD a) l n
+| freplace_nth a n => @canon.replace_nth (typD a) n
+| fpair a b => ((@pair (typD a) (typD b)) : typD (typeof_data (fpair a b)))
+| fleaf t => @PTree.Leaf (typD t)
+| fnode t => @PTree.Node (typD t)
+| fset t p => @PTree.set (typD t) p
+| fget t p => @PTree.get (typD t) p
+| fempty t => @PTree.empty (typD t)
+end.
+
+Inductive sep :=
+| flocal
+| fprop
+| fdata_at : type -> sep
+| ffield_at : type -> list gfield -> sep
+| fproj_val : type -> sep
+| fupd_val : type -> sep
+
+.
+
+Fixpoint reptyp (ty: type) : typ :=
+  match ty with
+  | Tvoid => tyunit
+  | Tint _ _ _ => tyval
+  | Tlong _ _ => tyval
+  | Tfloat _ _ => tyval
+  | Tpointer t1 a => tyval
+  | Tarray t1 sz a => tylist (reptyp t1)
+  | Tfunction t1 t2 _ => tyunit
+  | Tstruct id fld a => reptyp_structlist fld
+  | Tunion id fld a => reptyp_unionlist fld
+  | Tcomp_ptr id a => tyval
+  end
+with reptyp_structlist (fld: fieldlist) : typ :=
+  match fld with
+  | Fnil => tyunit
+  | Fcons id ty fld' =>
+    if is_Fnil fld'
+      then reptyp ty
+      else typrod (reptyp ty) (reptyp_structlist fld')
+  end
+with reptyp_unionlist (fld: fieldlist) : typ :=
+  match fld with
+  | Fnil => tyunit
+  | Fcons id ty fld' =>
+    if is_Fnil fld'
+      then reptyp ty
+      else tysum (reptyp ty) (reptyp_unionlist fld')
+  end.
+
+Definition typeof_sep (s : sep) : typ :=
+match s with
+| fdata_at t => tyArr tyshare (tyArr (reptyp t) (tyArr tyval tympred))
+| ffield_at t gfs => tyArr tyshare (tyArr (reptyp (nested_field_type2 t gfs)) (tyArr tyval tympred))
+
+| flocal => tyArr (tyArr tyenviron typrop) (tyArr tyenviron tympred)
+| fprop => tyArr typrop tympred
+| fproj_val t => tyArr (tylist tygfield)
+                 (tyArr (reptyp t) tyval)
+| fupd_val t => tyArr (tylist tygfield)
+                 (tyArr (reptyp t)
+                  (tyArr tyval (reptyp t)))
+end.
+
+Definition proj1T {A} {B} (x: A /\ B) :=
+  match x with
+  | conj y z => y
+  end.
+
+Definition proj2T {A} {B} (x: A /\ B) :=
+  match x with
+  | conj y z => z
+  end.
+
+Definition typD_reptyp_reptype: forall t, typD  (reptyp t) = reptype t.
+
+Definition reptyp_reptype ty (v: typD  (reptyp ty)): reptype ty :=
+  eq_rect_r (fun x => x) v (eq_sym (typD_reptyp_reptype ty)).
+
+Definition reptype_reptyp ty (v: reptype ty): typD  (reptyp ty) :=
+  eq_rect_r (fun x => x) v (typD_reptyp_reptype ty).
+
+Lemma reptyp_reptype_reptype_reptyp: forall t v, reptyp_reptype t (reptype_reptyp t v) = v.
+
+Definition sepD  (s : sep) : typD  (typeof_sep s).
+
+Inductive smx :=
+| fenviron : environ -> smx
+| fsemax
+| fstatement : statement -> smx
+| fretassert : ret_assert -> smx
+| ftycontext : PTree.t (type * bool) -> PTree.t type -> type -> PTree.t type ->  smx
+| fupdate_tycon
+
+| fnormal_ret_assert
+
+| fassertD
+| flocalD
+| fvaltree : PTree.t val -> smx
+| fdenote_tc_assert_b_norho
+| ftc_expr_b_norho
+| ftc_temp_id_b_norho : positive -> type ->  smx
+
+| flater
+| flater_lift
+| fnested_field_type2
+| fis_neutral_cast
+| fmsubst_efield_denote : list efield -> smx
+| flegal_nested_efield : list type -> smx
+| fmsubst_eval_LR
+| ftc_LR_b_norho
+| ftc_environ
+| ftc_efield_b_norho : list efield -> smx
+| fnested_efield
+| ftypeof_temp
+| ftc_val
+| flegal_nested_field
+| fstruct_field
+| funion_field
+| farray_subsc
+| fwritable_share
+| fTsh
+| fEws
+| ftype_is_by_value
+.
+
+Definition typeof_smx (t : smx) :=
+match t with
+| fsemax => tyArr tyOracleKind (tyArr tytycontext (tyArr (tyArr tyenviron tympred) (tyArr tystatement (tyArr tyret_assert typrop))))
+| fstatement s => tystatement
+| fretassert r => tyret_assert
+| ftycontext _ _ _ _ => tyArr (typtree tyfunspec) tytycontext
+
+| fnormal_ret_assert => tyArr (tyArr tyenviron tympred) (tyret_assert)
+| fenviron e => tyenviron
+| flocalD  => tyArr (typtree tyval)
+                    (tyArr (typtree (typrod tyc_type tyval)) (tylist (tyArr tyenviron typrop)))
+| fupdate_tycon => tyArr tytycontext (tyArr tystatement tytycontext)
+| fvaltree t => typtree tyval
+| fassertD => tyArr  (tylist typrop) (tyArr (tylist (tyArr tyenviron typrop)) (tyArr (tylist tympred) (tyArr tyenviron tympred)))
+| fdenote_tc_assert_b_norho => tyArr tytc_assert tybool
+| ftc_expr_b_norho => tyArr tytycontext (tyArr tyc_expr tybool)
+| ftc_temp_id_b_norho _ _  => tyArr tytycontext (tyArr tyc_expr tybool)
+
+| flater => tyArr tympred tympred
+| flater_lift => tyArr (tyArr tyenviron tympred) (tyArr tyenviron tympred)
+| fnested_field_type2 => tyArr tyc_type (tyArr (tylist tygfield) tyc_type)
+| fis_neutral_cast => tyArr tyc_type (tyArr tyc_type tybool)
+| fmsubst_efield_denote _ => tyArr (typtree tyval)
+                           (tyArr (typtree (typrod tyc_type tyval))
+                                 (tyoption (tylist tygfield)))
+| flegal_nested_efield _ => tyArr tytype_id_env
+                          (tyArr tyc_type
+                           (tyArr tyc_expr
+                            (tyArr (tylist tygfield)
+                              (tyArr tyllrr tybool))))
+| fmsubst_eval_LR => tyArr (typtree tyval)
+                     (tyArr (typtree (typrod tyc_type tyval))
+                      (tyArr tyc_expr
+                       (tyArr tyllrr (tyoption tyval))))
+| ftc_LR_b_norho => tyArr tytycontext (tyArr tyc_expr (tyArr tyllrr tybool))
+| ftc_environ => tyArr tytycontext (tyArr tyenviron typrop)
+| ftc_efield_b_norho efs => tyArr tytycontext tybool
+| fnested_efield => tyArr tyc_expr
+                    (tyArr (tylist tyefield)
+                     (tyArr (tylist tyc_type) tyc_expr))
+| ftypeof_temp => tyArr tytycontext (tyArr tyident (tyoption tyc_type))
+| ftc_val => tyArr tyc_type (tyArr tyval typrop)
+| flegal_nested_field => tyArr tyc_type (tyArr (tylist tygfield) typrop)
+| fstruct_field => tyArr tyident tygfield
+| funion_field => tyArr tyident tygfield
+| farray_subsc => tyArr tyZ tygfield
+| fwritable_share => tyArr tyshare typrop
+| fTsh => tyshare
+| fEws => tyshare
+| ftype_is_by_value => tyArr tyc_type tybool
+end.
+
+Definition smxD (t : smx) : typD (typeof_smx t) :=
+match t with
+| fsemax => (@semax : typD (typeof_smx fsemax))
+| fstatement s | fretassert s  => s
+| ftycontext t v r gt => fun gf => mk_tycontext t v r gt gf
+
+| fnormal_ret_assert => normal_ret_assert
+| fenviron e => (e : typD (typeof_smx (fenviron e)))
+| flocalD => localD
+| fupdate_tycon => update_tycon
+| fvaltree t => t
+| fassertD => assertD
+| fdenote_tc_assert_b_norho => (denote_tc_assert_b_norho : typD (typeof_smx fdenote_tc_assert_b_norho))
+| ftc_expr_b_norho => tc_expr_b_norho
+| ftc_temp_id_b_norho id ty  => tc_temp_id_b_norho id ty
+
+| flater => later
+| flater_lift => later
+| fnested_field_type2 => nested_field_type2
+| fis_neutral_cast => is_neutral_cast
+| fmsubst_efield_denote efs => (fun T1 T2 => msubst_efield_denote T1 T2 efs)
+| flegal_nested_efield tts => (fun e t_root e1 gfs => legal_nested_efield e t_root e1 gfs tts)
+| fmsubst_eval_LR => msubst_eval_LR
+| ftc_LR_b_norho => tc_LR_b_norho
+| ftc_environ => tc_environ
+| ftc_efield_b_norho efs => (fun tycon => tc_efield_b_norho tycon efs)
+| fnested_efield => nested_efield
+| ftypeof_temp => typeof_temp
+| ftc_val => tc_val
+| flegal_nested_field => legal_nested_field
+| fstruct_field => StructField
+| funion_field => UnionField
+| farray_subsc => ArraySubsc
+| fwritable_share => writable_share
+| fTsh => SeparationLogic.Tsh
+| fEws => assert_lemmas.Ews
+| ftype_is_by_value => client_lemmas.type_is_by_value
+end.
+
+Inductive func' :=
+| Const : const -> func'
+| Zop : z_op -> func'
+| Intop : int_op -> func'
+| Value : values -> func'
+| Eval_f : eval -> func'
+| Other : other -> func'
+| Sep : sep -> func'
+| Data : data -> func'
+| Smx : smx -> func'.
+
+Definition func := (SymEnv.func + @ilfunc typ + @bilfunc typ + func')%type.
+
+Definition typeof_func (f: func') : typ :=
+match f with
+| Const c => typeof_const c
+| Zop z => typeof_z_op z
+| Intop i => typeof_int_op i
+| Value v => typeof_value v
+| Eval_f e => typeof_eval e
+| Other o => typeof_other o
+| Sep s => typeof_sep s
+| Data l => typeof_data l
+| Smx t => typeof_smx t
+end.
+
+Definition funcD  (f : func') : typD  (typeof_func f) :=
+match f with
+| Const c => constD  c
+| Zop z => z_opD  z
+| Intop i => int_opD  i
+| Value v => valueD  v
+| Eval_f e => evalD  e
+| Other o => otherD  o
+| Sep s => sepD  s
+| Data l => dataD l
+| Smx t => smxD t
+end. *)
 Require Import types.
+(* types:
+Require Import MirrorCore.Lambda.ExprCore.
 
+Require Import VST.floyd_funcs.
 
+Require Import ExtLib.Core.RelDec.
+Require Import MirrorCore.TypesI.
+Require Import ExtLib.Tactics.
+Require Import ExtLib.Data.Fun.
+
+Require Import Coq.FSets.FMapPositive.
+
+Inductive typ :=
+| tyArr : typ -> typ -> typ
+| tytycontext
+| tyc_expr
+| tyc_type
+| tyenviron
+| tyval
+| tyshare
+| tyident
+| tylist : typ -> typ
+| tyint
+| tyZ
+| tynat
+| typositive
+| tybool
+| tycomparison
+| tytc_assert
+| tyint64
+| tyfloat
+| tyfloat32
+| tyattr
+| tysignedness
+| tyintsize
+| tyfloatsize
+| tytypelist
+| tyfieldlist
+| tybinary_operation
+| tyunary_operation
+| tyN
+| tyoption : typ -> typ
+| typrop
+| tympred
+| tysum : typ -> typ -> typ
+| typrod : typ -> typ -> typ
+| tyunit
+
+| tyOracleKind
+| tystatement
+| tyret_assert
+| tyexitkind
+| typtree : typ -> typ
+| tygfield
+| tyfunspec
+| tyefield
+| tytype_id_env
+| tyllrr
+
+.
+
+Fixpoint typD (t : typ) : Type :=
+    match t with
+        | tyArr a b => typD a  -> typD b
+        | tytycontext => tycontext
+        | tyc_expr => expr
+        | tyc_type => type
+        | tyenviron => environ
+        | tyval => val
+        | tyshare => share
+        | tyident => ident
+        | tylist t => list (typD t )
+        | tyint => int
+        | tyZ => Z
+        | tynat => nat
+        | typositive => positive
+        | tybool => bool
+        | tycomparison => comparison
+        | tytc_assert => tc_assert
+        | tyint64 => int64
+        | tyfloat => float
+        | tyfloat32 => float32
+        | tyattr => attr
+        | tysignedness => signedness
+        | tyintsize => intsize
+        | tyfloatsize  => floatsize
+        | tytypelist => typelist
+        | tyfieldlist => fieldlist
+        | tybinary_operation => Cop.binary_operation
+        | tyunary_operation => Cop.unary_operation
+        | tyN => N
+        | tyoption t => option (typD t )
+        | typrop => Prop
+        | tympred => mpred
+        | tysum t1 t2 => sum (typD  t1 ) (typD  t2 )
+        | typrod t1 t2 => prod (typD  t1 ) (typD  t2 )
+        | tyunit => unit
+        
+        | tyOracleKind => OracleKind
+        | tystatement => statement
+        | tyret_assert => ret_assert
+
+        | tyexitkind => exitkind
+        | typtree t => PTree.t (typD t)
+        | tygfield => gfield
+        | tyfunspec => funspec
+        | tyefield => efield
+        | tytype_id_env => type_id_env
+        | tyllrr => LLRR
+    end.
+
+Definition typ_eq_dec : forall a b : typ, {a = b} + {a <> b}.
+
+Instance Typ0_tyProp : Typ0 _ Prop :=
+{| typ0 := typrop
+ ; typ0_cast :=  eq_refl
+ ; typ0_match := fun T  t =>
+                   match t as t
+                         return T Prop -> T (TypesI.typD  t) -> T (TypesI.typD  t)
+                   with
+                     | typrop => fun tr _ => tr
+                     | _ => fun _ fa => fa
+                   end
+ |}. *)
 
 Ltac cbv_denote g' e :=
-
 eval cbv [
-
               g'
-
           reflect_prop reflect Expr_expr_fs RType_typ Typ2_tyArr RSym_sym
-
                       RSym_Func'
 
-
-
           ExprI.exprD' funcAs  typeof_sym typeof_func
-
           typeof_func_opt
-
           type_cast 
-
           exprD'_simul func_simul
-
           ExprD.Expr_expr
-
           ExprDsimul.ExprDenote.exprD'
-
           
-
           SymSum.RSym_sum Rcast Relim Rsym eq_sym symD 
-
           Rcast_val eq_rect_r eq_rect Datatypes.id
-
-
 
           Monad.bind Monad.ret
 
-
-
           OptionMonad.Monad_option
-
-
 
           HList.hlist_hd HList.hlist_tl
 
-
-
           TypesI.typD
-
           typ2_match typ2 typ2_cast
-
           typ0_match typ0 typ0_cast 
-
           
-
           MirrorCore.VariablesI.Var ExprVariables.ExprVar_expr
-
           MirrorCore.VariablesI.UVar
-
           MirrorCore.Lambda.ExprVariables.ExprUVar_expr
-
           ExprI.exprT_Inj ExprI.exprT_UseV ExprI.exprT_UseU
-
           exprT_App ExprI.exprT OpenT
-
           nth_error_get_hlist_nth
-
-
 
           exprT_GetVAs exprT_GetUAs
 
-
-
           ILogicFunc.mkEntails ILogicFunc.mkTrue ILogicFunc.mkFalse
-
           ILogicFunc.mkAnd ILogicFunc.mkOr ILogicFunc.mkImpl
-
           ILogicFunc.mkExists ILogicFunc.mkForall
 
-
-
           ILogicFunc.fEntails ILogicFunc.fTrue ILogicFunc.fFalse ILogicFunc.fAnd
-
           ILogicFunc.fOr ILogicFunc.fImpl ILogicFunc.fExists ILogicFunc.fForall
-
           ILogicFuncSumL ILogicFuncSumR ILogicFuncExpr
-
           ILogicFunc.RSym_ilfunc
-
           MirrorCharge.ModularFunc.ILogicFunc.ILogicFuncInst
-
-
 
           ILogicFunc.funcD ILogicFunc.typ2_cast_quant ILogicFunc.typ2_cast_bin
 
-
-
           BILogicFunc.mkEmp BILogicFunc.mkStar BILogicFunc.mkWand
-
-
 
           BILogicFunc.fEmp BILogicFunc.fStar BILogicFunc.fWand
 
-
-
           BILogicFuncSumL BILogicFuncSumR BILogicFuncExpr
-
           BILogicFunc.RSym_bilfunc BILogicFunc.BILogicFuncInst
-
-
 
           BILogicFunc.funcD BILogicFunc.typ2_cast_bin
 
-
-
           BILogicFunc.typeof_bilfunc
-
-
 
           LaterFunc.mkLater
 
-
-
           LaterFunc.fLater
 
-
-
           LaterFunc.LaterFuncSumL LaterFunc.LaterFuncSumR LaterFunc.LaterFuncExpr
-
           LaterFunc.RSym_later_func LaterFunc.LaterFuncInst
-
-
 
           LaterFunc.funcD LaterFunc.typ2_cast'
 
-
-
           LaterFunc.typeof_later_func
-
-
 
           EmbedFunc.mkEmbed
 
-
-
           EmbedFunc.fEmbed
 
-
-
           EmbedFunc.EmbedFuncSumL EmbedFunc.EmbedFuncSumR EmbedFunc.EmbedFuncExpr
-
           EmbedFunc.RSym_embed_func EmbedFunc.EmbedFuncInst
-
-
 
           EmbedFunc.funcD EmbedFunc.typ2_cast_bin
 
-
-
           EmbedFunc.typeof_embed_func
-
-
 
           BaseFunc.BaseFuncSumL BaseFunc.BaseFuncSumR BaseFunc.BaseFuncExpr
 
-
-
           BaseFunc.BaseFuncInst
-
           BaseFunc.mkNat BaseFunc.mkString BaseFunc.mkBool
-
           BaseFunc.mkEq BaseFunc.mkPair
 
-
-
           BaseFunc.fNat BaseFunc.fString BaseFunc.fBool
-
           BaseFunc.fEq BaseFunc.fPair
-
-
 
           BaseFunc.RSym_BaseFunc
 
-
-
           BaseFunc.typeof_base_func BaseFunc.base_func_eq BaseFunc.base_func_symD
-
           BaseFunc.RelDec_base_func
-
-
 
           ListFunc.ListFuncSumL ListFunc.ListFuncSumR ListFunc.ListFuncExpr
 
-
-
           ListFunc.ListFuncInst
-
           ListFunc.mkNil ListFunc.mkCons ListFunc.mkLength
-
           ListFunc.mkZip ListFunc.mkMap ListFunc.mkFold
 
-
-
           ListFunc.fNil ListFunc.fCons ListFunc.fLength
-
           ListFunc.fZip ListFunc.fMap ListFunc.fFold
 
-
-
           ListFunc.typeof_list_func ListFunc.list_func_eq ListFunc.list_func_symD
-
           ListFunc.RelDec_list_func
 
-
-
 		  OpenFunc.mkConst OpenFunc.mkAp OpenFunc.mkVar OpenFunc.mkNull OpenFunc.mkStackGet
-
 		  OpenFunc.mkStackSet OpenFunc.mkApplySubst OpenFunc.mkSingleSubst OpenFunc.mkSubst
-
 		  OpenFunc.mkTruncSubst
-
 		
-
 		  OpenFunc.fConst OpenFunc.fAp OpenFunc.fVar OpenFunc.fNull OpenFunc.fStackGet
-
 		  OpenFunc.fApplySubst OpenFunc.fSingleSubst OpenFunc.fSubst OpenFunc.fTruncSubst
-
 		
-
 		  OpenFunc.OpenFuncSumL OpenFunc.OpenFuncSumR OpenFunc.OpenFuncExpr
-
 		  OpenFunc.OpenFuncInst
-
 		
-
 		  OpenFunc.typeof_open_func OpenFunc.RSym_OpenFunc
-
 		  OpenFunc.typ2_cast_bin OpenFunc.typ3_cast_bin
-
 		  OpenFunc.RelDec_open_func
-
 		
-
 		  OpenFunc.RSym_OpenFunc_obligation_1
 
-
-
           BaseType.tyPair BaseType.tyNat BaseType.tyString BaseType.tyBool
-
           BaseType.btPair BaseType.btNat BaseType.btBool BaseType.btString
-
-
 
           ListType.tyList ListType.btList
 
-
-
           SubstType.tyVar SubstType.tyVal SubstType.tySubst
-
           SubstType.stSubst
 
-
-
 constD
-
 z_opD
-
 int_opD
-
 valueD
-
 evalD
-
 otherD
-
 sepD
-
 dataD
-
 typD
-
 funcs.funcD
-
 smxD
 
-
-
 typeof_func
-
 typeof_const
-
 typeof_z_op
-
 typeof_int_op
-
 typeof_value
-
 typeof_eval
-
 typeof_other
-
 typeof_sep
-
 typeof_data
-
 typeof_smx
-
-
 
           goalD propD exprD'_typ0 exprD split_env
 
-
-
           amap_substD
-
           substD
-
           FMapSubst.SUBST.raw_substD
-
           UVarMap.MAP.fold
-
           FMapPositive.PositiveMap.fold
-
           FMapPositive.PositiveMap.xfoldi
-
           FMapPositive.append
-
           UVarMap.MAP.from_key
-
           pred
-
           plus
-
           Pos.to_nat
-
           Pos.iter_op
-
           app
-
           HList.hlist_app
-
           Quant._foralls
-
           Quant._exists
-
           goalD_Prop
 
-
-
 typ_eq_dec typ_rec typ_rect sumbool_rec sumbool_rect eq_rec eq_rect eq_rec_r eq_rect_r False_ind eq_ind expr.eqb_type expr.eqb_intsize expr.eqb_signedness expr.eqb_attr
-
 expr.eqb_option expr.eqb_floatsize Bool.eqb BinNat.N.eqb expr.eqb_calling_convention expr.eqb_ident
-
 f_equal False_rect False_rec
 
-
-
 SymEnv.funcD
-
 SymEnv.fdenote
-
 SymEnv.RSym_func
-
 SymEnv.func_typeof_sym
-
 SymEnv.ftype
-
 FMapPositive.PositiveMap.find
-
 elem_ctor
-
 Tactics.elem_ctor
 
-
-
 Ext
-
 func_defs.reflect
 
-
-
 exprD_Prop
-
 Tactics.exprD_Prop
-
-
 
 goalD_Prop
-
 Tactics.exprD_Prop
 
-
-
 goalD_aux
-
 Tactics.goalD_aux
-
 Typ0_tyProp
 
-
-
 func_defs.RSym_ilfunc
-
 func_defs.ilops
-
 ILogic.lforall
-
 ILogic.ILogicOps_Prop
-
 ILogic.lentails
-
 ILogicOps_mpred
-
-
 
 ILogic.land
 
-
-
 reptyp_reptype
-
 reptype_reptyp
-
 typD_reptyp_reptype
-
 data_at_lemmas.type_mut
-
 proj1T
-
 proj2T
-
 data_at_lemmas.is_Fnil
-
 ModularFunc.ILogicFunc.typeof_func
-
 reptyp
-
 reptyp_structlist
-
 reptyp_unionlist
 
-
-
  exportclight.Clightdefs.tvoid
-
  exportclight.Clightdefs.tschar
-
  exportclight.Clightdefs.tuchar
-
  exportclight.Clightdefs.tshort
-
  exportclight.Clightdefs.tushort
-
  exportclight.Clightdefs.tint
-
  exportclight.Clightdefs.tuint
-
  exportclight.Clightdefs.tbool
-
  exportclight.Clightdefs.tlong
-
  exportclight.Clightdefs.tulong
-
  exportclight.Clightdefs.tfloat
-
  exportclight.Clightdefs.tdouble
-
  exportclight.Clightdefs.tptr
-
  exportclight.Clightdefs.tarray
 
-
-
 eq_ind_r
-
 eq_ind
-
           ] in e.
 
-
-
 Ltac cbv_denote_goal :=
-
 match goal with
-
 [ |- ?G] => let x := cbv_denote hd G in change x
-
 end.
 
-
-
 Require Import VST.floyd.proofauto.
-(* VST.floyd.proofauto:
-From compcert Require Export common.AST cfrontend.Ctypes cfrontend.Clight.
-Export Cop.
-Require Export VST.floyd.base2.
-Require Export VST.floyd.functional_base.
-Require Export VST.floyd.client_lemmas.
-Require Export VST.floyd.go_lower.
-Require Export VST.floyd.closed_lemmas.
-Require Export VST.floyd.compare_lemmas.
-Require Export VST.floyd.semax_tactics.
-Require Export VST.floyd.forward.
-Require Export VST.floyd.subsume_funspec.
-Require Export VST.floyd.call_lemmas.
-Require Export VST.floyd.forward_lemmas.
-Require Export VST.floyd.for_lemmas.
-Require Export VST.floyd.nested_pred_lemmas.
-Require Export VST.floyd.nested_field_lemmas.
-Require Export VST.floyd.efield_lemmas.
-Require Export VST.floyd.mapsto_memory_block.
-Require Export VST.floyd.aggregate_type.
-Require VST.floyd.aggregate_pred. Export floyd.aggregate_pred.aggregate_pred.
-Require Export VST.floyd.reptype_lemmas.
-Require Export VST.floyd.simpl_reptype.
-Require Export VST.floyd.data_at_rec_lemmas.
-Require Export VST.floyd.field_at.
-Require Export VST.floyd.field_at_wand.
-Require Export VST.floyd.field_compat.
-Require Export VST.floyd.stronger.
-Require Export VST.floyd.loadstore_mapsto.
-Require Export VST.floyd.loadstore_field_at.
-Require Export VST.floyd.nested_loadstore.
-Require Export VST.floyd.local2ptree_denote.
-Require Export VST.floyd.local2ptree_eval.
-Require Export VST.floyd.local2ptree_typecheck.
-Require Export VST.floyd.proj_reptype_lemmas.
-Require Export VST.floyd.replace_refill_reptype_lemmas.
-Require Export VST.floyd.sc_set_load_store.
-Require Export VST.floyd.unfold_data_at.
-Require Export VST.floyd.entailer.
-Require Export VST.floyd.globals_lemmas.
-Require Export VST.floyd.diagnosis.
-Require Export VST.floyd.freezer.
-Require Export VST.floyd.deadvars.
-Require Export VST.floyd.hints.
-Require Export VST.floyd.Clightnotations.
-Require VST.msl.iter_sepcon.
-Require VST.msl.wand_frame.
-Require VST.msl.wandQ_frame.
-
-Arguments semax {CS} {Espec} Delta Pre%assert cmd%C Post%assert.
-Export ListNotations.
-Export Clight_Cop2.
-
-Hint Rewrite add_repr mul_repr sub_repr : entailer_rewrite.
-Hint Rewrite ptrofs_add_repr ptrofs_mul_repr ptrofs_sub_repr : entailer_rewrite.
-Hint Rewrite mul64_repr add64_repr sub64_repr or64_repr and64_repr : entailer_rewrite.
-Hint Rewrite neg_repr neg64_repr : entailer_rewrite.
-Hint Rewrite ptrofs_to_int_repr: entailer_rewrite norm.
-
-Lemma Vptrofs_unfold_false: 
-Archi.ptr64 = false -> Vptrofs = fun x => Vint (Ptrofs.to_int x).
-
-Lemma Vptrofs_unfold_true: 
-Archi.ptr64 = true -> Vptrofs = fun x => Vlong (Ptrofs.to_int64 x).
-
-Lemma modu_repr: forall x y, 
-   0 <= x <= Int.max_unsigned ->
-Hint Rewrite modu_repr using rep_omega : entailer_rewrite norm.
-
-Hint Rewrite Vptrofs_unfold_false using reflexivity: entailer_rewrite norm.
-Hint Rewrite Vptrofs_unfold_true using reflexivity: entailer_rewrite norm.
-
-Hint Extern 1 (Vundef = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = Vundef) => reflexivity : cancel.
-Hint Extern 1 (list_repeat _ Vundef = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = list_repeat _ Vundef) => reflexivity : cancel.
-Hint Extern 1 (Vundef :: _ = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = Vundef :: _) => reflexivity : cancel.
-Hint Extern 1 (@nil _ = default_val _) => reflexivity : cancel.
-Hint Extern 1 (default_val _ = @nil _) => reflexivity : cancel.
-
-Instance Inhabitant_mpred : Inhabitant mpred := @FF mpred Nveric.
-Instance Inhabitant_share : Inhabitant share := Share.bot.
-
-Arguments deref_noload ty v / .
-Arguments nested_field_array_type {cs} t gfs lo hi / .
-Arguments nested_field_type {cs} t gfs / .  
-Arguments nested_field_offset {cs} t gfs / .  
-Arguments Z.mul !x !y.
-Arguments Z.sub !m !n.
-Arguments Z.add !x !y.
-Global Transparent peq.
-Global Transparent Archi.ptr64.
-
-Ltac step :=
-first [ progress Intros
-       | let x := fresh "x" in Intros x
-       | forward
-       | forward_if
-       | forward_call
-       | rep_omega | cstring' | list_solve
-       | EExists
-       | progress (autorewrite with sublist in *|-)
-       | progress (autorewrite with sublist)
-       | progress (autorewrite with norm)
-       | cstring1
-       | deadvars!
-       | progress_entailer
-       ]. *)
-
-
 

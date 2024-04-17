@@ -1,541 +1,270 @@
 Require Export VST.floyd.sublist.
-
 Require Export compcert.lib.Integers.
-
 Require Export compcert.lib.Coqlib.
-
 Require Export List. Import ListNotations.
-
 Require Export aes.sbox.
 
-
-
 Definition look_sbox (b: int) : int :=
-
   
-
   Int.repr (Znth (Int.unsigned b) sbox).
 
-
-
 Definition look_inv_sbox (b: int) : int :=
-
   Int.repr (Znth (Int.unsigned b) inv_sbox).
 
-
-
 Definition xtime (b: int) : int :=
-
   let b' := Int.modu (Int.shl b (Int.one)) (Int.repr 256) in 
-
   let c_1b := Int.repr 27 in 
-
   let c_80 := Int.repr 128 in 
-
   
-
   if Int.eq (Int.and b c_80) Int.zero then b'
-
   else Int.xor b' c_1b.
 
-
-
 Definition ff_checkbit (a b : int) (acc : int) : int :=
-
   
-
   if Int.eq (Int.and a Int.one) Int.zero then acc
-
   else Int.xor acc b.
 
-
-
 Fixpoint xtime_test (a b : int) (acc : int) (shifts : nat) : int :=
-
   if Int.eq a Int.zero then acc 
-
   else if Int.eq b Int.zero then acc
-
   else
-
-    
-    match shifts with
-
+        match shifts with
     | S n =>
-
       let acc' := ff_checkbit a b acc in
-
       
-
       let a' := Int.shru a Int.one in
-
       let b' := xtime b in
-
       xtime_test a' b' acc' n
-
     | O => acc
-
     end.
-
-
 
 Definition ff_mult (a b : int) : int := xtime_test a b Int.zero 8%nat.
 
-
-
 Definition word := (int * int * int * int) % type.
-
 Definition state := (word * word * word * word) % type.
-
 Definition block := state%type. 
 
-
-
 Definition sub_word (w: word) : word :=
-
   match w with (b1, b2, b3, b4) => (look_sbox b1, look_sbox b2, look_sbox b3, look_sbox b4) end.
-
 Definition SubBytes (s: state) : state :=
-
   match s with (w1, w2, w3, w4) => (sub_word w1, sub_word w2, sub_word w3, sub_word w4) end.
 
-
-
 Definition ShiftRows (s : state) : state :=
-
   match s with
-
   ((b11, b12, b13, b14),
-
    (b21, b22, b23, b24),
-
    (b31, b32, b33, b34),
-
    (b41, b42, b43, b44)) =>
 
-
-
   ((b11, b12, b13, b14),
-
    (b22, b23, b24, b21),
-
    (b33, b34, b31, b32),
-
    (b44, b41, b42, b43))
-
   end.
-
-
 
 Definition transform_column (col: word) : word :=
-
   match col with (b1, b2, b3, b4) =>
-
     let two := Int.repr 2 in
-
     let three := Int.repr 3 in
-
     
-
     let c0 := Int.xor (Int.xor (ff_mult two b1) (ff_mult three b2)) (Int.xor b3 b4) in
-
     
-
     let c1 := Int.xor (Int.xor b1 (ff_mult two b2)) (Int.xor (ff_mult three b3) b4) in
-
     
-
     let c2 := Int.xor (Int.xor b1 b2) (Int.xor (ff_mult two b3) (ff_mult three b4)) in
-
     
-
     let c3 := Int.xor (Int.xor (ff_mult three b1) b2) (Int.xor b3 (ff_mult two b4)) in
-
     (c0, c1, c2, c3)
-
   end.
-
-
 
 Definition transpose (s: state) : state :=
-
   match s with
-
    ((b11, b12, b13, b14),
-
     (b21, b22, b23, b24),
-
     (b31, b32, b33, b34),
-
     (b41, b42, b43, b44)) =>
 
-
-
    ((b11, b21, b31, b41),
-
     (b12, b22, b32, b42),
-
     (b13, b23, b33, b43),
-
     (b14, b24, b34, b44))
-
 end.
 
-
-
 Definition MixColumns (s: state) : state :=
-
   let cols := transpose s in
-
   match cols with (c1, c2, c3, c4) =>
-
     transpose (transform_column c1, transform_column c2, transform_column c3, transform_column c4)
-
   end.
-
-
 
 Definition SubWord (w: word) : word :=
-
   match w with (b1, b2, b3, b4) => (look_sbox b1, look_sbox b2, look_sbox b3, look_sbox b4) end.
 
-
-
 Definition RotWord (w: word) : word :=
-
   match w with (b1, b2, b3, b4) => (b2, b3, b4, b1) end.
 
-
-
 Definition RCon : list word := [
-
    (Int.repr 1, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 2, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 4, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 8, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 16, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 32, Int.zero, Int.zero, Int.zero);
-
    (Int.repr 64, Int.zero, Int.zero, Int.zero)
-
 ].
 
-
-
 Definition Nk := 8. 
-
 Definition Nr := 14. 
-
 Definition Nb := 4. 
 
-
-
 Definition xor_word (w1 w2 : word) : word :=
-
   match w1, w2 with (b1, b2, b3, b4), (b1', b2', b3', b4') =>
-
     (Int.xor b1 b1', Int.xor b2 b2', Int.xor b3 b3', Int.xor b4 b4')
-
   end.
-
-
 
 Definition extended_key_blocks := Nr+1.
 
-
-
 Definition odd_round (b1 b2 : block) (rcon: word) : block :=
-
   match b1, b2 with (w1, w2, w3, w4), (_, _, _, w8) =>
-
     let w1' := xor_word w1 (xor_word (SubWord (RotWord w8)) rcon) in
-
     let w2' := xor_word w2 w1' in
-
     let w3' := xor_word w3 w2' in
-
     let w4' := xor_word w4 w3' in
-
     (w1', w2', w3', w4')
-
   end.
-
 Definition even_round (b1 b2: block) : block :=
-
   match b1, b2 with (w1, w2, w3, w4), (_, _, _, w8) =>
-
     let w1' := xor_word w1 (SubWord w8) in
-
     let w2' := xor_word w2 w1' in
-
     let w3' := xor_word w3 w2' in
-
     let w4' := xor_word w4 w3' in
-
     (w1', w2', w3', w4')
-
   end.
-
-
 
 Fixpoint grow_key (b1 b2: block) (rcs: list word) : list block :=
-
   match rcs with
-
   | rc :: [] =>
-
     
-
     (odd_round b1 b2 rc) :: []
-
   | rc :: tl =>
-
     
-
     let b3 := odd_round b1 b2 rc in
-
 	let b4 := even_round b2 b3 in
-
 	b3 :: b4 :: (grow_key b3 b4 tl)
-
   | [] => [] 
-
   end.
-
-
 
 Definition KeyExpansion (k : list word) : list block :=
-
   match k with
-
   | [w1; w2; w3; w4; w5; w6; w7; w8] =>
-
     let b1 := (w1, w2, w3, w4) in
-
 	let b2 := (w5, w6, w7, w8) in
-
 	b1 :: b2 :: (grow_key b1 b2 RCon)
-
   | l => [] 
-
   end.
-
-
 
 Definition AddRoundKey (s : state) (kb : block) : state :=
-
   let cols := transpose s in
-
   match cols, kb with (c1,c2,c3,c4), (k1,k2,k3,k4) =>
-
     transpose (xor_word c1 k1, xor_word c2 k2, xor_word c3 k3, xor_word c4 k4)
-
   end.
-
-
 
 Definition round (s : state) (kb: block) : state :=
-
   AddRoundKey (MixColumns (ShiftRows (SubBytes s))) kb.
 
-
-
 Definition last_round (s : state) (kb : block) : state :=
-
   AddRoundKey (ShiftRows (SubBytes s)) kb.
 
-
-
 Fixpoint apply_rounds (s : state) (ek: list block) : state :=
-
   match ek with
-
   | rk :: [] => last_round s rk 
-
   | rk :: tl => apply_rounds (round s rk) tl
-
   | [] => s 
-
   end.
-
-
 
 Definition Cipher (exp_key : list block) (init : state) : state :=
-
   match exp_key with
-
   | k1 :: tl =>
-
     let r1 := AddRoundKey init k1 in
-
 	apply_rounds r1 tl
-
   | [] => init 
-
   end.
-
-
 
 Definition InvShiftRows (s: state) : state :=
-
   match s with
-
     ((b11, b12, b13, b14),
-
      (b21, b22, b23, b24),
-
 	 (b31, b32, b33, b34),
-
 	 (b41, b42, b43, b44)) =>
-
 	
-
 	((b11, b12, b13, b14),
-
 	 (b24, b21, b22, b23),
-
 	 (b33, b34, b31, b32),
-
 	 (b42, b43, b44, b41))
-
   end.
-
-
 
 Definition inv_sub_word (w: word) : word :=
-
   match w with (b1, b2, b3, b4) =>
-
     (look_inv_sbox b1, look_inv_sbox b2, look_inv_sbox b3, look_inv_sbox b4)
-
   end.
-
-
 
 Definition InvSubBytes (s : state) : state :=
-
   match s with (w1, w2, w3, w4) =>
-
     (inv_sub_word w1, inv_sub_word w2, inv_sub_word w3, inv_sub_word w4)
-
   end.
-
-
 
 Definition inv_transform_column (w: word) : word :=
-
   let c_e := Int.repr 14 in 
-
   let c_b := Int.repr 11 in 
-
   let c_d := Int.repr 13 in 
-
   let c_9 := Int.repr 9 in 
-
   match w with (b1, b2, b3, b4) =>
-
     
-
     let b1' := Int.xor (Int.xor (ff_mult c_e b1) (ff_mult c_b b2)) (Int.xor (ff_mult c_d b3) (ff_mult c_9 b4)) in
-
     
-
     let b2' := Int.xor (Int.xor (ff_mult c_9 b1) (ff_mult c_e b2)) (Int.xor (ff_mult c_b b3) (ff_mult c_d b4)) in
-
     
-
     let b3' := Int.xor (Int.xor (ff_mult c_d b1) (ff_mult c_9 b2)) (Int.xor (ff_mult c_e b3) (ff_mult c_b b4)) in
-
     
-
     let b4' := Int.xor (Int.xor (ff_mult c_b b1) (ff_mult c_d b2)) (Int.xor (ff_mult c_9 b3) (ff_mult c_e b4)) in
-
     (b1', b2', b3', b4')
-
   end.
-
-
 
 Definition InvMixColumns (s : state) : state :=
-
   let cols := transpose s in
-
   match cols with (c1, c2, c3, c4) =>
-
     transpose (inv_transform_column c1, inv_transform_column c2, inv_transform_column c3, inv_transform_column c4)
-
   end.
-
-
 
 Fixpoint grow_inv_key (ek : list block) : list block :=
-
   match ek with
-
   | rk :: [] => rk :: [] 
-
   | rk :: tl => InvMixColumns rk :: grow_inv_key tl
-
   | [] => [] 
-
   end.
-
-
 
 Definition InverseKeyExpansion (k : list word) : list block :=
-
   let exp_key := KeyExpansion k in
-
   match exp_key with
-
   
-
   | k1 :: tl => k1 :: grow_inv_key tl
-
   | ek => [] 
-
   end.
-
-
 
 Definition inv_round (s : state) (kb : block) : state :=
-
   AddRoundKey (InvMixColumns (InvShiftRows (InvSubBytes s))) kb.
 
-
-
 Definition inv_last_round (s : state) (kb : block) : state :=
-
   AddRoundKey (InvShiftRows (InvSubBytes s)) kb.
 
-
-
 Fixpoint apply_inv_rounds (s: state) (ek: list block) : state :=
-
   match ek with
-
   | kb :: [] => inv_last_round s kb
-
   | kb :: tl => apply_inv_rounds (inv_round s kb) tl
-
   | [] => s 
-
   end.
-
-
 
 Definition EqInvCipher (exp_key: list block) (init: state) : state :=
-
   match exp_key with
-
   | kb :: tl => apply_inv_rounds (AddRoundKey init kb) tl
-
   | l => init 
-
   end.
-

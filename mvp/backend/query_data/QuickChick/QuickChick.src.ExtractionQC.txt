@@ -1,15 +1,9 @@
 Set Warnings "-extraction-opaque-accessed,-extraction".
-
 Set Warnings "-notation-overridden,-parsing".
 
-
-
 Require Import ZArith.
-
 Require Import Coq.Strings.Ascii.
-
 Require Import Coq.Strings.String.
-
 Require Import RandomQC RoseTrees Test Show Checker.
 (* RandomQC:
 Set Warnings "-extraction-opaque-accessed,-extraction".
@@ -336,6 +330,354 @@ Fixpoint fmapRose {A B : Type} (f : A -> B) (r : Rose A) : Rose B :=
 
 Definition bindRose {A B : Type} (m : Rose A) (k : A -> Rose B) : Rose B :=
   joinRose (fmapRose k m). *)
+(* Test:
+Set Warnings "-extraction-opaque-accessed,-extraction".
+Set Warnings "-notation-overridden,-parsing".
+
+Require Import Omega.
+Require Import mathcomp.ssreflect.ssreflect.
+From mathcomp Require Import ssrnat ssrbool eqtype div.
+
+From ExtLib Require Import
+     Structures.Monad.
+Import MonadNotation.
+Local Open Scope monad_scope.
+
+From SimpleIO Require Import SimpleIO.
+
+From QuickChick Require Import RoseTrees RandomQC GenLow GenHigh SemChecker.
+From QuickChick Require Import Show Checker State Classes.
+
+Require Import Coq.Strings.Ascii.
+Require Import Coq.Strings.String.
+Require Import List.
+Import ListNotations.
+
+Require Import Recdef.
+
+Require Import Arith.EqNat.
+
+Import GenLow GenHigh.
+
+Definition gte n m := Nat.leb m n.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Set Bullet Behavior "Strict Subproofs".
+
+Record Args := MkArgs {
+  replay     : option (RandomSeed * nat);
+  maxSuccess : nat;
+  maxDiscard : nat;
+  maxShrinks : nat;
+  maxSize    : nat;
+  chatty     : bool
+}.
+
+Definition updMaxSize (a : Args) (x : nat) : Args := 
+  let '(MkArgs r msc md msh msz c) := a in 
+  MkArgs r msc md msh x c.
+
+Definition updMaxSuccess (a : Args) (x : nat) : Args := 
+  let '(MkArgs r msc md msh msz c) := a in 
+  MkArgs r x md msh msz c.
+
+Inductive Result :=
+  | Success : nat -> nat -> list (string * nat) -> string -> Result
+  | GaveUp  : nat -> list (string * nat) -> string -> Result
+  | Failure : nat -> nat -> nat -> RandomSeed -> nat -> string ->
+              list (string * nat) -> string -> Result
+  | NoExpectedFailure : nat -> list (string * nat) -> string -> Result.
+
+Definition isSuccess (r : Result) : bool :=
+  match r with
+    | Success _ _ _ _ => true
+    | _         => false
+  end.
+
+Axiom defNumTests    : nat.
+Extract Constant defNumTests    => "10000".
+Axiom defNumDiscards : nat.
+Extract Constant defNumDiscards => "(2 * defNumTests)".
+Axiom defNumShrinks  : nat.
+Extract Constant defNumShrinks  => "1000".
+Axiom defSize        : nat.
+Extract Constant defSize        => "7".
+
+Definition stdArgs := MkArgs None defNumTests defNumDiscards
+                             defNumShrinks defSize true.
+
+Definition roundTo n m := mult (Nat.div n m) m.
+
+Definition computeSize' (a : Args) (n : nat) (d : nat) : nat :=
+  if (roundTo n (maxSize a) <= maxSuccess a) || (n >= maxSuccess a)
+     || (maxSuccess a %| (maxSize a))
+  then
+    minn (n %% (maxSize a) + d %/ 10) (maxSize a)
+  else
+    minn ((n %% (maxSize a)) * maxSize a %/
+      ((maxSuccess a) %% (maxSize a) + d %/ 10)) (maxSize a).
+
+ Definition at0 (f : nat -> nat -> nat) (s : nat) (n d : nat) :=
+  if andb (beq_nat n 0) (beq_nat d 0) then s
+  else f n d.
+
+Fixpoint prependToAll {A : Type} (sep : A) (ls : list A) : list A :=
+  match ls with
+    | nil => nil
+    | h :: t => sep :: h :: prependToAll sep t
+  end.
+
+Definition intersperse {A : Type} (sep : A) (ls : list A) : list A :=
+  match ls with
+    | nil => nil
+    | h :: t => h :: prependToAll sep t
+  end.
+
+Definition notNull (ls : list string) : bool :=
+  match ls with
+    | nil => false
+    | _ => true
+  end.
+
+Fixpoint insertBy A (compare : A -> A -> bool) (x : A) (l : list A) : list A :=
+  match l with
+    | nil => x :: nil
+    | h :: t => if compare x h then x :: l else h :: insertBy compare x t
+  end.
+
+Fixpoint insSortBy A (compare : A -> A -> bool) (l : list A) : list A :=
+  match l with
+    | nil => nil
+    | h :: t => insertBy compare h (insSortBy compare t)
+  end.
+
+Local Open Scope string.
+Fixpoint concatStr (l : list string) : string :=
+  match l with
+    | nil => ""
+    | (h :: t) => h ++ concatStr t
+  end.
+
+Definition summary (st : State) : list (string * nat) :=
+  let res := Map.fold (fun key elem acc => (key,elem) :: acc) (labels st) nil
+  in insSortBy (fun x y => snd y <= snd x) res .
+
+Definition doneTesting (st : State) (f : nat -> RandomSeed -> QProp) : Result :=
+ if expectedFailure st then
+    Success (numSuccessTests st + 1) (numDiscardedTests st) (summary st)
+            ("+++ Passed " ++ (show (numSuccessTests st)) ++ " tests (" ++ (show (numDiscardedTests st)) ++ " discards)")
+  else
+    NoExpectedFailure (numSuccessTests st) (summary st)
+                      ("*** Failed! Passed " ++ (show (numSuccessTests st))
+                                             ++ " tests (expected Failure)").
+  
+Definition giveUp (st : State) (_ : nat -> RandomSeed -> QProp) : Result :=
+  GaveUp (numSuccessTests st) (summary st)
+         ("*** Gave up! Passed only " ++ (show (numSuccessTests st)) ++ " tests"
+          ++  newline ++ "Discarded: " ++ (show (numDiscardedTests st))).
+
+Definition callbackPostTest (st : State) (res : Checker.Result) : nat :=
+  match res with
+  | MkResult o e r i s c t =>
+    fold_left (fun acc callback =>
+                 match callback with
+                 | PostTest _ call =>
+                   (call st (MkSmallResult o e r i s t)) + acc
+                 | _ => acc
+                 end) c 0
+  end.
+  
+Definition callbackPostFinalFailure (st : State) (res : Checker.Result)
+: nat :=
+match res with
+  | MkResult o e r i s c t =>
+  fold_left (fun acc callback =>
+               match callback with
+                 | PostFinalFailure _ call =>
+                   (call st (MkSmallResult o e r i s t)) + acc
+                 | _ => acc
+               end) c 0
+end.
+
+Fixpoint localMin (st : State) (r : Rose Checker.Result)
+         {struct r} : (nat * Checker.Result) :=
+  match r with
+  | MkRose res ts =>
+    let fix localMin' st ts {struct ts} :=
+        match ts return (nat * Checker.Result) with
+        | nil =>
+          let zero := callbackPostFinalFailure st res in
+          (numSuccessShrinks st + zero, res)
+        | cons ((MkRose res' _) as r') ts' =>
+          let zero := callbackPostTest st res in 
+          match ok res' with
+            | Some x =>
+              let consistent_tags := 
+                match result_tag res, result_tag res' with 
+                | Some t1, Some t2 => if string_dec t1 t2 then true else false
+                | None, None => true
+                | _, _ => false
+                end in
+              if andb (negb x) consistent_tags then
+                localMin (updSuccessShrinks st (fun x => x + 1 + zero))
+                         r'
+              else
+                localMin' (updTryShrinks st (fun x => x + 1)) ts'
+            | None =>
+              localMin' (updTryShrinks st (fun x => x + 1)) ts'
+          end
+        end in
+    localMin' st (force ts)
+  end.
+
+Fixpoint runATest (st : State) (f : nat -> RandomSeed -> QProp) (maxSteps : nat) :=
+  if maxSteps is maxSteps'.+1 then
+    let size := (computeSize st) (numSuccessTests st) (numDiscardedTests st) in
+    let (rnd1, rnd2) := randomSplit (randomSeed st) in
+    let test (st : State) :=
+        if (gte (numSuccessTests st) (maxSuccessTests st)) then
+          doneTesting st f
+        else if (gte (numDiscardedTests st) (maxDiscardedTests st)) then
+               giveUp st f
+             else runATest st f maxSteps'
+    in
+    match st with
+    | MkState mst mdt ms cs nst ndt ls e r nss nts =>
+      match f size rnd1 with
+      | MkProp (MkRose res ts) =>
+        
+        let res_cb := callbackPostTest st res in
+        match res with
+        | MkResult (Some x) e reas _ s _ t =>
+          if x then 
+            let ls' := 
+                match s with 
+                | nil => ls 
+                | _ => 
+                  let s_to_add := 
+                      ShowFunctions.string_concat 
+                        (ShowFunctions.intersperse " , "%string s) in
+                  match Map.find s_to_add ls with 
+                    | None   => Map.add s_to_add (res_cb + 1) ls
+                    | Some k => Map.add s_to_add (k+1) ls
+                  end 
+                end in
+
+            test (MkState mst mdt ms cs (nst + 1) ndt ls' e rnd2 nss nts)
+          else 
+            let tag_text := 
+                match t with 
+                | Some s => "Tag: " ++ s ++ nl
+                | _ => "" 
+                end in 
+            let pre : string := (if expect res then "*** Failed "
+                                 else "+++ Failed (as expected) ")%string in
+            let (numShrinks, res') := localMin st (MkRose res ts) in
+            let suf := ("after " ++ (show (S nst)) ++ " tests and "
+                                 ++ (show numShrinks) ++ " shrinks. ("
+                                 ++ (show ndt) ++ " discards)")%string in
+            
+            if (negb (expect res)) then
+              Success (nst + 1) ndt (summary st) (tag_text ++ pre ++ suf)
+            else
+              Failure (nst + 1) numShrinks ndt r size (tag_text ++ pre ++ suf) (summary st) reas
+        | MkResult None e reas _ s _ t =>
+          
+          let ls' :=
+              match s with
+              | nil => ls
+              | _ =>
+                let s_to_add :=
+                    "(Discarded) " ++ ShowFunctions.string_concat
+                                    (ShowFunctions.intersperse " , "%string s) in
+                match Map.find s_to_add ls with
+                | None   => Map.add s_to_add (res_cb + 1) ls
+                | Some k => Map.add s_to_add (k+1) ls
+                end
+              end in
+          test (MkState mst mdt ms cs nst ndt.+1 ls' e rnd2 nss nts)
+        end
+      end
+    end
+  else giveUp st f.
+
+Definition test (st : State) (f : nat -> RandomSeed -> QProp) : Result :=
+  if (gte (numSuccessTests st) (maxSuccessTests st)) then
+    doneTesting st f
+  else if (gte (numDiscardedTests st) (maxDiscardedTests st)) then
+         giveUp st f
+  else
+    let maxSteps := maxSuccessTests st + maxDiscardedTests st in
+    runATest st f maxSteps.
+
+Require Import ZArith.
+
+Definition quickCheckWith {prop : Type} {_ : Checkable prop}
+           (a : Args) (p : prop) : Result :=
+  
+  let (rnd, computeFun) :=
+      match replay a with
+        | Some (rnd, s) => (rnd, at0 (computeSize' a) s)
+        | None          => (newRandomSeed, computeSize' a)
+        
+      end in
+  test (MkState (maxSuccess a)  
+                (maxDiscard a)  
+                (maxShrinks a)  
+                computeFun      
+                0               
+                0               
+                (Map.empty nat) 
+                false           
+                rnd             
+                0               
+                0               
+       ) (run (checker p)).
+
+Fixpoint showCollectStatistics (l : list (string * nat)) :=
+  match l with
+    | nil => ""
+    | cons (s,n) l' =>
+      show n ++ " : " ++ s ++ newline ++ showCollectStatistics l'
+  end.
+
+Instance showResult : Show Result := Build_Show _ (fun r =>
+  match r with
+  | Success _ _ l s => showCollectStatistics l ++ s
+  | GaveUp _ l s => showCollectStatistics l ++ s
+  | Failure _ _ _ _ _ s l _ => showCollectStatistics l ++ s
+  | NoExpectedFailure _ l s => showCollectStatistics l ++ s
+  end ++ newline).
+
+Definition quickCheck {prop : Type} {_ : Checkable prop}
+           (p : prop) : Result :=
+  quickCheckWith stdArgs p.
+
+Inductive Test : Type :=
+| QuickChickTest : string -> Args -> Checker -> Test.
+
+Definition qc_ {prop : Type} {_ : Checkable prop}
+           (name : string) (a : Args) (p : prop) : Test :=
+  QuickChickTest name a (checker p).
+
+Definition qc {prop : Type} {_ : Checkable prop}
+           (name : string) (p : prop) : Test :=
+  qc_ name stdArgs (checker p).
+
+Fixpoint testRunner (tests : list Test) : IO unit :=
+  match tests with
+  | [] => ret tt
+  | QuickChickTest name args test :: tests =>
+    print_endline ("Checking " ++ name ++ "...");;
+    print_endline (show (quickCheckWith args test));;
+    testRunner tests
+  end.
+
+Definition runTests (tests : list Test) : io_unit :=
+  IO.unsafe_run (testRunner tests). *)
 (* Show:
 From Coq Require Import
      Ascii
@@ -634,164 +976,467 @@ End ShowFunctions.
 Definition trace {A : Type} (s : string) (a : A) : A := a.
 Definition deprecate {A : Type} (old new: string) (a : A) : A :=
   trace ("Deprecated function: " ++ old ++ ". Use " ++ new ++ " instead.") a. *)
+(* Checker:
+Set Implicit Arguments.
 
+Require Import List.
+Require Import Coq.Strings.String.
 
+Require Import RoseTrees.
+Require Import Show.
+Require Import State.
+Require Import GenLow GenHigh.
+Require Import Classes.
+Require Import DependentClasses.
+
+Import GenLow GenHigh.
+
+Inductive CallbackKind :=
+| Counterexample
+| NotCounterexample.
+
+Inductive SmallResult :=
+  MkSmallResult : option bool -> bool -> string -> bool ->
+                  list string -> option string -> SmallResult.
+
+Inductive Callback : Type :=
+| PostTest :
+    CallbackKind -> (State -> SmallResult -> nat) -> Callback
+| PostFinalFailure :
+    CallbackKind -> (State -> SmallResult -> nat) -> Callback.
+
+Record Result :=
+  MkResult {
+      ok          : option bool; 
+      expect      : bool;        
+      reason      : string;      
+      interrupted : bool;        
+      stamp       : list string; 
+      callbacks   : list Callback; 
+      result_tag  : option string 
+    }.
+
+Definition debug_stamps s {A : Type} (r : Result) (x : A) :=
+  trace (s ++ (ShowFunctions.string_concat (
+             (ShowFunctions.intersperse " @ "%string (stamp r)))) ++ nl) x.
+
+Definition succeeded := MkResult (Some true ) true "" false nil nil None.
+Definition failed    := MkResult (Some false) true "" false nil nil None.
+Definition rejected  := MkResult (   None   ) true "" false nil nil None.
+
+Definition updExpect (res : Result) (e' : bool) : Result :=
+  match res with
+    | MkResult o e r i s c t => MkResult o e' r i s c t
+  end.
+
+Definition updReason (r : Result) (s' : string) : Result :=
+  match r with
+    | MkResult o e _ i s c t => MkResult o e s' i s c t
+  end.
+
+Definition updOk (r : Result) o' : Result :=
+  match r with
+    | MkResult _ e r i s c t => MkResult o' e r i s c t
+  end.
+
+Definition addCallback (res : Result) (c : Callback) : Result :=
+  match res with
+    | MkResult o e r i s cs t => MkResult o e r i s (cons c cs) t
+  end.
+
+Definition addCallbacks (res : Result) (cs : list Callback) : Result :=
+  match res with
+    | MkResult o e r i s cs' t => MkResult o e r i s (cs ++ cs') t
+  end.
+
+Definition addStamps res ss :=
+  match res with
+    | MkResult o e r i s cs t => MkResult o e r i (ss ++ s) cs t
+  end.
+
+Definition setTag (r : Result) (t' : string) : Result :=
+  match r with 
+    | MkResult o e r i s cs _ => MkResult o e r i s cs (Some t')
+  end.
+
+Record QProp : Type :=
+  MkProp
+    {
+      unProp : Rose Result
+    }.
+
+Definition Checker : Type := G QProp.
+
+Class Checkable (A : Type) : Type :=
+  {
+    checker : A -> Checker
+  }.
+
+Definition liftBool (b : bool) : Result :=
+  if b then succeeded else updReason failed "Falsifiable".
+
+Definition mapProp {P : Type} {_ : Checkable P}
+           (f : QProp -> QProp) (prop : P) : Checker :=
+  fmap f (checker prop).
+
+Definition mapRoseResult {P : Type} {_ : Checkable P}
+           (f : Rose Result -> Rose Result) (prop : P) : Checker :=
+  mapProp (fun p => match p with MkProp t => MkProp (f t) end) prop.
+
+Definition mapTotalResult {prop : Type} {_ : Checkable prop}
+           (f : Result -> Result) : prop -> Checker :=
+  mapRoseResult (fmapRose f).
+
+Global Instance testResult : Checkable Result :=
+  {|
+    
+    checker r := returnGen (MkProp (returnRose r))
+  |}.
+
+Global Instance testBool : Checkable bool :=
+  {|
+    checker b := checker (liftBool b)
+  |}.
+
+Global Instance testUnit : Checkable unit :=
+  {|
+    checker := fun _ => checker rejected
+  |}.
+
+Global Instance testProp : Checkable QProp :=
+  {|
+    checker p := returnGen p
+  |}.
+
+Global Instance testGenProp (P : Type) `{Checkable P} : Checkable (G P) :=
+  {|
+    checker p := bindGen p checker
+  |}.
+
+Global Instance testChecker : Checkable Checker :=
+  {|
+      checker x := x
+  |}.
+
+Fixpoint props' {prop A : Type} {t : Checkable prop} (n : nat)
+         (pf : A -> prop) (shrinker : A -> list A) (x : A) :=
+  match n with
+    | O =>
+      MkRose (checker (pf x)) (lazy nil)
+    | S n' =>
+      MkRose (checker (pf x)) (lazy (List.map (props' n' pf shrinker) (shrinker x)))
+  end.
+
+Definition props {prop A : Type} `{Checkable prop}
+           (pf : A -> prop) (shrinker : A -> list A) (x : A) : Rose Checker :=
+  props' 1000 pf shrinker x.
+
+Definition shrinking {prop A : Type} `{Checkable prop}
+           (shrinker : A -> list A) (x0 : A) (pf : A -> prop) : Checker :=
+  fmap (fun x => MkProp (joinRose (fmapRose unProp x)))
+       (promote (props pf shrinker x0)).
+
+Definition shrinkingNondet {prop A : Type} `{Checkable prop} (n : nat)
+          (shrinker : A -> list A) (x0 : A) (pf : A -> prop) : Checker :=
+  fmap (fun x => MkProp (repeatRose n (joinRose (fmapRose unProp x))))
+       (promote (props pf shrinker x0)).
+  
+Definition callback {prop : Type} `{Checkable prop}
+           (cb : Callback) : prop -> Checker :=
+  mapTotalResult (fun r => addCallback r cb).
+
+Definition printTestCase {prop : Type} `{Checkable prop}
+           (s : string) (p : prop) : Checker :=
+  
+  callback (PostFinalFailure Counterexample (fun _st _res => trace (s ) 0)) p.
+
+Definition whenFail {prop : Type} `{Checkable prop}
+           (str : string) : prop -> Checker :=
+  callback (PostFinalFailure Counterexample (fun _st _sr => trace (str ++ nl) 0)).
+
+Definition whenFail' {prop : Type} `{Checkable prop}
+           (str : unit -> string) : prop -> Checker :=
+  callback (PostFinalFailure Counterexample (fun _st _sr => trace (str tt ++ nl) 0)).
+
+Notation "x 'WHENFAIL' y" := (whenFail' (fun _ => x) y) (at level 55).
+
+Definition expectFailure {prop: Type} `{Checkable prop} (p: prop) :=
+  mapTotalResult (fun res => updExpect res false) p.
+
+Definition cover {prop : Type} {_ : Checkable prop}
+           (b : bool) (n : nat) (s : string) : prop -> Checker :=
+  if b then
+    mapTotalResult (fun res =>
+                      let '(MkResult o e r i st c t) := res in
+                      MkResult o e r i (s :: st) c t)
+  else checker.
+
+Definition classify {prop : Type} {_ : Checkable prop}
+           (b : bool) (s : string) : prop -> Checker :=
+  cover b 0 s.
+
+Definition label {prop : Type} {_ : Checkable prop}
+           (s : string) : prop -> Checker :=
+  classify true s.
+
+Definition collect {A prop : Type} `{_ : Show A} {_ : Checkable prop}
+           (x : A) : prop -> Checker :=
+  label (show x).
+
+Definition tag {prop : Type} {_ : Checkable prop} (t : string) : prop -> Checker :=
+  mapTotalResult (fun res => setTag res t).
+
+Definition implication {prop : Type} `{Checkable prop} (b : bool) (p : prop) : Checker :=
+  if b then checker p else (returnGen (MkProp (returnRose rejected))).
+
+Definition forAll {A prop : Type} {_ : Checkable prop} `{Show A}
+           (gen : G A)  (pf : A -> prop) : Checker :=
+  bindGen gen (fun x =>
+                 printTestCase (show x ++ newline) (pf x)).
+
+Definition forAllMaybe {A prop : Type} {_ : Checkable prop} `{Show A}
+           (gen : G (option A))  (pf : A -> prop) : Checker :=
+  bindGen gen (fun mx =>
+                 match mx with
+                 | Some x => printTestCase (show x ++ newline) (pf x)
+                 | None => checker tt
+                 end
+              ).
+
+Definition forAllProof {A prop : Type} {C : Checkable prop} `{S : Show A}
+           (gen : G A)  (pf : forall (x : A), semGen gen x -> prop) : Checker :=
+  bindGen' gen (fun x H => printTestCase (show x ++ newline) (pf x H)).
+Arguments forAllProof {A} {prop} {C} {S} _ _.
+
+Definition forAllShrink {A prop : Type} {_ : Checkable prop} `{Show A}
+           (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+
+  bindGen gen (fun x : A =>
+                 shrinking shrinker x (fun x' =>
+                                         printTestCase (show x' ++ newline) (pf x'))).
+
+Definition forAllShrinkNonDet {A prop : Type} {_ : Checkable prop} `{Show A}
+           (n : nat) (gen : G A) (shrinker : A -> list A) (pf : A -> prop) : Checker :=
+
+  bindGen gen (fun x : A =>
+                 shrinkingNondet n shrinker x (fun x' =>
+                                         printTestCase (show x' ++ newline) (pf x'))).
+
+Definition forAllShrinkShow {A prop : Type} {_ : Checkable prop}
+           (gen : G A) (shrinker : A -> list A) (show' : A -> string) (pf : A -> prop) : Checker :=
+  bindGen gen (fun x =>
+                 shrinking shrinker x (fun x' =>
+                                         printTestCase (show' x') (pf x'))).
+
+Global Instance testFun {A prop : Type} `{Show A}
+       `{Arbitrary A} `{_ : Checkable prop} : Checkable (A -> prop) :=
+  {
+    checker f := forAllShrink arbitrary shrink f
+  }.
+
+Global Instance testProd {A : Type} {prop : A -> Type} `{Show A} `{Arbitrary A} 
+       `{forall x : A, Checkable (prop x)} :
+  Checkable (forall (x : A), prop x) := 
+  {| checker f := forAllShrink arbitrary shrink (fun x => checker (f x)) |}.
+
+Global Instance testPolyFun {prop : Type -> Type} {_ : Checkable (prop nat)} : Checkable (forall T, prop T) :=
+  {
+    checker f := printTestCase "" (f nat)
+  }.
+
+Global Instance testPolyFunSet {prop : Set -> Type} {_ : Checkable (prop nat)} : Checkable (forall T, prop T) :=
+  {
+    checker f := printTestCase "" (f nat)
+  }.
+
+Definition addCallbacks' r result := 
+  addCallbacks result (callbacks r).
+Definition addStamps' r result := 
+
+  let res := addStamps result (stamp r) in
+
+  res.
+
+Fixpoint conjAux (f : Result -> Result) 
+         l := 
+  match l with 
+    | nil => (MkRose (f succeeded) (lazy nil))
+    | cons res rs => 
+      let '(MkRose r _) := res in
+      match ok r with 
+        | Some true =>
+           (conjAux (fun r' => addStamps' r (addCallbacks' r (f r'))
+                    ) rs)
+        | Some false => res
+        | None =>
+          let res' := conjAux (fun r' => (addCallbacks' r (f r'))) rs in
+          let '(MkRose r' rs) := res' in
+          match ok r' with 
+            | Some true => MkRose (updOk r' None) (lazy nil)
+            | Some false => res'
+            | None => res'
+          end
+      end
+  end.
+
+Definition mapGen {A B} (f : A -> G B) (l : list A) : G (list B) :=
+  bindGen (foldGen (fun acc a => 
+             bindGen (f a) (fun b => returnGen (cons b acc)))
+          l nil) (fun l => returnGen (rev l)).
+
+Fixpoint conjoin (l : list Checker) : Checker :=
+
+  bindGen (mapGen (liftGen unProp) l) (fun rs =>
+          (returnGen (MkProp (let res := conjAux (fun x => x) rs in
+                              let '(MkRose r _) := res in 
+                               res
+                             )))).
+
+Definition fmapRose' A B (r : Rose A) (f : A -> B) := fmapRose f r.
+
+Definition expectFailureError := 
+  updReason failed "Expect failure cannot occur inside a disjunction".
+
+Definition disjAux (p q : Rose Result) : Rose Result :=
+  joinRose (fmapRose' p (fun result1 =>
+  if expect result1 then
+    match ok result1 with 
+    | Some true => returnRose result1
+    | Some false => 
+      joinRose (fmapRose' q (fun result2 =>
+      if expect result2 then
+        match ok result2 with 
+        | Some true => returnRose result2
+        | Some false => 
+          returnRose (MkResult (ok result2)
+                               (expect result2)
+                               (if string_dec (reason result2) EmptyString 
+                                then reason result1
+                                else reason result2)
+                               (orb (interrupted result1) (interrupted result2))
+                               (stamp result1 ++ stamp result2)
+                               (callbacks result1 ++ 
+                                    cons (PostFinalFailure Counterexample
+                                                      (fun _ _ => trace newline 0)) nil ++
+                                    callbacks result2 )
+                               (result_tag result2))
+        | None => returnRose result2 
+        end
+      else returnRose expectFailureError))
+    | None => 
+      joinRose (fmapRose' p (fun result2 => 
+      if expect result2 then 
+        match ok result2 with
+        | Some true => returnRose result2
+        | _ => returnRose result1 
+        end
+      else returnRose expectFailureError))
+    end
+  else returnRose expectFailureError)).
+
+Definition disjoin (l : list Checker) : Checker := 
+  bindGen (mapGen (liftGen unProp) l) (fun rs =>
+          (returnGen (MkProp (
+                          fold_right disjAux (returnRose failed) rs
+                        )))).
+
+Module QcNotation.
+  Export QcDefaultNotation.
+
+  Notation "x ==> y" := (implication x y) (at level 55, right associativity)
+                           : Checker_scope.
+
+  Notation "'FORALL' x : T , c" :=
+    (forAllShrink (@arbitrary T _) shrink (fun x => c))
+    (at level 200, x ident, T at level 200, c at level 200, right associativity
+      )
+    : type_scope.
+
+  Notation "'FORALL' x | P , c" :=
+    (forAllShrink (genST (fun x => P)) shrink (fun y => match y with
+                                                    | Some x => c
+                                                    | _ => checker tt
+                                                    end))
+      (at level 200, x ident, P at level 200, c at level 200, right associativity)
+     : type_scope.
+End QcNotation. *)
 
 Require Import ExtrOcamlBasic.
-
 Require Import ExtrOcamlString.
-
 Require Import ExtrOcamlNatInt.
-
 Require Import ExtrOcamlZInt.
-
-
 
 Extraction Blacklist String List Nat.
 
-
-
 Extract Inductive Decimal.int => unit [ "(fun _ -> ())" "(fun _ -> ())" ] "(fun _ _ _ -> ())".
 
-
-
 Extract Constant show_nat =>
-
   "(fun i ->
-
   let s = string_of_int i in
-
   let rec copy acc i =
-
     if i < 0 then acc else copy (s.[i] :: acc) (i-1)
-
   in copy [] (String.length s - 1))".
-
 Extract Constant show_bool =>
-
   "(fun i ->
-
   let s = string_of_bool i in
-
   let rec copy acc i =
-
     if i < 0 then acc else copy (s.[i] :: acc) (i-1)
-
   in copy [] (String.length s - 1))".
-
-
 
 Extract Constant show_Z =>
-
   "(fun i ->
-
   let s = string_of_int i in
-
   let rec copy acc i =
-
     if i < 0 then acc else copy (s.[i] :: acc) (i-1)
-
   in copy [] (String.length s - 1))".
-
 Extract Constant show_N =>
-
   "(fun i ->
-
   let s = string_of_int i in
-
   let rec copy acc i =
-
     if i < 0 then acc else copy (s.[i] :: acc) (i-1)
-
   in copy [] (String.length s - 1))".
-
-
 
 Extract Constant RandomSeed   => "Random.State.t".
-
 Extract Constant randomNext   => "(fun r -> Random.State.bits r, r)".
 
-
-
 Extract Constant randomSplit  => "(fun x -> (x,x))".
-
 Extract Constant mkRandomSeed => "(fun x -> Random.init x; Random.get_state())".
-
 Extract Constant randomRNat  =>
-
   "(fun (x,y) r -> if y < x then failwith ""choose called with unordered arguments"" else  (x + (Random.State.int r (y - x + 1)), r))".
-
 Extract Constant randomRBool => "(fun _ r -> Random.State.bool r, r)".
-
 Extract Constant randomRInt  =>
-
   "(fun (x,y) r -> if y < x then failwith ""choose called with unordered arguments"" else  (x + (Random.State.int r (y - x + 1)), r))".
-
 Extract Constant randomRN =>
-
   "(fun (x,y) r -> if y < x then failwith ""choose called with unordered arguments"" else  (x + (Random.State.int r (y - x + 1)), r))".
-
 Extract Constant newRandomSeed => "(Random.State.make_self_init ())".
 
-
-
 Extract Inductive Lazy => "Lazy.t" [lazy].
-
 Extract Constant force => "Lazy.force".
 
-
-
 Extract Constant Nat.div => "(/)".
-
 Extract Constant Test.gte => "(>=)".
-
 Extract Constant le_gt_dec => "(<=)".
-
 Extract Constant trace =>
-
   "(fun l -> print_string (
-
    let s = Bytes.create (List.length l) in
-
    let rec copy i = function
-
     | [] -> s
-
     | c :: l -> Bytes.set s i c; copy (i+1) l
-
    in Bytes.to_string (copy 0 l)); flush stdout; fun y -> y)".
-
-
 
 Set Extraction AccessOpaque.
 
-
-
 Require Import mathcomp.ssreflect.ssreflect.
-
 From mathcomp Require Import ssreflect ssrnat ssrbool div eqtype.
-
 Extract Constant divn => "(/)".
-
 Extract Constant modn => "(fun x y -> x mod y)".
-
 Extract Constant eqn => "(==)".
 
-
-
 Axiom print_extracted_coq_string : string -> unit.
-
 Extract Constant print_extracted_coq_string =>
-
  "fun l -> print_string (
-
    let s = Bytes.create (List.length l) in
-
    let rec copy i = function
-
     | [] -> s
-
     | c :: l -> s.[i] <- c; copy (i+1) l
-
    in Bytes.to_string (copy 0 l))".
-

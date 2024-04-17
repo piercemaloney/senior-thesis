@@ -1,538 +1,1896 @@
 
-
 Require Export general_tactics.
+(* general_tactics:
+Ltac ExistHyp t := match goal with
+                   | H1:t |- _ => idtac
+                   end.
 
+Ltac HypOfType t := match goal with
+                    | H1:t |- _ => H1
+                    end.
+
+Ltac CleanDuplicatedHyps :=
+  repeat match goal with
+         | H:?X1 |- _ => clear H; ExistHyp X1
+         end.
+
+Ltac not_exist_hyp t := match goal with
+  | H1:t |- _ => fail 2
+ end || idtac.
+
+Ltac assert_if_not_exist H :=
+  not_exist_hyp H;assert H.
+
+Ltac suppose t := cut t;[intro|idtac].
+
+Ltac use H := decompose [and ex] H; clear H.
+
+Ltac print_goal := match goal with
+ |- ?G => idtac G
+end.
+
+Ltac DecompEx H P := elim H;intro P;intro;clear H.
+
+Ltac DecompExAnd H P :=
+  elim H;intro P;
+  let id:=fresh in intro id;decompose [and] id;clear id;clear H.
+
+Ltac DecompAndAll :=
+ repeat
+ match goal with
+   | H:(?X1 /\ ?X2) |- _ => decompose [and] H;clear H
+end. *)
 Require Export Rgeometry_tools.
+(* Rgeometry_tools:
+Require Export geometry_tools_lemmas.
+Require Export general_tactics.
+Require Import List.
+Require Import Quote.
 
-Require Export constructed_points_elimination.
+Inductive AVars : Type :=  
+  | PVar : Point -> AVars
+  | FVar : F -> AVars.
 
-Require Export free_points_elimination.
+Inductive AP : Type := 
+  | APvar : nat -> AP.
 
-Require Export simplify_constructions.
+Inductive AF : Type :=
+  | AS : nat -> nat -> nat -> AF
+  | AD : nat -> nat -> AF
+  | AFvar : nat -> AF
+  | AF0 : AF
+  | AF1 : AF
+  | AFplus : AF -> AF -> AF
+  | AFmult : AF -> AF -> AF
+  | AFopp : AF -> AF
+  | AFinv : AF -> AF.
 
-Require Export construction_tactics.
+Ltac List_mem var lvar :=
+  match constr:(lvar) with
+  | nil => constr:(false)
+  | cons ?X1 ?X2 =>
+      match constr:(X1 = var) with
+      | (?X1 = ?X1) => constr:(true)
+      | _ => List_mem var X2
+      end
+  end.
 
-Require Export my_field_tac.
+Ltac build_var_point_list_aux lvar point :=
+     let res := List_mem (PVar point) lvar in
+      match constr:(res) with
+      | true => lvar
+      | false => constr:(cons (PVar point) lvar)
+      end.
 
+Ltac build_var_list_aux lvar trm :=
+  match constr:(trm) with
+  | F0 => lvar
+  | F1 => lvar
+  | (Fplus ?X1 ?X2) =>
+      let l2 := build_var_list_aux lvar X2 in
+      build_var_list_aux  l2 X1
+  | (Fmult ?X1 ?X2) =>
+      let l2 := build_var_list_aux  lvar X2 in
+      build_var_list_aux l2 X1
+  | (Fopp ?X1) => build_var_list_aux lvar X1
+  | (Finv ?X1) => build_var_list_aux lvar X1
+  | (S ?X1 ?X2 ?X3) =>  
+  let l1 := build_var_point_list_aux lvar X3 in
+  let l2 := build_var_point_list_aux l1 X2 in
+  build_var_point_list_aux l2 X1
+  | (DSeg ?X1 ?X2) => 
+  let l1 := build_var_point_list_aux lvar X2 in
+  build_var_point_list_aux l1 X1
+  | (?X1 = ?X2) => 
+  let l2 := build_var_point_list_aux lvar X2 in
+  build_var_point_list_aux l2 X1
 
+  | ?X1 =>
+    let res := List_mem (FVar X1) lvar in
+      match constr:(res) with
+      | true => lvar
+      | false => constr:(cons (FVar X1) lvar)
+      end
+  end.
 
-Ltac decomp_non_zero_mult_div H := 
+Ltac build_var_list trm :=
+  build_var_list_aux (@nil AVars) trm.
 
-  (apply (multnonzero) in H || apply (divnonzero) in H; use H).
+Ltac List_assoc elt lst :=
+  match constr:(lst) with
+  | nil => fail
+  | (cons (@pairT AVars nat ?X1 ?X2) ?X3) =>
+      match constr:(elt = X1) with
+      | (?X1 = ?X1) => constr:(X2)
+      | _ => List_assoc elt X3
+      end
+  end.
 
+Ltac number_aux lvar cpt :=
+  match constr:(lvar) with
+  | nil => constr:(@nil (prodT AVars nat))
+  | cons ?X2 ?X3 =>
+      let l2 := number_aux X3 (Datatypes.S cpt) in
+      constr:(cons (@pairT  AVars nat X2 cpt) l2)
+  end.
 
+Ltac number lvar := number_aux lvar (Datatypes.O).
 
-Ltac decomp_all_non_zero_mult_div := repeat match goal with
+Ltac build_numbered_var_list trm := let lvar := build_var_list trm in
+                             number lvar.
 
- H: ?X <> 0 |- _ => decomp_non_zero_mult_div H
+Definition list_assoc_inv :=
+  (fix list_assoc_inv_rec (A:Type) (B:Set)
+                     (eq_dec:forall e1 e2:B, {e1 = e2} + {e1 <> e2})
+                     (lst:list (prodT A B)) {struct lst} :
+   B -> A -> A :=
+     fun (key:B) (default:A) =>
+       match lst with
+       | nil => default
+       | cons (pairT v e) l =>
+           match eq_dec e key with
+           | left _ => v
+           | right _ => list_assoc_inv_rec A B eq_dec l key default
+           end
+       end).
+
+Parameter SomeValue :AVars.
+Parameter SomePoint :Point.
+
+Definition interp_AP_to_Point (lvar:list (prodT AVars nat)) (e:nat) : Point :=
+ match(list_assoc_inv  AVars nat eq_nat_dec lvar e SomeValue) with
+    | PVar p => p
+    | _ => SomePoint
+  end
+.
+
+Fixpoint interp_AF_to_F (lvar:list (prodT AVars nat)) (e:AF) {struct e} : F :=
+  match e with
+  | AF0 => F0
+  | AF1 => F1
+  | AS e1 e2 e3 => let idx1 := (interp_AP_to_Point lvar e1) in 
+S idx1 (interp_AP_to_Point lvar e2) (interp_AP_to_Point lvar e3)
+  | AD e1 e2 => DSeg (interp_AP_to_Point lvar e1) (interp_AP_to_Point lvar e2) 
+  | AFplus e1 e2 => Fplus (interp_AF_to_F lvar e1) (interp_AF_to_F lvar e2)
+  | AFmult e1 e2 => Fmult (interp_AF_to_F lvar e1) (interp_AF_to_F lvar e2)
+  | AFopp e => Fopp (interp_AF_to_F lvar e)
+  | AFinv e => Finv (interp_AF_to_F lvar e)
+  | AFvar n => 
+  match(list_assoc_inv  AVars nat eq_nat_dec lvar n SomeValue) with
+    | FVar f => f
+    | _ => F0
+  end
+  end.
+
+Ltac interp_A lvar trm :=
+  match constr:(trm) with
+  | F0 => constr:(AF0)
+  | F1 => constr:(AF1)
+  | (Fplus ?X1 ?X2) =>
+      let e1 := interp_A lvar X1 with e2 := interp_A lvar X2 in
+      constr:(AFplus e1 e2)
+  | (Fmult ?X1 ?X2) =>
+      let e1 := interp_A lvar X1 with e2 := interp_A lvar X2 in
+      constr:(AFmult e1 e2)
+  | (Fopp ?X1) =>
+      let e := interp_A lvar X1 in
+      constr:(AFopp e)
+  | (Finv ?X1) => 
+      let e := interp_A lvar X1 in
+      constr:(AFinv e)
+ | (S ?X1 ?X2 ?X3) =>
+   let idx1 := List_assoc (PVar X1) lvar with 
+   idx2 := List_assoc (PVar X2) lvar with 
+   idx3 := List_assoc (PVar X3) lvar in 
+   constr:(AS idx1 idx2 idx3)
+ | (DSeg ?X1 ?X2) =>
+  let idx1 := List_assoc (PVar X1) lvar with
+  idx2 := List_assoc (PVar X2) lvar in 
+  constr:(AD idx1 idx2)
+ | ?X1 => let idx := List_assoc (FVar X1) lvar in
+           constr:(AFvar idx)
+  end.
+
+Fixpoint nateq (n m:nat) {struct m} : bool :=
+  match n, m with
+  | O, O => true
+  | Datatypes.S n', Datatypes.S m' => nateq n' m'
+  | _, _ => false
+  end.
+
+Lemma nateq_prop : forall n m:nat, (Is_true (nateq n m))-> n=m.
+
+Fixpoint simplif (e:AF) {struct e} : AF :=
+  match e with 
+   | AFplus e1 e2 => 
+   let s1 := (simplif e1) in 
+   let s2 := (simplif e2) in 
+   match s1 with 
+     AF0 => s2
+     |_ => match s2 with 
+        AF0 => s1
+        |_ =>  AFplus s1 s2
+        end
+     end
+   | AFmult e1 e2 =>
+    let s1 := (simplif e1) in 
+    let s2 := (simplif e2) in 
+    match s1 with 
+      AF0 => AF0
+      |AF1 => s2
+      |_ => match s2 with 
+        AF0 => AF0
+        |AF1 => s1
+        |_ =>  AFmult s1 s2
+        end
+    end
+  | AFopp e =>    
+    let s := (simplif e) in 
+    match s with 
+       AF0 => AF0
+       | AFopp e1 => e1
+       | _ => AFopp s
+    end
+  | AS e1 e2 e3 => if (nateq e1 e2) then AF0 else
+  (if (nateq e1 e3) then AF0 else (if (nateq e2 e3) then AF0 else e))
+  | AD e1 e2 => if (nateq e1 e2) then AF0 else e
+  | _ => e
+end.
+
+Lemma simplif_correct : 
+forall (e:AF) (lvar:list (prodT AVars nat)),
+   interp_AF_to_F lvar (simplif e) =
+   interp_AF_to_F lvar e.
+
+Ltac simplif_term exp :=
+  let lvar := build_numbered_var_list exp in 
+  let trm := interp_A lvar exp in 
+  let trm2 :=constr:(interp_AF_to_F lvar (simplif trm)) in 
+ (replace exp with trm2 in *;[simpl|rewrite simplif_correct;trivial]).
+
+Ltac Rbasic_simpl := match goal with 
+_:_ |- ?X1 = ?X2 => simplif_term X1;simplif_term X2;unfold interp_AP_to_Point;simpl
+end.
+
+Fixpoint natle (n m:nat) {struct m} : bool :=
+  match n, m with
+  | O, O => true
+  | O, Datatypes.S n' => true
+  | Datatypes.S n', Datatypes.S m' => natle n' m'
+  | _, _ => false
+  end.
+
+Fixpoint uniformize_areas (e:AF) {struct e} : AF :=
+match e with 
+  | AFplus e1 e2 => 
+    let s1 := (uniformize_areas e1) in 
+    let s2 := (uniformize_areas e2) in 
+    AFplus s1 s2
+  | AFmult e1 e2 =>
+    let s1 := (uniformize_areas e1) in 
+    let s2 := (uniformize_areas e2) in 
+    AFmult s1 s2
+  | AFopp e1 =>
+    let s1 := (uniformize_areas e1) in 
+    AFopp s1
+  | AFinv e1 =>
+    let s1 := (uniformize_areas e1) in 
+    AFinv s1
+  | AS e1 e2 e3 => if (natle e1 e2) then 
+                                 (if (natle e2 e3) then (AS e1 e2 e3) else 
+                                            (if (natle e1 e3)  then  (AFopp (AS e1 e3 e2)) else (AS e3 e1 e2))) 
+                               else (if (natle e2 e3) then 
+						(if (natle e1 e3) then (AFopp (AS e2 e1 e3)) else (AS e2 e3 e1)) 
+					else (AFopp (AS e3 e2 e1))) 
+  | AD e1 e2 => if (natle e1 e2) then (AD e1 e2) else  (AFopp (AD e2 e1))
+  | _ => e
+end.
+
+Lemma uniformize_areas_correct : 
+forall (e:AF) (lvar:list (prodT AVars nat)),
+   interp_AF_to_F lvar (uniformize_areas e) =
+   interp_AF_to_F lvar e.
+
+Ltac generalize_all := 
+   repeat match goal with
+          H:_ |- _ => revert H
+end.
+
+Ltac uniformize_term exp lvar :=
+  let trm := interp_A lvar exp in 
+  let trm2 :=constr:(interp_AF_to_F lvar (uniformize_areas trm)) in
+(replace exp with trm2;[idtac|rewrite uniformize_areas_correct;trivial]).
+
+Inductive formula : Type :=
+  | f_imp : formula -> formula -> formula 
+  | f_const : Prop -> formula .
+
+Inductive formula2 : Type :=
+  | f_imp2 : formula2 -> formula2 -> formula2 
+  | f_neq : AF -> AF -> formula2 
+  | f_eq : AF -> AF -> formula2.
+
+Fixpoint uniformize_areas_formula2 (e:formula2) {struct e} : formula2 :=
+match e with 
+  | f_imp2 e1 e2 => 
+    let s1 := (uniformize_areas_formula2 e1) in 
+    let s2 := (uniformize_areas_formula2 e2) in 
+    f_imp2 s1 s2
+  | f_neq e1 e2 =>
+    let s1 := (uniformize_areas e1) in 
+    let s2 := (uniformize_areas e2) in 
+    f_neq s1 s2
+  | f_eq e1 e2 =>
+    let s1 := (uniformize_areas e1) in 
+    let s2 := (uniformize_areas e2) in 
+    f_eq s1 s2
+end.
+
+Fixpoint interp_formula2_to_prop (lvar:list (prodT AVars nat)) (e:formula2) {struct e} : Prop :=
+  match e with
+  | f_imp2 e1 e2 => 
+        let s1 := interp_formula2_to_prop lvar e1 in
+        let s2 := interp_formula2_to_prop lvar e2 in
+      s1 -> s2
+  | f_neq e1 e2 => 
+        let s1 := interp_AF_to_F lvar e1 in
+        let s2 := interp_AF_to_F lvar e2 in
+        s1 <> s2
+ | f_eq e1 e2 => 
+        let s1 := interp_AF_to_F lvar e1 in
+        let s2 := interp_AF_to_F lvar e2 in
+        s1 = s2
+end.
+
+Lemma uniformize_areas_formula2_correct_gen : 
+forall (e:formula2) (lvar:list (prodT AVars nat)),
+   interp_formula2_to_prop lvar (uniformize_areas_formula2 e) <->
+   interp_formula2_to_prop lvar e.
+
+Lemma uniformize_areas_formula2_correct :
+forall (e:formula2) (lvar:list (prodT AVars nat)),
+   interp_formula2_to_prop lvar (uniformize_areas_formula2 e) ->
+   interp_formula2_to_prop lvar e.
+
+Definition implies := fun A B :Prop => A->B. 
+Definition neqF := fun A B : F => A<>B.
+Definition eqF := fun A B : F => A=B.
+
+Fixpoint interp_f (f: formula) : Prop :=
+   match f with
+   | f_imp f1 f2 => implies (interp_f f1) (interp_f f2)
+   | f_const c => c
+   end.
+
+Ltac put_implies :=
+ repeat
+ match goal with 
+  _:_ |- context [?X1 -> ?X2] => replace (X1 -> X2) with (implies X1 X2);[idtac|auto]
+end.
+
+Ltac put_eq_neqF :=
+ repeat
+ match goal with 
+  _:_ |- context [?X1 <> ?X2] => replace (X1 <> X2) with (neqF X1 X2);[idtac|auto]
+  |H:context [?X1 <> ?X2] |- _ => replace (X1 <> X2) with (neqF X1 X2) in H;[idtac|auto]
+  |_:_ |- context [?X1 = ?X2] => replace (X1 = X2) with (eqF X1 X2);[idtac|auto]
+  |H:context [?X1 = ?X2] |- _ => replace (X1 = X2) with (eqF X1 X2) in H;[idtac|auto]
 
 end.
 
+Ltac generalize_all_eq :=
+   repeat match goal with
+   H: context [?X1 = ?X2] |- _=> revert H
+end.
 
+Ltac generalize_all_eq_neqF :=
+   repeat match goal with
+   H: context [eqF ?X1 ?X2] |- _=> revert H
+   | H: context [neqF ?X1 ?X2] |- _=> revert H
+ end.
 
-Ltac field_and_conclude := 
+Ltac interp_formula2 lvar trm :=
+match constr:(trm) with
+  | (implies ?X1 ?X2) =>
+      let e1 := interp_formula2 lvar X1 in
+      let e2 := interp_formula2 lvar X2 in
+      constr:(f_imp2 e1 e2)
+ | (eqF ?X1 ?X2) =>
+      let e1 := interp_A lvar X1 in
+      let e2 := interp_A lvar X2 in
+      constr:(f_eq e1 e2)
+ | (neqF ?X1 ?X2) =>
+     let e1 := interp_A lvar X1 in
+     let e2 := interp_A lvar X2 in
+     constr:(f_neq e1 e2)
+end.
 
-  (abstract (field;decomp_all_non_zero_mult_div;solve_conds)) ||
+Ltac interp_formula2_goal lvar := 
+ match goal with
+ _:_ |- ?X1 => interp_formula2 lvar X1
+end.
 
-  (abstract (Ffield)).
+Ltac uniformize_formula2_goal lvar :=
+  let trm := interp_formula2_goal lvar in
+  let trm2 :=constr:(interp_formula2_to_prop lvar (uniformize_areas_formula2 trm)) in
+  let id := fresh in (
+assert (id:(trm2-> interp_formula2_to_prop lvar trm));
+[apply uniformize_areas_formula2_correct|idtac];
+simpl in id;
+ 
+unfold interp_AP_to_Point in id;simpl in id;unfold implies;
+apply id;clear id
+).
 
+Ltac prepare_goal2 lvar := generalize_all_eq_neqF;put_implies;interp_formula2_goal lvar.
 
+Ltac prepare_goal := generalize_all_eq;put_implies;quote interp_f.
+Ltac un_prepare_goal := simpl;unfold implies;intros.
 
-Ltac DecomposeMratio :=
+Ltac build_var_list_eq varlist x :=
+ match constr:(x) with 
+     	?X2=?X3 => 
+           let l1 := build_var_list_aux varlist X2 in
+   	   let l2 := build_var_list_aux l1 X3 in
+           constr:(l2) 
+       | ?X2<>?X3 => 
+          let l1 := build_var_list_aux varlist X2 in
+          let l2 := build_var_list_aux l1 X3 in
+          constr:(l2)
+   | _ => varlist
+end.
 
-  repeat
+Ltac union_vars_aux varlist trm :=  
+  match constr:(trm) with
+   | interp_f ?X1 => union_vars_aux varlist X1 
+   | f_imp ?X1 ?X2 => 
+        let lvar1 := union_vars_aux varlist X1 in 
+        let lvar2 := union_vars_aux lvar1 X2 in
+        constr:(lvar2)
+   | f_const ?X1 => build_var_list_eq varlist X1
+ end.
 
-   match goal with
+Ltac union_vars trm :=  union_vars_aux (@nil AVars) trm .
+      
+Ltac compute_vars_of_the_goal :=
+  match goal with 
+  _:_ |- ?X1 => 
+        let lvar := union_vars X1 in
+        let varlist := number lvar in
+       varlist
+end.
 
-   | H:(mratio _ _ _ _) |- _ =>
+Ltac uniformize_quantities varlist trm :=
+  match constr:(trm) with
+   | interp_f ?X1 => uniformize_quantities varlist X1 
+   | f_imp ?X1 ?X2 => uniformize_quantities varlist X1;uniformize_quantities varlist X2
+   | f_const ?X1 => 
+                (match constr:(X1) with 
+                    ?X1 = ?X2 => uniformize_term X1 varlist;uniformize_term X2 varlist
+                  | ?X1 <> ?X2 => uniformize_term X1 varlist;uniformize_term X2 varlist
+                    |_ => idtac
+                   end)
+   end.
 
-       unfold mratio in H; decompose [and] H; clear H
+Ltac uniformize_quantities_of_the_goal varlist :=
+ match goal with 
+  _:_ |- ?XG => uniformize_quantities varlist  XG
+end.
+
+Ltac uniformize_quantities_of_all varlist :=
+ repeat
+  match goal with 
+	  _:_ |- context [?X1 = ?X2] => progress uniformize_term X1 varlist
+          |_:_ |- context [?X1 = ?X2] => progress uniformize_term X2 varlist
+	  |H: context [?X1 <> ?X2] |- _ => progress uniformize_term X1 varlist
+          |H: context [?X1 <> ?X2] |- _ => progress uniformize_term X2 varlist
+	  |H: context [?X1 = ?X2] |- _ => progress uniformize_term X1 varlist
+	  |H: context [?X1 = ?X2] |- _ => progress uniformize_term X2 varlist
+end.
+
+Ltac Runiformize_signed_areas := 
+  unfold Fminus, Fdiv in *;   
+  prepare_goal;
+  let varlist := compute_vars_of_the_goal in
+  (un_prepare_goal; put_eq_neqF;generalize_all_eq_neqF;put_implies;
+    uniformize_formula2_goal varlist;intros). *)
+Require Export constructed_points_elimination.
+(* constructed_points_elimination:
+Require Export ratios_elimination_lemmas.
+Require Export py_elimination_lemmas.
+Require Export area_coords_elimination.
+Require Export elimination_prepare.
+Require Export area_coords_elimination.
+
+Ltac elimi_inter_ll_col  A C D U V P Q Y H  Hdenom Hpar Hneq HCol :=  
+  let T1 := fresh in 
+  (assert 
+  (T1 :=non_zero_denom_inter_ll_2_length_ratio  A C D U V P Q Y H HCol Hdenom Hneq Hpar);
+   rewrite
+             (elim_length_ratio_inter_ll_2 A C D U V P Q Y H HCol Hdenom Hpar Hneq) in *).
+ 
+Ltac elimi_inter_ll_not_col  A C D U V P Q Y H  Hdenom Hpar HCol :=  
+  let T1 := fresh in 
+  (assert 
+  (T1 :=non_zero_denom_inter_ll_1_length_ratio  A C D U V P Q Y H HCol Hpar Hdenom);
+   rewrite
+             (elim_length_ratio_inter_ll_1 A C D U V P Q Y H HCol Hdenom Hpar) in *).
+
+Ltac elimi_inter_ll_col_spec A C D U V P Q Y H  Hdenom Hpar Hneq HCol := 
+   rewrite (elim_length_ratio_inter_ll_2_spec A C U V P Q Y H HCol Hdenom Hpar Hneq) in *.
+
+Ltac elimi_inter_ll_not_col_spec A C D U V P Q Y H  Hdenom Hpar Hneq HCol :=  
+  rewrite (elim_length_ratio_inter_ll_1_spec A C U V P Q Y H HCol Hdenom Hpar) in *.
+ 
+Ltac elimi_inter_ll_spec A C D U V P Q Y H  Hdenom Hpar Hneq :=
+ test_col  A U V 
+              ltac: (elimi_inter_ll_col_spec        A C D U V P Q Y H  Hdenom Hpar Hneq)
+              ltac: (elimi_inter_ll_not_col_spec A C D U V P Q Y H  Hdenom Hpar Hneq).
+
+Ltac test_equality_and_subst Hc A B Tac := 
+ match goal with 
+| H : A = B |- _ => rewrite <- H in *;rewrite H in Hc
+| H : A<>B |- _ => Tac H
+| _ => let H := fresh in 
+      (named_cases_equality A B H;
+   [ rewrite <- H in *; rewrite H in Hc | Tac H])
+end.
+
+Ltac test_equality_and_subst_2 Hc A B Tac Tac2 := 
+ match goal with 
+| H : A = B |- _ => rewrite <- H in *;try rewrite H in Hc;Tac2
+| H : A<>B |- _ => Tac H
+| _ => let H := fresh in 
+      (named_cases_equality A B H;
+   [ (rewrite <- H in *; try rewrite H in Hc;Tac2) | 
+     Tac H])
+end.
+
+Ltac elimi_inter_ll_gen  P Q U V A Y C D H Hneq :=
+    let Hdenom := HypOfType (C <> D) in
+    let Hpar := HypOfType (parallel A Y C D) in
+              test_col  A U V 
+              ltac: (elimi_inter_ll_col A C D U V P Q Y H Hdenom Hpar Hneq)
+              ltac: (elimi_inter_ll_not_col A C D U V P Q Y H Hdenom Hpar).
+
+Ltac elimi_inter_ll P Q U V A Y C D H :=
+  let Hi := fresh in
+  (assert (Hi : C <> D); [ Geometry | idtac ];
+    match constr:((A, (C, D))) with
+
+    | (U, (V, Y)) =>
+        let Hfresh := fresh in
+        assert (Hfresh := aux_co_side_1 P Q U V Y Hi H);
+        rewrite (co_side_elim_1 P Q U V Y  Hi H) in *;clear Hi
+    | (V, (U, Y)) =>
+        let Hfresh := fresh in
+        assert (Hfresh := aux_co_side_2 P Q U V Y Hi H);
+        rewrite (co_side_elim_2 P Q U V Y  Hi H) in *;clear Hi
+    | (P, (Q, Y)) =>
+        let Hfresh := fresh in
+        assert (Hfresh := aux_co_side_3 P Q U V Y Hi H);
+        rewrite (co_side_elim_3 P Q U V Y  Hi H) in *;clear Hi
+    | (Q, (P, Y)) =>
+        let Hfresh := fresh in
+        assert (Hfresh := aux_co_side_4 P Q U V Y Hi H);
+        rewrite (co_side_elim_4 P Q U V Y  Hi H) in *;clear Hi
+
+   | (A,(C,Y)) => idtac "here";
+              let Hdenom := HypOfType (C <> D) in
+              let Hpar := HypOfType (parallel A Y C D) in
+              test_equality_and_subst H A Y 
+                   ltac:(elimi_inter_ll_spec  A C D U V P Q Y H  Hdenom Hpar)
+         | _ =>  
+         test_equality_and_subst H A Y ltac: (elimi_inter_ll_gen P Q U V A Y C D H )
+   
+end).
+
+Ltac elimi_on_line_d_col_aux P Q lambda A Y C D H Hdenom Hpar HCol Hdiff :=
+let T3 := fresh in (assert
+            (T3 :=
+             invariant_par_on_line_d_1_length_ratio_2 A C D P Q Y lambda H HCol Hdiff Hpar);
+            rewrite
+             (elim_length_ratio_on_line_d_1 A C D P Q Y lambda H HCol Hdenom) in *).
+
+Ltac elimi_on_line_d_col P Q lambda A Y C D H Hdenom Hpar HCol:=
+let T1 := fresh in
+(assert (T1 := non_zero_denom_on_line_d_1_length_ratio Y P Q lambda H);
+let T3 := fresh in
+(assert (T3 := non_zero_denom_on_line_d_1_length_ratio_seg Y P Q lambda H);
+let T2 := fresh in
+(assert (T2 := invariant_par_on_line_d_1_length_ratio A C D P Q Y lambda H HCol Hpar);
+let T4 := fresh in
+(assert (T4 :=invariant_par_on_line_d_1_length_ratio_3 A C D P Q Y lambda H HCol Hpar);
+test_equality_and_subst H A Y
+ltac:(elimi_on_line_d_col_aux P Q lambda A Y C D H Hdenom Hpar HCol) 
+  )))).
+ 
+Ltac elimi_on_line_d_not_col  P Q lambda A Y C D H Hdenom Hpar HCol :=
+let T := fresh in
+      (assert (T := non_zero_denom_on_line_d_2_length_ratio A C D P Q Y lambda H HCol Hpar Hdenom));
+        rewrite
+         (elim_length_ratio_on_line_d_2 A C D P Q Y lambda H HCol Hdenom Hpar) in *.
+
+Ltac elimi_on_line_d P Q lambda A Y C D H :=
+  let Hdenom := HypOfType (C <> D) in
+  let Hpar := HypOfType (parallel A Y C D) in
+  test_col  A P Q 
+  ltac: (elimi_on_line_d_col P Q lambda A Y C D H Hdenom Hpar)
+  ltac: (elimi_on_line_d_not_col P Q lambda A Y C D H Hdenom Hpar).
+
+Ltac elimi_on_parallel_d_col_aux_2 R P Q lambda A Y C D H Hdenom Hpar HCol Hneq Hneq2 :=
+ let T1 := fresh in
+      (assert
+        (T1 := non_zero_denom_on_parallel_d_1_length_ratio A C D P Q R Y lambda H HCol);
+        let T2 := fresh in
+        (assert
+          (T2 :=
+           invariant_par_on_parallel_d_1_length_ratio A C D P Q R Y lambda H HCol Hneq Hpar);
+          let T3 := fresh in
+          (assert
+            (T3 :=
+             invariant_par_on_parallel_d_1_length_ratio_2 A C D P Q R Y lambda H HCol Hneq
+             Hneq2 Hpar);
+            rewrite
+             (elim_length_ratio_on_parallel_d_1 A C D P Q R Y lambda H HCol Hdenom) in *))).
+
+Ltac elimi_on_parallel_d_col_aux  R P Q lambda A Y C D H Hdenom Hpar HCol Hneq :=
+  test_equality_and_subst H A Y
+  ltac:(elimi_on_parallel_d_col_aux_2 R P Q lambda A Y C D H Hdenom Hpar HCol Hneq).
+
+Ltac elimi_on_parallel_d_col R P Q lambda A Y C D H Hdenom Hpar HCol :=
+   test_equality_and_subst H R Y
+    ltac:(elimi_on_parallel_d_col_aux R P Q lambda A Y C D H Hdenom Hpar HCol).
+
+Ltac elimi_on_parallel_d R P Q lambda A Y C D H :=
+  let Hdenom := HypOfType (C <> D) in
+  let Hpar := HypOfType (parallel A Y C D) in
+  let HCol := fresh in
+  (named_cases_col A R Y HCol;
+    [ elimi_on_parallel_d_col R P Q lambda A Y C D H Hdenom Hpar HCol 
+    | let T1 := fresh in
+      (assert
+        (T1 := non_zero_denom_on_parallel_d_2_length_ratio A C D P Q R Y lambda H Hpar Hdenom HCol);
+        rewrite
+         (elim_length_ratio_on_parallel_d_2 A C D P Q R Y lambda H HCol Hdenom Hpar) in *)  ]).
+
+Ltac elimi_area_on_inter_line_parallel X4 X5 X1 X2 X3 Y X6 X7 H Hneq := 
+assert (S4 X4 X2 X5 X3 <> 0);
+       [ exact (non_zero_denom_on_inter_line_parallel_area Y X1 X2 X3 X4 X5 H) | idtac ];
+       rewrite (elim_area_on_inter_line_parallel X4 X5 X1 X2 X3 Y X6 X7 H Hneq) in *.
+
+Ltac elimi_on_foot_col_aux R P Q A Y C D H HCol HDiff :=
+  rewrite (elim_ratio_on_foot_a Y R P Q A C D H HCol) in * by assumption.
+
+Ltac elimi_on_foot_col R P Q A Y C D H HCol := 
+	assert (Py C D C <> 0) by (apply (elim_ratio_on_foot_a_invariant C D);assumption);
+	test_equality_and_subst H A Y 
+ 	ltac:(elimi_on_foot_col_aux R P Q A Y C D H HCol).
+
+Ltac elimi_on_foot_notcol R P Q A Y C D H HCol := 
+        assert (S4 C P D Q <> 0) by (apply (elim_ratio_on_foot_b_invariant Y R P Q A C D H HCol);assumption);
+      
+          rewrite (elim_ratio_on_foot_b Y R P Q A C D H HCol) in * by assumption.
+
+Ltac elimi_on_foot R P Q A Y C D H := test_col  A P Q
+    ltac: (elimi_on_foot_col R P Q A Y C D H)
+    ltac: (elimi_on_foot_notcol R P Q A Y C D H).
+
+Ltac elimi_on_perp_d_col  Y P Q r A C D H HCol := 
+          rewrite (elim_ratio_on_perp_d_a Y P Q A C D r H HCol) in *.
+
+Ltac elimi_on_perp_d_notcol Y P Q r A C D H HCol := idtac.
+
+Ltac elimi_on_perp_d P Q r A Y C D H :=
+   test_col A P Y
+   ltac: (elimi_on_perp_d_col Y P Q r A C D H)
+   ltac: (elimi_on_perp_d_notcol Y P Q r A C D H).
+
+Ltac elimi_inter_parallel_parallel_par  Y  R P Q W U V A C D H HPar :=
+ rewrite ( elim_length_ratio_on_inter_parallel_parallel_2 A C D P Q R U V W Y H HPar) by auto.
+
+Ltac elimi_inter_parallel_parallel_notpar  Y  R P Q W U V A C D H HPar :=
+ rewrite ( elim_length_ratio_on_inter_parallel_parallel_1 A C D P Q R U V W Y H HPar) by auto.
+
+Ltac elimi_inter_parallel_parallel   Y  R P Q W U V A C D H := 
+  test_parallel A Y P Q
+  ltac: ( elimi_inter_parallel_parallel_par       Y  R P Q W U V A C D H)
+  ltac: ( elimi_inter_parallel_parallel_notpar Y  R P Q W U V A C D H).
+
+Ltac elimi Y :=
+  match goal with
+  
+  | H:(on_line_d Y ?X1 ?X2 ?X3) |- context [(S ?X5 ?X6 Y)] =>
+      rewrite (elim_area_on_line_d X5 X6 X1 X2 Y X3 H) in *
+  | H:(inter_ll Y ?X1 ?X2 ?X3 ?X4) |- context [(S ?X5 ?X6 Y)] =>
+      assert (S4 X1 X3 X2 X4 <> 0);
+       [ exact (non_zero_denom_inter_ll_area Y X1 X2 X3 X4 H) | idtac ];
+       rewrite (elim_area_inter_ll X5 X6 X1 X2 X3 X4 Y H) in *
+
+  | H:(on_parallel_d Y ?X1 ?X2 ?X3 ?X4) |- context [(S ?X5 ?X6 Y)] =>
+      rewrite (elim_area_on_parallel_d X5 X6 X2 X3 X1 Y X4 H) in *
+
+ | H:(a_ratio Y ?O ?U ?V ?ro ?ru ?rv) |- context [(S ?A ?B Y)] =>
+      rewrite (elim_signed_area_a_ratio Y O U V A B ro ru rv H) in *
+
+  | H:(on_inter_line_parallel Y ?X1 ?X2 ?X3 ?X4 ?X5) |- context [(S ?X6 ?X7 Y)] =>
+          test_equality_and_subst H X1 Y ltac:(elimi_area_on_inter_line_parallel X4 X5 X1 X2 X3 Y X6 X7 H )     
+
+  | H:(on_inter_parallel_parallel Y ?X1 ?X2 ?X3 ?X4 ?X5 ?X6) |- context [(S ?X7 ?X8 Y)] =>
+          let Hneq := fresh in
+      (named_cases_equality X1 Y Hneq;[rewrite <- Hneq in *;rewrite Hneq in H|
+       assert (S4 X2 X5 X3 X6 <> 0);
+       [ exact (non_zero_denom_on_inter_parallel_parallel_area Y X1 X2 X3 X4 X5 X6 H) | idtac ];
+       rewrite
+        (elim_area_on_inter_parallel_parallel X2 X3 X1 X5 X6 X4 Y X7 X8 H Hneq) in *])        
+        
+  | H:(on_foot Y ?X1 ?X2 ?X3) |- context [(S ?A ?B Y)] =>
+	let T:= fresh in assert (T:=elim_area_on_foot_invariant A B X1 X2 X3 Y H);
+          rewrite (elim_area_on_foot A B X1 X2 X3 Y H) in *
+
+  | H:(on_perp_d Y ?X1 ?X2 ?R) |- context [(S ?A ?B Y)] =>
+          rewrite (elim_area_on_perp_d A B X1 X2 Y R H) in *
+
+  | H:(on_line_d Y ?X1 ?X2 ?X3) |- context [(?X5 ** Y / ?X6 ** ?X7)] =>
+      elimi_on_line_d X1 X2 X3 X5 Y X6 X7 H
+  | H:(inter_ll Y ?X1 ?X2 ?X3 ?X4) |- context [(?X5 ** Y / ?X6 ** ?X7)] =>
+      elimi_inter_ll X1 X2 X3 X4 X5 Y X6 X7 H
+  | H:(on_parallel_d Y ?X1 ?X2 ?X3 ?X4) |- context [(?X5 ** Y / ?X6 ** ?X7)] =>
+      elimi_on_parallel_d X1 X2 X3 X4 X5 Y X6 X7 H
+  | H:(on_inter_line_parallel Y ?X1 ?X2 ?X3 ?X4 ?X8) |- context [(?X5 ** Y / ?X6 ** ?X7)] =>
+      fail 5 "case ratio on inter line parallel"
+  | H:(on_inter_parallel_parallel Y ?R ?P ?Q ?W ?U ?V) |- context [(?A ** Y / ?C ** ?D)] =>
+      elimi_inter_parallel_parallel   Y  R P Q W U V A C D H
+
+  | H:(on_foot Y ?R ?P ?Q) |- context [(?A ** Y / ?C ** ?D)] =>
+      elimi_on_foot R P Q A Y C D H
+
+  | H:(on_perp_d Y ?X1 ?X2 ?r) |- context [(?A ** Y / ?C ** ?D)] =>
+      elimi_on_perp_d X1 X2 r A Y C D H
+
+  | H:(on_line_d Y ?X1 ?X2 ?X3) |- context [Py Y ?A Y] =>
+        rewrite (elim_py_on_line_d_left_right A X1 X2 Y X3 H) in *
+  | H:(inter_ll Y ?X1 ?X2 ?X3 ?X4) |- context [Py Y ?A Y] =>
+        let T := fresh in 
+	assert (T:= elim_py_inter_ll_left_right_invariant A X1 X2 X3 X4 Y H);
+	rewrite (elim_py_inter_ll_left_right A X1 X2 X3 X4 Y H)  in *
+  | H:(on_parallel_d Y ?X1 ?X2 ?X3 ?X4) |- context [Py Y ?A Y] =>
+        rewrite (elim_py_on_parallel_d_left_right A X1 X2 X3 Y X4 H) in *
+  | H:(on_foot Y ?X1 ?X2 ?X3) |- context [Py Y ?A Y] =>
+	let T := fresh in 
+	assert (T:= elim_py_on_foot_left_right_invariant A X1 X2 X3 Y H);
+        rewrite (elim_py_on_foot_left_right A X1 X2 X3 Y H) in * 
+  | H:(on_perp_d Y ?U ?V ?r) |- context [Py Y ?A Y] =>
+        rewrite (elim_py_on_perp_d_left_right A U V Y r H)  in *
+  | H:(a_ratio Y ?O ?U ?V ?ro ?ru ?rv) |- context [Py Y ?A Y] =>
+        rewrite (elim_py_a_ratio_left_right Y O U V A ro ru rv H)  in *
+
+  | H:(on_line_d Y ?X1 ?X2 ?X3) |- context [Py ?A ?B Y] =>
+        rewrite (elim_py_on_line_d_right  A B  X1 X2 Y X3 H) in *      
+  | H:(inter_ll Y ?X1 ?X2 ?X3 ?X4) |- context [Py ?A ?B Y] =>
+        let T:= fresh in 
+        assert (T:=elim_py_inter_ll_right_invariant A B X1 X2 X3 X4 Y H);
+        rewrite (elim_py_inter_ll_right A B X1 X2 X3 X4 Y H) in *
+  | H:(on_parallel_d Y ?X1 ?X2 ?X3 ?X4) |- context [Py ?A ?B Y] =>
+        rewrite (elim_py_on_parallel_d_right A B X1 X2 X3 Y X4 H) in *
+  | H:(on_inter_line_parallel Y ?X1 ?X2 ?X3 ?X4 ?X8) |- context [Py ?A ?B Y] =>
+        fail 5 "case py right on inter line parallel"
+  | H:(on_inter_parallel_parallel Y ?X1 ?X2 ?X3 ?X4 ?X8 ?X9) |- context [Py ?A ?B Y] =>
+        fail 5 "case py right on inter parallel parallel"
+  | H:(on_foot Y ?X1 ?X2 ?X3) |- context [Py ?A ?B Y] =>
+        let T:= fresh in 
+        assert (T:=elim_py_on_foot_right_invariant A B X1 X2 X3 Y H);
+        rewrite (elim_py_on_foot_right A B X1 X2 X3 Y H) in *
+  | H:(on_perp_d Y ?P ?Q ?r) |- context [Py ?A ?B Y] =>
+        rewrite (elim_py_on_perp_d_right A B P Q Y r H) in *
+  | H:(a_ratio Y ?O ?U ?V ?ro ?ru ?rv) |- context [Py ?A ?B Y] =>
+        rewrite (elim_py_a_ratio_right Y O U V A B ro ru rv H)  in *
+  | H:(on_inter_line_perp Y ?X1 ?X2 ?X3 ?X4 ?X5) |- context [Py ?A ?B Y] =>
+        fail 5 "case py right on inter line perp"
+
+  | H:(on_line_d Y ?X1 ?X2 ?X3) |- context [Py ?A Y ?B] =>
+	rewrite (elim_py_on_line_d_middle  A B  X1 X2 Y X3 H) in *
+  | H:(inter_ll Y ?X1 ?X2 ?X3 ?X4) |- context [Py ?A Y ?B] =>
+        let T:= fresh in assert (T:= elim_py_inter_ll_middle_invariant A B X1 X2 X3 X4 Y H);
+        rewrite (elim_py_inter_ll_middle A B X1 X2 X3 X4 Y H) in *
+  | H:(on_parallel_d Y ?X1 ?X2 ?X3 ?X4) |- context [Py ?A Y ?B] =>
+        rewrite (elim_py_on_parallel_d_middle A B X1 X2 X3 Y X4 H) in *
+  | H:(on_inter_line_parallel Y ?X1 ?X2 ?X3 ?X4 ?X8) |- context [Py ?A Y ?B] =>
+        fail 5 "case py midlle on inter line parallel"
+  | H:(on_inter_parallel_parallel Y ?X1 ?X2 ?X3 ?X4 ?X8 ?X9) |- context [Py ?A Y ?B] =>
+        fail 5 "case py midlle on inter parallel parallel"
+  | H:(on_foot Y ?X1 ?X2 ?X3) |- context [Py ?A Y ?B] =>
+        let T:= fresh in assert (T:= elim_py_on_foot_middle_invariant A B X1 X2 X3 Y H);
+        rewrite (elim_py_on_foot_middle A B X1 X2 X3 Y H) in *
+  | H:(on_perp_d Y ?P ?Q ?r) |- context [Py ?A Y ?B] =>
+        rewrite (elim_py_on_perp_d_middle A B P Q Y r H) in *
+  | H:(a_ratio Y ?O ?U ?V ?ro ?ru ?rv) |- context [Py ?A Y ?B] =>
+        rewrite (elim_py_a_ratio_middle Y O U V A B ro ru rv H)  in *
+  | H:(on_inter_line_perp Y ?X1 ?X2 ?X3 ?X4 ?X5) |- context [Py ?A Y ?B] =>
+        fail 5 "case py midlle on inter line perp"
 
    end.
 
+Ltac ClearConstructedPointDef Y :=
+  match goal with
+  | H:(on_line Y _ _) |- _ => fail 5 "Please report : should have been transformed into on_line_d before"
+  | H:(on_line_d Y _ _ _) |- _ => clear H
+  | H:(inter_ll Y _ _ _ _) |- _ => clear H
+  | H:(on_parallel Y _ _ _) |- _ =>  fail 5 "Please report : should have been transformed into on_parallel_d before"
+  | H:(on_parallel_d Y _ _ _ _) |- _ => clear H
+  | H:(on_inter_line_parallel Y _ _ _ _ _) |- _ => clear H
+  | H:(on_inter_parallel_parallel Y _ _ _ _ _ _) |- _ => clear H
+  | H:(on_foot Y _ _ _) |- _ => clear H
+  | H:(on_perp Y _ _ ) |- _ => fail 5 "Please report : should have been transformed into on_perp_d before"
+  | H:(on_perp_d Y _ _ _) |- _ => clear H
+  | H:(on_inter_line_perp Y _ _ _ _ _) |- _ => clear H
+  | H:(a_ratio Y _ _ _ _ _ _) |- _ => clear H
+  end.
 
+Ltac ClearConstructedPointNDG Y :=
+  repeat
+   match goal with
+  | H:(parallel Y _ _ _) |- _ => clear H
+  | H:(parallel _ Y _ _) |- _ => clear H
+  | H:(parallel _ _ Y _) |- _ => clear H
+  | H:(parallel _ _ _ Y) |- _ => clear H
+  | H:(_ <> Y) |- _ => clear H
+  | H:(Y <> _) |- _ => clear H
+end. 
+
+Ltac eliminate_aux Y := 
+   unify_signed_areas_and_put_on_the_right Y;
+   repeat elimi Y;
+   CleanDuplicatedHyps;
+   ClearConstructedPointDef Y.
+ 
+Ltac is_used_to_construct A :=
+  match goal with
+  | H:(on_line ?X1 A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_line ?X1 _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_line_d ?X1 A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_line_d ?X1 _ A _) |- _ =>
+      is_used_to_construct X1
+
+  | H:(inter_ll ?X1 A _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(inter_ll ?X1 _ A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(inter_ll ?X1 _ _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(inter_ll ?X1 _ _ _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_parallel ?X1 A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_parallel ?X1 _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_parallel ?X1 _ _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_parallel_d ?X1 A _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_parallel_d ?X1 _ A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_parallel_d ?X1 _ _ A _) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_inter_line_parallel ?X1 A _ _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_parallel ?X1 _ A _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_parallel ?X1 _ _ A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_parallel ?X1 _ _ _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_parallel ?X1 _ _ _ _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_inter_parallel_parallel ?X1 A _ _ _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_parallel_parallel ?X1 _ A _ _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_parallel_parallel ?X1 _ _ A _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_parallel_parallel ?X1 _ _ _ A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_parallel_parallel ?X1 _ _ _ _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_parallel_parallel ?X1 _ _ _ _ _ A) |- _ =>
+      is_used_to_construct X1
+
+ | H:(on_foot ?X1 A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_foot ?X1 _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_foot ?X1 _ _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_perp ?X1 A _ ) |- _ =>
+      is_used_to_construct X1
+  | H:(on_perp ?X1 _ A ) |- _ =>
+      is_used_to_construct X1
+
+  | H:(on_perp_d ?X1 A _ _ ) |- _ =>
+      is_used_to_construct X1
+  | H:(on_perp_d ?X1 _ A _ ) |- _ =>
+      is_used_to_construct X1
+ 
+  | H:(on_inter_line_perp ?X1 A _ _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_perp ?X1 _ A _ _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_perp ?X1 _ _ A _ _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_perp ?X1 _ _ _ A _) |- _ =>
+      is_used_to_construct X1
+  | H:(on_inter_line_perp ?X1 _ _ _ _ A) |- _ =>
+      is_used_to_construct X1
+
+  | H:(a_ratio ?Y A _ _ _ _ _) |- _ =>
+      is_used_to_construct Y
+  | H:(a_ratio ?Y _ A _ _ _ _) |- _ =>
+      is_used_to_construct Y
+  | H:(a_ratio ?Y _ _ A _ _ _) |- _ =>
+      is_used_to_construct Y
+  | H:(a_ratio ?Y _ _ _ A _ _) |- _ =>
+      is_used_to_construct Y
+  | H:(a_ratio ?Y _ _ _ _ A _) |- _ =>
+      is_used_to_construct Y
+  | H:(a_ratio ?Y _ _ _ _ _ A) |- _ =>
+      is_used_to_construct Y
+
+  | _ => A
+  end.
+
+Ltac check_proper_elimination A := match goal with
+H:_ |- context [A] => fail 2 "Elimination failed, please report."
+end || idtac.
+
+Ltac eliminate A := idtac "   elimination of point :" A;eliminate_aux A; 
+                                 unfold S4, Py4 in *; 
+                                 basic_simpl; 
+                                 check_proper_elimination A; try (clear A); idtac "   we need to show that:";print_goal.
+
+Ltac Remove_last A := 
+   eliminate ltac:(is_used_to_construct A).
+
+Ltac eliminate_All :=
+  repeat
+   match goal with
+   | H:(on_line ?X1 _ _) |- _ =>
+       Remove_last X1
+   | H:(on_line_d ?X1 _ _ _) |- _ =>
+       Remove_last X1
+   | H:(inter_ll ?X1 _ _ _ _) |- _ =>
+       Remove_last X1
+   | H:(on_parallel ?X1 _ _ _) |- _ =>
+       Remove_last X1
+   | H:(on_parallel_d ?X1 _ _ _ _) |- _ =>
+       Remove_last X1
+   | H:(on_inter_line_parallel ?X1 _ _ _ _ _) |- _ =>
+       Remove_last X1
+   | H:(on_inter_parallel_parallel ?X1 _ _ _ _ _ _) |- _ => 
+       Remove_last X1
+   | H:(on_foot ?X1 _ _ _) |- _ => 
+       Remove_last X1
+   | H:(on_perp ?X1 _ _ ) |- _ => 
+       Remove_last X1
+   | H:(on_perp_d ?X1 _ _ _) |- _ => 
+       Remove_last X1
+   | H:(on_inter_line_perp ?X1 _ _ _ _ _) |- _ => 
+       Remove_last X1
+   | H:(a_ratio ?X1 _ _ _ _ _ _) |- _ => 
+       Remove_last X1
+   end. *)
+Require Export free_points_elimination.
+(* free_points_elimination:
+Require Export freepoints.
+
+Ltac freepoints_independant A B C H D E F :=
+  rewrite (free_points_area_elimination A B C D E F H) in *.
+
+Ltac iter_coord_expr A B C H E :=
+  match constr:(E) with
+  | (?X1 = ?X2) =>
+      iter_coord_expr A B C H X1; iter_coord_expr A B C H X2
+  | (?X1 + ?X2) =>
+      iter_coord_expr A B C H X1; iter_coord_expr A B C H X2
+  | (?X1 * ?X2) =>
+      iter_coord_expr A B C H X1; iter_coord_expr A B C H X2
+  | (?X1 / ?X2) =>
+      iter_coord_expr A B C H X1; iter_coord_expr A B C H X2
+  | (?X1 - ?X2) =>
+      iter_coord_expr A B C H X1; iter_coord_expr A B C H X2
+  | (- ?X1) => iter_coord_expr A B C H X1
+  | (/ ?X1) => iter_coord_expr A B C H X1
+  | ?X5 =>
+      match constr:(X5) with
+      | (S ?X1 ?X2 ?X3) =>
+          match constr:(X1) with
+          | A =>
+              match constr:(X2) with
+              | B => idtac
+              | C => idtac
+              | _ =>
+                  match constr:(X3) with
+                  | B => idtac
+                  | C => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              end
+          | B =>
+              match constr:(X2) with
+              | A => idtac
+              | _ =>
+                  match constr:(X3) with
+                  | A => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              end
+          | C =>
+              match constr:(X2) with
+              | A => idtac
+              | _ =>
+                  match constr:(X3) with
+                  | A => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              end
+          | _ =>
+              match constr:(X2) with
+              | A =>
+                  match constr:(X3) with
+                  | C => idtac
+                  | B => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              | B =>
+                  match constr:(X3) with
+                  | A => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              | C =>
+                  match constr:(X3) with
+                  | A => idtac
+                  | _ => freepoints_independant A B C H X1 X2 X3
+                  end
+              | _ => freepoints_independant A B C H X1 X2 X3
+              end
+          end
+      | _ => idtac
+      end
+  end.
+
+Ltac only_use_area_coordinates :=
+  unfold Det3,Col in *;
+   match goal with
+   | H:(S ?X1 ?X2 ?X3 <> 0) |- ?X4 =>
+       
+       iter_coord_expr X1 X2 X3 H X4; unfold Det3 in *; basic_simpl;
+        uniformize_signed_areas; basic_simpl
+   | A:Point, B:Point, H:?A<>?B |- ?X4 =>
+       
+       let T := fresh in 
+       (assert (T:=(build_point_not_collinear_1 A B H));
+       decompose [ex] T;clear T);only_use_area_coordinates  
+    | A:Point |- ?X4 =>
+       let T := fresh in 
+       (assert (T:=(build_point_not_collinear_2 A));
+       decompose [ex] T;clear T);only_use_area_coordinates  
+   end.
+
+Lemma test_only_use_area_coordinates_1 : forall A B C D, S A B C <> 0 -> S D B C + S A D C  + S A B D = S A B C.
+
+Lemma test_only_use_area_coordinates_2 : forall A B C D,  A<> B -> S D B C + S A D C  + S A B D = S A B C.
+
+Lemma test_only_use_area_coordinates_3 : forall A B C D,   S D B C + S A D C  + S A B D = S A B C. *)
+Require Export simplify_constructions.
+(* simplify_constructions:
+Require Export area_elimination_lemmas.
+
+Theorem combine_inter_parallel : forall A B C E F X Y r, 
+(on_parallel_d X C A B r) -> 
+(inter_ll Y C X E F) ->
+~ Col C A B ->
+(on_inter_line_parallel Y C E F A B).
+
+Ltac put_on_inter_line_parallel :=
+  repeat match goal with
+  | H:(on_parallel_d  ?X ?C ?A ?B), G:(inter_ll ?Y ?C ?X ?E ?F) |- _ =>
+         let T:= fresh in  assert (T:=combine_inter_parallel A B C E F X Y H G);clear H G
+end. *)
+Require Export construction_tactics.
+(* construction_tactics:
+Require  Export construction_lemmas_2.
+
+Ltac point_on_line I A B :=
+let id1 := fresh in ((assert (id1:{Y : Point | Col Y A B});
+[apply (on_lineex A B)|DecompEx id1 ipattern:(I)])).
+
+Ltac point_on_line_d I A B d :=
+let id1 := fresh in ((assert (id1:{Y : Point | Col Y A B /\ A ** Y = d * A ** B});
+[apply (on_line_dex A B d)|DecompExAnd id1 ipattern:(I)])).
+
+Ltac midpoint I A B := point_on_line_d I A B (1/2).
+
+Ltac point_on_parallel_line I P A B :=
+let id1 := fresh in ((assert (id1:{Y : Point | (parallel Y P A B)});
+[apply (on_parallelex A B P)|DecompEx id1 ipattern:(I)])).
+
+Ltac point_on_intersection_lines I A B C D :=
+let id1 := fresh in ((assert (id1:{Y : Point | Col Y A B /\ Col Y C D});
+[apply (inter_llex A B C D)|DecompExAnd id1 ipattern:(I)])). *)
+Require Export my_field_tac.
+(* my_field_tac:
+Require Export field_general_properties.
+Require Import field.
+Require Import chou_gao_zhang_axioms.
+
+Ltac assumption_or_ax := assumption || apply chara_not_2.
+
+Ltac solve_conds :=  
+repeat split;
+repeat (assumption_or_ax || 
+           apply nonzeromult || 
+           apply nonzerodiv ||
+           apply nonzeroinv).
+
+Ltac smart_field := field; solve_conds.
+
+Ltac smart_field_simplify_eq := field_simplify_eq;solve_conds.
+
+Lemma same_denom_add_1 : forall a b c d : F, 
+  b<>0 ->
+  d<>0 -> 
+ a/b + c/d = (a*d+c*b) / (b*d).
+
+Lemma same_denom_add_2 : forall a b c : F, 
+  b<>0 ->
+  a/b + c = (a+c*b) / b.
+
+Lemma same_denom_add_3 : forall a c d : F, 
+  d<>0 -> 
+  a + c/d = (a*d+c) / d.
+
+Lemma same_denom_min_1 : forall a b c d : F, 
+  b<>0 ->
+  d<>0 -> 
+ a/b - c/d = (a*d-c*b) / (b*d).
+
+Lemma same_denom_min_2 : forall a b c : F, 
+  b<>0 ->
+ a/b - c = (a-c*b) / b.
+
+Lemma same_denom_min_3 : forall a  c d : F, 
+  d<>0 ->
+ a - (c/d) = (a*d-c) / d.
+
+Lemma same_denom_mul_1 : forall a b c d : F, 
+  b<>0 ->
+  d<>0 -> 
+ a/b * c/d = (a*c) / (b*d).
+
+Lemma same_denom_mul_2 : forall a b c : F, 
+  b<>0 -> 
+ a/b * c = (a*c) / b.
+
+Lemma same_denom_mul_3 : forall a c d : F, 
+  d<>0 -> 
+ a * (c/d) = (a*c) / d.
+
+Lemma same_denom_div_1 : forall a b c d : F, 
+  b<>0 ->
+  c/d<>0 ->
+  d<>0 -> 
+ (a/b) / (c/d) = (a*d) / (b*c).
+
+Lemma invariant_div_1 : forall b c d,
+  b<>0 ->
+  c/d<>0 ->
+  d<>0 ->
+  b*c <> 0.
+
+Lemma same_denom_div_3 : forall a c d : F, 
+  c/d<>0 ->
+  d<>0 -> 
+ a / (c/d) = (a*d) / c.
+
+Lemma invariant_div_3 : forall c d,
+  c/d<>0 ->
+  d<>0 ->
+  c <> 0.
+
+Lemma same_denom_div_2 : forall a b c : F, 
+  b<>0 ->
+  c<>0 -> 
+ (a/b) / c = a / (b*c).
+
+Lemma remove_inv : forall a : F, 
+ Finv a = 1/a.
+
+Lemma remove_opp : forall a : F,
+ -a = 0-a.
+
+Lemma simp_1 : forall a : F,
+a*0 = 0.
+
+Lemma simp_2 : forall a : F,
+0*a = 0.
+
+Lemma simp_3 : forall a : F,
+1*a = a.
+
+Lemma simp_4 : forall a : F,
+a*1 = a.
+
+Lemma simp_5 : forall a : F,
+0+a = a.
+
+Lemma simp_6: forall a : F,
+a+0 = a.
+
+Lemma simp_7: forall a : F,
+a-0 = a.
+
+Lemma simp_8: forall a : F,
+a-a = 0.
+
+Lemma simp_9: forall a : F,
+-a+a = 0.
+
+Lemma simp_10: forall a b : F,
+a+ -(b)= a-b.
+
+Lemma simp_11 : -0=0.
+
+Lemma simp_12 : forall a, - - a=a.
+
+Lemma simp_13 : forall a b, - a * -b=a*b.
+
+Lemma simp_14 : forall a b, (- a) * b=-(a*b).
+
+Lemma simp_15 : forall a b, a * (- b)=-(a*b).
+
+Hint Rewrite 
+simp_1 simp_2 simp_3 simp_4 simp_5 
+simp_6 simp_7 simp_8 simp_9 simp_10 
+simp_11 simp_12 simp_13 simp_14 simp_15 
+: ring_simplification.
+
+Hint Rewrite 
+same_denom_add_1
+same_denom_add_2
+same_denom_add_3
+same_denom_min_1
+same_denom_min_2
+same_denom_min_3
+same_denom_mul_1
+same_denom_mul_2
+same_denom_mul_3
+same_denom_div_1
+same_denom_div_2 
+same_denom_div_3 
+: same_denom.
+
+Lemma simp_frac_1: forall a : F,
+a<>0 ->
+a/a = 1.
+
+Lemma simp_frac_2: forall a : F,
+a<>0 ->
+a * Finv a = 1.
+
+Lemma simp_frac_3: forall a : F,
+a<>0 ->
+a * - Finv a = - (1).
+
+Lemma simp_frac_4: forall a : F,
+a<>0 ->
+(-a) * - Finv a = 1.
+
+Lemma simp_frac_5: forall a : F,
+a<>0 ->
+(-a) / a = - (1).
+
+Lemma simp_frac_6: forall a : F,
+-a<>0 ->
+a / -a = - (1).
+
+Lemma simp_frac_7: forall a : F,
+-a<>0 ->
+(-a) / -a = 1.
+
+Lemma simp_frac_8: forall a b c : F,
+a*c<>0 ->
+(a*b) / (a*c) = b/c.
+
+Lemma simp_frac_9: forall a b c : F,
+c*a<>0 ->
+(b*a) / (c*a) = b/c.
+
+Lemma simp_frac_10 : forall a, a<>0 ->
+0/a=0. 
+
+Lemma simp_frac_11 : forall a, a<>0 ->
+a*(1/a)=1. 
+
+Lemma simp_frac_12: forall a b : F,
+b<>0 ->
+(a*b) / b = a.
+
+Lemma simp_frac_13: forall a b : F,
+a<>0 ->
+(a*b) / a = b.
+
+Lemma simp_frac_14: forall a b : F,
+b<>0 ->
+(-a) / b = -(a/b).
+
+Lemma simp_frac_15: forall a : F,
+a / 1 = a.
+
+Lemma simp_frac_16: forall a b : F,
+-b<>0 -> a/(-b) = - (a/b).
+
+Lemma simp_frac_16_inv : forall a, -a<>0 -> a<>0.
+
+Hint Rewrite 
+simp_frac_1
+simp_frac_2
+simp_frac_3
+simp_frac_4
+simp_frac_5
+simp_frac_6
+simp_frac_7
+simp_frac_8 
+simp_frac_9 
+simp_frac_10
+simp_frac_11
+simp_frac_12
+simp_frac_13
+simp_frac_14
+simp_frac_15
+simp_frac_16
+: field_simplification.
+
+Ltac basic_field_simpl_goal :=
+  repeat
+   match goal with
+  | H:?X1<>0 |- context [?X1 / ?X1] =>
+           rewrite (simp_frac_1 X1 H) in * 
+  | H:?X1<>0 |- context [(- ?X1) / ?X1] =>
+           rewrite (simp_frac_5 X1 H) in *
+  | H:- ?X1<>0 |- context [?X1 / - ?X1] =>
+           rewrite (simp_frac_6 X1 H) in *
+  | H:- ?X1<>0 |- context [(-?X1) / - ?X1] =>
+           rewrite (simp_frac_7 X1 H) in *
+  | H: ?X1<>0 |- context [0 / ?X1] =>
+           rewrite (simp_frac_10 X1 H) in *
+  | H: ?X1<>0 |- context [?X1 * (1 / ?X1)] =>
+           rewrite (simp_frac_11 X1 H) in *
+  | H: ?X2<>0 |- context [(?X1 * ?X2) / ?X2] =>
+           rewrite (simp_frac_12 X1 X2 H) in *
+  | H: ?X1<>0 |- context [(?X1 * ?X2) / ?X1] =>
+           rewrite (simp_frac_13 X1 X2 H) in *
+  | H: ?X2<>0 |- context [(- ?X1) / ?X2] =>
+           rewrite (simp_frac_14 X1 X2 H) in *
+ | H: - ?X2<>0 |- context [ ?X1 / (- ?X2)] =>
+           rewrite (simp_frac_16 X1 X2 H) in *;
+           let T:=fresh in 
+           assert (T:= simp_frac_16_inv X2 H)
+  | H:_ |- context [?X1 / 1] =>
+           rewrite (simp_frac_15 X1) in *
+end.
+
+Ltac basic_field_simpl_hyps :=
+  repeat
+   match goal with
+  | H:?X1<>0, Hc: context [?X1 / ?X1] |- _ =>
+           rewrite (simp_frac_1 X1 H) in *|-
+  | H:?X1<>0, Hc: context [(- ?X1) / ?X1] |- _ =>
+           rewrite (simp_frac_5 X1 H) in *|-
+  | H:- ?X1<>0, Hc: context [?X1 / - ?X1] |- _ =>
+           rewrite (simp_frac_6 X1 H) in *|-
+  | H:- ?X1<>0, Hc: context [(- ?X1) / - ?X1] |- _ =>
+           rewrite (simp_frac_7 X1 H) in *|-
+  | H: ?X1<>0, Hc: context [0 / ?X1] |- _ =>
+           rewrite (simp_frac_10 X1 H) in *|-
+  | H: ?X1<>0, Hc: context [?X1 * (1 / ?X1)] |- _ =>
+           rewrite (simp_frac_11 X1 H) in *|-
+  | H: ?X2<>0, Hc: context [(?X1 * ?X2) / ?X2] |- _ =>
+           rewrite (simp_frac_12 X1 X2 H) in *|-
+  | H: ?X1<>0, Hc: context [(?X1 * ?X2) / ?X1] |- _ =>
+           rewrite (simp_frac_13 X1 X2 H) in *|-
+ | H: ?X2<>0, Hc: context [(-?X1) / ?X2] |- _ =>
+           rewrite (simp_frac_14 X1 X2 H) in *|-
+ | H: - ?X2<>0, Hc: context [ ?X1 / (- ?X2)] |- _ =>
+           rewrite (simp_frac_16 X1 X2 H) in *|-;
+           let T:=fresh in 
+           assert (T:= simp_frac_16_inv X2 H)
+ | Hc: context [?X1 / 1] |- _ =>
+           rewrite (simp_frac_15 X1) in *|-
+end.
+
+Ltac basic_field_simpl := basic_field_simpl_goal;basic_field_simpl_hyps.
+
+Goal forall a b , a<>0 -> b<>0 -> -a<>0 -> -b<>0 ->
+ a/a + (-a)/a + a/(-a) + (-a)/(-a) + 0/a + a*(1/a) + (a*b)/a +(a*b)/b -a/1 +a/(-b)= 1  -> 
+ b/b + (-b)/b + b/(-b) + (-b)/(-b) +0/b + b*(1/b) +(b*a)/b + (b*a)/a -b/1 + (-a)/1 = 1.
+
+Lemma same_denom_conclude_1 : forall a b c d :F,
+ a*d = c*b ->
+ b<>0 ->
+ d<>0 ->
+ a/b = c/d. 
+
+Lemma same_denom_conclude_2 : forall a b c :F,
+ a = c*b ->
+ b<>0 ->
+ a/b = c. 
+
+Lemma same_denom_conclude_3 : forall a c d :F,
+ a*d = c ->
+ d<>0 ->
+ a = c/d. 
+
+Lemma same_denom_conclude_4 : forall a b : F,
+ a=0 -> 
+ b<>0 ->
+ a/b = 0.
+
+Lemma same_denom_conclude_5 : forall a b : F,
+ 0=a -> 
+ b<>0 ->
+ 0 = a/b.
+
+Ltac split_hyp_not_eq_zero  :=
+   repeat 
+   match goal with
+         |  H: (Fmult _ _) <> F0 |- _ =>
+                   case (multnonzero  _ _ H); clear H; intros
+         | H: (Fdiv ?X ?Y) <> F0 |- _ =>
+                 let T:=fresh in 
+               assert (T:= (divnonzero X Y H));clear H
+   end.
+
+Goal forall x y : F,
+ x*y<>0 -> x/y <> 0 -> True.
+
+Ltac removes_inv_opp :=
+ repeat rewrite remove_opp in *;
+ repeat rewrite remove_inv in *.
+
+Ltac rewrite_for_same_denom :=
+match goal with 
+ | H:_ |- context[?X*0] => rewrite simp_1 in *
+ | H:_ |- context[0*?X] => rewrite simp_2 in *
+ | H:_ |- context[1*?X] => rewrite simp_3 in *
+ | H:_ |- context[?X*1] => rewrite simp_4 in *
+ | H:_ |- context[0+?X] => rewrite simp_5 in *
+ | H:_ |- context[?X+0] => rewrite simp_6 in * 
+ | H:_ |- context[?X-0] => rewrite simp_7 in *
+
+ | H1:?B<>0, H2: ?C/?D<>0, H3:?D<>0 |- context[?A/?B / ?C/?D ] =>
+     rewrite (same_denom_div_1 A B C D H1 H2 H3) in *;
+        let T:=fresh in assert (T:=(invariant_div_1 B C D H1 H2 H3))
+ | H1:?B<>0, H2:?C<>0 |- context[(?A/?B) / ?C ] =>
+     rewrite (same_denom_div_2 A B C H1 H2) in *;
+    let T:=fresh in assert (T:=(nonzeromult B C H1 H2))
+ | H1: ?C/?D<>0, H2: ?D<>0 |- context[?A / (?C/?D) ] =>
+     rewrite (same_denom_div_3 A C D H1 H2) in *;
+      let T:=fresh in assert (T:=(invariant_div_3 C D H1 H2))
+
+ | H1:?B<>0, H2: ?D<>0 |- context[?A/?B + ?C/?D ] =>
+     rewrite (same_denom_add_1 A B C D H1 H2) in *;
+     let T:=fresh in assert (T:=(nonzeromult B D H1 H2))
+ | H1:?B<>0 |- context[?A/?B + ?C ] =>
+     rewrite (same_denom_add_2 A B C H1) in *
+ | H2: ?D<>0 |- context[?A + ?C/?D ] =>
+     rewrite (same_denom_add_3 A C D H2) in *
+
+ | H1:?B<>0, H2: ?D<>0 |- context[?A/?B - ?C/?D ] =>
+     rewrite (same_denom_min_1 A B C D H1 H2) in *;
+     let T:=fresh in assert (T:=(nonzeromult B D H1 H2))
+ | H1:?B<>0 |- context[?A/?B - ?C ] =>
+     rewrite (same_denom_min_2 A B C H1) in *
+ | H2: ?D<>0 |- context[?A - ?C/?D ] =>
+     rewrite (same_denom_min_3 A C D H2) in *
+
+ | H1:?B<>0, H2: ?D<>0 |- context[(?A/?B) * (?C/?D) ] =>
+     rewrite (same_denom_mul_1 A B C D H1 H2) in *;
+     let T:=fresh in assert (T:=(nonzeromult B D H1 H2))
+ | H1:?B<>0 |- context[(?A/?B) * ?C ] =>
+     rewrite (same_denom_mul_2 A B C H1) in *
+ | H2: ?D<>0 |- context[?A * (?C/?D) ] =>
+     rewrite (same_denom_mul_3 A C D H2) in *
+end.
+
+Goal forall a b c d, 
+b<>0 -> d<>0 -> (a/b) + (c/d) <> 0 ->
+(a/b) + (c/d) = (a * d + c * b) / (b * d) .
+
+Goal forall a b c d, 
+d<>0 -> (a/b) + (c/d) <> 0 ->
+a + (c/d) = (a * d + c) / d.
+
+Ltac same_denom := 
+ let H:=fresh in assert (H:=chara_not_2);
+ removes_inv_opp;try assumption_or_ax;
+ repeat rewrite_for_same_denom.
+
+Ltac same_denom_prepare_for_ring:=  repeat (
+  
+             apply same_denom_conclude_4 || 
+             apply same_denom_conclude_5 || 
+ 
+             apply same_denom_conclude_1 || 
+             apply same_denom_conclude_2 || 
+             apply same_denom_conclude_3);
+  try assumption;same_denom.
+
+Ltac Ffield_before_ring := 
+ let H:=fresh in assert (H:=chara_not_2);
+  same_denom;
+  same_denom_prepare_for_ring.
+
+Ltac Ffield := Ffield_before_ring;Fring.
+
+Goal  forall f f0, 
+ f0 <> 0 ->
+ f * f0 - (- f0 + f * f0) * (f * f0) * / f0 <> 0 ->
+ / (f * f0 - (- f0 + f * f0) * (f * f0) * / f0) * 
+     (f * f0 * ((1 - f) * f0) * / f0 * f0) <> 0 ->
+
+/ (f * f0 - (- f0 + f * f0) * (f * f0) * / f0) *
+(f * f0 * ((- f0 + f * f0) * f0 * / f0)) *
+/
+(/ (f * f0 - (- f0 + f * f0) * (f * f0) * / f0) *
+ (f * f0 * ((1 - f) * f0) * / f0 * f0)) = - (1).
+
+Goal forall x y z t,  x<>0 -> -x <> 0 -> False ->
+- (y * / x) - z * / - x + t * / x = 1.
+
+Goal forall f,  / 2 * f + / 2 * (/ 2 * f) <> 0 ->
+- (/ 2 * (/ (/ 2 * f + / 2 * (/ 2 * f)) * (/ 2 * (/ 2 * f) * f))) +
+/ 2 * (/ (/ 2 * f + / 2 * (/ 2 * f)) * (/ 2 * f * (/ 2 * f))) = 0.
+
+Goal forall x,  / 2 * x + / 2 * (/ 2 * x) <> 0 -> / 2 * x + / 2 * (/ 2 * x) <> 0 ->
+-
+(/ 2 *
+ (/ (/ 2 * x + / 2 * (/ 2 * x)) *
+  (/ 2 * (/ 2 * x) * x))) +
+/ 2 *
+(/ (/ 2 * x + / 2 * (/ 2 * x)) *
+ (/ 2 * x * (/ 2 * x))) = 0.
+
+Goal forall f f1 f0, 
+- (f * f1 + (1 - f) * (f0 * f1)) <> 0 ->
+-
+((f * f1 + (1 - f) * (f0 * f1) - f * f1) * f1 *
+ / - (f * f1 + (1 - f) * (f0 * f1))) +
+(f * f1 * ((1 - f) * (f0 * f1)) -
+ - ((f * f1 + (1 - f) * (f0 * f1) - f * f1) * ((1 - f) * f1))) *
+/ - (f * f1 + (1 - f) * (f0 * f1)) = 0.
+
+Goal forall x,  / 2 * (/ 2 * x) <> 0 ->
+/ 2 * x * / (/ 2 * (/ 2 * x)) = 2.
+
+Goal forall x y z, z<>0 -> x * (y/z) = (x*y)/z.
+
+Goal forall a b c d : F,
+b <> 0 ->
+d <> 0 ->
+a/b+c/d+a/b = a/b+c/d+a/b.
+
+Goal forall x, -x<>0 -> -x + x = 0.
+
+Goal forall x,  x - x = 0.
+
+Goal forall x, x*x <> 0 -> 1<>0 ->  1/(x*x)<> 0 -> 1 / (1 / (x * x)) = x * x.
+
+Goal forall x, 1/x<>0 -> x <> 0 -> 1 <> 0 ->  1 / (1 / x) = x.
+
+Goal forall x, x <> 0 -> x <> 0 -> x <> 0 ->  1 / x  + 1 /x  = 2/x.
+
+Goal forall x, 2*x <> 0 -> 2*x <> 0 -> x<>0 ->  1 / (2*x)  + 1 /(2*x)  = 1/x.
+
+Goal forall x, 1*x <> 0 -> 1*x <> 0 -> 1/2*x<>0 -> 1 / (1*x)  + 1 /(1*x)  = 1/(1/2*x).
+
+Goal forall x,  x - (1 - - (1)) * (/ 2 * x) = 0.
+
+Goal forall x, x <> 0 -> 
+2*2*2*2*2*2*2*2*x<>0 ->
+2*2*2*2*2*2*2*2*x<>0 -> 
+2*2*2*2*2*2*2*x<>0 ->
+ 1 / (2*2*2*2*2*2*2*2*x)  + 1 /(2*2*2*2*2*2*2*2*x)  = 1/(2*2*2*2*2*2*2*x).
+
+Lemma eq_simpl: forall a b : F,
+a-b = 0 -> a =b .
+
+Ltac ring_simplify_eq := apply eq_simpl;ring_simplify. *)
+
+Ltac decomp_non_zero_mult_div H := 
+  (apply (multnonzero) in H || apply (divnonzero) in H; use H).
+
+Ltac decomp_all_non_zero_mult_div := repeat match goal with
+ H: ?X <> 0 |- _ => decomp_non_zero_mult_div H
+end.
+
+Ltac field_and_conclude := 
+  (abstract (field;decomp_all_non_zero_mult_div;solve_conds)) ||
+  (abstract (Ffield)).
+
+Ltac DecomposeMratio :=
+  repeat
+   match goal with
+   | H:(mratio _ _ _ _) |- _ =>
+       unfold mratio in H; decompose [and] H; clear H
+   end.
 
 Ltac prepare_half_free_construction :=
-
 repeat  match goal with
-
    | H:(on_line ?X1 ?X2 ?X3) |- _ => 
-
     let T:= fresh in 
-
     (assert (T:=(on_line_to_on_line_d X1 X2 X3 H));clear H;set ((X2**X1)/(X2**X3)) in * )
-
    | H:(on_parallel ?X1 ?X2 ?X3 ?X4) |- _ =>    
-
     let T:= fresh in 
-
     (assert (T:=(on_parallel_to_on_parallel_d X1 X2 X3 X4 H));clear H;set ((X2**X1)/(X3**X4)) in * )
-
    | H:(on_perp ?X1 ?X2 ?X3 ) |- _ => 
-
     let T:= fresh in 
-
     (assert (T:=(on_perp_to_on_perp_d X1 X2 X3 H));clear H;set ((2 + 2) * S X2 X3 X1 / Py X2 X3 X2) in * )
 
-
-
 end.
-
-
 
 Ltac add_non_zero_hyps :=
-
  repeat
-
  match goal with 
-
    | H:?A<>?B |- _ =>  
-
            assert_if_not_exist (A**B<>0);[apply neq_not_zero;assumption|revert H]
-
 end;intros.
 
-
-
 Ltac check_ratio_hyps_aux A B C D :=
-
     ((match goal with
-
  | H : parallel A B C D , H2 : C<>D |- _ => fail 2 
-
 end) || fail 3 "Error, one the following hypotheses are missing : parallel" A B C D ", " C "<>" D) || idtac.
 
-
-
 Ltac check_ratio_hyps :=
-
  try    match goal with
-
 | H : _ |- context [?A**?B/?C**?D] => check_ratio_hyps_aux A B C D
-
 end.
 
-
-
 Lemma test_check_ratio_hyp : forall A B C D, 
-
    parallel A B C D -> 
-
 C<>D ->
-
  A**B / C**D = A**B/C**D.
-
 Proof.
-
 intros.
-
 check_ratio_hyps.
-
 reflexivity.
-
 Qed.
 
-
-
 Ltac unfold_non_primitive_constructions := 
-
  unfold is_midpoint, m_ratio, on_circle, inter_lc,
-
   inversion, eq_angle, eq_distance, co_circle, harmonic in *.
-
-
 
 Definition parallel_s (A B C D : Point) : Prop := S A C B = S B A D.
 
-
-
 Lemma parallel_equiv : forall A B C D, parallel_s A B C D <-> parallel A B C D.
-
 Proof.
-
 intros.
-
 unfold parallel_s, parallel, S4.
-
 split.
-
 intro.
-
 rewrite H.
-
 uniformize_signed_areas.
-
 ring.
-
 intro.
-
 IsoleVar (S A C B) H.
-
 rewrite H.
-
 uniformize_signed_areas.
-
 ring.
-
 Qed.
-
-
 
 Ltac assert_non_zero_hyps_circum_ortho_center :=
-
   repeat
-
 ( match goal with 
-
 | H: is_circumcenter ?O ?A ?B ?C |- _ => 
-
  assert_if_not_exist (2 * (Py A B A * Py A C A - Py B A C * Py B A C) <> 0);
-
  [(apply  (is_circumcenter_non_zero O A B C H))|idtac]
-
 | H: is_orthocenter ?O ?A ?B ?C |- _ => 
-
  assert_if_not_exist ((Py A B A * Py A C A - Py B A C * Py B A C) <> 0);
-
  [(apply  (is_orthocenter_non_zero O A B C H))|idtac]
-
 end).
 
-
-
 Ltac geoInit :=
-
   unfold_non_primitive_constructions; intros; 
-
   unfold perp, S4, Py4 in |- *; 
-
   unfold Col in *; DecomposeMratio;
-
   prepare_half_free_construction;
-
   DecompAndAll;
-
   check_ratio_hyps;
-
   assert_non_zero_hyps_circum_ortho_center;
-
   unfold is_circumcenter,  is_orthocenter, is_centroid, is_Lemoine in *;
-
   add_non_zero_hyps; 
-
   put_on_inter_line_parallel;repeat split;
-
   try (apply -> parallel_equiv);
-
   unfold parallel_s.
 
-
-
 Ltac simpl_left  := apply f_equal2;[solve [ring] | idtac];idtac "simpl gauche".
-
 Ltac simpl_right := apply f_equal2;[idtac | solve[ring]];idtac "simpl droite".
-
 Ltac simpl_left_right := repeat (simpl_left || simpl_right).
-
           
-
 Lemma f_equal2_sym: 
-
   forall (f : F -> F -> F), 
-
   (forall x y, f x y = f y x) ->
-
   forall (x1 y1 : F) (x2 y2 : F),
-
        x1 = y1 -> x2 = y2 -> f x1 x2 = f y2 y1.
-
 Proof.
-
 intros.
-
 rewrite H.
-
 apply f_equal2;auto.
-
 Qed.
 
-
-
 Ltac simpl_left_sym := 
-
   apply (f_equal2_sym Fplus Fplus_sym);[solve [ring] | idtac];idtac "simpl gauche sym".
 
-
-
 Ltac simpl_right_sym := 
-
   apply (f_equal2_sym Fplus Fplus_sym);[idtac | solve[ring]];idtac "simpl droite sym".
-
-
 
 Ltac simpl_left_right_sym := repeat (simpl_left_sym || simpl_right_sym).
 
-
-
 Ltac simpl_eq :=  simpl_left_right;simpl_left_right_sym.
 
-
-
 Lemma eq_simpl_1 : forall a b c,
-
 	b=c -> a+b = a+c .
-
 Proof.
-
 intros.
-
 subst.
-
 auto.
-
 Qed.
-
-
 
 Lemma eq_simpl_2 : forall a b c,
-
 	b=c -> b+a = c+a .
-
 Proof.
-
 intros.
-
 subst.
-
 auto.
-
 Qed.
-
-
 
 Lemma eq_simpl_3 : forall a b c,
-
 	b=c -> a+b = c+a .
-
 Proof.
-
 intros.
-
 subst.
-
 ring.
-
 Qed.
-
-
 
 Lemma eq_simpl_4 : forall a b c,
-
 	b=c -> b+a = a+c .
-
 Proof.
-
 intros.
-
 subst.
-
 ring.
-
 Qed.
-
-
 
 Lemma eq_simpl_5 : forall a b c,
-
 	b=c -> a*b = a*c .
-
 Proof.
-
 intros.
-
 subst.
-
 auto.
-
 Qed.
-
-
 
 Lemma eq_simpl_6 : forall a b c,
-
 	b=c -> b*a = c*a .
-
 Proof.
-
 intros.
-
 subst.
-
 auto.
-
 Qed.
-
-
 
 Lemma eq_simpl_7 : forall a b c,
-
 	b=c -> a*b = c*a .
-
 Proof.
-
 intros.
-
 subst.
-
 ring.
-
 Qed.
-
-
 
 Lemma eq_simpl_8 : forall a b c,
-
 	b=c -> b/a = c/a .
-
 Proof.
-
 intros.
-
 subst.
-
 ring.
-
 Qed.
-
-
 
 Lemma eq_simpl_9 : forall b c,
-
 	b=c -> -b = -c .
-
 Proof.
-
 intros.
-
 subst.
-
 ring.
-
 Qed.
-
-
 
 Lemma eq_simpl_10 : forall a b c,
-
 	b=c -> a-b = a-c .
-
 Proof.
-
 intros.
-
 subst.
-
 auto.
-
 Qed.
-
-
 
 Lemma test_simpl_left_right_1 : forall a b c, 
-
 (a)+(c+b) = (a+a-a)+(b+c).
-
 Proof.
-
 intros.
-
 simpl_eq.
-
 ring.
-
 Qed.
-
-
 
 Lemma test_simpl_left_right_2 : forall a b c, 
-
 (c+b)+((a)+(c+b)) = (c+b)+ ((a+a-a)+(b+c)).
-
 Proof.
-
 intros.
-
 simpl_eq.
-
 ring.
-
 Qed.
-
-
 
 Lemma test_simpl_left_right_3 : forall a b c, 
-
 a+(b+c) = (c+b)+a.
-
 Proof.
-
 intros.
-
 simpl_eq.
-
 ring.
-
 Qed.
 
-
-
 Ltac turn_into_ring_eq := 
-
   try (field_simplify_eq;
-
   [idtac|solve [repeat split; repeat apply nonzeromult;auto with Geom]]).
 
-
-
 Ltac am_before_field :=  idtac "   initialisation...";geoInit;idtac "   elimination..."; eliminate_All; idtac "   uniformize areas...";
-
   uniformize_pys;Runiformize_signed_areas;idtac "   simplification...";basic_simpl.
 
-
-
 Ltac set_all := repeat
-
    match goal with
-
    | H:context[(S ?X1 ?X2 ?X3)] |- _ => set (S X1 X2 X3) in *
-
    | _:_ |- context[(S ?X1 ?X2 ?X3)] => set (S X1 X2 X3) in *
-
    end.
 
-
-
 Ltac unfold_Py :=
-
  repeat (rewrite pyth_simpl_3 in *); unfold Py in *.
 
-
-
 Ltac area_method := 
-
   idtac "Area method:";
-
   am_before_field;
-
   idtac "   before field...";
-
  
-
   (solve [set_all; unfold_Py; basic_simpl; uniformize_dir_seg; field_and_conclude ] ||
-
   (idtac "   we need to make geometric quantities independant...";
-
   only_use_area_coordinates;set_all; field_and_conclude)).
-
-
 

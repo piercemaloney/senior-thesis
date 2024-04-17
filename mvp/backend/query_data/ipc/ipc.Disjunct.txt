@@ -1,194 +1,400 @@
 
-
 Require Export In_NGamma.
+(* In_NGamma:
+Require Export Kripke_Trees.
+Require Export Normal_Forms.
 
+Definition disj := (Int * Int)%type.
+Definition disjs := list disj.
+Definition DNil := nil (A:=disj).
 
+Definition disj2form (x : disj) :=
+  match x with
+  | (i, j) => OrF (Atom i) (Atom j)
+  end.
+
+Definition disj2nform (x : disj) := match x with
+                                    | (i, j) => NDisj i j
+                                    end.
+
+Definition disjs2forms (ds : disjs) := map disj2form ds.
+Definition disjs2nforms (ds : disjs) := map disj2nform ds.
+
+Inductive nested_imp : Set :=
+  | Undecorated : nimp -> nested_imp
+  | Decorated : nimp -> kripke_tree -> nested_imp.
+
+Definition nested_imp2nimp (ni : nested_imp) :=
+  match ni with
+  | Undecorated ni => ni
+  | Decorated ni _ => ni
+  end.
+
+Definition nested_imp2form (x : nested_imp) := nimp2form (nested_imp2nimp x).
+Definition nested_imp2nform (x : nested_imp) := NImp_NF (nested_imp2nimp x).
+
+Definition nested_imps := list nested_imp.
+Definition NNil := nil (A:=nested_imp).
+
+Definition nested_imps2forms (ni : nested_imps) := map nested_imp2form ni.
+Definition nested_imps2nforms (ni : nested_imps) := map nested_imp2nform ni.
+Definition nested_imps2nimps (ni : nested_imps) := map nested_imp2nimp ni.
+
+Lemma nested_imps2nimps_app :
+ forall ni1 ni2 : nested_imps,
+ nested_imps2nimps (ni1 ++ ni2) =
+ nested_imps2nimps ni1 ++ nested_imps2nimps ni2.
+
+Lemma nested_imps2nimps_length :
+ forall ni : nested_imps, length ni = length (nested_imps2nimps ni).
+
+Definition atomic_imps := AVL nf_list.
+Definition AI_Nil := AVL_NIL nf_list.
+
+Inductive in_ngamma (work : nf_list) (ds : disjs) (ni : nested_imps)
+(ai : atomic_imps) (a : atoms) : normal_form -> Set :=
+  | In_Work :
+      forall (n : nat) (c : normal_form),
+      my_nth normal_form n work c -> in_ngamma work ds ni ai a c
+  | In_Disjs :
+      forall (n : nat) (i j : Int),
+      my_nth disj n ds (i, j) -> in_ngamma work ds ni ai a (NDisj i j)
+  | In_Nested_Imps :
+      forall (n : nat) (x : nimp),
+      my_nth nimp n (nested_imps2nimps ni) x ->
+      in_ngamma work ds ni ai a (NImp_NF x)
+  | In_Atomic_Imps :
+      forall (i : Int) (b : normal_form) (n : nat) (bs : nf_list),
+      LOOKUP nf_list i ai bs ->
+      my_nth normal_form n bs b -> in_ngamma work ds ni ai a (AImp i b)
+  | In_Atoms :
+      forall i : Int,
+      LOOKUP unit i a tt -> in_ngamma work ds ni ai a (NAtom i).
+
+Lemma in_ngamma_cons_work_tail :
+ forall (c0 : normal_form) (work : nf_list) (ds : disjs) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds ni ai a c -> in_ngamma (c0 :: work) ds ni ai a c.
+
+Lemma in_ngamma_cons_work_head :
+ forall (c : normal_form) (work : nf_list) (ds : disjs) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms),
+ in_ngamma (c :: work) ds ni ai a c.
+
+Lemma in_ngamma_work_app1 :
+ forall (bs work : nf_list) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma work ds ni ai a c -> in_ngamma (bs ++ work) ds ni ai a c.
+
+Lemma in_ngamma_work_app_rev :
+ forall (bs work : nf_list) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma (bs ++ work) ds ni ai a c ->
+ in_ngamma work ds ni ai a c + {n : nat | my_nth normal_form n bs c}.
+
+Lemma in_ngamma_cons_work_rev :
+ forall (c0 : normal_form) (work : nf_list) (ds : disjs) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma (c0 :: work) ds ni ai a c ->
+ in_ngamma work ds ni ai a c + {c = c0}.
+
+Lemma in_ngamma_cons_ds_tail :
+ forall (work : nf_list) (i j : Int) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma work ds ni ai a c -> in_ngamma work ((i, j) :: ds) ni ai a c.
+
+Lemma in_ngamma_cons_ds_head :
+ forall (work : nf_list) (i j : Int) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms),
+ in_ngamma work ((i, j) :: ds) ni ai a (NDisj i j).
+
+Lemma in_ngamma_cons_ds_rev :
+ forall (work : nf_list) (i j : Int) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma work ((i, j) :: ds) ni ai a c ->
+ in_ngamma work ds ni ai a c + {c = NDisj i j}.
+
+Lemma in_ngamma_cons_ni_tail :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds ni ai a c -> in_ngamma work ds (x :: ni) ai a c.
+
+Lemma in_ngamma_cons_ni_head :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms),
+ in_ngamma work ds (x :: ni) ai a (NImp_NF (nested_imp2nimp x)).
+
+Lemma in_ngamma_cons_ni_rev :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds (x :: ni) ai a c ->
+ in_ngamma work ds ni ai a c + {c = NImp_NF (nested_imp2nimp x)}.
+
+Lemma in_ngamma_ni_x_ni_head :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp)
+   (ni1 ni2 : nested_imps) (ai : atomic_imps) (a : atoms),
+ in_ngamma work ds (ni1 ++ x :: ni2) ai a (NImp_NF (nested_imp2nimp x)).
+
+Lemma in_ngamma_ni_x_ni_tail :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp)
+   (ni1 ni2 : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds (ni1 ++ ni2) ai a c ->
+ in_ngamma work ds (ni1 ++ x :: ni2) ai a c.
+
+Lemma in_ngamma_ni_x_ni_rev :
+ forall (work : nf_list) (ds : disjs) (x : nested_imp)
+   (ni1 ni2 : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds (ni1 ++ x :: ni2) ai a c ->
+ in_ngamma work ds (ni1 ++ ni2) ai a c + {c = NImp_NF (nested_imp2nimp x)}.
+
+Lemma in_ngamma_ni_eq :
+ forall (work : nf_list) (ds : disjs) (ni ni' : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ nested_imps2nimps ni = nested_imps2nimps ni' ->
+ in_ngamma work ds ni ai a c -> in_ngamma work ds ni' ai a c.
+
+Lemma in_ngamma_ins_ai_tail :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (ai ai' : atomic_imps) 
+   (a : atoms) (c : normal_form),
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma work ds ni ai a c -> in_ngamma work ds ni ai' a c.
+
+Lemma in_ngamma_ins_ai_head_new :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (ai ai' : atomic_imps) 
+   (a : atoms),
+ (forall bs : nf_list, LOOKUP nf_list i ai bs -> False) ->
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma work ds ni ai' a (AImp i b).
+
+Lemma in_ngamma_ins_ai_head_old :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (bs : nf_list) (ai ai' : atomic_imps)
+   (a : atoms),
+ LOOKUP nf_list i ai bs ->
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma work ds ni ai' a (AImp i b).
+
+Lemma in_ngamma_ins_ai_rev :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (ai ai' : atomic_imps) 
+   (a : atoms) (c : normal_form),
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma work ds ni ai' a c -> in_ngamma work ds ni ai a c + {c = AImp i b}.
+
+Lemma in_ngamma_del_ai_tail :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (ai ai' : atomic_imps) (a : atoms) (c : normal_form),
+ EQUIV_DEL nf_list i ai' ai ->
+ in_ngamma work ds ni ai a c -> in_ngamma work ds ni ai' a c.
+
+Inductive in_ngamma_del_ai_rev_spec (i : Int) (bs : nf_list)
+(c : normal_form) : Set :=
+    In_NGamma_Del_AI_Rev_Spec_Intro :
+      forall (b : normal_form) (n : nat),
+      my_nth normal_form n bs b ->
+      c = AImp i b -> in_ngamma_del_ai_rev_spec i bs c.
+
+Lemma in_ngamma_del_ai_rev :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (bs : nf_list) (ai ai' : atomic_imps) 
+   (a : atoms) (c : normal_form),
+ LOOKUP nf_list i ai' bs ->
+ EQUIV_DEL nf_list i ai' ai ->
+ in_ngamma work ds ni ai' a c ->
+ in_ngamma work ds ni ai a c + in_ngamma_del_ai_rev_spec i bs c.
+
+Lemma in_ngamma_ins_a_tail :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (ai : atomic_imps) (i : Int) (a a' : atoms) (c : normal_form),
+ EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
+ in_ngamma work ds ni ai a c -> in_ngamma work ds ni ai a' c.
+
+Lemma in_ngamma_ins_a_head :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (ai : atomic_imps) (i : Int) (a a' : atoms),
+ EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
+ in_ngamma work ds ni ai a' (NAtom i).
+
+Lemma in_ngamma_ins_a_rev :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (ai : atomic_imps) (i : Int) (a a' : atoms) (c : normal_form),
+ EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
+ in_ngamma work ds ni ai a' c -> in_ngamma work ds ni ai a c + {c = NAtom i}.
+
+Lemma in_ngamma_shift_work_ds :
+ forall (i j : Int) (work : nf_list) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma (NDisj i j :: work) ds ni ai a c ->
+ in_ngamma work ((i, j) :: ds) ni ai a c.
+
+Lemma in_ngamma_shift_ds_work :
+ forall (i j : Int) (work : nf_list) (ds : disjs) (ni : nested_imps)
+   (ai : atomic_imps) (a : atoms) (c : normal_form),
+ in_ngamma work ((i, j) :: ds) ni ai a c ->
+ in_ngamma (NDisj i j :: work) ds ni ai a c.
+
+Lemma in_ngamma_shift_work_ni :
+ forall (x : nested_imp) (work : nf_list) (ds : disjs) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma (NImp_NF (nested_imp2nimp x) :: work) ds ni ai a c ->
+ in_ngamma work ds (x :: ni) ai a c.
+
+Lemma in_ngamma_shift_ni_work :
+ forall (x : nested_imp) (work : nf_list) (ds : disjs) 
+   (ni : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds (x :: ni) ai a c ->
+ in_ngamma (NImp_NF (nested_imp2nimp x) :: work) ds ni ai a c.
+
+Lemma in_ngamma_shift_work_ni_x_ni :
+ forall (x : nested_imp) (work : nf_list) (ds : disjs)
+   (ni1 ni2 : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma (NImp_NF (nested_imp2nimp x) :: work) ds (ni1 ++ ni2) ai a c ->
+ in_ngamma work ds (ni1 ++ x :: ni2) ai a c.
+
+Lemma in_ngamma_shift_ni_x_ni_work :
+ forall (x : nested_imp) (work : nf_list) (ds : disjs)
+   (ni1 ni2 : nested_imps) (ai : atomic_imps) (a : atoms) 
+   (c : normal_form),
+ in_ngamma work ds (ni1 ++ x :: ni2) ai a c ->
+ in_ngamma (NImp_NF (nested_imp2nimp x) :: work) ds (ni1 ++ ni2) ai a c.
+
+Lemma in_ngamma_shift_work_ai_new :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (ai ai' : atomic_imps) 
+   (a : atoms) (c : normal_form),
+ (forall bs : nf_list, LOOKUP nf_list i ai bs -> False) ->
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma (AImp i b :: work) ds ni ai a c -> in_ngamma work ds ni ai' a c.
+
+Lemma in_ngamma_shift_work_ai_old :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (bs : nf_list) (ai ai' : atomic_imps)
+   (a : atoms) (c : normal_form),
+ LOOKUP nf_list i ai bs ->
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma (AImp i b :: work) ds ni ai a c -> in_ngamma work ds ni ai' a c.
+
+Lemma in_ngamma_shift_ai_work :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (i : Int) (b : normal_form) (ai ai' : atomic_imps) 
+   (a : atoms) (c : normal_form),
+ EQUIV_INS nf_list i (cons b) nf_nil ai ai' ->
+ in_ngamma work ds ni ai' a c -> in_ngamma (AImp i b :: work) ds ni ai a c.
+
+Lemma in_ngamma_shift_work_a :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (ai : atomic_imps) (i : Int) (a a' : atoms) (c : normal_form),
+ EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
+ in_ngamma (NAtom i :: work) ds ni ai a c -> in_ngamma work ds ni ai a' c.
+
+Lemma in_ngamma_shift_a_work :
+ forall (work : nf_list) (ds : disjs) (ni : nested_imps) 
+   (ai : atomic_imps) (i : Int) (a a' : atoms) (c : normal_form),
+ EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
+ in_ngamma work ds ni ai a' c -> in_ngamma (NAtom i :: work) ds ni ai a c. *)
 
 Definition a_ai_disj (a : atoms) (ai : atomic_imps) :=
-
   forall i : Int,
-
   LOOKUP unit i a tt -> forall bs : nf_list, LOOKUP nf_list i ai bs -> False.
 
-
-
 Definition a_goal_disj (a : atoms) (goal : Int) :=
-
   LOOKUP unit goal a tt -> False.
 
-
-
 Lemma disjs_insert_ai :
-
  forall (i : Int) (b : normal_form) (a : atoms) (ai ai' : atomic_imps),
-
  a_ai_disj a ai ->
-
  (forall d : unit, ~ LOOKUP unit i a d) ->
-
  EQUIV_INS nf_list i (cons b) nf_nil ai ai' -> a_ai_disj a ai'.
-
 intros i b a ai ai'.
-
 elim a; clear a; intros a avl_a.
-
 elim ai; clear ai; intros ai avl_ai.
-
 elim ai'; clear ai'; intros ai' avl_ai'.
-
 unfold a_ai_disj in |- *.
-
 simpl in |- *.
-
 intros a_ai_disj0 not_lookup_i equiv_ins j lookup_j bs lookup_bs.
-
 elim (equal_dec j i).
-
 intros equal_ji.
-
 apply (not_lookup_i tt).
-
  rewrite <- (equal_eq j i); assumption.
-
 intros not_equal_ji.
-
 apply a_ai_disj0 with j bs; clear a_ai_disj0; try assumption.
-
 inversion_clear equiv_ins.
-
 apply H2; assumption.
-
 Qed.
-
-
 
 Lemma disjs_delete_ai :
-
  forall (i : Int) (a a' : atoms) (ai ai' : atomic_imps),
-
  a_ai_disj a ai ->
-
  EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
-
  EQUIV_DEL nf_list i ai ai' -> a_ai_disj a' ai'.
-
 intros i a a' ai ai'.
-
 elim a; clear a; intros a avl_a.
-
 elim a'; clear a'; intros a' avl_a'.
-
 elim ai; clear ai; intros ai avl_ai.
-
 elim ai'; clear ai'; intros ai' avl_ai'.
-
 unfold a_ai_disj in |- *.
-
 simpl in |- *.
-
 intros a_ai_disj0 equiv_ins equiv_del i0 lookup_j bs0 lookup_bs0.
-
 elim (equal_dec i0 i).
-
 intro equal_i.
-
 inversion_clear equiv_del.
-
 apply H with i0 bs0; assumption.
 
-
-
 intros not_equal_i.
-
 apply a_ai_disj0 with i0 bs0.
-
 inversion_clear equiv_ins.
-
 apply H2; assumption.
-
 inversion_clear equiv_del.
-
 apply H1; assumption.
-
 Qed.
-
-
 
 Lemma goal_disj_insert_a :
-
  forall (i goal : Int) (a a' : atoms),
-
  a_goal_disj a goal ->
-
  (Equal goal i -> False) ->
-
  EQUIV_INS unit i (fun _ : unit => tt) tt a a' -> a_goal_disj a' goal.
-
 intros i goal a a'.
-
 elim a; clear a; intros a avl_a.
-
 elim a'; clear a'; intros a' avl_a'.
-
 unfold a_goal_disj in |- *.
-
 simpl in |- *.
-
 intros a_goal_disj0 not_equal equiv_ins lookup.
-
 apply a_goal_disj0.
-
 inversion_clear equiv_ins.
-
 apply H2; assumption.
-
 Qed.
-
-
 
 Lemma disjs_insert_a :
-
  forall (i : Int) (a a' : atoms) (ai : atomic_imps),
-
  a_ai_disj a ai ->
-
  EQUIV_INS unit i (fun _ : unit => tt) tt a a' ->
-
  (forall bs : nf_list, ~ LOOKUP nf_list i ai bs) -> a_ai_disj a' ai.
-
 intros i a a' ai.
-
 elim a; clear a; intros a avl_a.
-
 elim a'; clear a'; intros a' avl_a'.
-
 elim ai; clear ai; intros ai avl_ai.
-
 unfold a_ai_disj in |- *.
-
 simpl in |- *.
-
 intros a_ai_disj0 equiv_ins not_lookup_bs i0 lookup_j bs0 lookup_bs0.
-
 elim (equal_dec i0 i).
-
 intro equal_i.
-
 apply (not_lookup_bs bs0).
-
  rewrite <- (equal_eq i0 i); assumption.
 
-
-
 intros not_equal_i.
-
 apply a_ai_disj0 with i0 bs0.
-
 inversion_clear equiv_ins.
-
 apply H2; assumption.
-
 assumption.
-
 Qed.
-

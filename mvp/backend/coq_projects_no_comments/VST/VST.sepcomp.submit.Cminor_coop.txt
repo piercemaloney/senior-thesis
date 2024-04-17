@@ -1,585 +1,292 @@
 Require Import Coqlib.
-
 Require Import AST.
-
 Require Import Integers.
-
 Require Import compcert.common.Values.
-
 Require Import Memory.
-
 Require Import Events.
-
 Require Import Globalenvs.
 
-
-
 Require Import sepcomp.Cminor.
-
 Require Import sepcomp.mem_lemmas. 
-
 Require Import sepcomp.core_semantics.
 
-
-
 Inductive CMin_core: Type :=
-
   | CMin_State:                      
-
       forall (f: function)              
-
              (s: stmt)                  
-
              (k: cont)                  
-
              (sp: val)                  
-
              (e: env),                   
-
       CMin_core
-
   | CMin_Callstate:                  
-
       forall (f: fundef)                
-
              (args: list val)           
-
              (k: cont),                  
-
       CMin_core
-
   | CMin_Returnstate:                
-
       forall (v: val)                   
-
              (k: cont),                  
-
       CMin_core.
 
-
-
 Definition ToState (q:CMin_core) (m:mem): Cminor.state :=
-
   match q with
-
      CMin_State f s k sp e => State f s k sp e m
-
    | CMin_Callstate f args k => Callstate f args k m
-
    | CMin_Returnstate v k => Returnstate v k m
-
   end.
-
-
 
 Definition FromState (c: Cminor.state) : CMin_core * mem :=
-
   match c with
-
      State f s k sp e m => (CMin_State f s k sp e, m)
-
    | Callstate f args k m => (CMin_Callstate f args k, m)
-
    | Returnstate v k m => (CMin_Returnstate v k, m)
-
   end.
-
-
 
 Definition CMin_initial_core (ge:Cminor.genv) (v: val) (args:list val): option CMin_core :=
-
    match v with
-
         Vptr b i =>
-
           if Int.eq_dec i  Int.zero
-
           then match Genv.find_funct_ptr ge b with
-
                  | None => None
-
                  | Some f => Some (CMin_Callstate f args Kstop)
-
                end
-
           else None
-
       | _ => None
-
    end.
 
-
-
 Definition CMin_at_external (c: CMin_core) : option (external_function * signature * list val) :=
-
   match c with
-
   | CMin_State f s k sp e => None
-
   | CMin_Callstate fd args k => match fd with
-
                                   Internal f => None
-
                                 | External ef => Some (ef, ef_sig ef, args)
-
                               end
-
   | CMin_Returnstate v k => None
-
  end.
 
-
-
 Definition CMin_after_external (vret: option val) (c: CMin_core) : option CMin_core :=
-
   match c with
-
     CMin_Callstate fd args k =>
-
          match fd with
-
             Internal f => None
-
           | External ef => match vret with
-
                              None => Some (CMin_Returnstate Vundef k)
-
                            | Some v => Some (CMin_Returnstate v k)
-
                            end
-
          end
-
   | _ => None
-
   end.
 
-
-
 Definition CMin_corestep (ge : genv)  (q : CMin_core) (m : mem) (q' : CMin_core) (m' : mem) : Prop.
-
   destruct q; destruct q'.
-
   
-
        apply (exists t, Cminor.step ge (State f s k sp e m)  t (State f0 s0 k0 sp0 e0 m')).
-
   
-
        apply (exists t, Cminor.step ge (State f s k sp e m)  t (Callstate f0 args k0 m')).
-
   
-
        apply (exists t, Cminor.step ge (State f s k sp e m)  t (Returnstate v k0 m')).
-
   
-
        apply (match f with
-
                 Internal ff =>
-
                   exists t, Cminor.step ge (Callstate f args k m) t (State f0 s k0 sp e m')
-
               | External _ => False
-
               end).
-
-  
-
-       apply False.
-
   
        apply False.
-
+         apply False.
   
-
        apply (exists t, Cminor.step ge (Returnstate v k m) t (State f s k0 sp e m')).
-
   
-
        apply False.
-
   
-
        apply False.
-
 Defined.
-
-
 
 Lemma CMin_corestep_not_at_external:
-
        forall ge m q m' q', CMin_corestep ge q m q' m' -> CMin_at_external q = None.
-
   Proof. intros.
-
      unfold CMin_corestep in H.
-
      destruct q; destruct q'; simpl in *; try reflexivity.
-
        
-
              destruct f; try contradiction.
-
              destruct H as [t Ht]. inversion Ht; subst. reflexivity.
-
        
-
              contradiction.
-
        
-
              contradiction.
-
   Qed.
-
-
 
 Definition CMin_halted (q : CMin_core): option val :=
-
     match q with
-
        CMin_Returnstate v Kstop => Some v
-
      | _ => None
-
     end.
 
-
-
 Lemma CMin_corestep_not_halted : forall ge m q m' q',
-
        CMin_corestep ge q m q' m' -> CMin_halted q = None.
-
   Proof. intros.
-
      unfold CMin_corestep in H.
-
      destruct q; destruct q'; simpl in *; try reflexivity.
-
           
-
              destruct H as [t Ht]. inversion Ht; subst.
-
              destruct v; reflexivity.
-
        
-
              contradiction.
-
        
-
              contradiction.
-
   Qed.
-
-
 
 Lemma CMin_at_external_halted_excl :
-
        forall q, CMin_at_external q = None \/ CMin_halted q = None.
-
    Proof. intros. destruct q; auto. Qed.
 
-
-
 Lemma CMin_after_at_external_excl : forall retv q q',
-
       CMin_after_external retv q = Some q' -> CMin_at_external q' = None.
-
   Proof. intros.
-
        destruct q; simpl in *; try inv H.
-
        destruct f; try inv H1; simpl; trivial.
-
          destruct retv; inv H0; simpl; trivial.
-
 Qed.
-
-
 
 Definition CMin_core_sem : CoreSemantics genv CMin_core mem.
-
   eapply @Build_CoreSemantics with (at_external:=CMin_at_external)
-
                   (after_external:=CMin_after_external) (corestep:=CMin_corestep)
-
                   (halted:=CMin_halted).
-
     apply CMin_initial_core.
-
     apply CMin_corestep_not_at_external.
-
     apply CMin_corestep_not_halted.
-
     apply CMin_at_external_halted_excl.
-
     apply CMin_after_at_external_excl.
-
 Defined.
-
-
 
 Lemma CMin_forward : forall g c m c' m' (CS: CMin_corestep g c m c' m'),
-
       mem_lemmas.mem_forward m m'.
-
   Proof. intros.
-
      unfold CMin_corestep in CS.
-
      destruct c; destruct c'; simpl in *; try contradiction.
-
        destruct CS as [t CS].
-
          inv CS; try apply mem_forward_refl.
-
          
-
           destruct vaddr; simpl in H14; inv H14.
-
           eapply store_forward; eassumption.
-
          
-
           eapply external_call_mem_forward; eassumption.
-
        destruct CS as [t CS].
-
          inv CS; simpl; try apply mem_forward_refl.
-
          
-
          eapply free_forward. apply H14.
-
        destruct CS as [t CS].
-
          inv CS; simpl; try apply mem_forward_refl.
-
          eapply free_forward. apply H10.
-
          eapply free_forward. apply H6.
-
          eapply free_forward. apply H10.
-
        destruct f; try contradiction.
-
          destruct CS as [t CS].
-
          inv CS; simpl; try apply mem_forward_refl.
-
          eapply alloc_forward. apply H4.
-
        destruct CS as [t CS].
-
          inv CS; simpl; try apply mem_forward_refl.
-
 Qed.
-
-
 
 Definition coopstep g c m c' m' :=
-
    CMin_corestep g c m c' m'.
 
-
-
 Lemma cmin_coopstep_not_at_external: forall ge m q m' q',
-
   coopstep ge q m q' m' -> CMin_at_external q = None.
-
 Proof.
-
   intros.
-
   eapply CMin_corestep_not_at_external. apply H.
-
 Qed.
-
-
 
 Lemma cmin_coopstep_not_halted :
-
   forall ge m q m' q', coopstep ge q m q' m' -> CMin_halted q = None.
-
 Proof.
-
   intros.
-
   eapply CMin_corestep_not_halted. apply H.
-
 Qed.
-
-
 
 Program Definition cmin_core_sem :
-
   CoreSemantics Cminor.genv CMin_core mem :=
-
   @Build_CoreSemantics _ _ _ 
-
     
-
     CMin_initial_core
-
     CMin_at_external
-
     CMin_after_external
-
     CMin_halted
-
     coopstep
-
     cmin_coopstep_not_at_external
-
     cmin_coopstep_not_halted
-
     CMin_at_external_halted_excl
-
     CMin_after_at_external_excl.
 
-
-
 Lemma cmin_coop_forward : forall g c m c' m' (CS: coopstep g c m c' m'),
-
       mem_lemmas.mem_forward m m'.
-
 Proof. intros. eapply CMin_forward. apply CS. Qed.
 
-
-
 Program Definition cmin_coop_sem :
-
   CoopCoreSem Cminor.genv CMin_core.
-
 apply Build_CoopCoreSem with (coopsem := cmin_core_sem).
-
   apply cmin_coop_forward.
-
 Defined.
 
-
-
 Lemma CMin_corestep_2_CompCertStep: forall (ge : genv)  (q : CMin_core) (m : mem) (q' : CMin_core) (m' : mem) ,
-
    CMin_corestep ge q m q' m' ->
-
    exists t, step ge (ToState q m) t (ToState q' m').
-
 Proof.
-
   intros. destruct q; destruct q'; try assumption; try contradiction.
-
   unfold CMin_corestep in H.
-
      destruct f; try contradiction.
-
         apply H.
-
 Qed.
-
-
 
 Lemma CompCertStep_CMin_corestep: forall (ge : genv)  (q : CMin_core) (m : mem) (q' : CMin_core) (m' : mem)  t,
-
    step ge (ToState q m) t (ToState q' m') ->
-
    CMin_at_external q = None ->
-
    CMin_corestep ge q m q' m'.
-
 Proof.
-
   intros. destruct q; destruct q'; simpl in *; try eexists; try eassumption.
-
      inv H. eexists. econstructor; trivial.
-
      inv H.
-
      inv H. inv H0.
-
      inv H.
-
      inv H.
-
 Qed.
-
-
 
 Lemma CompCertStep_CMin_corestep': forall (ge : genv)  (q : CMin_core) (m : mem) c' t,
-
    step ge (ToState q m) t c' ->
-
    CMin_at_external q = None ->
-
      CMin_corestep ge q m (fst (FromState c')) (snd (FromState c')).
-
 Proof.
-
   intros. destruct q; destruct c'; simpl in *; try eexists; try eassumption.
-
      inv H. eexists. econstructor; trivial.
-
      inv H.
-
      inv H. inv H0.
-
      inv H.
-
      inv H.
-
 Qed.
-
-
 
 Lemma CompCertStep_2_CMin_corestep: forall (ge : genv)  (q : CMin_core) (m : mem) t c',
-
    step ge (ToState q m) t c' ->
-
    CMin_at_external q = None ->
-
    exists q', exists m', c' = ToState q' m' /\ CMin_corestep ge q m q' m'.
-
 Proof.
-
   intros. destruct q; destruct c'; simpl in *.
-
      exists (CMin_State f0 s0 k0 sp0 e0). exists m0; simpl. split. trivial. eexists. eassumption.
-
      exists (CMin_Callstate f0 args  k0). exists m0; simpl. split. trivial. eexists. eassumption.
-
      exists (CMin_Returnstate v k0). exists m0; simpl. split. trivial. eexists. eassumption.
-
      exists (CMin_State f0 s k0 sp e). exists m0; simpl. split. trivial.
-
         destruct f. eexists. eassumption.
-
         inv H0.
-
      inv H.
-
      inv H. inv H0.
-
      exists (CMin_State f s k0 sp e). exists m0; simpl. split. trivial. eexists. eassumption.
-
      inv H.
-
      inv H.
-
 Qed.
 
-
-
 Lemma CMin_core2state_injective: forall q m q' m',
-
  ToState q m = ToState q' m' -> q'=q /\ m'=m.
-
   Proof. intros.
-
     destruct q; destruct q'; simpl in *; inv H; split; trivial.
-
   Qed.
-
-
 

@@ -1,2513 +1,361 @@
 Require Import VST.veric.juicy_base.
-(* VST.veric.juicy_base:
-Require Export VST.veric.base.
-Require Export VST.msl.msl_standard.
-Require Export VST.veric.rmaps.
-
-Require Export VST.veric.rmaps_lemmas.
-
-Require Export VST.veric.compcert_rmaps.
-
-Export Mem.
-Open Scope Z. *)
-
 Import cjoins.
-
 Require Import VST.veric.juicy_mem.
-(* VST.veric.juicy_mem:
-Require Import VST.veric.base.
-Require Import VST.veric.Memory.
-Require Import VST.veric.juicy_base.
-Require Import VST.veric.shares.
-Import cjoins.
-
-Definition dec_share_nonidentity (sh: Share.t) : {~identity sh}+{identity sh} :=
-   (Sumbool.sumbool_not _ _ (dec_share_identity sh)).
-
-Definition perm_of_sh (sh: Share.t): option permission :=
-  if writable0_share_dec sh
-  then if eq_dec sh Share.top
-            then Some Freeable
-            else Some Writable
-    else if readable_share_dec sh
-         then Some Readable
-         else if eq_dec sh Share.bot
-                   then None
-              else Some Nonempty.
-Functional Scheme perm_of_sh_ind := Induction for perm_of_sh Sort Prop.
-
-Definition contents_at (m: mem) (loc: address) : memval :=
-  ZMap.get (snd loc) (PMap.get (fst loc) (mem_contents m)).
-
-Definition contents_cohere (m: mem) (phi: rmap) :=
-  forall rsh sh v loc pp, phi @ loc = YES rsh sh (VAL v) pp -> contents_at m loc = v /\ pp=NoneP.
-
-Definition valshare (r: resource) : share :=
-    match r with
-      | YES sh rsh _ _ => Share.glb Share.Rsh sh
-      | _ => Share.bot
-    end.
-
-Definition res_retain' (r: resource) : Share.t :=
- match r with
-  | NO sh _ => sh
-  | YES sh _ _ _ => Share.glb Share.Lsh sh
-  | PURE _ _ => Share.top
- end.
-
-Definition perm_of_res (r: resource) :=
-  
- match r with
- | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
- | PURE _ _ => Some Nonempty
- | YES sh rsh (VAL _) _ => perm_of_sh sh
- | YES sh rsh _ _ => Some Nonempty
- end.
-
-Definition perm_of_res_lock_explicit
-             (r : compcert_rmaps.RML.R.resource):=
-    match r with
-    | compcert_rmaps.RML.R.NO _ _ => None
-    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ => None
-    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ =>
-      if writable0_share_dec (Share.glb Share.Rsh sh)
-      then if eq_dec (Share.glb Share.Rsh sh) Share.top then Some Freeable else Some Writable
-      else if readable_share_dec (Share.glb Share.Rsh sh) then Some Readable else
-             if eq_dec  (Share.glb Share.Rsh sh) Share.bot then None else Some Nonempty
-    | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => None
-    | compcert_rmaps.RML.R.PURE _ _ => None
-    end.
-      
-  Functional Scheme perm_of_res_lock_expl_ind := Induction for perm_of_res_lock_explicit Sort Prop.
-
-Definition perm_of_res' (r: resource) :=
-  
- match r with
- | NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
- | PURE _ _ => Some Nonempty
- | YES sh _ _ _ => perm_of_sh sh
- end.
-
-Definition perm_of_res_lock (r: resource) := 
-  
- match r with
- | YES sh rsh (LK _ _) _ => perm_of_sh (Share.glb Share.Rsh sh)
- | _ => None 
- end.
-
-Definition perm_of_res_explicit
-               (r : compcert_rmaps.RML.R.resource):=
-        match r with
-        | compcert_rmaps.RML.R.NO sh _ => if eq_dec sh Share.bot then None else Some Nonempty
-           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.VAL _) _ =>
-             if writable0_share_dec sh
-             then if eq_dec sh Share.top then Some Freeable else Some Writable
-             else
-               if readable_share_dec sh
-               then Some Readable
-               else if eq_dec sh Share.bot then None else Some Nonempty
-           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.LK _ _) _ => Some Nonempty
-           | compcert_rmaps.RML.R.YES sh _ (compcert_rmaps.FUN _ _) _ => Some Nonempty
-           | compcert_rmaps.RML.R.PURE _ _ => Some Nonempty
-        end.
-      
-Functional Scheme perm_of_res_expl_ind := Induction for perm_of_res_explicit Sort Prop.
-
-Lemma Rsh_not_top: Share.Rsh <> Share.top.
-
-Lemma nonidentity_Rsh: ~identity Share.Rsh.
-
-Lemma perm_of_sh_fullshare: perm_of_sh fullshare = Some Freeable.
-
-Lemma nonreadable_extern_retainer: ~readable_share extern_retainer.
-
-Lemma Lsh_nonreadable: ~readable_share Share.Lsh.
-
-Lemma perm_of_res_op1:
-  forall r,
-    perm_order'' (perm_of_res' r) (perm_of_res r).
-
-Lemma perm_of_res_op2:
-  forall r,
-    perm_order'' (perm_of_res' r) (perm_of_res_lock r).
-
-Definition access_cohere (m: mem)  (phi: rmap) :=
-  forall loc,  access_at m loc Cur = perm_of_res (phi @ loc).
-
-Definition max_access_at m loc := access_at m loc Max.
-
-Definition max_access_cohere (m: mem) (phi: rmap)  :=
-  forall loc,
-    perm_order'' (max_access_at m loc) (perm_of_res' (phi @ loc)).
-
-Definition alloc_cohere (m: mem) (phi: rmap) :=
- forall loc,  (fst loc >= nextblock m)%positive -> phi @ loc = NO Share.bot bot_unreadable.
-
-Inductive juicy_mem: Type :=
-  mkJuicyMem: forall (m: mem) (phi: rmap)
-    (JMcontents: contents_cohere m phi)
-    (JMaccess: access_cohere m phi)
-    (JMmax_access: max_access_cohere m phi)
-    (JMalloc: alloc_cohere m phi),
-       juicy_mem.
-
-Section selectors.
-Variable (j: juicy_mem).
-Definition m_dry := match j with mkJuicyMem m _ _ _ _ _ => m end.
-Definition m_phi := match j with mkJuicyMem _ phi _ _ _ _ => phi end.
-Lemma juicy_mem_contents: contents_cohere m_dry m_phi.
-Lemma juicy_mem_access: access_cohere m_dry m_phi.
-Lemma juicy_mem_max_access: max_access_cohere m_dry m_phi.
-Lemma juicy_mem_alloc_cohere: alloc_cohere m_dry m_phi.
-End selectors.
-
-Definition juicy_mem_resource: forall jm m', resource_at m' = resource_at (m_phi jm) ->
-  {jm' | m_phi jm' = m' /\ m_dry jm' = m_dry jm}.
-
-Lemma perm_of_empty_inv {s} : perm_of_sh s = None -> s = Share.bot.
-
-Lemma writable_join_sub: forall loc phi1 phi2,
-  join_sub phi1 phi2 -> writable loc phi1 -> writable loc phi2.
-
-Lemma writable_inv: forall phi loc, writable loc phi ->
-  exists sh, exists rsh, exists k, exists pp, 
-       phi @ loc = YES sh rsh k pp /\ 
-       writable0_share sh /\
-       isVAL k.
-
-Lemma nreadable_inv: forall phi loc, ~readable loc phi 
-  -> (exists sh, exists nsh, phi @ loc = NO sh nsh)
-   \/ (exists sh, exists rsh, exists k, exists pp, phi @ loc = YES sh rsh k pp /\ ~isVAL k)
-   \/ (exists k, exists pp, phi @ loc = PURE k pp).
-
-Lemma age1_joinx {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall phi1 phi2 phi3 phi1' phi2' phi3',
-             age phi1 phi1' -> age phi2 phi2' -> age phi3 phi3' ->
-             join phi1 phi2 phi3 -> join phi1' phi2' phi3'.
-
-Lemma constructive_age1_join  {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A} : forall x y z x' : A,
-       join x y z ->
-       age x x' ->
-       { yz' : A*A | join x' (fst yz') (snd yz') /\ age y (fst yz') /\ age z (snd yz')}.
-
-Lemma age1_constructive_joins_eq : forall {A}  {JA: Join A}{PA: Perm_alg A}{agA: ageable A}{AgeA: Age_alg A}  {phi1 phi2},
-  constructive_joins phi1 phi2
-  -> forall {phi1'}, age1 phi1 = Some phi1'
-  -> forall {phi2'}, age1 phi2 = Some phi2'
-  -> constructive_joins phi1' phi2'.
-
-Program Definition age1_juicy_mem (j: juicy_mem): option juicy_mem :=
-      match age1 (m_phi j) with
-        | Some phi' => Some (mkJuicyMem (m_dry j) phi' _ _ _ _)
-        | None => None
-      end.
-
-Lemma age1_juicy_mem_unpack: forall j j',
-  age1_juicy_mem j = Some j' ->
-  age (m_phi j)  (m_phi j')
-  /\ m_dry j = m_dry j'.
-
-Lemma age1_juicy_mem_unpack': forall j j',
-  age (m_phi j)  (m_phi j')  /\ m_dry j = m_dry j' ->
-  age1_juicy_mem j = Some j'.
-
-Lemma age1_juicy_mem_unpack'': forall j j',
-  age (m_phi j)  (m_phi j')  -> m_dry j = m_dry j' ->
-  age1_juicy_mem j = Some j'.
-
-Lemma rmap_join_eq_level: forall phi1 phi2: rmap, joins phi1 phi2 -> level phi1 = level phi2.
-
-Lemma rmap_join_sub_eq_level: forall phi1 phi2: rmap,
-          join_sub phi1 phi2 -> level phi1 = level phi2.
-
-Lemma age1_juicy_mem_None1:
-  forall j, age1_juicy_mem j = None -> age1 (m_phi j) = None.
-
-Lemma age1_juicy_mem_None2:
-  forall j, age1 (m_phi j) = None -> age1_juicy_mem j = None.
-
-Lemma age1_juicy_mem_Some:
-  forall j j', age1_juicy_mem j = Some j' -> age1 (m_phi j) = Some (m_phi j').
-
-Lemma unage_juicy_mem: forall j' : juicy_mem,
-   exists j : juicy_mem, age1_juicy_mem j = Some j'.
-
-Lemma level1_juicy_mem: forall j: juicy_mem,
-  age1_juicy_mem j = None <-> level (m_phi j) = 0%nat.
-
-Lemma level2_juicy_mem: forall j1 j2: juicy_mem,
-   age1_juicy_mem j1 = Some j2 -> level (m_phi j1) = S (level (m_phi j2)).
-
-Lemma juicy_mem_ageable_facts: ageable_facts juicy_mem (fun j => level (m_phi j)) age1_juicy_mem.
-
-Instance juicy_mem_ageable: ageable juicy_mem :=
-  mkAgeable _ (fun j => level (m_phi j)) age1_juicy_mem juicy_mem_ageable_facts.
-
-Lemma level_juice_level_phi: forall (j: juicy_mem), level j = level (m_phi j).
-
-Lemma juicy_mem_ext: forall j1 j2,
-       m_dry j1 = m_dry j2  ->
-       m_phi j1 = m_phi j2 ->
-       j1=j2.
-
-Lemma unage_writable: forall (phi phi': rmap) loc,
-  age phi phi' -> writable loc phi' -> writable loc phi.
-
-Lemma unage_readable: forall (phi phi': rmap) loc,
-  age phi phi' -> readable loc phi' -> readable loc phi.
-
-Lemma readable_inv: forall phi loc, readable loc phi ->
-  exists rsh, exists sh, exists v, exists pp, phi @ loc = YES rsh sh (VAL v) pp.
-
-Definition fmap_option {A B} (v: option A) (m: B) (f: A -> B): B :=
-  match v with
-    | None => m
-    | Some v' => f v'
-  end.
-
-Lemma resource_at_make_rmap: forall f g lev H Hg, resource_at (proj1_sig (make_rmap f g lev H Hg)) = f.
-
-Lemma resource_at_remake_rmap: forall f g lev H Hg, resource_at (proj1_sig (remake_rmap f g lev H Hg)) = f.
-
-Lemma ghost_of_make_rmap: forall f g lev H Hg, ghost_of (proj1_sig (make_rmap f g lev H Hg)) = g.
-
-Lemma ghost_of_remake_rmap: forall f g lev H Hg, ghost_of (proj1_sig (remake_rmap f g lev H Hg)) = g.
-
-Lemma level_make_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (make_rmap f g lev H Hg)) = lev.
-
-Lemma level_remake_rmap: forall f g lev H Hg, @level rmap _ (proj1_sig (remake_rmap f g lev H Hg)) = lev.
-
-Section inflate.
-Variables (m: mem) (phi: rmap).
-
-Definition inflate_initial_mem' (w: rmap) (loc: address) :=
-   match access_at m loc Cur with
-           | Some Freeable => YES Share.top readable_share_top (VAL (contents_at m loc)) NoneP
-           | Some Writable => YES Ews (writable_readable writable_Ews) (VAL (contents_at m loc)) NoneP
-           | Some Readable => YES Ers readable_Ers (VAL (contents_at m loc)) NoneP
-           | Some Nonempty => 
-                         match w @ loc with PURE _ _ => w @ loc | _ => NO _ nonreadable_extern_retainer end
-           | None =>  NO Share.bot bot_unreadable
-         end.
-
-Lemma inflate_initial_mem'_fmap:
- forall w, resource_fmap (approx (level w)) (approx (level w)) oo inflate_initial_mem' w =
-                inflate_initial_mem' w.
-
-Definition inflate_initial_mem (w: rmap): rmap :=
-    proj1_sig (make_rmap (inflate_initial_mem' w) (ghost_of w) _
-            (inflate_initial_mem'_fmap w) (ghost_of_approx w)).
-
-Lemma inflate_initial_mem_level: forall w, level (inflate_initial_mem w) = level w.
-
-Definition all_VALs (phi: rmap) :=
-  forall l, match phi @ l with
-              | YES _ _ k _ => isVAL k
-              | _ => True
-            end.
-
-Lemma inflate_initial_mem_all_VALs: forall lev, all_VALs (inflate_initial_mem lev).
-
-Definition inflate_alloc: rmap.
-
-Lemma approx_map_idem: forall n (lp: preds),
-  preds_fmap (approx n) (approx n) (preds_fmap (approx n) (approx n) lp) =
-  preds_fmap (approx n) (approx n) lp.
-
-Definition inflate_store: rmap. refine (
-
-End inflate.
-
-Lemma adr_inv0: forall (b b': block) (ofs ofs': Z) (sz: Z),
-  ~ adr_range (b, ofs) sz (b', ofs') ->
-  b <> b' \/ ~ ofs <= ofs' < ofs + sz.
-
-Lemma adr_inv: forall (b b': block) (ofs ofs': Z) ch,
-  ~ adr_range (b, ofs) (size_chunk ch) (b', ofs') ->
-  b <> b' \/ ~ ofs <= ofs' < ofs + size_chunk ch.
-
-Lemma range_inv0: forall ofs ofs' sz,
-  ~ ofs <= ofs' < ofs + sz ->
-  ofs' < ofs \/ ofs' >= ofs + sz.
-
-Lemma range_inv: forall ofs ofs' ch,
-  ~ ofs <= ofs' < ofs + size_chunk ch ->
-  ofs' < ofs \/ ofs' >= ofs + size_chunk ch.
-
-Lemma perm_of_sh_Freeable_top: forall sh, perm_of_sh sh = Some Freeable -> 
-     sh = Share.top.
-
-Lemma nextblock_access_empty: forall m b ofs k, (b >= nextblock m)%positive
-  -> access_at m (b, ofs) k = None.
-
-Section initial_mem.
-Variables (m: mem) (w: rmap).
-
-Definition initial_rmap_ok := 
-   forall loc, ((fst loc >= nextblock m)%positive -> core w @ loc = NO Share.bot bot_unreadable) /\
-                   (match w @ loc with 
-                    | PURE _ _ => (fst loc < nextblock m)%positive /\ 
-                                           access_at m loc Cur = Some Nonempty /\  
-                                            max_access_at m loc = Some Nonempty 
-                    | _ => True end).
-Hypothesis IOK: initial_rmap_ok.
-End initial_mem.
-
-Definition empty_retainer (loc: address) := Share.bot.
-
-Lemma perm_of_freeable: perm_of_sh Share.top = Some Freeable.
-
-Lemma perm_of_writable: 
-   forall sh, writable_share sh -> sh <> Share.top -> perm_of_sh sh = Some Writable.
-
-Lemma perm_of_readable:
-  forall sh (rsh: readable_share sh), ~writable0_share sh -> perm_of_sh sh = Some Readable.
-
-Lemma perm_of_nonempty:
-  forall sh, sh <> Share.bot -> ~readable_share sh -> perm_of_sh sh = Some Nonempty.
-
-Lemma perm_of_empty:
-    perm_of_sh Share.bot = None.
-
-Lemma perm_of_Ews: perm_of_sh Ews = Some Writable.
-
-Lemma perm_of_Ers: perm_of_sh Ers = Some Readable.
-
-Lemma extern_retainer_neq_bot: extern_retainer <> Share.bot.
-
-Lemma perm_order''_trans: forall a b c, Mem.perm_order'' a b ->  Mem.perm_order'' b c ->
-
-Definition initial_mem (m: mem) lev (IOK: initial_rmap_ok m lev) : juicy_mem.
-
-Definition juicy_mem_level (j: juicy_mem) (lev: nat) :=
-  level (m_phi j) = lev.
-
-Lemma initial_mem_level: forall lev m j IOK,
-  j = initial_mem m lev IOK -> juicy_mem_level j (level lev).
-
-Lemma initial_mem_all_VALs: forall lev m j IOK, j = initial_mem m lev IOK
-  -> all_VALs (m_phi j).
-
-Lemma perm_mem_access: forall m b ofs p,
-  perm m b ofs Cur p ->
-  exists p', (perm_order p' p /\ access_at m (b, ofs) Cur = Some p').
-
-Section store.
-Variables (jm: juicy_mem) (m': mem)
-          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
-          (STORE: store ch (m_dry jm) b ofs v = Some m').
-
-Lemma store_phi_elsewhere_eq: forall rsh sh mv loc',
-  ~ adr_range (b, ofs) (size_chunk ch) loc'
-  -> (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP -> contents_at m' loc' = mv.
-
-Definition store_juicy_mem: juicy_mem.
-
-End store.
-
-Section storebytes.
-Variables (jm: juicy_mem) (m': mem) (b: block) (ofs: Z) (bytes: list memval)
-  (STOREBYTES: storebytes (m_dry jm) b ofs bytes = Some m').
-
-Lemma storebytes_phi_elsewhere_eq: forall rsh sh mv loc',
-  ~ adr_range (b, ofs) (Zlength bytes) loc' ->
-  (m_phi jm) @ loc' = YES rsh sh (VAL mv) NoneP ->
-  contents_at m' loc' = mv.
-
-Definition storebytes_juicy_mem: juicy_mem.
-
-End storebytes.
-
-Lemma free_smaller_None : forall m b b' ofs lo hi m',
-  access_at m (b, ofs) Cur = None
-  -> free m b' lo hi = Some m'
-  -> access_at m' (b, ofs) Cur = None.
-
-Lemma free_nadr_range_eq : forall m b b' ofs' lo hi m',
-  ~ adr_range (b, lo) (hi - lo) (b', ofs')
-  -> free m b lo hi = Some m'
-  -> access_at m (b', ofs') = access_at m' (b', ofs')
-  /\  contents_at m (b', ofs') = contents_at m' (b', ofs').
-
-Section free.
-Variables (jm :juicy_mem) (m': mem)
-          (b: block) (lo hi: Z)
-          (FREE: free (m_dry jm) b lo hi = Some m')
-          (PERM: forall ofs, lo <= ofs < hi ->
-                      perm_of_res (m_phi jm @ (b,ofs)) = Some Freeable).
-
-Definition inflate_free: rmap. refine (
-
-Definition free_juicy_mem: juicy_mem.
-
-End free.
-
-Lemma free_not_freeable_eq : forall m b lo hi m' b' ofs',
-  free m b lo hi = Some m'
-  -> access_at m (b', ofs') Cur <> Some Freeable
-  -> access_at m (b', ofs') Cur = access_at m' (b', ofs') Cur.
-
-Definition after_alloc' 
-  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable)
-  : address -> resource := fun loc =>
-    if adr_range_dec (b,lo) (hi-lo) loc 
-      then YES Share.top readable_share_top (VAL Undef) NoneP
-      else phi @ loc.
-
-Lemma adr_range_eq_block : forall b ofs n b' ofs',
-  adr_range (b,ofs) n (b',ofs') ->
-  b=b'.
-
-Lemma after_alloc'_ok : forall lo hi b phi H,
-  resource_fmap (approx (level phi)) (approx (level phi)) oo (after_alloc' lo hi b phi H)
-  = after_alloc' lo hi b phi H.
-
-Definition after_alloc
-  (lo hi: Z) (b: block) (phi: rmap)(H: forall ofs, phi @ (b,ofs) = NO Share.bot bot_unreadable) : rmap :=
-  proj1_sig (make_rmap (after_alloc' lo hi b phi H) (ghost_of phi)
-    (level phi)
-    (after_alloc'_ok lo hi b phi H) (ghost_of_approx phi)).
-
-Definition mod_after_alloc' (phi: rmap) (lo hi: Z) (b: block)
-  : address -> resource := fun loc =>
-    if adr_range_dec (b,lo) (hi-lo) loc 
-      then YES Share.top readable_share_top (VAL Undef) NoneP
-      else core phi @ loc.
-
-Lemma mod_after_alloc'_ok : forall phi lo hi b,
-  resource_fmap (approx (level phi)) (approx (level phi)) oo (mod_after_alloc'  phi lo hi b)
-  = mod_after_alloc' phi lo hi b.
-
-Definition mod_after_alloc (phi: rmap) (lo hi: Z) (b: block) :=
-  proj1_sig (make_rmap (mod_after_alloc' phi lo hi b) (ghost_of phi)
-    _
-    (mod_after_alloc'_ok phi lo hi b) (ghost_of_approx phi)).
-
-Transparent alloc.
-
-Lemma adr_range_inv: forall loc loc' n,
-  ~ adr_range loc n loc' ->
-  fst loc <> fst loc' \/ (fst loc=fst loc' /\ ~snd loc <= snd loc' < snd loc + n).
-
-Lemma dry_noperm_juicy_nonreadable : forall m loc,
-  access_at (m_dry m) loc Cur = None ->   ~readable loc (m_phi m).
-
-Lemma fullempty_after_alloc : forall m1 m2 lo n b ofs,
-  alloc m1 lo n = (m2, b) ->
-  access_at m2 (b, ofs) Cur = None \/ access_at m2 (b, ofs) Cur = Some Freeable.
-
-Lemma alloc_dry_unchanged_on : forall m1 m2 loc lo hi b0,
-  alloc m1 lo hi = (m2, b0) ->
-  ~adr_range (b0,lo) (hi-lo) loc ->
-  access_at m1 loc = access_at m2 loc /\
-  (access_at m1 loc Cur <> None -> contents_at m1 loc= contents_at m2 loc).
-
-Lemma adr_range_zle_fact : forall b lo hi loc,
-  adr_range (b,lo) (hi-lo) loc ->
-  zle lo (snd loc) && zlt (snd loc) hi = true.
-
-Lemma alloc_dry_updated_on : forall m1 m2 lo hi b loc,
-  alloc m1 lo hi = (m2, b) ->
-  adr_range (b, lo) (hi - lo) loc ->
-  access_at m2 loc Cur=Some Freeable /\
-  contents_at m2 loc=Undef.
-
-Definition resource_decay (nextb: block) (phi1 phi2: rmap) :=
-  (level phi1 >= level phi2)%nat /\
- forall l: address,
-  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
-  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
-  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
-       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = 
-                       YES sh (writable0_readable wsh) (VAL v) NoneP /\ 
-       phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)
-  \/ ((fst l >= nextb)%positive /\ exists v, phi2 @ l = YES Share.top readable_share_top (VAL v) NoneP)
-  \/ (exists v, exists pp, phi1 @ l = YES Share.top readable_share_top (VAL v) pp 
-                        /\ phi2 @ l = NO Share.bot bot_unreadable)).
-
-Definition resource_nodecay (nextb: block) (phi1 phi2: rmap) :=
-  (level phi1 >= level phi2)%nat /\
-  forall l: address,
-  ((fst l >= nextb)%positive -> phi1 @ l = NO Share.bot bot_unreadable) /\
-  (resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = (phi2 @ l) \/
-  (exists sh, exists (wsh: writable0_share sh), exists v, exists v',
-       resource_fmap (approx (level phi2)) (approx (level phi2)) (phi1 @ l) = YES sh (writable0_readable wsh) (VAL v) NoneP
-      /\ phi2 @ l = YES sh (writable0_readable wsh) (VAL v') NoneP)).
-
-Lemma resource_nodecay_decay:
-   forall b phi1 phi2, resource_nodecay b phi1 phi2 -> resource_decay b phi1 phi2.
-
-Lemma resource_decay_refl: forall b phi, 
-  (forall l, (fst l >= b)%positive -> phi @ l = NO Share.bot bot_unreadable) ->
-
-Lemma resource_decay_trans: forall b b' m1 m2 m3,
-  (b <= b')%positive ->
-  resource_decay b m1 m2 -> resource_decay b' m2 m3 -> resource_decay b m1 m3.
-
-Lemma level_store_juicy_mem:
- forall jm m ch b i v H, level (store_juicy_mem jm m ch b i v H) = level jm.
-
-Lemma level_storebytes_juicy_mem:
- forall jm m b i bytes H, level (storebytes_juicy_mem jm m b i bytes H) = level jm.
-
-Lemma inflate_store_resource_nodecay:
-  forall (jm: juicy_mem) (m': mem)
-          (ch: memory_chunk) (b: block) (ofs: Z) (v: val)
-          (STORE: store ch (m_dry jm) b ofs v = Some m')
-          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
-                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable))
-          phi',
-  inflate_store m' (m_phi jm) = phi' -> resource_nodecay (nextblock (m_dry jm)) (m_phi jm) phi'.
-
-Lemma inflate_free_resource_decay:
- forall (jm :juicy_mem) (m': mem)
-          (b: block) (lo hi: Z)
-          (FREE: free (m_dry jm) b lo hi = Some m')
-          (PERM: forall ofs : Z,
-             lo <= ofs < hi -> perm_of_res (m_phi jm @ (b, ofs)) = Some Freeable),
-   resource_decay (nextblock (m_dry jm)) (m_phi jm) (inflate_free jm b lo hi).
-
-Lemma juicy_store_nodecay:
-  forall jm m' ch b ofs v
-       (H: store ch (m_dry jm) b ofs v = Some m')
-          (PERM: forall z, ofs <= z < ofs + size_chunk ch ->
-                      perm_order'' (perm_of_res (m_phi jm @ (b,z))) (Some Writable)),
-       resource_nodecay (nextblock (m_dry jm)) (m_phi jm) (m_phi (store_juicy_mem jm _ _ _ _ _ H)).
-
-Lemma can_age1_juicy_mem: forall j r,
-  age (m_phi j) r -> exists j', age1 j = Some j'.
-
-Lemma can_age_jm:
-  forall jm, age1 (m_phi jm) <> None -> exists jm', age jm jm'.
-
-Lemma age_jm_dry: forall {jm jm'}, age jm jm' -> m_dry jm = m_dry jm'.
-
-Lemma age_jm_phi: forall {jm jm'}, age jm jm' -> age (m_phi jm) (m_phi jm').
-
-Lemma age1_YES'_1 {phi phi' l rsh sh k P} :
-  age1 phi = Some phi' ->
-  phi @ l = YES rsh sh k P ->
-  (exists P, phi' @ l = YES rsh sh k P).
-
-Lemma age1_YES'_2 {phi phi' l rsh sh k P} :
-  age1 phi = Some phi' ->
-  phi' @ l = YES rsh sh k P ->
-  (exists P, phi @ l = YES rsh sh k P).
-
-Lemma age1_PURE_2 {phi phi' l k P} :
-  age1 phi = Some phi' ->
-  phi' @ l = PURE k P ->
-  (exists P, phi @ l = PURE k P).
-
-Lemma perm_of_res_age x y loc :
-  age x y -> perm_of_res (x @ loc) = perm_of_res (y @ loc).
-
-Lemma contents_cohere_age m : hereditary age (contents_cohere m).
-
-Lemma access_cohere_age m : hereditary age (access_cohere m).
-
-Lemma max_access_cohere_age m : hereditary age (max_access_cohere m).
-
-Lemma alloc_cohere_age m : hereditary age (alloc_cohere m).
-
-Definition unage {A} {_:ageable A} x y := age y x.
-
-Lemma unage_YES'_1 {phi phi' l rsh sh k P} :
-  age1 phi' = Some phi ->
-  phi @ l = YES rsh sh k P ->
-  (exists P, phi' @ l = YES rsh sh k P).
-
-Lemma unage_YES'_2 {phi phi' l rsh sh k P} :
-  age1 phi' = Some phi ->
-  phi' @ l = YES rsh sh k P ->
-  (exists P, phi @ l = YES rsh sh k P).
-
-Lemma unage_PURE_2 {phi phi' l k P} :
-  age1 phi' = Some phi ->
-  phi' @ l = PURE k P ->
-  (exists P, phi @ l = PURE k P).
-
-Lemma contents_cohere_unage m : hereditary unage (contents_cohere m).
-
-Lemma access_cohere_unage m : hereditary unage (access_cohere m).
-
-Lemma max_access_cohere_unage m : hereditary unage (max_access_cohere m).
-
-Lemma alloc_cohere_unage m : hereditary unage (alloc_cohere m).
-
-Lemma juicy_mem_unage jm' : { jm | age jm jm' }. *)
-
 Require Import VST.veric.juicy_mem_lemmas.
-(* VST.veric.juicy_mem_lemmas:
-Require Import VST.veric.juicy_base.
-Require Import VST.veric.juicy_mem.
-Require Import VST.veric.res_predicates.
 Require Import VST.veric.shares.
-
-Definition juicy_mem_core (j: juicy_mem) : rmap := core (m_phi j).
-
-Definition no_VALs (phi: rmap) := forall loc,
-  match phi @ loc with
-    | YES _ _ (VAL _) _ => False | _ => True
-  end.
-
-Lemma components_join_joins {A} {JA: Join A}{PA: Perm_alg A}{TA: Trip_alg A}: forall a b c d,
-   join a b c -> joins a d -> joins b d -> joins c d.
-
-Lemma contents_cohere_join_sub: forall m phi phi',
-  contents_cohere m phi -> join_sub phi' phi -> contents_cohere m phi'.
-
-Lemma perm_of_sh_join_sub: forall (sh1 sh2: Share.t) p,
-
-Lemma perm_order'_trans: forall p1 p2 p3,
-  perm_order' (Some p1) p2 -> perm_order' (Some p2) p3 -> perm_order' (Some p1) p3.
-
-Lemma rmap_unage_YES: forall phi phi' sh rsh k pp loc, 
-  age phi phi' 
-  -> phi' @ loc = YES sh rsh k pp 
-  -> exists pp', phi @ loc = YES sh rsh k pp'.
-
-Lemma preds_fmap_NoneP_approx: forall pp lev1 lev2,
-  preds_fmap (approx lev1) (approx lev1) pp = NoneP ->
-  preds_fmap (approx lev2) (approx lev2) pp = NoneP.
-Proof.
-intros.
-destruct pp.
-unfold NoneP, approx, compose in *.
-simpl in *. unfold compose in *.
-inv H. simpl in *.
-apply EqdepFacts.eq_sigT_eq_dep in H2.
-
-Lemma oracle_unage:
-  forall (jm': juicy_mem) (w: rmap), age w (m_phi jm') ->
-       exists jm, age jm jm' /\ m_phi jm = w.
-
-Lemma writable_perm:
-  forall b i jm, writable (b,i) (m_phi jm) -> Mem.perm (m_dry jm) b i Cur Writable.
-
-Lemma valid_access_None: forall m ch b b' ofs ofs' p,
-  Mem.valid_access m ch b ofs p
-
-Lemma core_load_getN: forall ch v b ofs bl phi m,
-  contents_cohere m phi
-  -> (core_load' ch (b, ofs) v bl)%pred phi
-  -> bl = Mem.getN (size_chunk_nat ch) ofs (PMap.get b (Mem.mem_contents m)).
-
-Lemma core_load_valid: forall ch v b ofs m phi,
-  (core_load ch (b, ofs) v)%pred phi
-  -> access_cohere m phi
-  -> Mem.valid_access m ch b ofs Readable.
-
-Lemma core_load_load': forall ch b ofs v m,
-  core_load ch (b, ofs) v (m_phi m) -> Mem.load ch (m_dry m) b ofs = Some v.
-
-Lemma Zminus_lem: forall z1 z2, z1 <= z2 -> nat_of_Z (z2 - z1) = O -> z1=z2.
-
-Lemma nat_of_Z_lem1: forall n z, S n = nat_of_Z z -> n = nat_of_Z (z - 1).
-
-Lemma nat_of_Z_lem2: forall n z1 z2, S n = nat_of_Z (z1 - z2) -> n = nat_of_Z (z1 - z2 - 1).
-
-Lemma nth_getN: forall m b ofs ofs' z,
-  ofs <= ofs' < ofs + z
-  -> z >= 0
-  -> contents_at m (b, ofs')
-  = nth (nat_of_Z (ofs' - ofs)) (Mem.getN (nat_of_Z z) ofs (PMap.get b (Mem.mem_contents m))) Undef.
-
-Lemma load_core_load: forall ch b ofs v m,
-  Mem.load ch (m_dry m) b ofs = Some v ->
-
-Lemma core_load_load: forall ch b ofs v m,
-  (forall z, ofs <= z < ofs + size_chunk ch ->
-                      perm_order'' (perm_of_res (m_phi m @ (b,z))) (Some Readable)) ->
-  (core_load ch (b, ofs) v (m_phi m) <-> Mem.load ch (m_dry m) b ofs = Some v).
-
-Lemma mapsto_valid_access: forall ch v sh b ofs jm,
-  (address_mapsto ch v sh (b, ofs) * TT)%pred (m_phi jm)
-  -> Mem.valid_access (m_dry jm) ch b ofs Readable.
-
-Lemma mapsto_valid_access_wr: forall ch v sh (wsh: writable0_share sh) b ofs jm,
-  (address_mapsto ch v sh (b, ofs) * TT)%pred (m_phi jm)
-  -> Mem.valid_access (m_dry jm) ch b ofs Writable.
-
-Program Definition mapsto_can_store_definition ch v sh (wsh: writable0_share sh) b ofs jm (v':val)
-  (MAPSTO: (address_mapsto ch v sh (b, ofs) * TT)%pred (m_phi jm)):
-  Memory.mem. 
-
-Lemma mapsto_can_store_property: forall (ch:memory_chunk) v sh (wsh: writable0_share sh) b ofs jm v'
-  (MAPSTO: (address_mapsto ch v sh (b, ofs) * TT)%pred (m_phi jm)),
-  Mem.store ch (m_dry jm) b ofs v' = 
-
-Lemma mapsto_can_store: forall ch v sh (wsh: writable0_share sh) b ofs jm v',
-  (address_mapsto ch v sh (b, ofs) * TT)%pred (m_phi jm)
-  -> exists m', Mem.store ch (m_dry jm) b ofs v' = Some m'.
-
-Lemma store_outside':
-   forall ch m b z v m',
-          Mem.store ch m b z v = Some m' ->
-
-Lemma adr_range_zle_zlt : forall  b lo hi ofs,
-  adr_range (b,lo) (hi-lo) (b,ofs)
-  -> zle lo ofs && zlt ofs hi = true.
-
-Lemma join_top: forall sh2 sh, join Share.top sh2 sh -> sh = Share.top.
-
-Lemma juicy_free_aux_lemma:
- forall phi b lo hi F,
- app_pred (VALspec_range (hi-lo) Share.top (b,lo) * F) phi ->
-
-Lemma juicy_free_lemma:
-  forall {j b lo hi m' m1 F}
-    (H: Mem.free (m_dry j) b lo hi = Some m')
-
-Section free.
-
-Variables (jm :juicy_mem) (m': mem)
-          (b: block) (lo hi: Z)
-          (FREE: free (m_dry jm) b lo hi = Some m')
-          (PERM: forall ofs, lo <= ofs < hi ->
-                      perm_of_res (m_phi jm @ (b,ofs)) = Some Freeable)
-          (phi1 phi2 : rmap) (Hphi1: VALspec_range (hi-lo) Share.top (b,lo) phi1)
-          (Hjoin : join phi1 phi2 (m_phi jm)).
-
-Lemma phi2_eq : m_phi (free_juicy_mem _ _ _ _ _ FREE) = phi2.
-
-End free.
-
-Lemma juicy_free_lemma':
-  forall {j b lo hi m' m1 m2 F}
-    (H: Mem.free (m_dry j) b lo hi = Some m')
-
-Lemma initial_mem_core: forall lev m j IOK,
-  j = initial_mem m lev IOK -> juicy_mem_core j = core lev.
-
-Lemma writable_writable_after_alloc' : forall m1 m2 lo hi b lev loc IOK1 IOK2,
-  alloc m1 lo hi = (m2, b) ->
-  writable loc (m_phi (initial_mem m1 lev IOK1)) ->
-  writable loc (m_phi (initial_mem m2 lev IOK2)).
-
-Lemma readable_eq_after_alloc' : forall m1 m2 lo hi b lev loc IOK1 IOK2,
-  alloc m1 lo hi = (m2, b) ->
-  readable loc (m_phi (initial_mem m1 lev IOK1)) ->
-  m_phi (initial_mem m1 lev IOK1) @ loc=m_phi (initial_mem m2 lev IOK2) @ loc.
-
-Lemma necR_m_dry:
-  forall jm jm', necR jm jm' -> m_dry jm = m_dry jm'.
-
-Lemma perm_order''_trans p1 p2 p3 :
-  perm_order'' p1 p2 ->
-  perm_order'' p2 p3 ->
-  perm_order'' p1 p3.
-
-Lemma po_join_sub_sh sh1 sh2 :
-  join_sub sh2 sh1 ->
-  Mem.perm_order'' (perm_of_sh sh1) (perm_of_sh sh2).
-
-Lemma po_join_sub r1 r2 :
-  join_sub r2 r1 ->
-  Mem.perm_order'' (perm_of_res r1) (perm_of_res r2).
-
-Lemma perm_of_res_lock_not_Freeable:
-  forall r,
-    perm_order'' (Some Writable) (perm_of_res_lock r).
-
-Definition readable_perm (p: option permission) :
-  {perm_order'' p (Some Readable)}+{~perm_order'' p (Some Readable)}.
-
-Definition rebuild_juicy_mem_fmap (jm: juicy_mem) (m': mem) : (AV.address -> resource) :=
- fun loc =>
-   match m_phi jm @ loc with
-    PURE k pp => PURE k pp
-   | NO sh rsh => if readable_perm (access_at m' loc Cur)
-                            then YES Tsh (writable_readable writable_share_top)
-                                        (VAL (contents_at m' loc)) NoneP
-                            else NO sh rsh 
-   | YES sh rsh (VAL _) _ => 
-                 if readable_perm (access_at m' loc Cur)
-                 then YES sh rsh (VAL (contents_at m' loc)) NoneP
-                 else NO _ bot_unreadable
-   | YES sh rsh _ _ => m_phi jm @ loc
-end.
-
-Definition rebuild_juicy_mem_rmap (jm: juicy_mem) (m': mem) :
-  {phi : rmap |
-  level phi = level jm /\
-  resource_at phi = rebuild_juicy_mem_fmap jm m' /\
-  ghost_of phi = ghost_of (m_phi jm)}. *)
-
-Require Import VST.veric.shares.
-(* VST.veric.shares:
-Require Import VST.msl.msl_standard.
-Require Import VST.msl.Coqlib2.
-
-Set Implicit Arguments.
-
-Lemma share_lemma87:
-  forall a b, Share.glb a b = Share.bot -> Share.glb (Share.comp a) b = b.
-
-Lemma join_top_comp:
-  forall a b, join a b Share.top -> Share.comp a = b.
-
-Lemma comp_bot: Share.comp Share.bot = Share.top.
-
-Lemma share_distrib1':
-      forall w x y z : Share.t,
-
-Lemma share_distrib2':
-   forall w x y z : Share.t,
-
-Lemma lub_bot_e:
-  forall x y, Share.lub x y = Share.bot -> x = Share.bot /\ y = Share.bot.
-
-Lemma glb_less_both:
-  forall a L b R,
-   Share.Ord a L -> Share.Ord b R ->
-
-Lemma comp_Lsh_Rsh:
-  Share.comp Share.Lsh = Share.Rsh.
-
-Lemma share_lemma88:
-   forall sh, Share.glb sh Share.Rsh = Share.bot ->
-
-Definition Tsh : share := Share.top.
-
-Definition nonempty_share (sh: share) :=
-       sepalg.nonidentity sh.
-Definition readable_share (sh: share) :=
-       nonempty_share (Share.glb Share.Rsh sh).
-Definition writable_share (sh: share) :=
-    nonempty_share (Share.glb Share.Lsh sh) /\ join_sub Share.Rsh sh.
-
-Lemma lub_Lsh_Rsh:
- Share.lub Share.Lsh Share.Rsh = Share.top.
-
-Lemma glb_Lsh_Rsh:
- Share.glb Share.Lsh Share.Rsh = Share.bot.
-
-Lemma readable_share_dec:
-  forall sh, {readable_share sh}+{~ readable_share sh}.
-
-Lemma writable_share_dec: forall sh, {writable_share sh} + {~ writable_share sh}.
-
-Lemma writable_readable:
- forall sh, writable_share sh -> readable_share sh.
-
-Lemma readable_share_top:
-  readable_share Share.top.
-Hint Resolve writable_readable.
-
-Lemma top_pfullshare: forall psh, pshare_sh psh = Share.top -> psh = pfullshare.
-
-Lemma fst_split_fullshare_not_bot: fst (Share.split fullshare) <> Share.bot.
-
-Lemma fst_split_fullshare_not_top: fst (Share.split fullshare) <> Share.top.
-
-Lemma glb_Rsh_not_top:
-   forall sh, Share.glb Share.Rsh sh <> Share.top.
-Arguments glb_Rsh_not_top sh _ : clear implicits.
-
-Lemma writable_share_top: writable_share Tsh.
-Hint Resolve writable_share_top.
-
-Lemma writable_readable_share:
- forall sh, writable_share sh -> readable_share sh.
-Hint Resolve writable_readable_share.
-
-Definition extern_retainer := fst (Share.split Share.Lsh).
-
-Definition Ews  := 
-  Share.lub extern_retainer Share.Rsh.
-
-Lemma writable_Ews: writable_share Ews.
-
-Lemma writable_Rsh: writable_share Share.Rsh.
-Proof.
-  unfold writable_share.
-Abort.  
-
-Hint Resolve writable_Ews.
-
-Definition Ers  := 
-  Share.lub extern_retainer (fst (Share.split Share.Rsh)).
-
-Lemma readable_nonidentity: forall sh, readable_share sh -> sepalg.nonidentity sh.
-
-Hint Resolve readable_nonidentity.
-
-Lemma sub_glb_bot:
-  forall r a c : share,
-   sepalg.join_sub a c ->
-
-Lemma glb_split: forall sh,
- Share.glb (fst (Share.split sh)) (snd (Share.split sh)) = Share.bot.
-
-Lemma Lsh_nonidentity:   sepalg.nonidentity Share.Lsh.
-
-Lemma Rsh_nonidentity:   sepalg.nonidentity Share.Rsh.
-
-Lemma nonidentity_extern_retainer: ~identity extern_retainer.
-
-Lemma glb_split_x:
-  forall a, Share.glb a (fst (Share.split a)) = fst (Share.split a).
-
-Lemma readable_Ers: readable_share Ers.
-
-Lemma join_sub_readable:
-  forall sh sh', sepalg.join_sub sh sh' -> readable_share sh -> readable_share sh'.
-
-Lemma join_unreadable_shares:
- forall sh1 sh2 sh,
-  sepalg.join sh1 sh2 sh ->
-
-Lemma readable_share_join_left:
-  forall sh1 sh2 sh,
-    sepalg.join sh1 sh2 sh ->
-
-Lemma readable_share_join:
-  forall sh1 sh2 sh,
-    sepalg.join sh1 sh2 sh ->
-
-Lemma Lsh_bot_neq: Share.Lsh <> Share.bot.
-
-Lemma not_nonunit_bot: forall sh, ~ nonunit sh <-> sh = Share.bot.
-
-Lemma join_readable1:
-  forall sh1 sh2 sh3,
-    join sh1 sh2 sh3 ->
-    readable_share sh1 -> readable_share sh3.
-
-Lemma join_readable2:
-  forall sh1 sh2 sh3,
-    join sh1 sh2 sh3 ->
-    readable_share sh2 -> readable_share sh3.
-
-Lemma bot_unreadable: ~readable_share Share.bot.
-
-Definition pure_readable_share (sh: Share.t) :=
-  Share.glb Share.Lsh sh = Share.bot /\ readable_share sh.
-
-Definition rshare := sig pure_readable_share.
-
-Definition readable_part: forall (sh: Share.t) (rsh: readable_share sh), rshare.
-
-Lemma readable_not_identity: forall sh P,
-  readable_share sh -> identity sh -> P.
-Arguments readable_not_identity sh P _ _ : clear implicits.
-
-Lemma comp_parts:  
-  forall L R : Share.t,
-
-Lemma join_comp_parts:  
-  forall L R : Share.t,
-
-Lemma join_pure_readable:
-  forall sh1 sh2 sh3,
-    join sh1 sh2 sh3 ->
-    pure_readable_share sh1 -> 
-    pure_readable_share sh2 -> 
-    pure_readable_share sh3.
-
-Lemma dec_readable sh : {readable_share sh}+{~readable_share sh}.
-
-Lemma dec_pure_readable sh : {pure_readable_share sh}+{~pure_readable_share sh}.
-
-Lemma dec_share_identity': forall sh: Share.t, Decidable.decidable (identity sh).
-
-Lemma not_not_share_identity: forall sh: Share.t,
-
-Lemma join_readable_part_eq:
-  forall sh1 (rsh1: readable_share sh1)
-         sh2 (nsh2: ~readable_share sh2)
-         sh3 (rsh3: readable_share sh3),
-        join sh1 sh2 sh3 -> 
-        readable_part rsh1 = readable_part rsh3.
-
-Lemma join_readable_part:
-  forall sh1 (rsh1: readable_share sh1) sh2 (rsh2: readable_share sh2) sh3 (rsh3: readable_share sh3),
-   join sh1 sh2 sh3 ->
-  join (readable_part rsh1) (readable_part rsh2)(readable_part rsh3).
-
-Lemma share_self_join_bot:
-  forall sh: Share.t, join sh sh sh -> sh = Share.bot.
-
-Definition retainer_part (sh: Share.t) := Share.glb Share.Lsh sh.
-
-Lemma retainer_part_nonreadable:
-  forall sh, ~readable_share (retainer_part sh).
-Arguments retainer_part_nonreadable: clear implicits.
-
-Lemma readable_share_lub:
- forall a b: Share.t, readable_share b -> readable_share (Share.lub a b).
-
-Lemma retainer_part_join: forall sh1 sh2 sh3, 
-  join sh1 sh2 sh3 -> join (retainer_part sh1) (retainer_part sh2) (retainer_part sh3).
-
-Lemma not_readable_Rsh_part:
- forall sh, ~ readable_share sh -> Share.glb Share.Rsh sh = Share.bot.
-
-Lemma join_parts1:
-  forall L R (HC: Share.comp L = R) sh1 sh2 sh,         
-
-Lemma join_parts:
-  forall L R (HC: Share.comp L = R) sh1 sh2 sh,         
-
-Lemma comp_Rsh_Lsh: Share.comp Share.Rsh = Share.Lsh.
-
-Lemma glb_twice: forall a b, Share.glb a (Share.glb a b) = Share.glb a b.
-
-Lemma glb_Lsh_Rsh':
-  forall sh, Share.glb Share.Lsh (Share.glb Share.Rsh sh) = Share.bot.
-
-Lemma comp_parts_join:
- forall L R (HC: Share.comp L = R) a b c,
-
-Lemma left_right_join:
- forall a b c,
-  join (Share.glb Share.Lsh a) (Share.glb Share.Lsh b) (Share.glb Share.Lsh c) ->
-
-Lemma lub_bot': forall sh, Share.lub Share.bot sh = sh.
-
-Lemma glb_Rsh_Lsh: Share.glb Share.Rsh Share.Lsh = Share.bot.
-
-Lemma join_writable1: forall sh1 sh2 sh,
-   join sh1 sh2 sh -> writable_share sh1 -> writable_share sh.
-
-Lemma join_writable_readable:
-  forall {sh1 sh2 sh}, 
-   join sh1 sh2 sh -> writable_share sh1 -> readable_share sh2 -> False.
-
-Definition writable0_share (sh: share) :=
-    join_sub Share.Rsh sh.
-
-Lemma writable_writable0: forall sh,
-  writable_share sh -> writable0_share sh.
-Hint Resolve writable_writable0.
-
-Lemma writable0_readable: forall sh,
-  writable0_share sh -> readable_share sh.
-Hint Resolve writable0_readable.
-
-Lemma writable0_Rsh: writable0_share Share.Rsh.
-
-Lemma join_writable0_readable:
-  forall {sh1 sh2 sh}, 
-   join sh1 sh2 sh -> writable0_share sh1 -> readable_share sh2 -> False.
-
-Lemma join_writable01: forall sh1 sh2 sh,
-   join sh1 sh2 sh -> writable0_share sh1 -> writable0_share sh.
-
-Lemma writable0_share_dec: forall sh, {writable0_share sh} + {~ writable0_share sh}.
-
-Lemma writable0_share_glb_Rsh:
-  forall sh, writable0_share sh -> writable0_share (Share.glb Share.Rsh sh).
-
-Lemma glb_split_lemma1:
-  forall a b, Share.glb Share.Rsh a = Share.glb Share.Rsh b ->
-     Share.glb Share.Rsh (fst (Share.split a)) =
-     Share.glb Share.Rsh (fst (Share.split b)).
-Proof.
-intros.
-Abort.  
-
-Lemma glb_split_lemma2:
-  forall a b, Share.glb Share.Rsh a = Share.glb Share.Rsh b ->
-     Share.glb Share.Rsh (snd (Share.split a)) =
-     Share.glb Share.Rsh (snd (Share.split b)).
-Proof.
-Abort.  
-
-Lemma fst_split_glb_orthogonal: forall sh : share,
-identity (Share.glb Share.Rsh (fst (Share.split sh))) ->
-identity (Share.glb Share.Rsh sh).
-Proof.
-Abort. 
-
-Lemma snd_split_glb_orthogonal: forall sh : share,
-identity (Share.glb Share.Rsh (snd (Share.split sh))) ->
-identity (Share.glb Share.Rsh sh).
-Abort.  
-
-  Lemma writable_not_join_readable:
-    forall sh1 sh2,
-      joins sh1 sh2 ->
-      writable_share sh1 ->
-      ~ readable_share sh2.
-
-  Lemma writable_not_join_writable :
-    forall sh1 sh2,
-      joins sh1 sh2 ->
-      writable_share sh1 ->
-      ~ writable_share sh2.
-
-  Lemma only_bot_joins_top:
-    forall sh, joins Share.top sh -> sh = Share.bot.
-
-  Lemma writable0_right:
-    forall sh,  writable0_share (Share.glb Share.Rsh sh) ->
-
-Lemma join_readable_unreadable:
-  forall sh1 sh2 sh3,
-    join sh1 sh2 sh3 ->
-    ~ writable0_share sh1 ->
-    ~ readable_share sh2 ->
-    ~ writable0_share sh3.
-
-Lemma readable_glb:
-   forall sh,
-     readable_share sh ->
-     readable_share (Share.glb Share.Rsh sh).
-
- Lemma unreadable_glb:
-   forall sh,
-     ~readable_share sh ->
-     ~readable_share (Share.glb Share.Rsh sh).
-
-  Lemma nonreadable_emptyshare: ~ readable_share emptyshare.
-  
-Lemma join_comp_Tsh:
-  forall sh, sepalg.join sh (Share.comp sh) Tsh. *)
-
-
 
 Module Type JUICY_MEM_OPS.
-
 Parameter juicy_mem_store
-
   : juicy_mem -> memory_chunk -> block -> Z -> val -> option juicy_mem.
 
-
-
 Parameter juicy_mem_storebytes
-
   : juicy_mem -> block -> Z -> list memval -> option juicy_mem.
 
-
-
 Parameter juicy_mem_alloc
-
   : juicy_mem -> Z -> Z -> juicy_mem * block.
 
-
-
 Axiom juicy_mem_store_succeeds: forall j j' ch b ofs v,
-
   juicy_mem_store j ch b ofs v = Some j'
-
   -> exists m', store ch (m_dry j) b ofs v = Some m' /\ m' = m_dry j'.
-
 Axiom juicy_mem_alloc_succeeds: forall j j' b lo hi,
-
   juicy_mem_alloc j lo hi = (j', b) -> (m_dry j', b) = alloc (m_dry j) lo hi.
-
-
 
 End JUICY_MEM_OPS.
 
-
-
 Obligation Tactic := Tactics.program_simpl.
 
-
-
 Module JuicyMemOps <: JUICY_MEM_OPS.
-
 Program Definition juicy_mem_store j ch b ofs v: option juicy_mem :=
-
   if valid_access_dec (m_dry j) ch b ofs Writable
-
     then Some (store_juicy_mem j _ ch b ofs v _)
-
     else None.
-
 Next Obligation.
-
 intros.
-
 apply (proj1_sig (valid_access_store (m_dry j) ch b ofs v H)).
-
 Defined.
-
 Next Obligation.
-
 apply (proj2_sig (valid_access_store (m_dry j) ch b ofs v H)).
-
 Defined.
-
-
 
 Lemma juicy_mem_store_succeeds: forall j j' ch b ofs v,
-
   juicy_mem_store j ch b ofs v = Some j'
-
   -> exists m', store ch (m_dry j) b ofs v = Some m' /\ m' = m_dry j'.
-
 Proof.
-
 intros until v; intro H.
-
 unfold juicy_mem_store in H.
-
 destruct (valid_access_dec (m_dry j) ch b ofs Writable) as [H1 | H1].
-
 exists (m_dry j').
-
 split; auto.
-
 inversion H.
-
 simpl.
-
 unfold juicy_mem_store_obligation_1.
-
 destruct (valid_access_store (m_dry j) ch b ofs v H1).
-
 simpl. auto.
-
 inv H.
-
 Qed.
-
-
 
 Program Definition juicy_mem_storebytes j b ofs bytes: option juicy_mem :=
-
   if range_perm_dec (m_dry j) b ofs (ofs + Z_of_nat (length bytes)) Cur Writable
-
     then Some (storebytes_juicy_mem j _ b ofs bytes _)
-
     else None.
-
 Next Obligation.
-
 apply (proj1_sig (range_perm_storebytes (m_dry j) b ofs bytes H)).
-
 Defined.
-
 Next Obligation.
-
 apply (proj2_sig (range_perm_storebytes (m_dry j) b ofs bytes H)).
-
 Qed.
-
-
 
 Lemma juicy_mem_storebytes_succeeds: forall j j' b ofs bytes,
-
   juicy_mem_storebytes j b ofs bytes = Some j' ->
-
   exists m', storebytes (m_dry j) b ofs bytes = Some m' /\ m' = m_dry j'.
-
 Proof.
-
 intros until bytes; intro H.
-
 unfold juicy_mem_storebytes in H.
-
 destruct (range_perm_dec (m_dry j) b ofs (ofs + Z_of_nat (length bytes)) Cur Writable).
-
 exists (m_dry j').
-
 split; auto.
-
 inversion H.
-
 simpl.
-
 unfold juicy_mem_storebytes_obligation_1.
-
 destruct (range_perm_storebytes (m_dry j) b ofs bytes r).
-
 simpl. auto.
-
 inv H.
-
 Qed.
-
-
 
 Lemma pshare_sh_bot: forall p, pshare_sh p = Share.bot -> False.
-
 Proof. destruct p; intros. simpl in H. subst x. apply nonunit_nonidentity in n.
-
 apply n. apply bot_identity.
-
 Qed.
-
-
 
 Lemma juicy_mem_alloc_aux1:
-
   forall jm lo hi m' b, alloc (m_dry jm) lo hi = (m',b) ->
-
         forall ofs, m_phi jm @ (b,ofs) = NO Share.bot bot_unreadable.
-
 Proof.
-
  intros.
-
  pose proof (juicy_mem_max_access jm (b,ofs)).
-
  unfold max_access_at in H0.
-
  simpl in H0.
-
  pose proof (alloc_result _ _ _ _ _ H).
-
  subst b.
-
  destruct jm; simpl in *.
-
  rewrite JMalloc; auto; simpl.
-
  xomega.
-
 Qed.
-
-
 
 Lemma after_alloc_contents_cohere:
-
  forall jm lo hi m' b (H : alloc (m_dry jm) lo hi = (m', b)),
-
   contents_cohere m'
-
     (after_alloc lo hi b (m_phi jm) (juicy_mem_alloc_aux1 jm lo hi m' b H)).
-
 Proof.
-
 intros.
-
 unfold after_alloc; hnf; intros.
-
 rewrite resource_at_make_rmap in H0. unfold after_alloc' in H0.
-
 if_tac in H0.
-
 *
-
 inv H0; split; auto.
-
 apply (alloc_dry_updated_on _ _ _ _ _ _ H); auto.
-
 *
-
 destruct (alloc_dry_unchanged_on _ _ _ _ _ b H H1).
-
 pose proof (juicy_mem_access jm loc).
-
 rewrite H0 in H4. rewrite H4 in H3.
-
 spec H3.
-
 clear.
-
 unfold perm_of_res, perm_of_sh; simpl.
-
 if_tac. if_tac. congruence. congruence. rewrite if_true by auto. congruence.
-
 destruct (juicy_mem_contents jm _ _ _ _ _ H0).
-
 split; auto.
-
 rewrite <- H3; auto.
-
 Qed.
-
-
 
 Lemma after_alloc_access_cohere:
-
  forall jm lo hi m' b (H : alloc (m_dry jm) lo hi = (m', b)),
-
  access_cohere m'
-
   (after_alloc lo hi b (m_phi jm) (juicy_mem_alloc_aux1 jm lo hi m' b H)).
-
 Proof.
-
 intros; hnf; intros.
-
 unfold after_alloc. rewrite resource_at_make_rmap.
-
 unfold after_alloc'.
-
 if_tac.
-
 *
-
 unfold perm_of_res; simpl.   rewrite perm_of_freeable.
-
 apply (alloc_dry_updated_on _ _ _ _ _ _ H); auto.
-
 *
-
 destruct (alloc_dry_unchanged_on _ _ _ _ _ b H H0).
-
 pose proof (juicy_mem_access jm loc).
-
 congruence.
-
 Qed.
-
-
 
 Lemma after_alloc_max_access_cohere:
-
  forall jm lo hi m' b (H : alloc (m_dry jm) lo hi = (m', b)),
-
  max_access_cohere m'
-
   (after_alloc lo hi b (m_phi jm) (juicy_mem_alloc_aux1 jm lo hi m' b H)).
-
 Proof.
-
-
 
 intros; pose proof I; hnf; intros.
-
 unfold after_alloc. rewrite resource_at_make_rmap.
-
 unfold after_alloc'.
-
 if_tac.
-
 *
-
  simpl; rewrite perm_of_freeable.
-
  destruct loc. destruct H1. subst b0.
-
  unfold max_access_at.
-
  rewrite (alloc_access_same _ _ _ _ _ H) by omega.
-
  constructor.
-
 *
-
   assert (HH:= juicy_mem_max_access jm loc).
 
-
-
     eapply perm_order''_trans; eauto.
-
     unfold max_access_at in *.
-
     destruct loc as [b' z].
-
     rewrite (alloc_access_other _ _ _ _ _ H); auto.
 
-
-
     destruct ((access_at m' (b', z) Max)); [apply perm_refl |constructor].
-
     destruct (eq_block b b').
-
     right. assert (~(lo <= z < lo + (hi - lo))).
-
     { intros HHH; apply H1. split; auto. }
-
     xomega.
-
     left; auto.
-
 Qed.
-
-
 
 Lemma after_alloc_alloc_cohere:
-
  forall jm lo hi m' b (H : alloc (m_dry jm) lo hi = (m', b)),
-
  alloc_cohere m'
-
   (after_alloc lo hi b (m_phi jm) (juicy_mem_alloc_aux1 jm lo hi m' b H)).
-
 Proof.
-
 intros; hnf; intros.
-
 unfold after_alloc.
-
 rewrite resource_at_make_rmap.
-
 unfold after_alloc'.
-
 rewrite if_false.
-
 apply (juicy_mem_alloc_cohere jm loc).
-
 rewrite (nextblock_alloc _ _ _ _ _ H) in H0.
-
 zify. omega.
-
 destruct loc as [b' z']; simpl in *; intros [? ?]; subst b'.
-
 pose proof (alloc_result _ _ _ _ _ H).
-
 pose proof (nextblock_alloc _ _ _ _ _ H).
-
 rewrite <- H1 in H3.
-
 rewrite H3 in H0.
-
 clear - H0.
-
 zify; omega.
-
 Qed.
-
-
 
 Definition juicy_mem_alloc (jm: juicy_mem) (lo hi: Z) : juicy_mem * block :=
-
          (mkJuicyMem (fst (alloc (m_dry jm) lo hi))
-
                      (after_alloc lo hi (snd (alloc (m_dry jm) lo hi)) (m_phi jm)
-
                             (juicy_mem_alloc_aux1 _ _ _ _ _ (eq_refl _)))
-
                      (after_alloc_contents_cohere _ _ _ _ _ (eq_refl _))
-
                      (after_alloc_access_cohere _ _ _ _ _ (eq_refl _))
-
                      (after_alloc_max_access_cohere _ _ _ _ _ (eq_refl _))
-
                      (after_alloc_alloc_cohere _ _ _ _ _ (eq_refl _)),
-
            snd (alloc (m_dry jm) lo hi)).
 
-
-
 Lemma juicy_mem_alloc_at:
-
   forall jm lo hi jm' b,
-
      juicy_mem_alloc jm lo hi = (jm',b) ->
-
      forall loc, m_phi jm' @ loc =
-
        if adr_range_dec (b, lo) (hi - lo) loc
-
        then YES Share.top readable_share_top (VAL Undef) NoneP
-
        else m_phi jm @ loc.
-
 Proof.
-
  intros.
-
  inv H. simpl.
-
  unfold after_alloc; rewrite resource_at_make_rmap.
-
  unfold after_alloc'. auto.
-
 Qed.
-
-
 
 Lemma juicy_mem_alloc_level:
-
  forall jm lo hi jm' b,
-
    juicy_mem_alloc jm lo hi = (jm', b) -> level jm = level jm'.
-
 Proof.
-
  unfold juicy_mem_alloc; intros.
-
  inv H.
-
  unfold after_alloc; simpl. rewrite level_make_rmap; auto.
-
 Qed.
-
-
 
 Lemma juicy_mem_alloc_succeeds: forall j j' b lo hi,
-
   juicy_mem_alloc j lo hi = (j', b) -> (m_dry j', b) = alloc (m_dry j) lo hi.
-
 Proof.
-
 intros until hi; intro H.
-
 unfold juicy_mem_alloc in H.
-
 inv H.
-
 simpl.
-
 simpl; auto.
-
 Qed.
-
-
 
 End JuicyMemOps.
 
-
-
 Module Abs := JuicyMemOps.
-
 Require Import VST.veric.local.
-(* VST.veric.local:
-Require Import VST.veric.base.
-Require Import VST.msl.msl_standard.
-Require Import Coq.Relations.Relations.
-
-Definition deterministic_rel {T} (R: relation T) :=
-  forall s s' s'', R s s' /\ R s s'' -> s'=s''.
-
-Definition pfunc T R := T -> option R.
-
-Definition address := nat.
-
-Inductive val : Type :=
-| Vint : nat -> val
-| Vptr : address -> val
-| Vundef.
-
-Class GenericSemantics
-  (W : Type) 
-  (V : relation W -> Prop) 
-  (G : pfunc W val -> Prop) 
-  : Type := mkGenericSem {
-}.
-
-Section Expressions.
-Variables
-  (W : Type)
-  (G : pfunc W val -> Prop) .
-
-Inductive unop := UNeg.
-
-Inductive binop := BAdd.
-
-Inductive expr : Type :=
-| EVal : forall (v : val), expr
-| EUnop : forall (op : unop) (e : expr), expr
-| EBinop : forall (op : binop) (e1 e2 : expr), expr
-| EPrim : forall (f : pfunc W val), expr.
-
-Definition is_true (v : val) :=
-  exists n, (v = Vint n \/ v = Vptr n) /\ n <> O.
-
-Lemma is_true_dec : forall v, {is_true v} + {~ is_true v}.
-
-Definition unopDenote (op : unop) (v : val) : val :=
-  match op, is_true_dec v with
-    | UNeg, left _ => Vint 0
-    | UNeg, right _ => Vint 1
-  end.
-
-Definition binopDenote (op : binop) (v1 v2 : val) :=
-  match op, v1, v2 with
-    | BAdd, (Vint n), (Vint m) => Vint (n+m)%nat
-    | BAdd, (Vptr p), (Vint n) => Vptr (p+n)%nat
-    | _, _, _ => Vundef
-  end.
-
-Fixpoint expr_wellformed (e : expr) : Prop :=
-  match e with
-    | EVal _ => True
-    | EUnop _ e => expr_wellformed e
-    | EBinop _ e1 e2 => expr_wellformed e1 /\ expr_wellformed e2
-    | EPrim f => G f
-  end.
-
-Fixpoint exprEval' (e : expr) : W -> option val := fun w =>
-  match e with
-    | EVal v => Some v
-    | EUnop op e' =>
-      let v := exprEval' e' w in
-        match v with
-          | Some v' => Some (unopDenote op v')
-          | None => None
-        end
-    | EBinop op e1 e2 =>
-      let v1 := exprEval' e1 w in
-      let v2 := exprEval' e2 w in
-        match v1, v2 with
-          | Some v1', Some v2' => Some (binopDenote op v1' v2')
-          | _, _ => None
-        end
-    | EPrim f => f w
-  end.
-
-Definition exprEval (e : expr) (w : W) (v : val) :=
-  expr_wellformed e /\ exprEval' e w = Some v.
-
-Fixpoint pure_expr (e : expr) :=
-  match e with
-    | EVal v => True
-    | EUnop op e' => pure_expr e'
-    | EBinop op e1 e2 => pure_expr e1 /\ pure_expr e2
-    | EPrim _ => False
-  end.
-
-Lemma pure_exprEval : forall e w w' b1 b2,
-  pure_expr e
-  -> exprEval e w b1
-  -> exprEval e w' b2
-  -> b1=b2.
-
-Lemma pure_expr_safe : forall e w,
-  pure_expr e
-  -> exists b, exprEval e w b.
-
-Lemma pure_expr_dec : forall e, {pure_expr e} + {~ pure_expr e}.
-End Expressions.
-Arguments exprEval' [W] _ _.
-Arguments exprEval [W] _ _ _ _.
-Arguments EUnop [W] _ _.
-Arguments EUnop [W] _ _.
-Arguments EBinop [W] _ _ _.
-Arguments EPrim [W] _.
-
-Section ExpressionErasure.
-Variables
-  (W S' : Type)
-  (G : pfunc W val -> Prop)
-  (F : pfunc S' val -> Prop)
-  (GF : pfunc W val -> pfunc S' val -> Prop)
-
-  (world_erase : W -> S')
-
-  (primexpr_erasure : forall g f b1 b2 w s (Hgf : GF g f),
-    world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exprEval F (EPrim f) s b2
-    -> b1=b2)
-
-  (primexpr_safety : forall g f b1 w s,
-    GF g f
-    -> world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exists b2, exprEval F (EPrim f) s b2).
-
-Inductive expr_erase : expr W -> expr S' -> Prop :=
-| erase_EVal : forall v,
-     expr_erase (EVal _ v) (EVal _ v)
-| erase_EUnop : forall op e e',
-     expr_erase e e'
-     -> expr_erase (EUnop op e) (EUnop op e')
-| erase_EBinop : forall op e1 e2 e1' e2',
-     expr_erase e1 e1'
-     -> expr_erase e2 e2'
-     -> expr_erase (EBinop op e1 e2) (EBinop op e1' e2')
-| erase_EPrim : forall g f,
-     GF g f
-     -> expr_erase (EPrim g) (EPrim f).
-
-Lemma expr_erase_pure_expr : forall e e',
-  expr_erase e e'
-  -> pure_expr _ e
-  -> pure_expr _ e'.
-
-Lemma expr_erasure : forall e e' w b1 b2,
-  expr_erase e e'
-  -> exprEval G e w b1
-  -> exprEval F e' (world_erase w) b2
-  -> b1=b2.
-
-Lemma expr_safety : forall e e' w b1,
-  expr_erase e e'
-  -> exprEval G e w b1
-  -> exists b2, exprEval F e' (world_erase w) b2.
-End ExpressionErasure.
-Arguments expr_erase [W S'] _ _ _.
-
-Section GenericSemanticsElaboration.
-Context {W V G} `{GS : GenericSemantics W V G}.
-
-Inductive stmt : Type :=
-| Sprimcom: forall (u: relation W), stmt
-| Sskip
-| Sseq: forall (s1 s2: stmt), stmt
-| Sifte: forall (e: expr W) (s1 s2: stmt), stmt
-| Swhile: forall (e: expr W) (s: stmt), stmt.
-
-Inductive ctl : Type := Kstop | Kseq: forall (s: stmt) (k: ctl), ctl.
-
-Inductive step : W -> ctl -> W -> ctl -> Prop :=
-| step_Sprimcom: forall v (w w': W) (k: ctl),
-     V v
-     -> v w w'
-     -> step w (Kseq (Sprimcom v) k) w' k
-| step_Sskip: forall w (k: ctl),
-     step w (Kseq Sskip k) w k
-| step_Sseq: forall (s1 s2: stmt) w (k: ctl),
-     step w (Kseq (Sseq s1 s2) k) w (Kseq s1 (Kseq s2 k))
-| step_Sifte_true: forall (e: expr W) (v: val) (s1 s2: stmt) (w: W) (k: ctl),
-     exprEval G e w v
-     -> is_true v
-     -> step w (Kseq (Sifte e s1 s2) k) w (Kseq s1 k)
-| step_Sifte_false: forall (e: expr W) (v: val) (s1 s2: stmt) (w: W) (k: ctl),
-     exprEval G e w v
-     -> ~is_true v
-     -> step w (Kseq (Sifte e s1 s2) k) w (Kseq s2 k)
-| step_Swhile: forall (s: stmt) e w (k: ctl),
-     step w (Kseq (Swhile e s) k)
-          w (Kseq (Sifte e (Sseq s (Swhile e s)) Sskip) k).
-
-Inductive step_star : W -> ctl -> W -> ctl -> Prop :=
-| step_star0: forall w k, step_star w k w k
-| step_starN: forall w k w'' k'' w' k', step w k w'' k'' -> step_star w'' k'' w' k'
-     -> step_star w k w' k'.
-
-Inductive stepN : nat -> W -> ctl -> W -> ctl -> Prop :=
-| stepN_0: forall w k, stepN O w k w k
-| stepN_S: forall n w k w' k' w'' k'',
-     step w k w' k'
-     -> stepN n w' k' w'' k''
-     -> stepN (S n) w k w'' k''.
-
-Inductive immed_safe : W -> ctl -> Prop :=
-| immed_safe0: forall w,
-     immed_safe w Kstop
-| immed_safe1: forall w k w' k',
-     step w k w' k'
-     -> immed_safe w k.
-
-Definition safe w k := forall w'' k'', step_star w k w'' k'' -> immed_safe w'' k''.
-
-Lemma step_step_star : forall w k w' k',
-  step w k w' k'
-  -> step_star w k w' k'.
-
-Lemma step_star_trans : forall w k w'' k'' w' k',
-  step_star w k w'' k''
-  -> step_star w'' k'' w' k'
-  -> step_star w k w' k'.
-
-Lemma step_star_stepN : forall w k w'' k'',
-  step_star w k w'' k'' <-> exists n, stepN n w k w'' k''.
-
-Lemma step_nprimcom_det : forall w k w' k' w'' k'',
-  (forall u k', k <> Kseq (Sprimcom u) k')
-  -> step w k w' k'
-  -> step w k w'' k''
-  -> w'=w'' /\ k'=k''.
-
-Lemma step_safe : forall w k w' k', safe w k -> step w k w' k' -> safe w' k'.
-
-Definition config_det w k := forall w' k' w'' k'',
-  step w k w' k' -> step w k w'' k'' -> w'=w'' /\ k'=k''.
-
-Lemma step_safe' : forall w k w' k',
-  safe w' k' -> step w k w' k' -> config_det w k -> safe w k.
-
-Lemma safe_seq_assoc: forall w k c1 c2,
-  safe w (Kseq c1 (Kseq c2 k)) -> safe w (Kseq (Sseq c1 c2) k).
-
-Lemma step_compatible : forall c w w' k,
-  step w (Kseq c Kstop) w' Kstop -> step w (Kseq c k) w' k.
-End GenericSemanticsElaboration.
-
-Class StratifiedSemantics {W V G S' U F}
-                          `{WVG : GenericSemantics W V G}
-                           
-                          `{S'UF : GenericSemantics S' U F}
-                           
-                           (world_erase : W -> S')
-                           
-                           (VU : relation W -> relation S' -> Prop)
-                           
-                           (GF : pfunc W val -> pfunc S' val -> Prop)
-                           
-                           : Type := mkStratifiedSemantics {
-
-  ss_VU_wellformed : forall v u,
-    VU v u
-    -> V v /\ U u;
-
-  ss_GF_wellformed : forall g f,
-    GF g f
-    -> G g /\ F f;
-
-  ss_primcom_erasure : forall v u w w' s s',
-    VU v u
-    -> world_erase w = s
-    -> v w w'
-    -> u s s'
-    -> world_erase w' = s';
-
-  ss_primcom_safety : forall v u w w' s,
-    VU v u
-    -> world_erase w = s
-    -> v w w'
-    -> exists s', u s s';
-
-  ss_primexpr_erasure : forall g f b1 b2 w s (Hgf : GF g f),
-    world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exprEval F (EPrim f) s b2
-    -> b1=b2;
-
-  ss_primexpr_saftey : forall g f b1 w s,
-    GF g f
-    -> world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exists b2, exprEval F (EPrim f) s b2
-}.
-
-Section UnpackStratifiedSemantics.
-Context {W V G S' U F world_erase VU GF}
-        `{SS : StratifiedSemantics W V G S' U F world_erase VU GF}.
-
-Lemma VU_wellformed : forall v u,
-    VU v u
-    -> V v /\ U u.
-
-Lemma GF_wellformed : forall g f,
-    GF g f
-    -> G g /\ F f.
-
-Lemma primcom_erasure : forall v u w w' s s',
-    VU v u
-    -> world_erase w = s
-    -> v w w'
-    -> u s s'
-    -> world_erase w' = s'.
-
-Lemma primcom_safety : forall v u w w' s,
-    VU v u
-    -> world_erase w = s
-    -> v w w'
-    -> exists s', u s s'.
-
-Lemma primexpr_erasure : forall g f b1 b2 w s,
-    GF g f
-    -> world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exprEval F (EPrim f) s b2
-    -> b1=b2.
-
-Lemma primexpr_safety : forall g f b1 w s,
-    GF g f
-    -> world_erase w = s
-    -> exprEval G (EPrim g) w b1
-    -> exists b2, exprEval F (EPrim f) s b2.
-End UnpackStratifiedSemantics.
-
-Section ErasureCorollaries.
-Context
-  {W V G S' U F world_erase VU GF}
-  `{SS : StratifiedSemantics W V G S' U F world_erase VU GF}.
-
-Inductive stmt_erase : @stmt W -> @stmt S' -> Prop :=
-| erase_SPrimcom: forall v u,
-     VU v u
-     -> stmt_erase (Sprimcom v) (Sprimcom u)
-| erase_SSkip: stmt_erase Sskip Sskip
-| erase_SSeq: forall c1 c1' c2 c2',
-     stmt_erase c1 c1'
-     -> stmt_erase c2 c2'
-     -> stmt_erase (Sseq c1 c2) (Sseq c1' c2')
-| erase_SIfte: forall e e' c1 c2 c1' c2',
-     expr_erase GF e e'
-     -> stmt_erase c1 c1'
-     -> stmt_erase c2 c2'
-     -> stmt_erase (Sifte e c1 c2) (Sifte e' c1' c2')
-| erase_SWhile: forall e e' c c',
-     expr_erase GF e e'
-     -> stmt_erase c c'
-     -> stmt_erase (Swhile e c) (Swhile e' c').
-
-Inductive ctl_erase : @ctl W -> @ctl S' -> Prop :=
-| erase_KStop: ctl_erase Kstop Kstop
-| erase_KSeq: forall c c' k k',
-     stmt_erase c c'
-     -> ctl_erase k k'
-     -> ctl_erase (Kseq c k) (Kseq c' k').
-
-Lemma stratified_expr_erasure : forall e e' w b1 b2,
-  expr_erase GF e e'
-  -> exprEval G e w b1
-  -> exprEval F e' (world_erase w) b2
-  -> b1=b2.
-
-Lemma stratified_expr_safety : forall e e' w b1,
-  expr_erase GF e e'
-  -> exprEval G e w b1
-  -> exists b2, exprEval F e' (world_erase w) b2.
-
-Lemma step_erasure : forall (w w': W) (s s': S') k_w k_w' k_s k_s',
-  world_erase w = s
-  -> ctl_erase k_w k_s
-  -> @step _ V G w k_w w' k_w'
-  -> @step _ U F s k_s s' k_s'
-  -> world_erase w' = s' /\ ctl_erase k_w' k_s'.
-
-Lemma step_safety : forall w w' s k_w k_w' k_s,
-  world_erase w = s
-  -> ctl_erase k_w k_s
-  -> @step _ V G w k_w w' k_w'
-  -> exists s', exists k_s', @step _ U F s k_s s' k_s'.
-
-Lemma step_star_erasure : forall w w' s k_w k_w' k_s,
-  world_erase w = s
-  -> ctl_erase k_w k_s
-  -> @step_star _ V G w k_w w' k_w'
-  -> exists s', exists k_s',
-        @step_star _ U F s k_s s' k_s'
-        /\ world_erase w' = s' /\ ctl_erase k_w' k_s'.
-End ErasureCorollaries.
-
-Class StratifiedSemanticsWithSeparation
-  {W V G S' U F world_erase VU GF}
-  `{StratifiedSemantics W V G S' U F world_erase VU GF}
-  {A}
-  {JA: Join A}{PA: Perm_alg A}{SA: Sep_alg A}
-   
-  (projA : W -> A)
-  
-  (H : pfunc A val -> Prop)
-    (HG : pfunc A val -> pfunc W val -> Prop)
-  
-  : Type := {
-
-   sss_HG_wellformed : forall h g,
-     HG h g
-     -> H h /\ G g;
-
-   sss_primexpr_erasure : forall w a g h b1 b2,
-    HG h g
-    -> projA w = a
-    -> exprEval H (EPrim h) a b1
-    -> exprEval G (EPrim g) w b2
-    -> b1=b2;
-
-   sss_primexpr_safety : forall w a g h b1,
-    HG h g
-    -> projA w = a
-    -> exprEval H (EPrim h) a b1
-    -> exists b2, exprEval G (EPrim g) w b2
-}.
-
-Section UnpackStratifiedSemanticsWithSeparation.
-Context
-{W V G S' U F world_erase VU GF A projA H HG}
-`{SSS : StratifiedSemanticsWithSeparation W V G S' U F world_erase VU GF A projA H HG}.
-
-Lemma HG_wellformed : forall h g,
-     HG h g
-     -> H h /\ G g.
-
-Lemma sep_primexpr_erasure : forall w a g h b1 b2,
-  HG h g
-  -> projA w = a
-  -> exprEval H (EPrim h) a b1
-  -> exprEval G (EPrim g) w b2
-  -> b1=b2.
-
-Lemma sep_primexpr_safety : forall w a g h b1,
-  HG h g
-  -> projA w = a
-  -> exprEval H (EPrim h) a b1
-  -> exists b2, exprEval G (EPrim g) w b2.
-End UnpackStratifiedSemanticsWithSeparation.
-
-Section SepErasureCorollaries.
-Context
-{W V G S' U F world_erase VU GF A projA H HG}
-`{SSS : StratifiedSemanticsWithSeparation W V G S' U F world_erase VU GF A projA H HG}.
-
-Lemma sep_expr_erasure : forall e e' w b1 b2,
-  expr_erase HG e e'
-  -> exprEval H e (projA w) b1
-  -> exprEval G e' w b2
-  -> b1=b2.
-
-Lemma sep_expr_safety : forall e e' w b1,
-  expr_erase HG e e'
-  -> exprEval H e (projA w) b1
-  -> exists b2, exprEval G e' w b2.
-End SepErasureCorollaries. *)
-
-
 
 Inductive AbsPrimcom : relation juicy_mem -> Prop :=
-
 | AbsPrimcom_store : forall ch b ofs v,
-
   AbsPrimcom (fun j j' => Abs.juicy_mem_store j ch b ofs v = Some j')
-
 | AbsPrimcom_alloc : forall lo hi,
-
   AbsPrimcom (fun j j' => fst (Abs.juicy_mem_alloc j lo hi) = j')
-
 .
-
 Inductive AbsPrimexpr : pfunc juicy_mem val -> Prop :=.
-
-
 
 Instance abstract : GenericSemantics juicy_mem AbsPrimcom AbsPrimexpr := {}.
 
-
-
 Inductive ConcPrimcom : relation mem -> Prop :=
-
 | ConcPrimcom_store : forall ch b ofs v,
-
   ConcPrimcom (fun m m' => store ch m b ofs v = Some m')
-
 | ConcPrimcom_alloc : forall lo hi,
-
   ConcPrimcom (fun m m' => fst (alloc m lo hi) = m')
-
 | ConcPrimcom_free : forall b ofs n,
-
   ConcPrimcom (fun m m' => free m b ofs n = Some m').
-
-
 
 Inductive ConcPrimexpr : pfunc mem val -> Prop :=.
 
-
-
 Instance concrete : GenericSemantics mem ConcPrimcom ConcPrimexpr := {}.
 
-
-
 Inductive VU : relation juicy_mem -> relation mem -> Prop :=
-
 | VU_store : forall ch b ofs v,
-
   VU (fun j j' => Abs.juicy_mem_store j ch b ofs v = Some j')
-
      (fun m m' => store ch m b ofs v = Some m')
-
 | VU_alloc : forall lo hi,
-
   VU (fun j j' => fst (Abs.juicy_mem_alloc j lo hi) = j')
-
      (fun m m' => fst (alloc m lo hi) = m')
-
 .
-
-
 
 Inductive GF : pfunc juicy_mem val -> pfunc mem val -> Prop :=.
 
-
-
 Lemma PrimexprErasure : forall g f, GF g f -> False. Proof. inversion 1. Qed.
-
-
 
 Lemma PrimexprSafety : forall g f, GF g f -> False. Proof. inversion 1. Qed.
 
-
-
 Lemma PrimcomErasure : forall v u j j' m m',
-
   VU v u -> m_dry j = m -> v j j' -> u m m' -> m_dry j' = m'.
-
 Proof.
-
 intros.
-
 inv H.
 
-
-
 apply JuicyMemOps.juicy_mem_store_succeeds in H1.
-
 destruct H1 as [? [? ?]]; subst.
-
 rewrite H in H2; inv H2; auto.
 
-
-
 generalize JuicyMemOps.juicy_mem_alloc_succeeds; intros.
-
 specialize (H j j' (snd (JuicyMemOps.juicy_mem_alloc j lo hi)) lo hi).
-
 case_eq (JuicyMemOps.juicy_mem_alloc j lo hi); intros.
-
 rewrite H0 in *. spec H; auto. simpl in *.
-
 destruct (alloc (m_dry j) lo hi); simpl in *. inv H; auto.
 
-
-
 Qed.
-
-
 
 Lemma PrimcomSafety : forall v u j j' m,
-
   VU v u -> m_dry j = m -> v j j' -> exists m', u m m'.
-
 Proof.
-
 intros.
-
 inv H.
 
-
-
 apply JuicyMemOps.juicy_mem_store_succeeds in H1.
-
 destruct H1 as [? [? ?]]; subst.
-
 eexists; eauto.
-
-
 
 generalize JuicyMemOps.juicy_mem_alloc_succeeds; intros.
-
 specialize (H j j' (snd (JuicyMemOps.juicy_mem_alloc j lo hi)) lo hi).
-
 case_eq (JuicyMemOps.juicy_mem_alloc j lo hi); intros.
-
 rewrite H0 in *. spec H; auto. simpl in *.
-
 destruct (alloc (m_dry j) lo hi); simpl in *. inv H; auto.
-
 eexists; eauto.
 
-
-
 Qed.
-
-
 
 Existing Instance abstract.
-
 Existing Instance concrete.
 
-
-
 Instance stratsem : @StratifiedSemantics
-
   juicy_mem
-
   AbsPrimcom
-
   AbsPrimexpr
-
   mem
-
   ConcPrimcom
-
   ConcPrimexpr
-
   abstract
-
   concrete
-
   m_dry
-
   VU
-
   GF.
-
 Proof.
-
 constructor.
-
 intros; inv H; split; constructor.
-
 intros; inv H; split; constructor.
-
 apply PrimcomErasure.
-
 apply PrimcomSafety.
-
 intros; elimtype False; eapply PrimexprErasure; eauto.
-
 intros; elimtype False; eapply PrimexprSafety; eauto.
-
 Qed.
-
-
 
 Existing Instance stratsem.
 
-
-
 Require Import VST.veric.compcert_rmaps.
-(* VST.veric.compcert_rmaps:
-Require Export VST.msl.msl_standard.
-Require Import VST.veric.base.
-Require Import compcert.cfrontend.Ctypes.
-Require Import VST.veric.shares.
-Require Import VST.veric.rmaps.
-Require Import VST.veric.rmaps_lemmas.
-Require Export VST.veric.Memory. 
-
-Instance EqDec_type: EqDec type := type_eq.
-
-Definition funsig := (list (ident*type) * type)%type. 
-
-Inductive kind : Type := VAL : memval -> kind
-                                   | LK : forall n i : Z, kind
-                                   | FUN: funsig -> calling_convention -> kind.
-
-Definition isVAL (k: kind) := match k with | VAL _ => True | _ => False end.
-Definition isFUN (k: kind) := match k with | FUN _ _ => True | _ => False end.
-
-Lemma isVAL_i: forall v, isVAL (VAL v).
-Hint Resolve isVAL_i.
-
-Lemma isVAL_dec: forall k, {isVAL k}+{~isVAL k}.
-
-Module CompCert_AV <: ADR_VAL.
-
-Definition address := address.
-Definition some_address : address := (xH,0).
-Definition kind := kind.
-
-End CompCert_AV.
-
-Lemma getVAL: forall k, {v : memval & k = VAL v}  + {~isVAL k}.
-
-Lemma VAL_inj: forall v v', VAL v = VAL v' -> v = v'.
-
-Module R := Rmaps (CompCert_AV).
-Module RML := Rmaps_Lemmas(R).
-
-Export RML.
-Export R.
-
-Definition mk_rshare: forall p: Share.t, pure_readable_share p -> rshare := exist pure_readable_share.
-Definition rshare_sh (p: rshare) : Share.t := proj1_sig p.
-
-Lemma mk_rshare_sh: forall (p:rshare) (H: pure_readable_share (rshare_sh p)),
-  mk_rshare (rshare_sh p) H = p.
-
-Definition fixup_splitting
-  (a:address -> Share.t) (z: address -> option (rshare * kind)) : address -> option (rshare * kind) :=
-  fun l => 
-    match z l with
-    | Some (sh, k) =>
-       match dec_readable (a l) with
-       | left p => Some (readable_part p,  k)
-       | right _ => None
-       end
-    | None => None
-    end.
-
-Definition share_of (x: option (rshare * kind)) : Share.t :=
-  match x with Some (p,_) => proj1_sig p | None => Share.bot end.
-
-Definition Join_pk := (Join_lower (Join_prod rshare _ kind (Join_equiv _))).
-
-Lemma share_of_Some: forall p: rshare * AV.kind, readable_share (share_of (Some p)).
-
-Lemma join_sub_same_k:
- forall {a a' : rshare} {k k': AV.kind},
-
-Lemma pure_readable_glb_Rsh:
- forall sh, pure_readable_share sh -> Share.glb Share.Rsh sh = sh.
-
-Lemma join_glb_Rsh:  
-  forall a b c : Share.t,
-
-Lemma pure_readable_share_glb:
-  forall a, pure_readable_share a -> Share.glb Share.Rsh a = a.
-
-Lemma glb_Rsh_bot_unreadable:
-  forall a, Share.glb Share.Rsh a = Share.bot -> ~readable_share a.
-
-Lemma fixup_join : forall a (ac ad: address -> Share.t)  z,
-
-Lemma join_share_of: forall a b c,
-     @join _ Join_pk a b c -> join (share_of a) (share_of b) (share_of c).
-
-Lemma pure_readable_share_i:
-  forall sh, readable_share sh -> (pure_readable_share (Share.glb Share.Rsh sh)).
-
-Obligation Tactic := Tactics.program_simpl.
-
-Lemma pure_readable_Rsh: pure_readable_share Share.Rsh.
-
-Definition rfullshare : rshare := mk_rshare _ pure_readable_Rsh.
-
-Program Definition writable (l: address): pred rmap :=
- fun phi =>
-  match phi @ l with
-    | YES sh _ k lp => writable0_share sh /\ isVAL k
-    | _ => False
-  end.
-
-Program Definition readable (loc: address) : pred rmap :=
-   fun phi => match phi @ loc with YES _ _ k _ => isVAL k | _ => False end.
-
-Lemma readable_join:
-  forall phi1 phi2 phi3 loc, join phi1 phi2 phi3 ->
-            readable loc phi1 -> readable loc phi3.
-
-Lemma readable_writable_join:
-forall phi1 phi2 l, readable l phi1 -> writable l phi2 -> joins phi1 phi2 -> False.
-
-Lemma writable0_join_sub:
-  forall sh sh', join_sub sh sh' -> writable0_share sh -> writable0_share sh'.
-
-Lemma writable_join: forall loc phi1 phi2, join_sub phi1 phi2 ->
-            writable loc phi1 -> writable loc phi2.
-
-Lemma writable_readable: forall loc m, writable loc m -> readable loc m.
-
-Lemma writable_e: forall loc m, 
-   writable loc m -> 
-   exists sh, exists rsh, exists v, exists p, 
-     m @ loc = YES sh rsh (VAL v) p /\ writable0_share sh.
-Arguments writable_e [loc] [m] _.
-
-Lemma readable_e: forall loc m, 
-   readable loc m -> 
-  exists sh, exists rsh, exists v, exists p, m @ loc = YES sh rsh (VAL v) p.
-Arguments readable_e [loc] [m] _.
-
-Definition bytes_writable (loc: address) (size: Z) (phi: rmap) : Prop :=
-  forall i, (0 <= i < size) -> writable (adr_add loc i) phi.
-
-Definition bytes_readable (loc: address) (size: Z) (phi: rmap) : Prop :=
-  forall i, (0 <= i < size) -> readable (adr_add loc i) phi.
-
-Lemma readable_dec (loc: address) (phi: rmap) : {readable loc phi} + {~readable loc phi}.
-
-Lemma writable_dec: forall loc phi, {writable loc phi}+{~writable loc phi}.
-
-Lemma bytes_writable_dec:
-   forall loc n m, {bytes_writable loc n m}+{~bytes_writable loc n m}.
-
-Lemma bytes_readable_dec:
-   forall loc n m, {bytes_readable loc n m}+{~bytes_readable loc n m}.
-
-Lemma bytes_writable_readable:
-  forall m loc n, bytes_writable m loc n -> bytes_readable m loc n.
-
-Hint Resolve bytes_writable_readable : mem.
-
-Lemma rmap_age_i:
- forall w w' : rmap,
-    level w = S (level w') ->
-   (forall l, resource_fmap (approx (level w')) (approx (level w')) (w @ l) = w' @ l) ->
-    ghost_fmap (approx (level w')) (approx (level w')) (ghost_of w) = ghost_of w' ->
-    age w w'. *)
-
-
 
 Inductive RmapPrimexpr : pfunc rmap val -> Prop :=.
 
-
-
 Inductive HG : pfunc rmap val -> pfunc juicy_mem val -> Prop :=.
 
-
-
 Instance stratsemsep : StratifiedSemanticsWithSeparation m_phi RmapPrimexpr HG.
-
 Proof.
-
 constructor; intros; inv H.
-
 Qed.
-
-
 

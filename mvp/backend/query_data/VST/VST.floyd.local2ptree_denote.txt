@@ -1,3212 +1,819 @@
 Require Import VST.floyd.base2.
-(* VST.floyd.base2:
-Require Export VST.floyd.base.
-Require Export VST.floyd.typecheck_lemmas.
-Require Export VST.floyd.functional_base.
-Require Export VST.floyd.seplog_tactics.
-Require Export VST.floyd.const_only_eval.
-Require Export VST.floyd.computable_functions.
-
-Fixpoint delete_id {A: Type} i (al: list (ident*A)) : option (A * list (ident*A)) :=
- match al with
- | (j,x)::bl => if ident_eq i j then Some (x,bl)
-                else match delete_id i bl with
-                        | None => None
-                        | Some (y,cl) => Some (y, (j,x)::cl)
-                        end
-  | nil => None
- end.
-
-Inductive NOTE__Perhaps_you_need_to_Import_floyd_library___See_reference_manual_chapter___with_library : Type := .
-
-Definition cc_of_fundef (fd: Clight.fundef) : calling_convention :=
- match fd with
- | Internal f => fn_callconv f
- | External _ _ _ c => c
- end.
-
-Definition funsig_of_fundef (fd: Clight.fundef) : funsig :=
- match fd with
- | Internal {| fn_return := fn_return; fn_params := fn_params |} =>
-    (fn_params, fn_return)
- | External _ t t0 _ => (arglist 1 t, t0)
- end.
-
-Definition vacuous_funspec (fd: Clight.fundef): funspec :=
-   mk_funspec (funsig_of_fundef fd) (cc_of_fundef fd) (rmaps.ConstType NOTE__Perhaps_you_need_to_Import_floyd_library___See_reference_manual_chapter___with_library) (fun _ _ => FF) (fun _ _ => FF) (const_super_non_expansive _ _) (const_super_non_expansive _ _).
-
-Fixpoint augment_funspecs' (fds: list (ident * Clight.fundef)) (G:funspecs) : option funspecs :=
- match fds with
- | (i,fd)::fds' => match delete_id i G with
-                       | Some (f, G') =>
-                              match augment_funspecs' fds' G' with
-                               | Some G2 => Some ((i,f)::G2)
-                               | None => None
-                              end
-                       | None =>
-                              match augment_funspecs' fds' G with
-                               | Some G2 => Some ((i, vacuous_funspec fd)::G2)
-                               | None => None
-                              end
-                        end
- | nil => match G with nil => Some nil | _::_ => None end
- end.
-
-Definition augment_funspecs prog G : funspecs :=
- match augment_funspecs' (prog_funct prog) G with
- | Some G' => G'
- | None => nil
- end. *)
-
 Require Import VST.floyd.client_lemmas.
-(* VST.floyd.client_lemmas:
-Require Import VST.floyd.base2.
-Require Export VST.floyd.canon.
-Local Open Scope logic.
-
-Lemma SEP_entail:
- forall R' Delta P Q R, 
-   fold_right_sepcon R |-- fold_right_sepcon R' -> 
-   ENTAIL Delta, PROPx P (LOCALx Q (SEPx R)) |-- PROPx P (LOCALx Q (SEPx R')).
-
-Ltac refold_right_sepcon R :=
- match R with
- | @sepcon mpred _ _ ?R1 ?R' => let S := refold_right_sepcon R' in constr: (R1 :: S )
- | _ => constr:(R :: nil)
- end.
-
-Lemma SEP_entail':
- forall R' Delta P Q R, 
-   ENTAIL Delta, PROPx P (LOCALx Q (SEPx R)) |-- ` (fold_right_sepcon R') -> 
-   ENTAIL Delta, PROPx P (LOCALx Q (SEPx R)) |-- PROPx P (LOCALx Q (SEPx R')).
-
-Arguments sem_cmp c !t1 !t2 / v1 v2.
-
-Hint Resolve (@LiftClassicalSep environ) : typeclass_instances.
-
-Definition func_ptr' f v := func_ptr f v && emp.
-
-Hint Resolve func_ptr_isptr: saturate_local.
-
-Lemma func_ptr'_isptr: forall f v, func_ptr' f v |-- !! isptr v.
-Hint Resolve func_ptr'_isptr: saturate_local.
-
-Lemma split_func_ptr': 
- forall fs p, func_ptr' fs p = func_ptr' fs p * func_ptr' fs p.
-
-Lemma approx_func_ptr': forall (A: Type) fsig0 cc (P Q: A -> environ -> mpred) (v: val) (n: nat),
-  compcert_rmaps.RML.R.approx n (func_ptr' (NDmk_funspec fsig0 cc A P Q) v) = compcert_rmaps.RML.R.approx n (func_ptr' (NDmk_funspec fsig0 cc A (fun a rho => compcert_rmaps.RML.R.approx n (P a rho)) (fun a rho => compcert_rmaps.RML.R.approx n (Q a rho))) v).
-
-Lemma lift0_unfold: forall {A} (f: A)  rho,  lift0 f rho = f.
-
-Lemma lift0_unfoldC: forall {A} (f: A) (rho: environ),  `f rho = f.
-
-Lemma lift1_unfold: forall {A1 B} (f: A1 -> B) a1 rho,
-        lift1 f a1 rho = f (a1 rho).
-
-Lemma lift1_unfoldC: forall {A1 B} (f: A1 -> B) a1 (rho: environ),
-        `f a1 rho = f (a1 rho).
-
-Lemma lift2_unfold: forall {A1 A2 B} (f: A1 -> A2 -> B) a1 a2 (rho: environ),
-        lift2 f a1 a2 rho = f (a1 rho) (a2 rho).
-
-Lemma lift2_unfoldC: forall {A1 A2 B} (f: A1 -> A2 -> B) a1 a2 (rho: environ),
-        `f a1 a2 rho = f (a1 rho) (a2 rho).
-
-Lemma lift3_unfold: forall {A1 A2 A3 B} (f: A1 -> A2 -> A3 -> B) a1 a2 a3 (rho: environ),
-        lift3 f a1 a2 a3 rho = f (a1 rho) (a2 rho) (a3 rho).
-
-Lemma lift3_unfoldC: forall {A1 A2 A3 B} (f: A1 -> A2 -> A3 -> B) a1 a2 a3 (rho: environ),
-        `f a1 a2 a3 rho = f (a1 rho) (a2 rho) (a3 rho).
-
-Lemma lift4_unfold: forall {A1 A2 A3 A4 B} (f: A1 -> A2 -> A3 -> A4 -> B) a1 a2 a3 a4 (rho: environ),
-        lift4 f a1 a2 a3 a4 rho = f (a1 rho) (a2 rho) (a3 rho) (a4 rho).
-
-Lemma lift4_unfoldC: forall {A1 A2 A3 A4 B} (f: A1 -> A2 -> A3 -> A4 -> B) a1 a2 a3 a4 (rho: environ),
-        `f a1 a2 a3 a4 rho = f (a1 rho) (a2 rho) (a3 rho) (a4 rho).
-
-Hint Rewrite @lift0_unfold @lift1_unfold @lift2_unfold @lift3_unfold @lift4_unfold : norm2.
-Hint Rewrite @lift0_unfoldC @lift1_unfoldC @lift2_unfoldC @lift3_unfoldC @lift4_unfoldC : norm2.
-
-Lemma subst_lift0: forall {A} id v (f: A),
-        subst id v (lift0 f) = lift0 f.
-
-Lemma subst_lift0': forall {A} id v (f: A),
-        subst id v (fun _ => f) = (fun _ => f).
-
-Hint Rewrite @subst_lift0' : subst.
-
-Lemma subst_lift0C:
-  forall {B} id (v: environ -> val) (f: B) ,
-          subst id v (`f) = `f.
-
-Hint Rewrite @subst_lift0  @subst_lift0C : subst.
-
-Lemma subst_lift1:
-  forall {A1 B} id v (f: A1 -> B) a,
-          subst id v (lift1 f a) = lift1 f (subst id v a).
-
-Lemma subst_lift1':
-  forall {A1 B} id v (f: A1 -> B) a,
-          subst id v (fun rho => f (a rho)) = fun rho => f (subst id v a rho).
-
-Lemma subst_lift1C:
-  forall {A1 B} id (v: environ -> val) (f: A1 -> B) (a: environ -> A1),
-          subst id v (`f a)  = `f (subst id v a).
-
-Hint Rewrite @subst_lift1  @subst_lift1C  : subst.
-
-Lemma subst_lift2:
-  forall {A1 A2 B} id v (f: A1 -> A2 -> B) a b,
-          subst id v (lift2 f a b) = lift2 f (subst id v a) (subst id v b).
-
-Lemma subst_lift2':
-  forall {A1 A2 B} id v (f: A1 -> A2 -> B) a b,
-          subst id v (fun rho => f (a rho) (b rho)) = fun rho => f (subst id v a rho) (subst id v b rho).
-
-Lemma subst_lift2C:
-  forall {A1 A2 B} id (v: environ -> val) (f: A1 -> A2 -> B) (a: environ -> A1) (b: environ -> A2),
-          subst id v (`f a b) = `f (subst id v a) (subst id v b).
-
-Hint Rewrite @subst_lift2  @subst_lift2C : subst.
-
-Lemma subst_lift3:
-  forall {A1 A2 A3 B} id v (f: A1 -> A2 -> A3 -> B) a1 a2 a3,
-          subst id v (lift3 f a1 a2 a3) = lift3 f (subst id v a1) (subst id v a2) (subst id v a3).
-
-Lemma subst_lift3':
-  forall {A1 A2 A3 B} id v (f: A1 -> A2 -> A3 -> B) a1 a2 a3,
-          subst id v (fun rho => f (a1 rho) (a2 rho) (a3 rho)) =
-          fun rho => f (subst id v a1 rho) (subst id v a2 rho) (subst id v a3 rho).
-
-Lemma subst_lift3C:
-  forall {A1 A2 A3 B} id (v: environ -> val) (f: A1 -> A2 -> A3 -> B)
-                  (a1: environ -> A1) (a2: environ -> A2) (a3: environ -> A3),
-          subst id v (`f a1 a2 a3) = `f (subst id v a1) (subst id v a2) (subst id v a3).
-
-Hint Rewrite @subst_lift3  @subst_lift3C : subst.
-
-Lemma subst_lift4:
-  forall {A1 A2 A3 A4 B} id v (f: A1 -> A2 -> A3 -> A4 -> B) a1 a2 a3 a4,
-          subst id v (lift4 f a1 a2 a3 a4) = lift4 f (subst id v a1) (subst id v a2) (subst id v a3) (subst id v a4).
-
-Lemma subst_lift4':
-  forall {A1 A2 A3 A4 B} id v (f: A1 -> A2 -> A3 -> A4 -> B) a1 a2 a3 a4,
-          subst id v (fun rho => f (a1 rho) (a2 rho) (a3 rho) (a4 rho)) =
-          fun rho => f (subst id v a1 rho) (subst id v a2 rho) (subst id v a3 rho) (subst id v a4 rho).
-
-Lemma subst_lift4C:
-  forall {A1 A2 A3 A4 B} id (v: environ -> val) (f: A1 -> A2 -> A3 -> A4 -> B)
-                  (a1: environ -> A1) (a2: environ -> A2) (a3: environ -> A3) (a4: environ -> A4),
-          subst id v (`f a1 a2 a3 a4) = `f (subst id v a1) (subst id v a2) (subst id v a3) (subst id v a4).
-
-Hint Rewrite @subst_lift4  @subst_lift4C : subst.
-
-Lemma bool_val_int_eq_e:
-  forall i j m, Cop.bool_val (Val.of_bool (Int.eq i j)) type_bool m = Some true ->
-
-Lemma bool_val_notbool_ptr:
-    forall v t m,
-   match t with Tpointer _ _ => True | _ => False end ->
-   (Cop.bool_val (force_val (Cop.sem_notbool v t m)) type_bool m = Some true) 
-
-Definition retval : environ -> val := eval_id ret_temp.
-
-Hint Rewrite eval_id_same : norm.
-Hint Rewrite eval_id_other using solve [clear; intro Hx; inversion Hx] : norm.
-
-Lemma simpl_get_result1:
- forall (f: val -> Prop) i, @liftx (Tarrow environ (LiftEnviron Prop)) (@liftx (Tarrow val (LiftEnviron Prop))f retval) (get_result1 i) = `f (eval_id i).
-Hint Rewrite simpl_get_result1: norm.
-
-Lemma retval_get_result1:
-   forall i rho, retval (get_result1 i rho) = (eval_id i rho).
-Hint Rewrite retval_get_result1 : norm.
-
-Lemma retval_ext_rval:
-  forall ge v, retval (make_ext_rval ge v) = force_val v.
-Hint Rewrite retval_ext_rval : norm.
-
-Lemma retval_lemma1:
-  forall rho v,     retval (env_set rho ret_temp v) = v.
-Hint Rewrite retval_lemma1 : norm.
-
-Lemma retval_make_args:
-  forall v rho, retval (make_args (ret_temp::nil) (v::nil) rho) = v.
-Hint Rewrite retval_make_args: norm2.
-
-Lemma andp_makeargs:
-   forall (a b: environ -> mpred) d e,
-   `(a && b) (make_args d e) = `a (make_args d e) && `b (make_args d e).
-Hint Rewrite andp_makeargs: norm2.
-
-Lemma local_makeargs:
-   forall (f: val -> Prop) v,
-   `(local (`(f) retval)) (make_args (cons ret_temp nil) (cons v nil))
-    = (local (`(f) `(v))).
-Hint Rewrite local_makeargs: norm2.
-
-Lemma simpl_and_get_result1:
-  forall (Q R: environ->mpred) i,
-    `(Q && R) (get_result1 i) = `Q (get_result1 i) && `R (get_result1 i).
-Hint Rewrite simpl_and_get_result1 : norm2.
-
-Lemma liftx_local_retval:
-  forall (P: val -> Prop) i,
-   `(local (`P retval)) (get_result1 i) = local (`P (eval_id i)).
-Hint Rewrite liftx_local_retval : norm2.
-
-Hint Rewrite bool_val_notbool_ptr using apply Coq.Init.Logic.I : norm.
-
-Lemma Vint_inj': forall i j,  (Vint i = Vint j) =  (i=j).
-
-Lemma overridePost_normal_right:
-  forall P Q R,
-   P |-- Q ->
-   P |-- RA_normal (overridePost Q R).
-
-Fixpoint fold_right_and P0 (l: list Prop) : Prop :=
- match l with
- | nil => P0
- | b::r => b  /\ fold_right_and P0 r
- end.
-
-Fixpoint fold_right_and_True (l: list Prop) : Prop :=
- match l with
- | nil => True
- | b :: nil => b
- | b::r => b /\ fold_right_and_True r
- end.
-
-Definition fold_right_PROP_SEP (l1: list Prop) (l2: list mpred) : mpred :=
- match l1 with
- | nil => fold_right_sepcon l2
- | l => !! (fold_right_and_True l) && fold_right_sepcon l2
- end.
-
-Lemma fold_right_PROP_SEP_spec: forall l1 l2,
-  fold_right_PROP_SEP l1 l2 = !! (fold_right and True l1) && fold_right_sepcon l2.
-
-Lemma typed_true_isptr:
- forall t, match t with Tpointer _ _ => True | Tarray _ _ _ => True | Tfunction _ _ _ => True | _ => False end ->
-          typed_true t = isptr.
-
-Hint Rewrite typed_true_isptr using apply Coq.Init.Logic.I : norm.
-
-Ltac super_unfold_lift_in H :=
-   cbv delta [liftx LiftEnviron Tarrow Tend lift_S lift_T
-    lift_prod lift_last lifted lift_uncurry_open lift_curry lift lift0
-    lift1 lift2 lift3] beta iota in H.
-
-Ltac super_unfold_lift' :=
-  cbv delta [liftx LiftEnviron Tarrow Tend lift_S lift_T
-    lift_prod lift_last lifted lift_uncurry_open lift_curry lift lift0
-    lift1 lift2 lift3] beta iota.
-
-Lemma tc_eval'_id_i:
-  forall Delta t i rho,
-               tc_environ Delta rho ->
-              (temp_types Delta)!i = Some t ->
-              tc_val' t (eval_id i rho).
-
-Lemma is_int_e:
- forall v i s , is_int i s v -> exists n, v = Vint n /\ is_int i s v.
-
-Definition name (id: ident) := True.
-
-Tactic Notation "name" ident(s) constr(id) :=
-    assert (s: name id) by apply Coq.Init.Logic.I.
-
-Definition reflect_temps_f (rho: environ) (b: Prop) (i: ident) (t: type) : Prop :=
-  tc_val' t (eval_id i rho) /\ b.
-
-Definition reflect_temps (Delta: tycontext) (rho: environ) : Prop :=
-    PTree.fold (reflect_temps_f rho) (temp_types Delta) True.
-
-Lemma reflect_temps_valid:
-  forall Delta rho,
-    tc_environ Delta rho -> reflect_temps Delta rho.
-
-Definition abbreviate {A:Type} (x:A) := x.
-Arguments abbreviate [A] [x].
-
-Ltac clear_Delta :=
-match goal with
-| Delta := @abbreviate tycontext _ |- _ =>
-   first [clear Delta | clearbody Delta]
-| _ => idtac
-end;
-match goal with
- |  DS := @abbreviate (PTree.t funspec) _  |- _ =>
-   first [clear DS | clearbody DS]
- | |- _ => idtac
- end.
-
-Ltac clear_Delta_specs :=
- lazymatch goal with
- |  DS := @abbreviate (PTree.t funspec) _  |- _ => clearbody DS
- | |- _ => idtac
- end.
-
-Ltac findvars :=
- match goal with DD: tc_environ ?Delta ?rho |- _ =>
-  let H := fresh in
-    assert (H := reflect_temps_valid _ _ DD);
-    try (unfold Delta in H);
-   cbv beta iota zeta delta [abbreviate PTree.fold PTree.prev PTree.prev_append PTree.xfold temp_types fst snd
-             reflect_temps reflect_temps_f] in H;
-   simpl in H;
-   repeat match goal with
-
-    | Name: name ?J |- context [eval_id ?J rho] =>
-            fold J in H;
-            clear Name;
-           forget (eval_id J rho) as Name
-    | |- context [eval_id ?J rho] =>
-           try fold J in H;
-           let Name := fresh "_id" in forget (eval_id J rho) as Name
-    | Name: name _ |- _ =>
-          clear Name
-     end;
-    repeat match type of H with
-                | _ (eval_id _ _) /\ _ =>  destruct H as [_ H]
-                | is_int _ _ ?i /\ _ => let TC := fresh "TC" in destruct H as [TC H];
-                                let i' := fresh "id" in rename i into i';
-                               apply is_int_e in TC; destruct TC as [i [? TC]]; subst i';
-                                simpl in TC;
-                               match type of TC with True => clear TC | _ => idtac end
-                | _ /\ _ => destruct H as [?TC H]
-                end;
-    clear H
- end.
-
-Lemma is_true_negb:
- forall a, is_true (negb a) -> a=false.
-
-Lemma sem_cast_pointer2':
-  forall (v : val) (t1 t2: type),
-  match t1 with
-  | Tpointer _ _ => is_true (negb (eqb_type t1 int_or_ptr_type))
-  | Tint I32 _ _ => if Archi.ptr64 then False else True 
-
-Hint Rewrite sem_cast_pointer2' using (try apply Coq.Init.Logic.I; try assumption; reflexivity) : norm.
-
-Lemma sem_cast_pointer2:
-  forall v t1 t2 t3 t1' t2',
-   t1' = Tpointer t1 noattr ->
-   t2' = Tpointer t2 noattr ->
-   tc_val (Tpointer t3 noattr) v ->
-   force_val (sem_cast t1' t2' v) = v.
-
-Lemma force_eval_var_int_ptr :
-forall  {cs: compspecs}  Delta rho i t,
-tc_environ Delta rho ->
-tc_lvalue Delta (Evar i t) rho |--
-        !! (force_val
-            match eval_var i t rho with
-
-            | Vptr _ _ => Some (eval_var i t rho)
-            | _ => None
-            end = eval_var i t rho).
-
-Lemma is_pointer_or_null_force_int_ptr:
-   forall v, is_pointer_or_null v -> (force_val
-        match v with
-        | Vint _ => if Archi.ptr64 then None else Some v
-Hint Rewrite is_pointer_or_null_force_int_ptr using assumption : norm1.
-
-Lemma is_pointer_force_int_ptr:
-   forall v, isptr v -> (force_val
-        match v with
-        | Vint _ => if Archi.ptr64 then None else Some v
-Hint Rewrite is_pointer_force_int_ptr using assumption : norm1.
-
-Lemma is_pointer_or_null_match :
-   forall v, is_pointer_or_null v ->
-        (match v with
-        | Vint _ => if Archi.ptr64 then None else Some v
-Hint Rewrite is_pointer_or_null_match using assumption : norm1.
-
-Lemma is_pointer_force_int_ptr2:
-   forall v, isptr v ->
-        match v with
-        | Vint _ => if Archi.ptr64 then None else Some v
-Hint Rewrite is_pointer_force_int_ptr2 using assumption : norm1.
-
-Lemma is_pointer_or_null_force_int_ptr2:
-   forall v, is_pointer_or_null (force_val
-        match v with
-        | Vint _ => Some v
-        | Vptr _ _ => Some v
-        | _ => None
-         end) -> (force_val
-        match v with
-        | Vint _ => Some v
-        | Vptr _ _ => Some v
-        | _ => None
-         end) = v.
-
-Hint Rewrite is_pointer_or_null_force_int_ptr2 using assumption : norm1.
-
-Lemma isptr_match : forall w0,
-is_pointer_or_null
-         match
-           match w0 with
-          | Vint _ => if Archi.ptr64 then None else Some w0
-
-Hint Rewrite isptr_match : norm1.
-
-Lemma eval_cast_neutral_tc_val:
-   forall v, (exists t, tc_val t v /\ is_pointer_type t = true) ->
-       sem_cast_pointer v = Some v.
-
-Hint Rewrite eval_cast_neutral_tc_val using solve [eauto] : norm.
-
-Lemma eval_cast_neutral_is_pointer_or_null:
-   forall v, is_pointer_or_null v -> sem_cast_pointer v = Some v.
-Hint Rewrite eval_cast_neutral_is_pointer_or_null using assumption : norm.
-
-Lemma is_pointer_or_null_eval_cast_neutral:
-  forall v, is_pointer_or_null (force_val (sem_cast_pointer v)) = is_pointer_or_null v.
-Hint Rewrite is_pointer_or_null_eval_cast_neutral : norm.
-
-Lemma eval_cast_neutral_isptr:
-   forall v, isptr v -> sem_cast_pointer v = Some v.
-Hint Rewrite eval_cast_neutral_isptr using assumption : norm.
-
-Arguments ret_type !Delta /.
-
-Arguments Datatypes.id {A} x / .
-
-Lemma raise_sepcon:
- forall A B : environ -> mpred ,
-    (fun rho: environ => A rho * B rho) = (A * B).
-Hint Rewrite raise_sepcon : norm1.
-
-Lemma lift1_lift1_retval {A}: forall i (P: val -> A),
-lift1 (lift1 P retval) (get_result1 i) = lift1 P (eval_id i).
-
-Lemma lift_lift_retval:
-  forall (i: ident) P,
-   @liftx (Tarrow environ (LiftEnviron mpred))
-     (@liftx (Tarrow val (LiftEnviron mpred)) P retval) (get_result1 i) = `P (eval_id i).
-Hint Rewrite lift_lift_retval: norm2.
-
-Lemma lift_lift_x:  
-  forall t t' P (v: t),
-  (@liftx (Tarrow t (LiftEnviron t')) P (@liftx (LiftEnviron t) v)) =
-  (@liftx (LiftEnviron t') (P v)).
-Hint Rewrite lift_lift_x : norm2.
-
-Lemma lift0_exp {A}{NA: NatDed A}:
-  forall (B: Type) (f: B -> A), lift0 (exp f) = EX x:B, lift0 (f x).
-
-Lemma lift0C_exp {A}{NA: NatDed A}:
-  forall (B: Type) (f: B -> A), `(exp f) = EX x:B, `(f x).
-Hint Rewrite @lift0_exp : norm2.
-Hint Rewrite @lift0C_exp : norm2.
-
-Lemma lift0_andp {A}{NA: NatDed A}:
- forall P Q,
-   lift0 (@andp A NA P Q) = andp (lift0 P) (lift0 Q).
-
-Lemma lift0C_andp {A}{NA: NatDed A}:
- forall P Q: A,
-  `(@andp A NA P Q) =
-  andp (`P) (`Q).
-
-Lemma lift0_prop {A}{NA: NatDed A}:
- forall P, lift0 (!! P) = !!P.
-
-Lemma lift0C_prop {A}{NA: NatDed A}:
- forall P, @liftx (LiftEnviron A) (@prop A NA P) =
-                  @prop (environ -> A) _ P.
-
-Lemma lift0_sepcon {A}{NA: NatDed A}{SA: SepLog A}:
- forall P Q,
-  lift0 (@sepcon A NA SA P Q) = sepcon (lift0 P) (lift0 Q).
-
-Lemma lift0C_sepcon {A}{NA: NatDed A}{SA: SepLog A}:
- forall P Q N2 S2,
-  (@liftx (LiftEnviron A) (@sepcon A N2 S2 P Q)) =
-  (@sepcon (environ->A) _ _
-     (@liftx (LiftEnviron A) P)
-     (@liftx (LiftEnviron A) Q)).
-
-Lemma lift0_later {A}{NA: NatDed A}{IA: Indir A}:
-  forall P:A,
-   lift0 (@later A NA IA P) = later  (lift0 P).
-
-Lemma lift0C_later {A}{NA: NatDed A}{IA: Indir A}:
-  forall P:A,
-   `(@later A NA IA P) = @later (environ->A) _ _ (`P).
-
-Hint Rewrite (@lift0C_sepcon mpred _ _) : norm.
-Hint Rewrite (@lift0C_andp mpred _) : norm.
-Hint Rewrite (@lift0C_exp mpred _) : norm.
-Hint Rewrite (@lift0C_later mpred _ _) : norm.
-Hint Rewrite (@lift0C_prop mpred _) : norm.
-
-Hint Rewrite
-    @lift1_lift1_retval
-    @lift0_exp
-    @lift0_sepcon
-    @lift0_prop
-    @lift0_later
-    : norm2.
-
-Lemma fst_unfold: forall {A B} (x: A) (y: B), fst (x,y) = x.
-Lemma snd_unfold: forall {A B} (x: A) (y: B), snd (x,y) = y.
-Hint Rewrite @fst_unfold @snd_unfold : norm.
-
-Lemma eq_True:
-   forall (A: Prop), A -> (A=True).
-
-Lemma derives_extract_PROP :
-  forall (P1: Prop) A P QR S,
-     (P1 -> A && PROPx P QR |-- S) ->
-     A && PROPx (P1::P) QR |-- S.
-
-Lemma local_andp_prop:  forall P Q, local P && prop Q = prop Q && local P.
-Lemma local_andp_prop1: forall P Q R, local P && (prop Q && R) = prop Q && (local P && R).
-Hint Rewrite local_andp_prop local_andp_prop1 : norm2.
-
-Lemma local_sepcon_assoc1:
-   forall P Q R, (local P && Q) * R = local P && (Q * R).
-Lemma local_sepcon_assoc2:
-   forall P Q R, R * (local P && Q) = local P && (R * Q).
-Hint Rewrite local_sepcon_assoc1 local_sepcon_assoc2 : norm2.
-
-Definition do_canon (x y : environ->mpred) := (sepcon x y).
-
-Ltac strip1_later P :=
- match P with
- | do_canon ?L ?R => let L' := strip1_later L in let R' := strip1_later R in constr:(do_canon L' R')
- | PROPx ?P ?QR => let QR' := strip1_later QR in constr:(PROPx P QR')
- | LOCALx ?Q ?R => let R' := strip1_later R in constr:(LOCALx Q R')
- | SEPx ?R => let R' := strip1_later R in constr:(SEPx R')
- | ?L::?R => let L' := strip1_later L in let R' := strip1_later R in constr:(L'::R')
- | nil => constr:(nil)
- | ?L && ?R => let L' := strip1_later L in let R' := strip1_later R in constr:(L' && R')
- | ?L * ?R => let L' := strip1_later L in let R' := strip1_later R in constr:(L'*R')
- | |> ?L => constr:(L)
- | ?L => constr:(L)
-end.
-
-Lemma andp_later_derives {A} {NA: NatDed A}{IA: Indir A}:
-  forall P Q P' Q': A, P |-- |> P' -> Q |-- |> Q' -> P && Q |-- |> (P' && Q').
-
-Lemma sepcon_later_derives {A} {NA: NatDed A}{SL: SepLog A}{IA: Indir A}{SI: SepIndir A}:
-  forall P Q P' Q': A, P |-- |> P' -> Q |-- |> Q' -> P * Q |-- |> (P' * Q').
-
-Hint Resolve @andp_later_derives @sepcon_later_derives @sepcon_derives
-              @andp_derives @imp_derives @now_later @derives_refl: derives.
-
-Notation "'DECLARE' x s" := (x: ident, s: funspec)
-   (at level 160, x at level 0, s at level 150, only parsing).
-
-Notation " a 'OF' ta " := (a%positive,ta%type) (at level 100, only parsing): formals.
-Delimit Scope formals with formals.
-
-Definition NDsemax_external {Hspec: OracleKind} (ids: list ident) (ef: external_function)
-  (A: Type) (P Q: A -> environ -> mpred): Prop :=
-  @semax_external Hspec ids ef (rmaps.ConstType A) (fun _ => P) (fun _ => Q).
-
-Notation "'WITH' x : tx 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default tx (fun x => P%assert) (fun x => Q%assert))
-            (at level 200, x at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH' x : tx 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default tx (fun x => P%assert) (fun x => Q%assert))
-            (at level 200, x at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2)
-           (fun x => match x with (x1,x2) => P%assert end)
-           (fun x => match x with (x1,x2) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2)
-           (fun x => match x with (x1,x2) => P%assert end)
-           (fun x => match x with (x1,x2) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3)
-           (fun x => match x with (x1,x2,x3) => P%assert end)
-           (fun x => match x with (x1,x2,x3) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3)
-           (fun x => match x with (x1,x2,x3) => P%assert end)
-           (fun x => match x with (x1,x2,x3) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4)
-           (fun x => match x with (x1,x2,x3,x4) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4)
-           (fun x => match x with (x1,x2,x3,x4) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5)
-           (fun x => match x with (x1,x2,x3,x4,x5) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, x5 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5)
-           (fun x => match x with (x1,x2,x3,x4,x5) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0, x5 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0,  x13 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0,  x13 at level 0, x14 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-              x20 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-             x20 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 , x21 : t21 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20*t21)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-              x20 at level 0, x21 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 , x21 : t21 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20*t21)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-             x20 at level 0, x21 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 , x21 : t21 , x22 : t22 'PRE'  [ ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec (nil, tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20*t21*t22)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-              x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-              x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-              x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-              x20 at level 0, x21 at level 0, x22 at level 0,
-             P at level 100, Q at level 100).
-
-Notation "'WITH'  x1 : t1 , x2 : t2 , x3 : t3 , x4 : t4 , x5 : t5 , x6 : t6 , x7 : t7 , x8 : t8 , x9 : t9 , x10 : t10 , x11 : t11 , x12 : t12 , x13 : t13 , x14 : t14 , x15 : t15 , x16 : t16 , x17 : t17 , x18 : t18 , x19 : t19 , x20 : t20 , x21 : t21 , x22 : t22 'PRE'  [ u , .. , v ] P 'POST' [ tz ] Q" :=
-     (NDmk_funspec ((cons u%formals .. (cons v%formals nil) ..), tz) cc_default (t1*t2*t3*t4*t5*t6*t7*t8*t9*t10*t11*t12*t13*t14*t15*t16*t17*t18*t19*t20*t21*t22)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22) => P%assert end)
-           (fun x => match x with (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22) => Q%assert end))
-            (at level 200, x1 at level 0, x2 at level 0, x3 at level 0, x4 at level 0,
-             x5 at level 0, x6 at level 0, x7 at level 0, x8 at level 0, x9 at level 0,
-             x10 at level 0, x11 at level 0, x12 at level 0, x13 at level 0, x14 at level 0,
-             x15 at level 0, x16 at level 0, x17 at level 0, x18 at level 0, x19 at level 0,
-             x20 at level 0, x21 at level 0, x22 at level 0,
-             P at level 100, Q at level 100).
-
-Lemma prop_true_andp1 {A}{NA: NatDed A} :
-  forall (P1 P2: Prop) Q ,
-    P1 -> (!! (P1 /\ P2) && Q = !!P2 && Q).
-Hint Rewrite prop_true_andp1 using solve [auto 3 with typeclass_instances]: norm1.
-Hint Rewrite prop_true_andp1 using assumption : norm.
-
-Lemma and_assoc': forall A B C: Prop,
-  ((A /\ B) /\ C) = (A /\ (B /\ C)).
-
-Ltac splittablex_tac A :=
- match A with
- | _ <= _ < _ => fail 1
- | _ < _ <= _ => fail 1
- | _ <= _ <= _ => fail 1
- | _ < _ < _ => fail 1
- | _ <-> _ => fail 1
- | _ /\ _ => apply Logic.I
- end.
-
-Definition splittablex (A: Prop) := True.
-
-Lemma and_assoc_splittablex {T}{NT: NatDed T}: forall A B C: Prop,
-    splittablex (A /\ B) ->
-  !! ((A /\ B) /\ C) = !! (A /\ (B /\ C)).
-
-Lemma and_assoc'' {T}{NT: NatDed T}: forall A B C: Prop,
-  !! ((A /\ B) /\ C) = !! (A /\ (B /\ C)).
-
-Hint Rewrite and_assoc_splittablex using 
-    match goal with |- splittablex ?A => splittablex_tac A end : normalize.
-Hint Rewrite and_assoc_splittablex using 
-    match goal with |- splittablex ?A => splittablex_tac A end : gather_prop.
-
-Ltac hoist_later_left :=
-   match goal with
-  | |- (?P |-- _) =>
-        let P' := strip1_later P in
-        apply derives_trans with (|>P');
-         [ solve [ auto 50 with derives ] | ]
-  end.
-
-Lemma semax_later_trivial: forall Espec  {cs: compspecs} Delta P c Q,
-  @semax cs Espec Delta (|> P) c Q ->
-  @semax cs Espec Delta P c Q.
-
-Ltac hoist_later_in_pre :=
-     match goal with |- semax _ ?P _ _ =>
-       match P with
-       | context[@later] =>
-            let P' := strip1_later P in apply semax_pre0 with (|> P'); [solve [auto 50 with derives] | ]
-       | _ => apply semax_later_trivial
-       end
-     end.
-
-Ltac type_of_field_tac :=
- simpl;
-  repeat first [rewrite if_true by auto
-                    | rewrite if_false by (let H:=fresh in intro H; inversion H)
-                    | simpl; reflexivity].
-
-Ltac simpl_tc_expr :=
-    match goal with |- context [tc_expr ?A ?B] =>
-        change (tc_expr A B) with (denote_tc_assert (typecheck_expr A B));
-        simpl typecheck_expr; simpl denote_tc_assert
-    end.
-
-Lemma prop_and1 {A}{NA: NatDed A}:
-  forall P Q : Prop, P -> !!(P /\ Q) = !!Q.
-Hint Rewrite prop_and1 using solve [auto 3 with typeclass_instances] : norm2.
-
-Lemma subst_make_args':
-  forall  {cs: compspecs}  id v (P: environ->mpred) fsig tl el,
-  length tl = length el ->
-  length (fst fsig) = length el ->
-  subst id v (`P (make_args' fsig (eval_exprlist tl el))) =
-           (`P (make_args' fsig (subst id v (eval_exprlist tl el)))).
-Hint Rewrite @subst_make_args' using (solve[reflexivity]) : subst.
-
-Lemma map_cons: forall {A B} (f: A -> B) x y,
-   map f (x::y) = f x :: map f y.
-
-Hint Rewrite @map_cons : norm.
-Hint Rewrite @map_cons : subst.
-
-Lemma map_nil: forall {A B} (f: A -> B), map f nil = nil.
-
-Hint Rewrite @map_nil : norm.
-Hint Rewrite @map_nil : subst.
-
-Fixpoint remove_localdef_temp (i: ident) (l: list localdef) : list localdef :=
-  match l with
-  | nil => nil
-  | d :: l0 =>
-     match d with
-     | temp j v =>
-       if ident_eq i j
-       then remove_localdef_temp i l0
-       else d :: remove_localdef_temp i l0
-     | _ => d :: remove_localdef_temp i l0
-     end
-  end.
-
-Lemma subst_stackframe_of:
-  forall {cs: compspecs} i v f, subst i v (stackframe_of f) = stackframe_of f.
-Hint Rewrite @subst_stackframe_of : subst.
-
-Lemma remove_localdef_temp_PROP: forall (i: ident) P Q R,
-  EX old: val, subst i `(old) (PROPx P (LOCALx Q (SEPx R))) |--
-  PROPx P (LOCALx (remove_localdef_temp i Q) (SEPx R)).
-
-Lemma eval_id_denote_tc_initialized: forall Delta i t v,
-  (temp_types Delta) ! i = Some t ->
-  local (tc_environ Delta) && local (`and (`(eq v) (eval_id i)) `(v <> Vundef)) |-- denote_tc_initialized i t.
-
-Lemma PQR_denote_tc_initialized: forall Delta i t v P Q R,
-  (temp_types Delta) ! i = Some t ->
-  local (tc_environ Delta) && PROPx P (LOCALx (temp i v :: Q) R) |-- denote_tc_initialized i t.
-
-Lemma derives_remove_localdef_PQR: forall P Q R i,
-  PROPx P (LOCALx Q (SEPx R)) |-- PROPx P (LOCALx (remove_localdef_temp i Q) (SEPx R)).
-
-Lemma subst_remove_localdef_PQR: forall P Q R i v,
-  subst i v (PROPx P (LOCALx (remove_localdef_temp i Q) (SEPx R))) |-- PROPx P (LOCALx (remove_localdef_temp i Q) (SEPx R)).
-
-Fixpoint iota_formals (i: ident) (tl: typelist) :=
- match tl with
- | Tcons t tl' => (i,t) :: iota_formals (i+1)%positive tl'
- | Tnil => nil
- end.
-
-Ltac make_sequential :=
-  match goal with
-  | |- @semax _ _ _ _ _ (normal_ret_assert _) => idtac
-  | |- _ => apply sequential
-  end.
-
-Lemma isptr_force_ptr'' : forall p Q,
-    (isptr p -> Q) ->
-    (isptr (force_ptr p) -> Q).
-
-Lemma isptr_offset_val'': forall i p Q,
-    (isptr p -> Q) ->
-    (isptr (offset_val i p) -> Q).
-
-Lemma ptr_eq_e': forall v1 v2 B,
-   (v1=v2 -> B) ->
-   (ptr_eq v1 v2 -> B).
-
-Lemma typed_false_of_bool':
- forall x (P: Prop),
-    ((x=false) -> P) ->
-    (typed_false tint (Val.of_bool x) -> P).
-
-Lemma typed_true_of_bool':
- forall x (P: Prop),
-    ((x=true) -> P) ->
-    (typed_true tint (Val.of_bool x) -> P).
-
-Ltac intro_if_new :=
- repeat match goal with
-  | |- ?A -> _ => ((assert A by auto; fail 1) || fail 1) || intros _
-  | |- (_ <-> _) -> _ =>
-         intro
-  | |- (?A /\ ?B) -> ?C =>
-         apply (@and_ind A B C)
-  | |- isptr (force_ptr ?P) -> ?Q =>
-         apply (isptr_force_ptr'' P Q)
-  | |- isptr (offset_val ?i ?P) -> ?Q =>
-         apply (isptr_offset_val'' i P Q)
-  | H: is_pointer_or_null ?P |- isptr ?P -> _ =>
-         clear H
-  | |- ?x = ?y -> _ =>
-          let H := fresh in intro H;
-                     first [subst x | subst y
-                             | is_var x; rewrite H
-                             | is_var y; rewrite <- H
-                             | solve [discriminate H]
-                             | idtac]
-  | |- isptr ?x -> _ =>
-          let H := fresh "P" x in intro H
-  | |- is_pointer_or_null ?x =>
-          let H := fresh "PN" x in intro H
-  | |- typed_false _ (Val.of_bool _) -> _ =>
-          simple apply typed_false_of_bool'
-  | |- typed_true _ (Val.of_bool _) -> _ =>
-          simple apply typed_true_of_bool'
-  | |- ptr_eq _ _ -> _ =>
-          apply ptr_eq_e'
-  | |- _ -> _ =>
-          intro
-  end.
-
-Lemma saturate_aux20:
- forall (P Q: mpred) P' Q' ,
-    P |-- !! P' ->
-    Q |-- !! Q' ->
-    P * Q |-- !! (P' /\ Q').
-
-Lemma saturate_aux21:  
-  forall (P Q: mpred) S (S': Prop),
-   P |-- S ->
-   S = !!S' ->
-   !! S' && P |-- Q -> P |-- Q.
-
-Lemma saturate_aux21x:
-  forall (P Q S: mpred),
-   P |-- S ->
-   S && P |-- Q -> P |-- Q.
-
-Ltac already_saturated :=
-(match goal with |- ?P |-- ?Q =>
-    let H := fresh in
-     assert (H: P |-- Q) by auto with nocore saturate_local;
-     cbv beta in H;
-     match type of H with _ |-- !! ?Q' =>
-     assert (Q') by (repeat simple apply conj; auto);
-     fail 3
-     end
-end || auto with nocore saturate_local)
- || simple apply prop_True_right.
-
-Ltac saturate_local :=
-simple eapply saturate_aux21x;
- [repeat simple apply saturate_aux20;
-       auto with nocore saturate_local;
-    simple apply prop_True_right
-
- | simple apply derives_extract_prop;
-   match goal with |- _ -> ?A =>
-       let P := fresh "P" in set (P := A);
-       fancy_intros true;
-       subst P
-      end
- ].
-
-Lemma prop_right_emp {A} {NA: NatDed A}:
- forall P: Prop, P -> emp |-- !! P.
-
-Ltac prop_right_cautious :=
- try solve [simple apply prop_right; auto].
-
-Ltac subst_any :=
- repeat match goal with
-  | H: ?x = ?y |- _ => first [ subst x | subst y ]
- end.
-
-Lemma prop_and_right {A}{NA: NatDed A}:
- forall (U: A) (X Y: Prop),
-    X ->
-    U |-- !! Y ->
-    U |-- !! (X /\ Y).
-
-Lemma fold_right_sepcon_subst:
- forall i e R, fold_right sepcon emp (map (subst i e) R) = subst i e (fold_right sepcon emp R).
-
-Lemma unsigned_eq_eq: forall i j, Int.unsigned i = Int.unsigned j -> i = j.
-
-Ltac solve_mod_eq :=
-  unfold Int.add, Int.mul;
-  repeat rewrite Int.unsigned_repr_eq;
-  repeat
-  (repeat rewrite Zmod_mod;
-  repeat rewrite Zmult_mod_idemp_l;
-  repeat rewrite Zmult_mod_idemp_r;
-  repeat rewrite Zplus_mod_idemp_l;
-  repeat rewrite Zplus_mod_idemp_r).
-
-Lemma prop_false_andp {A}{NA :NatDed A}:
- forall P Q, ~P -> !! P && Q = FF.
-
-Lemma wand_join {A}{NA: NatDed A}{SA: SepLog A}:
-  forall x1 x2 y1 y2: A,
-    (x1 -* y1) * (x2 -* y2) |-- ((x1 * x2) -* (y1 * y2)).
-
-Lemma wand_sepcon:
- forall {A} {NA: NatDed A}{SA: SepLog A} P Q,
-   (P -* Q * P) * P = Q * P.
-
-Lemma wand_sepcon':
- forall {A} {NA: NatDed A}{SA: SepLog A} P Q,
-   P * (P -* Q * P) = P * Q.
-
-Hint Rewrite wand_sepcon wand_sepcon' : norm.
-
-Lemma extract_nth_exists_in_SEP:
-  forall n P Q (R: list mpred)
-              {A} (S: A -> mpred),
-   nth n R emp = (exp S) ->
-   PROPx P (LOCALx Q (SEPx R)) =
-   exp (fun x => PROPx P (LOCALx Q (SEPx (replace_nth n R (S x))))).
-
-Ltac extract_exists_in_SEP' PQR :=
- match PQR with
- | PROPx ?P (LOCALx ?Q (SEPx (?R))) =>
-   match R with context [(@exp _ _ ?A ?S) :: ?R'] =>
-      let n := constr:((length R - Datatypes.S (length R'))%nat) in
-      let n' := eval lazy beta zeta iota delta in n in
-      rewrite (@extract_nth_exists_in_SEP n' P Q R A S (eq_refl _));
-      unfold replace_nth at 1;
-      rewrite ?exp_andp2
-   end
- end.
-
-Ltac extract_exists_from_SEP :=
-match goal with
-  | |- semax _ ?Pre _ _ =>
-    extract_exists_in_SEP' Pre; apply extract_exists_pre
-  | |- _ && ?Pre |-- ?Post =>
-     let P := fresh "POST" in set (P := Post);
-    extract_exists_in_SEP' Pre; subst P; apply exp_left
-  | |- ?Pre |-- ?Post => 
-     let P := fresh "POST" in set (P := Post);
-    extract_exists_in_SEP' Pre; subst P; apply exp_left
-end.
-
-Ltac move_from_SEP' PQR :=
- match PQR with
- | PROPx ?P (LOCALx ?Q (SEPx (?R))) =>
-   match R with context [(prop ?P1 && ?S) :: ?R'] =>
-      let n := constr:((length R - Datatypes.S (length R'))%nat) in
-      let n' := eval lazy beta zeta iota delta in n in
-      rewrite(@extract_prop_in_SEP n' P1 S P Q R (eq_refl _));
-      unfold replace_nth at 1
-   end
- end.
-
-Lemma derives_extract_PROP' :
-  forall (P1: Prop) P QR S,
-     (P1 -> PROPx P QR |-- S) ->
-     PROPx (P1::P) QR |-- S.
-
-Ltac Intro_prop :=
-autorewrite with gather_prop;
-match goal with
- | |- semax _ ?PQR _ _ =>
-     first [ is_evar PQR; fail 1
-            | simple apply semax_extract_PROP; fancy_intros false
-            | move_from_SEP' PQR;
-              simple apply semax_extract_PROP; fancy_intros false
-            | flatten_in_SEP PQR
-            ]
- | |- _ && ?PQR |-- _ =>
-     first [ is_evar PQR; fail 1
-            | simple apply derives_extract_prop; fancy_intros false
-            | simple apply derives_extract_PROP; fancy_intros false
-            | move_from_SEP' PQR;
-               simple apply derives_extract_PROP; fancy_intros false
-            | flatten_in_SEP PQR
-             ]
- | |- ?PQR |-- _ =>  
-     first [ is_evar PQR; fail 1
-            | simple apply derives_extract_prop; fancy_intros false
-            | simple apply derives_extract_PROP; fancy_intros false
-            | move_from_SEP' PQR;
-               simple apply derives_extract_PROP; fancy_intros false
-            | flatten_in_SEP PQR
-             ]
-end.
-
-Ltac Intro'' a :=
-  first [ simple apply extract_exists_pre; intro a
-         | simple apply exp_left; intro a
-         | rewrite exp_andp1; Intro'' a
-         | rewrite exp_andp2; Intro'' a
-         | rewrite exp_sepcon1; Intro'' a
-         | rewrite exp_sepcon2; Intro'' a
-         | extract_exists_from_SEP; intro a
-         ].
-
-Ltac Intro a :=
-  repeat Intro_prop;
-  match goal with
-  | |- ?A |-- ?B =>
-     let z := fresh "z" in pose (z:=B); change (A|--z); Intro'' a; subst z
-  | |- semax _ _ _ _ =>
-     Intro'' a
-  end.
-
-Tactic Notation "Intros" := repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0) :=
- Intro x0; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) :=
- Intro x0; Intro x1; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2) :=
- Intro x0; Intro x1; Intro x2; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) :=
- Intro x0; Intro x1; Intro x2; Intro x3; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6)
- simple_intropattern(x7) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; Intro x7; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6)
- simple_intropattern(x7) simple_intropattern(x8) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; Intro x7; Intro x8; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6)
- simple_intropattern(x7) simple_intropattern(x8)
- simple_intropattern(x9) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; Intro x7; Intro x8; Intro x9; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6)
- simple_intropattern(x7) simple_intropattern(x8)
- simple_intropattern(x9) simple_intropattern(x10) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; Intro x7; Intro x8; Intro x9;
- Intro x10; repeat Intro_prop.
-
-Tactic Notation "Intros" simple_intropattern(x0)
- simple_intropattern(x1) simple_intropattern(x2)
- simple_intropattern(x3) simple_intropattern(x4)
- simple_intropattern(x5) simple_intropattern(x6)
- simple_intropattern(x7) simple_intropattern(x8)
- simple_intropattern(x9) simple_intropattern(x10)
- simple_intropattern(x11) :=
- Intro x0; Intro x1; Intro x2; Intro x3; Intro x4;
- Intro x5; Intro x6; Intro x7; Intro x8; Intro x9;
- Intro x10; Intro x11; repeat Intro_prop.
-
-Ltac extract_exists_from_SEP_right :=
-match goal with
-  | |- ?Pre |-- ?Post =>
-     let P := fresh "PRE" in set (P := Pre);
-    extract_exists_in_SEP' Post; subst P
-end.
-
-Ltac Exists'' a :=
-  first [apply exp_right with a
-         | rewrite exp_andp1; Exists'' a
-         | rewrite exp_andp2; Exists'' a
-         | rewrite exp_sepcon1; Exists'' a
-         | rewrite exp_sepcon2; Exists'' a
-         | extract_exists_from_SEP_right; apply exp_right with a
-         ].
-
-Ltac Exists' a :=
-  match goal with |- ?A |-- ?B =>
-     let z := fresh "z" in pose (z:=A); change (z|--B); Exists'' a; subst z
-  end.
-
-Tactic Notation "Exists" constr(x0) :=
- Exists' x0.
-
-Tactic Notation "Exists" constr(x0) constr(x1) :=
- Exists' x0; Exists x1.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) :=
- Exists' x0; Exists' x1; Exists' x2.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) constr(x8) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7; Exists' x8.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) constr(x8) constr(x9) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7; Exists' x8; Exists' x9.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) constr(x8) constr(x9)
- constr(x10) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7; Exists' x8; Exists' x9;
- Exists' x10.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) constr(x8) constr(x9)
- constr(x10) constr(x11) :=
- Exists' x0; Exists' x1; Exists' x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7; Exists' x8; Exists' x9;
- Exists' x10; Exists' x11.
-
-Tactic Notation "Exists" constr(x0) constr(x1) constr(x2) constr(x3)
- constr(x4) constr(x5) constr(x6) constr(x7) constr(x8) constr(x9)
- constr(x10) constr(x11) constr(x12) :=
- Exists' x0; Exists' x1; Exists x2; Exists' x3; Exists' x4;
- Exists' x5; Exists' x6; Exists' x7; Exists' x8; Exists' x9;
- Exists' x10; Exists' x11; Exists' x12.
-
-Ltac my_evar name T cb :=
-  let x := fresh name
-  in
-  evar (x : T);
-    let x' := eval unfold x in x
-    in
-    clear x; cb x'.
-
-Ltac tuple_evar name T cb :=
-  lazymatch T with
-  | prod ?A ?B => tuple_evar name A
-    ltac: (fun xA =>
-      tuple_evar name B ltac: (fun xB =>
-        cb (xA, xB)))
-  | _ => my_evar name T cb
-  end; idtac.
-
-Ltac EExists'' :=
-  let EExists_core :=
-    match goal with [ |- _ |-- EX x:?T, _ ] =>
-      tuple_evar x T ltac: (fun x => apply exp_right with x)
-    end; idtac
-  in
-  first [ EExists_core
-         | rewrite exp_andp1; EExists''
-         | rewrite exp_andp2; EExists''
-         | rewrite exp_sepcon1; EExists''
-         | rewrite exp_sepcon2; EExists''
-         | extract_exists_from_SEP_right; EExists_core
-         ].
-
-Ltac EExists' :=
-  match goal with |- ?A |-- ?B =>
-     let z := fresh "z" in pose (z:=A); change (z|--B); EExists''; unfold z at 1; clear z
-  end.
-
-Ltac EExists := EExists'.
-
-Ltac EExists_alt :=
-  let T := fresh "T"
-  in
-  let x := fresh "x"
-  in
-  evar (T:Type); evar (x:T); subst T; Exists x; subst x.
-
-Tactic Notation "freeze1" uconstr(a) :=
-    let x := fresh "x" in set (x:=a);
-    let fr := fresh "freeze" in pose (fr := @abbreviate mpred x);
-    change x with fr; subst x. *)
-
-
 
 Local Open Scope logic.
-
-
 
 Definition pTree_from_elements {A} (el: list (positive * A)) : PTree.t A :=
-
  fold_right (fun ia t => PTree.set (fst ia) (snd ia) t) (PTree.empty _) el.
 
-
-
 Definition local_trees :=
-
    (PTree.t val * PTree.t (type * val) * list Prop * option globals)%type.
 
-
-
 Definition local2ptree1 (Q: localdef)
-
    (T1: PTree.t val) (T2: PTree.t (type * val)) (P': list Prop) (Q': option globals)
-
    (f:  PTree.t val -> PTree.t (type * val) -> list Prop -> option globals -> local_trees)
-
    : local_trees :=
-
 match Q with
-
 | temp i v =>   match T1 ! i with
-
                 | None => f (PTree.set i v T1) T2 P' Q'
-
                 | Some v' => f T1 T2 ((v=v')::P')  Q'
-
                 end
-
 | lvar i t v => match T2 ! i with
-
                 | None => f T1 (PTree.set i (t, v) T2) P' Q'
-
                 | Some (t', vl) => f T1 T2 ((vl=v)::(t'=t)::P') Q'
-
                 end
-
 | gvars gv =>   match Q' with
-
                 | None => f T1 T2 P' (Some gv)
-
                 | Some gv' => f T1 T2 ((gv' = gv)::P') Q'
-
                 end
-
 end.
-
-
 
 Fixpoint local2ptree_aux (Q: list localdef)
-
    (T1: PTree.t val) (T2: PTree.t (type * val)) (P': list Prop) (Q': option globals):
-
    local_trees :=
-
 match Q with
-
 | Q1 :: Qr => local2ptree1 Q1 T1 T2 P' Q' (local2ptree_aux Qr)
-
 | nil => (T1,T2,P',Q')
-
 end.
 
-
-
 Definition local2ptree (Q: list localdef)
-
      : (PTree.t val * PTree.t (type * val) * list Prop * option globals) :=
-
 local2ptree_aux Q PTree.Leaf PTree.Leaf nil None.
 
-
-
 Definition CLEAR_ME {T} (x:T) := x.
-
 Ltac hide_it z := let x := fresh "x" in set (x:=z); change z with (CLEAR_ME z) in x.
 
-
-
 Ltac hnf_localdef_list A :=
-
   match A with
-
  | temp _ ?v :: ?Q' => hide_it v; hnf_localdef_list Q'
-
  | lvar _ ?t ?v :: ?Q' => hide_it t; hide_it v; hnf_localdef_list Q'
-
  | gvars ?v :: ?Q' => hide_it v; hnf_localdef_list Q'
-
   | ?B :: ?C => let x := eval hnf in B in change B with x; hnf_localdef_list (x::C)
-
   | nil => idtac
-
   | _ => try (is_evar A; fail 1);
-
             let x := eval hnf in A in (change A with x); hnf_localdef_list x
-
   end.
-
-
 
 Ltac grab_gvars L := 
-
  match L with gvars ?A :: ?B => let x := grab_gvars B in let z := constr:(A::x) in z
-
                 | nil => let x := constr:(@nil globals) in x
-
   end.
-
-
 
 Ltac prove_local2ptree :=
-
  clear;
-
  match goal with |- local2ptree ?A = _ => hnf_localdef_list A end;
-
  etransitivity;
-
  [unfold local2ptree, local2ptree_aux; simpl;
-
   repeat match goal with x := CLEAR_ME _ |- _ => unfold CLEAR_ME in x; subst x end;
-
   reflexivity |
-
   repeat match goal with x := CLEAR_ME _ |- _ => unfold CLEAR_ME in x; subst x end;
-
   apply f_equal;
-
   try reflexivity;
-
   match goal with |- ?L = _ => let x := grab_gvars L in instantiate(1:=x); reflexivity end
-
  ].
 
-
-
 Goal exists x,  local2ptree (
-
       temp 1%positive Vundef
-
    :: temp 3%positive (Vint (Int.repr (3+4)))
-
    :: lvar 1%positive tint (Vint (Int.repr (1 + 2)))
-
    :: nil) = x.
-
 set (Three := 3). 
-
 set (T := temp 1%positive Vundef). 
-
 set (Q :=  nil).  
-
 eexists.
-
 etransitivity.
-
 prove_local2ptree.
-
 match goal with |- context [1+2] => idtac end.
-
 match goal with |- context [Three] => idtac end.
-
 Abort.
 
-
-
 Ltac construct_local2ptree Q H :=
-
   let t := fresh "t" in
-
   evar (t: (PTree.t val * PTree.t (type * val) * list Prop * option globals)%type);
-
   assert (H: local2ptree Q = t); subst t;
-
    [ prove_local2ptree | ].
 
-
-
 Definition LocalD (T1: PTree.t val) (T2: PTree.t (type * val)) (Q: option globals) :=
-
   PTree.fold (fun Q i v => temp i v :: Q) T1
-
   (PTree.fold (fun Q i tv => match tv with (t, v) => lvar i t v end :: Q) T2
-
    match Q with Some gv => (gvars gv) :: nil | None => nil end).
 
-
-
 Lemma PTree_elements_set: forall {A} i (v: A) elm T,
-
   In elm (PTree.elements (PTree.set i v T)) ->
-
   elm = (i, v) \/ In elm (PTree.elements T).
-
 Proof.
-
   intros.
-
   destruct elm as [i' v'].
-
   apply PTree.elements_complete in H.
-
   destruct (ident_eq i i').
-
   + subst.
-
     rewrite PTree.gss in H.
-
     inversion H.
-
     subst.
-
     left; auto.
-
   + rewrite PTree.gso in H by auto.
-
     right.
-
     apply PTree.elements_correct.
-
     auto.
-
 Qed.
-
-
 
 Lemma LocalD_sound_temp:
-
   forall i v T1 T2 Q,
-
   PTree.get i T1 = Some v -> In (temp i v) (LocalD T1 T2 Q).
-
 Proof.
-
  unfold LocalD; intros.
-
  forget (PTree.fold (fun Q i tv => match tv with (t, v) => lvar i t v end :: Q) T2
-
           match Q with Some gv => (gvars gv) :: nil | None => nil end) as Q'.
-
  rewrite !PTree.fold_spec, <- !fold_left_rev_right.
-
  apply PTree.elements_correct in H.
-
  rewrite in_rev in H.
-
  forget (rev (PTree.elements T1)) as L.
-
  induction L; intros; destruct H.
-
  subst a. left. reflexivity.
-
  right. apply IHL. auto.
-
 Qed.
-
-
 
 Lemma LocalD_sound_local:
-
   forall i t v T1 T2 Q,
-
   PTree.get i T2 = Some (t, v) ->
-
    In (lvar i t v) (LocalD T1 T2 Q).
-
 Proof.
-
  unfold LocalD; intros.
-
  rewrite !PTree.fold_spec, <- !fold_left_rev_right.
-
  apply PTree.elements_correct in H.
-
  rewrite in_rev in H.
-
  forget (rev (PTree.elements T1)) as L.
-
  induction L; [ | right; apply IHL].
-
  forget (rev (PTree.elements T2)) as L.
-
  simpl.
-
  induction L; intros; destruct H.
-
  subst a.
-
  left; reflexivity.
-
  simpl.
-
  destruct a as [ia vda]; destruct vda; simpl in *; auto.
-
 Qed.
-
-
 
 Lemma LocalD_sound_gvars:
-
   forall gv T1 T2 Q,
-
   Q = Some gv->
-
   In (gvars gv) (LocalD T1 T2 Q).
-
 Proof.
-
  unfold LocalD; intros.
-
  subst Q.
-
  rewrite !PTree.fold_spec, <- !fold_left_rev_right.
-
  forget (rev (PTree.elements T1)) as L.
-
  induction L; [ | right; apply IHL].
-
  forget (rev (PTree.elements T2)) as L.
-
  simpl.
-
  induction L.
-
  simpl; auto.
-
  simpl.
-
  destruct a as [ia vda]; destruct vda; simpl in *; auto.
-
 Qed.
-
-
 
 Lemma LocalD_sound: forall q T1 T2 Q,
-
   (exists i v, PTree.get i T1 = Some v /\ q = temp i v) \/
-
   (exists i t v, PTree.get i T2 = Some (t, v) /\ q = lvar i t v) \/
-
   (exists gv, Q = Some gv /\ q = gvars gv) ->
-
   In q (LocalD T1 T2 Q).
-
 Proof.
-
 intros.
-
 repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
 apply LocalD_sound_temp; auto.
-
 apply LocalD_sound_local with (T1:=T1) (T2:=T2)(Q:=Q) in H; intuition.
-
 apply LocalD_sound_gvars with (T1:=T1) (T2:=T2); intuition.
-
 Qed.
-
-
 
 Lemma LocalD_complete : forall q T1 T2 Q,
-
   In q (LocalD T1 T2 Q) ->
-
   (exists i v, PTree.get i T1 = Some v /\ q = temp i v) \/
-
   (exists i t v, PTree.get i T2 = Some (t, v) /\ q = lvar i t v) \/
-
   (exists gv, Q = Some gv /\ q = gvars gv).
-
 Proof.
-
   intros.
-
   unfold LocalD in H.
-
   rewrite !PTree.fold_spec, <- !fold_left_rev_right in H.
-
   remember (rev (PTree.elements T1)) as L.
-
   simpl in H.
-
   change L with (nil ++ L) in HeqL.
-
   forget (@nil (positive * val)) as K.
-
   revert K HeqL; induction L; intros.
-
   + right.
-
     clear K T1 HeqL.
-
     remember (rev (PTree.elements T2)) as L.
-
     simpl in H.
-
     change L with (nil ++ L) in HeqL.
-
     forget (@nil (positive * (type * val))) as K.
-
     revert K HeqL; induction L; intros.
-
     - repeat right.
-
       destruct Q; simpl in H; [| inv H].
-
       destruct H; [| tauto].
-
       subst; eexists; eauto.
-
     - assert (In a (PTree.elements T2)).
-
       { rewrite in_rev, <- HeqL. rewrite in_app. right; left; auto. }
-
       destruct a as [i [t v]].
-
       apply PTree.elements_complete in H0.
-
       destruct H; try subst q; eauto 50.
-
       specialize (IHL H (K ++ (i, (t, v)) :: nil));
-
       rewrite app_ass in IHL; specialize (IHL HeqL); eauto.
-
   + destruct H.
-
     - subst q.
-
       assert (In a (PTree.elements T1)).
-
       { rewrite in_rev, <- HeqL. rewrite in_app. right; left; auto. }
-
       destruct a as [i v]; apply PTree.elements_complete in H; eauto.
-
     - destruct a as [i v].
-
       specialize (IHL H (K ++ (i,v)::nil)).
-
       rewrite app_ass in IHL; specialize (IHL HeqL); eauto.
-
 Qed.
-
-
 
 Lemma in_temp_aux:
-
   forall q L Q,
-
     In q (fold_right
-
      (fun (y : positive * val) (x : list localdef) =>
-
       temp (fst y) (snd y) :: x) Q L) <->
-
     ((exists i v, q = temp i v /\ In (i,v) L) \/ In q Q).
-
 Proof.
-
  intros.
-
  induction L.
-
  simpl. intuition. destruct H0 as [? [? [? ?]]]. contradiction.
-
  intuition.
-
   destruct H0. simpl in *. subst q.
-
   left. eauto.
-
   specialize (H H0).
-
   destruct H as [[? [? [? ?]]] | ?].
-
   left. exists x, x0. split; auto. right; auto.
-
   right; auto.
-
   destruct H3 as [i [v [? ?]]]. destruct H3. inv H3. left. reflexivity.
-
   right; apply H1. eauto.
-
   right; auto.
-
   right; auto.
-
 Qed.
-
-
 
 Lemma LOCALx_expand_temp_var  : forall i v T1 T2 Q Q0,
-
   In Q0 (LocalD (PTree.set i v T1) T2 Q) <->
-
   In Q0 (temp i v :: LocalD (PTree.remove i T1) T2 Q).
-
 Proof.
-
   intros; split; intros.
-
   + simpl.
-
     apply LocalD_complete in H.
-
     destruct H.
-
     - destruct H as [i0 [v0 [? ?]]].
-
       subst.
-
       destruct (ident_eq i0 i).
-
       * subst.
-
         rewrite PTree.gss in H.
-
         inversion H; subst.
-
         left; reflexivity.
-
       * rewrite PTree.gso in H by auto.
-
         right.
-
         apply LocalD_sound_temp.
-
         rewrite PTree.gro by auto. auto.
-
     - right.
-
       destruct H.
-
       * destruct H as [j [t [v1 [? ?]]]]; subst Q0.
-
         unfold LocalD.
-
         rewrite !PTree.fold_spec, <- !fold_left_rev_right.
-
         induction (rev (PTree.elements (PTree.remove i T1))); simpl.
-
        ++ apply PTree.elements_correct in H. rewrite in_rev in H.
-
           induction  (rev (PTree.elements T2)).
-
          -- inv H.
-
          -- destruct H.
-
            ** destruct a. inv H. simpl. left; auto.
-
            ** simpl. destruct a as [? ?]; simpl; repeat right; auto.
-
        ++ right; apply IHl.
-
       * unfold LocalD.
-
         rewrite !PTree.fold_spec, <- !fold_left_rev_right.
-
         destruct H as [gv [? ?]]; subst Q Q0.
-
         induction (rev (PTree.elements (PTree.remove i T1))); simpl.
-
        ++ induction (rev (PTree.elements T2)); simpl; auto.
-
        ++ destruct a as [? ?]; simpl; repeat right; auto.
-
   + destruct H.
-
     - subst.
-
       apply LocalD_sound_temp. apply PTree.gss.
-
     - unfold LocalD in *.
-
       rewrite !PTree.fold_spec, <- !fold_left_rev_right in *.
-
       forget  (fold_right (fun (y : positive * (type * val)) (x : list localdef) => (let (t, v0) := snd y in lvar (fst y) t v0) :: x)
-
         match Q with
-
         | Some gv => gvars gv :: nil
-
         | None => nil
-
         end (rev (PTree.elements T2))) as JJ.
-
       clear - H.
-
       rewrite in_temp_aux. rewrite in_temp_aux in H.
-
       destruct H as [[j [w [? ?]]] |?].
-
       * left; exists j,w; split; auto.
-
         rewrite <- in_rev in *.
-
         apply PTree.elements_correct. apply PTree.elements_complete in H0.
-
         clear - H0.
-
         destruct (ident_eq i j); subst.
-
        ++ rewrite PTree.grs in H0; inv H0.
-
        ++ rewrite PTree.gro in H0 by auto. rewrite PTree.gso; auto.
-
       * right; auto.
-
 Qed.
-
-
 
 Lemma In_LocalD_remove_set :
-
    forall q T1 i vd T2 Q,
-
       In q (LocalD T1 (PTree.remove i T2) Q) ->
-
       In q (LocalD T1 (PTree.set i vd T2) Q).
-
 Proof.
-
  intros.
-
  apply LocalD_sound.
-
  apply LocalD_complete in H.
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
 *
-
  left; eauto 50.
-
 *
-
  right; left. exists x,x0,x1. split; auto.
-
  destruct (ident_eq i x). subst. rewrite PTree.grs in H; inv H.
-
  rewrite PTree.gro in H by auto; rewrite PTree.gso by auto; auto.
-
 *
-
  repeat right. exists x; split; auto.
-
 Qed.
-
-
 
 Lemma LOCALx_expand_vardesc : forall i vd T1 T2 Q Q0,
-
   In Q0 (LocalD T1 (PTree.set i vd T2) Q) <->
-
   In Q0 (match vd with (t, v) => lvar i t v end :: (LocalD T1 (PTree.remove i T2) Q)).
-
 Proof.
-
   intros; split; intros.
-
   + simpl.
-
     apply LocalD_complete in H.
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
     -
-
       destruct vd; simpl;
-
       repeat right; apply LocalD_sound_temp; auto.
-
     -
-
       destruct (ident_eq i x).
-
       * subst x;   rewrite PTree.gss in H; inv H. simpl. auto.
-
       * rewrite PTree.gso in H by auto.
-
          destruct vd; simpl;
-
         repeat right; apply LocalD_sound;
-
         right; left;
-
         exists x,x0,x1; rewrite PTree.gro by auto; auto.
-
     - right.
-
       apply LocalD_sound_gvars. auto.
-
  +
-
    destruct vd; simpl in H; destruct H; subst.
-
    -
-
       apply LocalD_sound.
-
       right. left. exists i,t,v; split; auto. apply PTree.gss.
-
    -
-
       apply In_LocalD_remove_set; auto.
-
 Qed.
-
-
 
 Lemma LOCALx_expand_gvars: forall T1 T2 gv Q0,
-
   In Q0 (LocalD T1 T2 (Some gv)) <->
-
   In Q0 (gvars gv ::LocalD T1 T2 None).
-
 Proof.
-
   intros; split; intros.
-
   + simpl.
-
     apply LocalD_complete in H.
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
     - right.
-
       apply LocalD_sound_temp; auto.
-
     - right.
-
       apply LocalD_sound.
-
       right; left; repeat econstructor; eauto.
-
     -
-
       inv H; auto.
-
 +
-
     destruct H. subst. apply LocalD_sound_gvars. auto.
-
     apply LocalD_complete in H.
-
     apply LocalD_sound.
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
     * do 0 right; left; repeat econstructor; eauto.
-
     * do 1 right; left; repeat econstructor; eauto.
-
     * inv H.
-
 Qed.
-
-
 
 Lemma LOCALx_shuffle_derives': forall P Q Q' R,
-
   (forall Q0, In Q0 Q' -> In Q0 Q) ->
-
   PROPx P (LOCALx Q R) |-- PROPx P (LOCALx Q' R).
-
 Proof.
-
   intros.
-
   induction Q'.
-
   {
-
     unfold PROPx, LOCALx.
-
     normalize.
-
     apply andp_left2; auto.
-
   }
-
   pose proof (H a (or_introl _ eq_refl)).
-
   rewrite <- insert_local'.
-
   apply andp_right.
-
   + clear -H0.
-
     induction Q; [inversion H0 |].
-
     rewrite <- insert_local'.
-
     simpl in H0; inversion H0.
-
     - subst.
-
       apply andp_left1.
-
       apply derives_refl.
-
     - apply andp_left2.
-
       apply IHQ, H.
-
   + apply IHQ'.
-
     intros.
-
     apply H.
-
     simpl.
-
     right.
-
     apply H1.
-
 Qed.
-
-
 
 Lemma LOCALx_shuffle_derives: forall P Q Q' R,
-
   (forall Q0, In Q0 Q' -> In Q0 Q) ->
-
   PROPx P (LOCALx Q (SEPx R)) |-- PROPx P (LOCALx Q' (SEPx R)).
-
 Proof. intros. apply LOCALx_shuffle_derives'. auto. Qed.
 
-
-
 Lemma LOCALx_shuffle': forall P Q Q' R,
-
   (forall Q0, In Q0 Q' <-> In Q0 Q) ->
-
   PROPx P (LOCALx Q R) = PROPx P (LOCALx Q' R).
-
 Proof.
-
   intros.
-
   apply pred_ext; apply LOCALx_shuffle_derives'; intros; apply H; auto.
-
 Qed.
-
-
 
 Lemma LOCALx_shuffle: forall P Q Q' R,
-
   (forall Q0, In Q0 Q' <-> In Q0 Q) ->
-
   PROPx P (LOCALx Q (SEPx R)) = PROPx P (LOCALx Q' (SEPx R)).
-
 Proof.
-
   intros.
-
   apply pred_ext; apply LOCALx_shuffle_derives; intros; apply H; auto.
-
 Qed.
-
-
 
 Lemma LocalD_remove_empty_from_PTree1: forall i T1 T2 Q Q0,
-
   T1 ! i = None ->
-
   (In Q0 (LocalD (PTree.remove i T1) T2 Q) <-> In Q0 (LocalD T1 T2 Q)).
-
 Proof.
-
   intros until Q0; intro G; split; intros;
-
   apply LocalD_sound; apply LocalD_complete in H;
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst.
-
    - do 0 right; left. exists x,x0; split; auto.
-
       destruct (ident_eq i x). subst. rewrite PTree.grs in H; inv H.
-
       rewrite PTree.gro in H; auto.
-
    - do 1 right; left. repeat eexists. eauto.
-
    - do 2 right. repeat eexists.
-
    - do 0 right; left. exists x,x0; split; auto.
-
       destruct (ident_eq i x). subst. congruence.
-
       rewrite PTree.gro; auto.
-
    - do 1 right; left. repeat eexists. eauto.
-
    - do 2 right. repeat eexists.
-
 Qed.
-
-
 
 Lemma LocalD_remove_empty_from_PTree2: forall i T1 T2 Q Q0,
-
   T2 ! i = None ->
-
   (In Q0 (LocalD T1 (PTree.remove i T2) Q) <-> In Q0 (LocalD T1 T2 Q)).
-
 Proof.
-
   intros until Q0; intro G; split; intros;
-
   apply LocalD_sound; apply LocalD_complete in H;
-
     repeat match type of H with
-
              | _ \/ _ => destruct H
-
              | ex _ => destruct H
-
              | _ /\ _ => destruct H
-
              end; subst;
-
    try solve [left; repeat eexists; eauto] ;
-
    try solve [repeat right; auto];
-
      try (destruct (ident_eq i x);
-
            [try congruence; subst x; rewrite PTree.grs in H; inv H
-
            | try rewrite PTree.gro in H by auto]).
-
   - do 1 right; left; repeat eexists; eauto.
-
   - do 2 right; repeat eexists; eauto.
-
   - do 1 right; left; repeat eexists; rewrite PTree.gro by auto; eauto.
-
   - do 2 right; repeat eexists; rewrite PTree.gro by auto; eauto.
-
 Qed.
-
-
 
 Lemma nth_error_local':
-
   forall n P Q R (Qn: localdef),
-
     nth_error Q n = Some Qn ->
-
     PROPx P (LOCALx Q R) |-- local (locald_denote Qn).
-
 Proof.
-
 intros.
-
 apply andp_left2. apply andp_left1.
-
 go_lowerx. normalize.
-
 revert Q H H0; induction n; destruct Q; intros; inv H.
-
 destruct H0; auto.
-
 destruct H0. apply (IHn Q); auto.
-
 Qed.
-
-
 
 Lemma in_local': forall Q0 P Q R, In Q0 Q ->
-
    PROPx P (LOCALx Q R) |-- local (locald_denote Q0).
-
 Proof.
-
   intros.
-
   destruct (in_nth_error _ _ H) as [?n ?H].
-
   eapply nth_error_local'.
-
   eauto.
-
 Qed.
-
-
 
 Lemma local2ptree_sound_aux: forall P Q R Q0 Q1 Q2,
-
   Q1 && local (locald_denote Q0) = Q2 && local (locald_denote Q0) ->
-
   In Q0 Q ->
-
   Q1 && PROPx P (LOCALx Q R) = Q2 && PROPx P (LOCALx Q R).
-
 Proof.
-
   intros.
-
   pose proof in_local' _ P _ R H0.
-
   rewrite (add_andp _ _ H1).
-
   rewrite (andp_comm _ (local (locald_denote Q0))).
-
   rewrite <- !andp_assoc.
-
   f_equal.
-
   exact H.
-
 Qed.
-
-
 
 Lemma LOCALx_expand_vardesc': forall P R i vd T1 T2 Q,
-
   PROPx P (LOCALx (LocalD T1 (PTree.set i vd T2) Q) R) =
-
   PROPx P (LOCALx (match vd with (t,v) => lvar i t v end :: LocalD T1 (PTree.remove i T2) Q) R).
-
 Proof.
-
  intros.
-
  apply LOCALx_shuffle'; intro.
-
  symmetry; apply LOCALx_expand_vardesc.
-
 Qed.
-
-
 
 Lemma LOCALx_expand_gvars': forall P R gv T1 T2,
-
   PROPx P (LOCALx (LocalD T1 T2 (Some gv)) R) =
-
   PROPx P (LOCALx (gvars gv :: LocalD T1 T2 None) R).
-
 Proof.
-
  intros.
-
  apply LOCALx_shuffle'; intro.
-
  symmetry; apply LOCALx_expand_gvars.
-
 Qed.
-
-
 
 Lemma local_equal_lemma :
-
  forall i t v t' v',
-
   local (locald_denote (lvar i t v)) && local (locald_denote (lvar i t' v')) =
-
   !!(v' = v) && !!(t'=t) && local (locald_denote (lvar i t' v')).
-
 Proof.
-
 intros; extensionality rho.
-
 unfold local, lift1; simpl.
-
 normalize. f_equal. apply prop_ext.
-
 unfold lvar_denote.
-
 split; intros [? ?].
-
 hnf in H,H0.
-
 destruct (Map.get (ve_of rho) i) as [[? ?] | ] eqn:H8; try contradiction.
-
 destruct H, H0; subst.
-
 repeat split; auto.
-
 destruct (Map.get (ve_of rho) i) as [[? ?] | ] eqn:H8; try contradiction.
-
 destruct H0 as [[? ?] ?]; subst. subst. repeat split; auto.
-
 destruct H0; contradiction.
-
 Qed.
-
-
 
 Lemma gvars_equal_lemma :
-
   forall g g0,
-
   local (locald_denote (gvars g)) && local (locald_denote (gvars g0)) = !! (g0 = g) && local (locald_denote (gvars g0)).
-
 Proof.
-
 intros; extensionality rho.
-
 unfold local, lift1; simpl.
-
 normalize. f_equal. apply prop_ext.
-
 unfold gvars_denote.
-
 split; intros [? ?].
-
 +
-
 subst; split; auto.
-
 +
-
 subst; split; auto.
-
 Qed.
-
-
 
 Lemma insert_locals:
-
   forall P A B C,
-
   local (fold_right `(and) `(True) (map locald_denote A)) && PROPx P (LOCALx B C) =
-
   PROPx P (LOCALx (A++B) C).
-
 Proof.
-
 intros.
-
 induction A.
-
 extensionality rho; simpl. unfold local, lift1. rewrite prop_true_andp by auto.
-
 auto.
-
 simpl app. rewrite <- (insert_local' a).
-
 rewrite <- IHA.
-
 rewrite <- andp_assoc.
-
 f_equal.
-
 extensionality rho; simpl; unfold_lift; unfold local, lift1; simpl.
-
 normalize.
-
 Qed.
-
-
 
 Lemma LOCALx_app_swap:
-
   forall A B, LOCALx (A++B) = LOCALx (B++A).
-
 Proof.
-
 intros.
-
 extensionality R rho; unfold LOCALx.
-
 simpl andp. cbv beta. f_equal.
-
 rewrite !map_app.
-
 simpl map. unfold local,lift1. f_equal.
-
 rewrite !fold_right_and_app.
-
 apply prop_ext; intuition.
-
 Qed.
-
-
 
 Lemma local2ptree_soundness' : forall P Q R T1a T2a Pa Qa T1 T2 P' Q',
-
   local2ptree_aux Q T1a T2a Pa Qa = (T1, T2, P', Q') ->
-
   PROPx (Pa++P) (LOCALx (Q ++ LocalD T1a T2a Qa) R)
-
    = PROPx (P' ++ P) (LOCALx (LocalD T1 T2 Q') R).
-
 Proof.
-
   intros until R.
-
   induction Q; intros.
-
   simpl in H. inv H. reflexivity.
-
   simpl in H.
-
   destruct a; simpl in H.
-
 +
-
     destruct (T1a ! i) eqn:H8; inv H;
-
     rewrite <- (IHQ _ _ _ _ _ _ _ _ H1); clear H1 IHQ.
-
     simpl app. rewrite <- insert_prop.
-
     rewrite <- insert_local'.
-
     apply local2ptree_sound_aux with (Q0 := temp i v0).
-
     extensionality rho. unfold locald_denote; simpl.
-
     unfold local, lift1; unfold_lift; simpl. normalize.
-
     f_equal. apply prop_ext; split.
-
     intros [? [? [? ?]]]; subst; split; auto.
-
     intros [? [? ?]]; subst; split; auto.
-
     rewrite in_app; right. apply LocalD_sound_temp. auto.
-
     apply LOCALx_shuffle'; intros.
-
     simpl In. rewrite !in_app. simpl In. intuition.
-
     apply LOCALx_expand_temp_var in H0. simpl In in H0.
-
     destruct H0; auto. right. right.
-
     apply LocalD_remove_empty_from_PTree1 in H; auto.
-
     right; apply LOCALx_expand_temp_var.
-
     simpl. left; auto.
-
     right;  apply LOCALx_expand_temp_var.
-
     simpl.
-
     right. apply (LocalD_remove_empty_from_PTree1 i T1a T2a Qa Q0 H8). auto.
-
   +
-
     destruct (T2a ! i) as [[?t ?v] |] eqn:H8; inv H;
-
     rewrite <- (IHQ _ _ _ _ _ _ _ _ H1); clear H1 IHQ;
-
     simpl app;
-
      rewrite  <- ?insert_prop, <- ?insert_local', <- ?andp_assoc;
-
     rewrite <- !insert_locals;
-
     forget (local (fold_right `(and) `(True) (map locald_denote Q))) as QQ;
-
     destruct (T2a ! i) as [ vd |  ] eqn:H9;
-
     try assert (H8 := LOCALx_expand_vardesc i vd T1 T2 Q');
-
     inv H8.
-
    -
-
      rewrite <- (PTree.gsident _ _ H9) by auto.
-
      rewrite !LOCALx_expand_vardesc'.
-
      simpl app.
-
      rewrite  <- ?insert_prop, <- ?insert_local', <- ?andp_assoc.
-
      f_equal.
-
      rewrite !andp_assoc.
-
      rewrite !(andp_comm QQ). rewrite <- !andp_assoc. f_equal.
-
      apply local_equal_lemma.
-
   -
-
      rewrite !(andp_comm QQ). rewrite <- !andp_assoc. f_equal.
-
      rewrite !LOCALx_expand_vardesc'.
-
      rewrite <- !insert_local'.
-
      rewrite LOCALx_shuffle'
-
        with (Q:= LocalD T1a (PTree.remove i T2a) Qa)
-
               (Q':= LocalD T1a T2a Qa); auto.
-
     intro; symmetry; apply (LocalD_remove_empty_from_PTree2); auto.
-
  + destruct Qa; rewrite <- (IHQ _ _ _ _ _ _ _ _ H); clear IHQ H;
-
    simpl app; rewrite <- ?insert_prop; rewrite <- insert_local', <- ?andp_assoc;
-
    rewrite <- !insert_locals;
-
    forget (local (fold_right `(and) `(True) (map locald_denote Q))) as QQ.
-
    - rewrite LOCALx_expand_gvars'.
-
      simpl app.
-
      rewrite  <- ?insert_prop, <- ?insert_local', <- ?andp_assoc.
-
      f_equal.
-
      rewrite !andp_assoc.
-
      rewrite !(andp_comm QQ). rewrite <- !andp_assoc. f_equal.
-
      apply gvars_equal_lemma.
-
    - rewrite LOCALx_expand_gvars'.
-
      simpl app.
-
      rewrite  <- ?insert_prop, <- ?insert_local', <- ?andp_assoc.
-
      f_equal.
-
      apply andp_comm.
-
 Qed.
-
-
 
 Lemma local2ptree_soundness  : forall P Q R T1 T2 P' Q',
-
   local2ptree Q = (T1, T2, P', Q') ->
-
   PROPx P (LOCALx Q (SEPx R)) = PROPx (P' ++ P) (LOCALx (LocalD T1 T2 Q') (SEPx R)).
-
 Proof. intros. eapply local2ptree_soundness' in H.
-
    etransitivity; [ | apply H]. clear H.
-
    simpl.
-
    unfold LocalD. rewrite !PTree.fold_spec. simpl. rewrite <- app_nil_end; auto.
-
 Qed.
-
-
 
 Lemma local2ptree_soundness'' : forall Q T1 T2 gv,
-
   local2ptree Q = (T1, T2, nil, Some gv) ->
-
   LOCALx Q TT = LOCALx (LocalD T1 T2 (Some gv)) TT.
-
 Proof.
-
   intros.
-
   eapply local2ptree_soundness in H.
-
   match goal with |- LOCALx _ ?B = _ =>
-
     replace B with (SEPx(TT::nil))
-
   end.
-
   instantiate (2:=@nil Prop) in H.
-
   simpl app in H.
-
   unfold PROPx in H.
-
   simpl fold_right in H.
-
   rewrite !prop_true_andp in H by auto. apply H.
-
   extensionality rho; unfold SEPx; simpl. rewrite sepcon_emp. reflexivity.
-
 Qed.
-
-
 
 Lemma local_ext: forall Q0 Q rho, In Q0 Q -> fold_right `(and) `(True) Q rho -> Q0 rho.
-
 Proof.
-
   intros.
-
   induction Q.
-
   + inversion H.
-
   + destruct H.
-
     - subst; simpl in H0; unfold_lift in H0.
-
       tauto.
-
     - apply IHQ; auto.
-
       unfold_lift in H0.
-
       unfold_lift.
-
       simpl in H0.
-
       tauto.
-
 Qed.
-
-
 
 Lemma local_ext_rev: forall (Q: list (environ -> Prop)) rho, (forall Q0, In Q0 Q -> Q0 rho) -> fold_right `(and) `(True) Q rho.
-
 Proof.
-
   intros.
-
   induction Q.
-
   + simpl; auto.
-
   + simpl.
-
     split.
-
     - apply H; simpl; auto.
-
     - apply IHQ; intros.
-
       apply H; simpl; auto.
-
 Qed.
-
-
 
 Fixpoint explicit_cast_exprlist (et: list type) (el: list expr) {struct et} : list expr :=
-
  match et, el with
-
  | t::et', e::el' => Ecast e t :: explicit_cast_exprlist et' el'
-
  | _, _ => nil
-
  end.
-
-
 
 Fixpoint force_list {A} (al: list (option A)) : option (list A) :=
-
  match al with
-
  | Some a :: al' => match force_list al' with Some bl => Some (a::bl) | _ => None end
-
  | nil => Some nil
-
  | _ => None
-
  end.
 
-
-
 Lemma make_func_ptr:
-
  forall id (Espec: OracleKind) (CS: compspecs) Delta P Q R fs gv p c Post,
-
    (var_types Delta) ! id = None ->
-
    (glob_specs Delta) ! id = Some fs ->
-
    (glob_types Delta) ! id = Some (type_of_funspec fs) ->
-
    snd (local2ptree Q) = Some gv /\ gv id = p ->
-
   semax Delta (PROPx P (LOCALx Q (SEPx (func_ptr' fs p :: R)))) c Post ->
-
   semax Delta (PROPx P (LOCALx Q (SEPx R))) c Post.
-
 Proof.
-
 intros.
-
 apply (semax_fun_id id fs Delta); auto.
-
 eapply semax_pre; try apply H3. clear H3.
-
 destruct (local2ptree Q) as [[[? ?] ?] ?] eqn:?.
-
 simpl in H2.
-
 destruct H2 as [H3 H2']; subst o.
-
 pose proof (local2ptree_soundness P Q R t t0 l _ Heqp0) as H3.
-
 pose proof LocalD_sound_gvars gv t t0 _ eq_refl as H2.
-
 forget (LocalD t t0 (Some gv)) as Q'.
-
 assert (local (tc_environ Delta) |-- fun rho => !! (Map.get (ve_of rho) id = None)) as TC.
-
 {
-
   intro rho.
-
   unfold local, lift1.
-
   normalize.
-
   destruct H4 as [_ [? _]].
-
   specialize (H4 id).
-
   rewrite H in H4.
-
   destruct (Map.get (ve_of rho) id) as [[? ?] |]; auto.
-
   specialize (H4 t1).
-
   destruct H4 as [_ ?].
-
   specialize (H4 (ex_intro _ b eq_refl)).
-
   inv H4.
-
 }
-
 clear - H2 H2' H3 TC.
-
 rewrite <- insert_SEP.
-
 unfold func_ptr'.
-
 normalize.
-
 rewrite corable_andp_sepcon1
-
   by (unfold_lift; simpl; intros; apply corable_func_ptr).
-
 apply andp_right; [ | apply andp_left2; apply andp_left1; normalize].
-
 rewrite H3.
-
 rewrite <- andp_assoc.
-
 rewrite (add_andp _ _ (in_local _ Delta (l ++ P) _ (SEPx R) H2)).
-
 rewrite (add_andp _ _ TC).
-
 apply derives_trans with ((fun rho : environ => !! (Map.get (ve_of rho) id = None)) &&
-
 local (locald_denote (gvars gv)) && (` (func_ptr fs)) (eval_var id (type_of_funspec fs))); [solve_andp |].
-
 subst p.
-
 clear.
-
 intro rho.
-
 unfold_lift. unfold local, lift1; simpl.
-
 normalize.
-
 unfold eval_var.
-
 hnf in H0.
-
 subst gv.
-
 rewrite H.
-
 auto.
-
 Qed.
-

@@ -1802,7 +1802,6 @@ Hint Resolve
   Mem.valid_access_free_inv_2
   Mem.unchanged_on_refl
 : mem. *)
-
 Require Import compcert.common.AST.
 (* compcert.common.AST:
 Require Import String.
@@ -2303,7 +2302,6 @@ Inductive builtin_arg_constraint : Type :=
   | OK_addrstack
   | OK_addressing
   | OK_all. *)
-
 Require Import compcert.common.Values. 
 (* compcert.common.Values:
 Require Import Coqlib.
@@ -3759,749 +3757,8 @@ Definition compose_meminj (f f': meminj) : meminj :=
 Lemma val_inject_compose:
   forall f f' v1 v2 v3,
   Val.inject f v1 v2 -> Val.inject f' v2 v3 -> *)
-
 Require Import VST.concurrency.common.permissions.
-(* VST.concurrency.common.permissions:
-From mathcomp.ssreflect Require Import ssreflect seq ssrbool
-        ssrnat ssrfun eqtype seq fintype finfun.
-
-Set Implicit Arguments.
-Require Import VST.msl.Coqlib2.
-Require Import VST.sepcomp.mem_lemmas.
-Require Import VST.sepcomp.event_semantics.
-Require Import VST.concurrency.common.threads_lemmas.
-Require Import VST.concurrency.common.permjoin_def.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Values. 
-Require Import compcert.lib.Integers.
-Require Export compcert.lib.Maps.
 Require Import Coq.ZArith.ZArith.
-From VST.veric Require Import shares juicy_mem juicy_mem_lemmas.
-Require Import VST.msl.msl_standard.
-Require Import FunInd.
-Import cjoins.
-
-Require Import ProofIrrelevance.
-
-Lemma po_refl: forall p, Mem.perm_order'' p p.
-
-Lemma perm_order_antisym :
-  forall p p'
-    (Hlt: Mem.perm_order'' p p')
-
-Definition access_map := Maps.PMap.t (Z -> option permission).
-Definition delta_map := Maps.PTree.t (Z -> option (option permission)).
-
-Section permMapDefs.
-
-  Definition empty_map : access_map :=
-    (fun z => None, Maps.PTree.empty (Z -> option permission)).
-
-  Lemma empty_map_spec: forall b ofs,
-      Maps.PMap.get b empty_map ofs = None.
-
-  Definition permission_at (m : mem) (b : block) (ofs : Z) (k : perm_kind) :=
-    Maps.PMap.get b (Mem.mem_access m) ofs k.
-
-  Definition perm_coh (p1 p2 : option permission) :=
-    match p1 with
-    | Some Freeable | Some Writable | Some Readable =>
-                                      match p2 with
-                                      | None => True
-                                      | _ => False
-                                      end
-    | Some Nonempty | None =>
-                      match p2 with
-                      | Some Freeable => False
-                      | _ => True
-                      end
-    end.
-
-  Lemma perm_coh_lower:
-    forall p1 p2 p3 p4
-      (Hpu: perm_coh p1 p2)
-      (Hperm2: Mem.perm_order'' p2 p4)
-
-  Lemma perm_coh_not_freeable:
-    forall p p',
-      perm_coh p p' ->
-      p' <> Some Freeable.
-
-  Lemma perm_coh_empty_1:
-    forall p,
-      perm_coh p None.
-
-  Lemma perm_coh_empty_2:
-    forall p : option permission,
-      Mem.perm_order'' (Some Writable) p ->
-
-  Lemma perm_of_glb_not_Freeable: forall sh,
-      ~ perm_of_sh (Share.glb Share.Rsh sh) = Some Freeable.
-
-  Lemma perm_coh_self: forall res,
-      perm_coh (perm_of_res res)
-               (perm_of_res_lock res).
-
-  Lemma perm_coh_joins:
-    forall a b, joins a b ->
-           perm_coh (perm_of_res a) (perm_of_res_lock b).
-
-  Lemma po_join_sub_lock:
-  forall r1 r2 ,
-    join_sub r2 r1 ->
-    Mem.perm_order'' (perm_of_res_lock r1) (perm_of_res_lock r2).
-
-  Definition permMapCoherence (pmap1 pmap2 : access_map) :=
-    forall b ofs, perm_coh (pmap1 !! b ofs) (pmap2 !! b ofs).
-
-  Lemma permCoh_empty: forall r,
-      (forall b ofs, Mem.perm_order'' (Some Writable) (r !! b ofs)) ->
-
-  Lemma permCoh_empty': forall x,
-      permMapCoherence x empty_map.
-
-  Lemma perm_of_res_lock_not_Freeable:
-    forall r,
-      Mem.perm_order'' (Some Writable) (perm_of_res_lock r).
-
-  Definition perm_union (p1 p2 : option permission) : option (option permission) :=
-    match p1,p2 with
-      | None, _ => Some p2
-      | _, None => Some p1
-      | Some p1', Some p2' =>
-        match p1', p2' with
-          | Freeable, _ => None
-          | _, Freeable => None
-          | Nonempty, _ => Some p2
-          | _, Nonempty => Some p1
-          | Writable, _ => None
-          | _, Writable => None
-          | Readable, Readable => Some (Some Readable)
-        end
-    end.
-
-  Lemma perm_union_comm :
-    forall p1 p2,
-      perm_union p1 p2 = perm_union p2 p1.
-
-  Lemma perm_union_result : forall p1 p2 pu (Hunion: perm_union p1 p2 = Some pu),
-                              pu = p1 \/ pu = p2.
-
-  Lemma perm_union_ord : forall p1 p2 pu (Hunion: perm_union p1 p2 = Some pu),
-                           Mem.perm_order'' pu p1 /\ Mem.perm_order'' pu p2.
-
-  Lemma perm_union_lower:
-    forall p1 p2 p3
-      (Hpu: exists pu, perm_union p1 p2 = Some pu)
-      (Hperm: Mem.perm_order'' p2 p3),
-
-  Lemma perm_union_lower_2:
-    forall p1 p2 p3 p4
-      (Hpu: exists pu, perm_union p1 p2 = Some pu)
-      (Hperm: Mem.perm_order'' p1 p3)
-
-  Inductive not_racy : option permission -> Prop :=
-  | empty : not_racy None.
-
-  Inductive racy : option permission -> Prop :=
-  | freeable : racy (Some Freeable).
-
-  Lemma not_racy_union :
-    forall p1 p2 (Hnot_racy: not_racy p1),
-    exists pu, perm_union p1 p2 = Some pu.
-
-  Lemma no_race_racy : forall p1 p2 (Hracy: racy p1)
-                              (Hnorace: exists pu, perm_union p1 p2 = Some pu),
-                         not_racy p2.
-
-  Lemma perm_order_clash:
-    forall p p'
-      (Hreadable: Mem.perm_order' p Readable)
-
-  Lemma perm_order_incompatible:
-    forall p p'
-      (Hreadable: Mem.perm_order'' p (Some Readable))
-
-  Definition perm_max (p1 p2 : option permission) : option permission :=
-    match p1,p2 with
-      | Some Freeable, _ => p1
-      | _, Some Freeable => p2
-      | Some Writable, _ => p1
-      | _, Some Writable => p2
-      | Some Readable, _ => p1
-      | _, Some Readable => p2
-      | Some Nonempty, _ => p1
-      | _, Some Nonempty => p2
-      | None, None => None
-    end.
-
-  Lemma perm_max_comm :
-    forall p1 p2,
-      perm_max p1 p2 = perm_max p2 p1.
-
-  Lemma perm_max_result : forall p1 p2 pu (Hmax: perm_max p1 p2 = pu),
-                            pu = p1 \/ pu = p2.
-
-  Lemma perm_max_ord : forall p1 p2 pu (Hmax: perm_max p1 p2 = pu),
-                           Mem.perm_order'' pu p1 /\ Mem.perm_order'' pu p2.
-
-  Definition getMaxPerm (m : mem) : access_map :=
-    Maps.PMap.map (fun f => fun ofs => f ofs Max) (Mem.mem_access m).
-
-  Definition getCurPerm (m : mem) : access_map :=
-    Maps.PMap.map (fun f => fun ofs => f ofs Cur) (Mem.mem_access m).
-
-  Definition getPermMap (m : mem) : Maps.PMap.t (Z -> perm_kind -> option permission) :=
-    Mem.mem_access m.
-
-  Lemma getCur_Max : forall m b ofs,
-                       Mem.perm_order'' (Maps.PMap.get b (getMaxPerm m) ofs)
-
-  Lemma getMaxPerm_correct :
-    forall m b ofs,
-      Maps.PMap.get b (getMaxPerm m) ofs = permission_at m b ofs Max.
-
-  Lemma getCurPerm_correct :
-    forall m b ofs,
-      Maps.PMap.get b (getCurPerm m) ofs = permission_at m b ofs Cur.
-
-  Definition permDisjoint p1 p2:=
-    exists pu : option permission,
-      perm_union p1 p2 = Some pu.
-
-   Lemma permDisjoint_None: forall p,
-      permDisjoint None p.
-
-  Lemma permDisjoint_comm: forall p1 p2,
-      permDisjoint p1 p2 -> permDisjoint p2 p1.
-
-  Lemma permDisjointLT: forall a b c,
-      permDisjoint a c ->
-      Mem.perm_order'' a b ->
-
-  Ltac if_simpl:=
-    repeat match goal with
-           | [ H: ?X = true |- context[if ?X then _ else _] ] => rewrite H; simpl 
-           | [ H: ?X = false |- context[if ?X then _ else _] ] => rewrite H; simpl 
-           | [ H: ?X = left _ |- context[match ?X with left _ => _ | right _ => _ end] ]=>
-             rewrite H; simpl 
-           | [ H: ?X = right _ |- context[match ?X with left _ => _ | right _ => _ end] ]=>
-             rewrite H; simpl 
-           | [ H: (@is_left _ _ ?X) = true |-
-               context [match ?X with left _ => _ | right _ => _ end ]] => destruct X; inversion H
-           | [ H: (@is_left _ _ ?X) = false |-
-               context [match ?X with left _ => _ | right _ => _ end ]] => destruct X; inversion H
-           end.
-
-  Ltac permDisj_solve:= eexists; simpl; reflexivity.
-  
-  Lemma join_sh_permDisjoint:
-        forall sh1 sh2,
-          joins sh1 sh2 ->
-          permDisjoint (perm_of_sh sh1) (perm_of_sh sh2).
-  
-  Lemma writable0_not_join_readable:
-    forall sh1 sh2,
-      joins sh1 sh2 ->
-      writable0_share sh1 ->
-      ~ readable_share sh2.
-
-  Lemma writable0_not_join_writable0 :
-    forall sh1 sh2,
-      joins sh1 sh2 ->
-      writable0_share sh1 ->
-      ~ writable0_share sh2.
- 
-  Lemma joins_permDisjoint: forall r1 r2,
-      joins r1 r2 ->
-      permDisjoint (perm_of_res r1) (perm_of_res r2).
-  
-  Ltac glb_contradictions:=
-    repeat match goal with
-           | [ H: writable0_share_dec _ = _ |- _ ] => clear H
-           end;
-    match goal with
-    | [ H:  Share.glb Share.Rsh ?sh = Share.top  |- _ ] =>
-      exfalso; eapply glb_Rsh_not_top; eassumption
-    | [ H: writable0_share (Share.glb Share.Rsh ?sh) |- _ ] =>
-      eapply writable0_right in H
-    end; join_sh_contradiction.
-  
-  Lemma joins_permDisjoint_lock: forall r1 r2,
-      joins r1 r2 ->
-      permDisjoint (perm_of_res_lock r1) (perm_of_res_lock r2).
-  
-  Definition permMapsDisjoint (pmap1 pmap2 : access_map) : Prop :=
-    forall b ofs, exists pu,
-      perm_union ((Maps.PMap.get b pmap1) ofs)
-                 ((Maps.PMap.get b pmap2) ofs) = Some pu.
-
-  Definition permMapsDisjoint2 (pmap pmap': access_map * access_map) :=
-    permMapsDisjoint pmap.1 pmap'.1 /\
-    permMapsDisjoint pmap.2 pmap'.2.
-
-  Lemma permDisjoint_permMapsDisjoint: forall r1 r2,
-      (forall b ofs, permDisjoint (r1 !! b ofs) (r2 !! b ofs))->
-      permMapsDisjoint r1 r2.
-
-  Lemma permMapsDisjoint_permDisjoint: forall r1 r2 b ofs,
-      permMapsDisjoint r1 r2 ->
-      permDisjoint (r1 !! b ofs) (r2 !! b ofs).
-
-  Lemma empty_disjoint':
-    forall pmap,
-      permMapsDisjoint empty_map pmap.
-  Lemma empty_disjoint:
-    permMapsDisjoint empty_map
-                     empty_map.
-
-  Lemma permMapsDisjoint_comm :
-    forall pmap1 pmap2
-      (Hdis: permMapsDisjoint pmap1 pmap2),
-      permMapsDisjoint pmap2 pmap1.
-
-  Lemma permMapsDisjoint2_comm:
-    forall pmaps pmaps',
-      permMapsDisjoint2 pmaps pmaps' <-> permMapsDisjoint2 pmaps' pmaps.
-
-  Lemma disjoint_norace:
-    forall (mi mj : mem) (b : block) (ofs : Z)
-      (Hdisjoint: permMapsDisjoint (getCurPerm mi) (getCurPerm mj))
-      (Hpermj: Mem.perm mj b ofs Cur Readable)
-
-  Definition isCanonical (pmap : access_map) := pmap.1 = fun _ => None.
-  Import Maps.
-  Definition TreeMaxIndex {A} (t:Maps.PTree.t A): positive:=
-    compcert.lib.Coqlib.list_fold_left (fun a => [eta Pos.max a.1]) 1%positive (Maps.PTree.elements t) .
-  Lemma fold_max_monoton: forall  {A} (ls: seq.seq (positive * A)), forall i,
-  Lemma fold_max_monoton': forall  {A} (ls: seq.seq (positive * A)), forall i j,
-  Lemma TreeMaxIndex_help: forall {A} (ls: seq.seq (positive * A)), forall i v,
-
-  Lemma max_works: forall A (t:PTree.t A) m, (m > TreeMaxIndex t)%positive ->
-
-  Lemma Cur_isCanonical: forall m, isCanonical (getCurPerm m).
-
-  Lemma Max_isCanonical: forall m, isCanonical (getMaxPerm m).
-
-  Definition permMapLt (pmap1 pmap2 : access_map) : Prop :=
-    forall b ofs,
-      Mem.perm_order'' (Maps.PMap.get b pmap2 ofs)
-                       (Maps.PMap.get b pmap1 ofs).
-
-  Lemma empty_LT: forall pmap,
-             permMapLt empty_map pmap.
-
-  Lemma canonical_lt :
-    forall p' m
-      (Hlt: permMapLt p' (getMaxPerm m)),
-      isCanonical p'.
-
-   Lemma invalid_block_empty:
-    forall pmap m
-      (Hlt: permMapLt pmap (getMaxPerm m)),
-    forall b, ~ Mem.valid_block m b ->
-
-  Definition setPerm (p : option permission) (b : block)
-             (ofs : Z) (pmap : access_map) : access_map :=
-    Maps.PMap.set b (fun ofs' => if compcert.lib.Coqlib.zeq ofs ofs' then
-                                p
-                              else
-                                Maps.PMap.get b pmap ofs')
-                  pmap.
-
-   Fixpoint setPermBlock (p : option permission) (b : block)
-           (ofs : Z) (pmap : access_map) (length: nat): access_map :=
-    match length with
-      0 => pmap
-    | S len =>
-      setPerm p b (ofs + (Z_of_nat len))%Z (setPermBlock p b ofs pmap len)
-    end.
-
-  Lemma setPermBlock_same:
-    forall p b ofs ofs' pmap sz
-      (Hofs: (ofs <= ofs' < ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlock_other_1:
-    forall p b ofs ofs' pmap sz
-      (Hofs: (ofs' < ofs)%Z \/ (ofs' >= ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlock_other_2:
-    forall p b b' ofs ofs' pmap sz,
-      b <> b' ->
-      (Maps.PMap.get b' (setPermBlock p b ofs pmap sz)) ofs' =
-
-  Lemma setPermBlock_or:
-    forall p b ofs sz pmap b' ofs',
-      (setPermBlock p b ofs pmap sz) !! b' ofs' = p \/
-      (setPermBlock p b ofs pmap sz) !! b' ofs' = pmap !! b' ofs'.
-
-  Fixpoint setPermBlock_var (fp : nat -> option permission) (b : block)
-           (ofs : Z) (pmap : access_map) (length: nat): access_map :=
-    match length with
-      0 => pmap
-    | S len =>
-      setPerm (fp length) b (ofs + (Z_of_nat len))%Z
-              (setPermBlock_var fp b ofs pmap len)
-    end.
-
-  Lemma setPermBlock_var_other_2:
-    forall p b b' ofs ofs' pmap sz,
-      b <> b' ->
-      (Maps.PMap.get b' (setPermBlock_var p b ofs pmap sz)) ofs' =
-
-   Lemma setPermBlock_var_other_1:
-    forall p b ofs ofs' pmap sz
-      (Hofs: (ofs' < ofs)%Z \/ (ofs' >= ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlock_var_same:
-    forall p b ofs ofs' pmap sz
-      (Hofs: (ofs <= ofs' < ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlock_setPermBlock_var:
-    forall b ofs sz pmap p,
-      setPermBlock p b ofs pmap sz =
-      setPermBlock_var (fun _ => p) b ofs pmap sz.
-
-  Lemma permMapCoherence_increase:
-    forall pmap pmap' b ofs sz_nat sz
-      (Hsz: sz = Z.of_nat (sz_nat))
-
-  Fixpoint setPermBlockFunc (fp : Z -> option permission) (b : block)
-           (ofs : Z) (pmap : access_map) (length: nat): access_map :=
-    match length with
-      0 => pmap
-    | S len =>
-      setPerm (fp (ofs + (Z_of_nat len))%Z) b (ofs + (Z_of_nat len))%Z (setPermBlockFunc fp b ofs pmap len)
-    end.
-
-  Lemma setPermBlockFunc_same:
-    forall fp b ofs ofs' pmap sz
-      (Hofs: (ofs <= ofs' < ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlockFunc_other_1:
-    forall fp b ofs ofs' pmap sz
-      (Hofs: (ofs' < ofs)%Z \/ (ofs' >= ofs + (Z.of_nat sz))%Z),
-
-  Lemma setPermBlockFunc_other_2:
-    forall fp b b' ofs ofs' pmap sz,
-      b <> b' ->
-      (Maps.PMap.get b' (setPermBlock fp b ofs pmap sz)) ofs' =
-
-  Lemma setPermBlock_coherent:
-    forall pmap pmap' b ofs sz
-      (Hcoh: permMapCoherence pmap pmap')
-      (Hnonempty: forall ofs', Intv.In ofs' (ofs, ofs + Z.of_nat sz)%Z ->
-
-  Definition computeMap (pmap : access_map) (delta : delta_map) : access_map :=
-    (pmap.1,
-     @Maps.PTree.combine (Z -> option permission) (Z -> option (option permission))
-                         (Z -> option permission)
-                         (fun p1 pd => match pd, p1 with
-                                    | Some pd', Some p1' =>
-                                      Some (fun z => match pd' z with
-                                                    Some pd'' => pd''
-                                                  | _ => p1' z
-                                                  end)
-                                    | Some pd', None =>
-                                      Some (fun z => match pd' z with
-                                                    Some pd'' => pd''
-                                                  | _ => pmap.1 z
-                                                  end)
-                                    | None, _ => p1
-                                    end)
-                         pmap.2 delta).
-
-  Lemma computeMap_1 :
-    forall (pmap : access_map) (dmap : delta_map) b ofs df (p : option permission),
-      Maps.PTree.get b dmap = Some df ->
-
-  Lemma computeMap_2 :
-    forall (pmap : access_map) (dmap : delta_map) b ofs df,
-      Maps.PTree.get b dmap = Some df ->
-
-  Lemma computeMap_3 :
-    forall (pmap : access_map) (dmap : delta_map) b ofs,
-      Maps.PTree.get b dmap = None ->
-
-  Import Maps BlockList.
-
-  Definition maxF (f : Z -> perm_kind -> option permission) :=
-    fun ofs k => match k with
-              | Max => Some Freeable
-              | Cur => f ofs k
-              end.
-
-  Definition allF (f : Z -> perm_kind -> option permission) :=
-    fun (_ : Z) (_ : perm_kind) => Some Freeable.
-
-  Fixpoint PList (f : (Z -> perm_kind -> option permission) ->
-                      Z -> perm_kind -> option permission)
-           l m : list (positive * (Z -> perm_kind -> option permission)) :=
-    match l with
-      | nil => nil
-      | x :: l =>
-        (Pos.of_nat x, f (PMap.get (Pos.of_nat x) m)) :: (PList f l m)
-  end.
-
-  Lemma PList_app :
-    forall l m x f,
-      (PList f l m) ++ ((Pos.of_nat x,
-
-  Lemma PList_cons :
-    forall f l m x,
-      (Pos.of_nat x, f (PMap.get (Pos.of_nat x) m)) :: (PList f l m) =
-
-  Lemma PList_correct :
-    forall f l m k v
-           (HInl: List.In k l)
-
-  Lemma PList_mkBlock_complete :
-    forall f k v m n
-           (Hk: k > 0)
-           (HIn1: List.In (Pos.of_nat k, v) (PList f (mkBlockList n) m)),
-
-  Lemma PList_mkBlock_det :
-    forall n f k v v' m
-           (HIn1: List.In (Pos.of_nat k, v) (PList f (mkBlockList n) m))
-
-  Fixpoint canonicalPTree (l : list (positive * (Z -> perm_kind -> option permission))) :=
-    match l with
-      | nil => PTree.empty _
-      | x :: l =>
-        PTree.set (fst x) (snd x) (canonicalPTree l)
-    end.
-
-  Lemma canonicalPTree_elements :
-    forall l x
-           (Hin: List.In x (PTree.elements (canonicalPTree l))),
-
-  Lemma canonicalPTree_get_complete :
-    forall l m k f fn
-           (HGet: (canonicalPTree (PList fn l m)) ! k = Some f),
-      List.In (k, f) (PList fn l m).
-
-  Lemma canonicalPTree_get_sound :
-    forall n m k fn
-           (Hk: k > 0)
-           (Hn: n > 1)
-           (HGet: (canonicalPTree (PList fn (mkBlockList n) m)) ! (Pos.of_nat k) = None),
-
-  Definition canonicalPMap fn n m : Maps.PMap.t (Z -> perm_kind -> option permission) :=
-    let l := mkBlockList n in
-    (fun _ _ => None, canonicalPTree (PList fn l m)).
-
-  Lemma canonicalPMap_sound :
-    forall k n m fn
-           (Hk : k > 0)
-           (Hkn : k < n),
-      fn (m !! (Pos.of_nat k)) = (canonicalPMap fn n m) !! (Pos.of_nat k).
-
-  Lemma canonicalPMap_default :
-    forall n k m fn
-           (Hkn : k >= n),
-      (canonicalPMap fn n m) !! (Pos.of_nat k) = fun _ _ => None.
-
-  Definition setMaxPerm (m : mem) : mem.
-
-  Lemma setMaxPerm_Max :
-    forall m b ofs,
-      (Mem.valid_block m b ->
-
-   Lemma setMaxPerm_MaxV :
-    forall m b ofs,
-      Mem.valid_block m b ->
-
-  Lemma setMaxPerm_MaxI :
-    forall m b ofs,
-      ~ Mem.valid_block m b ->
-
-  Lemma setMaxPerm_Cur :
-    forall m b ofs,
-      permission_at (setMaxPerm m) b ofs Cur = permission_at m b ofs Cur.
-
-  Definition makeCurMax_map (mem_access:PMap.t (Z -> perm_kind -> option permission)):
-    PMap.t (Z -> perm_kind -> option permission):=
-    PMap.map (fun f => fun z k => f z Max) mem_access.
-
-  Definition makeCurMax (m:mem): mem.
-
-  Lemma makeCurMax_correct :
-    forall m b ofs k,
-      permission_at m b ofs Max = permission_at (makeCurMax m) b ofs k.
-
-  Lemma makeCurMax_valid :
-    forall m b,
-      Mem.valid_block m b <-> Mem.valid_block (makeCurMax m) b.
-
-  Definition restrPermMap p' m (Hlt: permMapLt p' (getMaxPerm m)) : mem.
-
-Lemma restrPermMap_irr:
-      forall p1 p2 m1 m2
-        (P1: permMapLt p1 (getMaxPerm m1))
-        (P2: permMapLt p2 (getMaxPerm m2)),
-        p1 = p2 -> m1 = m2 ->
-        restrPermMap P1 = restrPermMap P2.
-    Lemma restrPermMap_ext:
-      forall p1 p2 m
-        (P1: permMapLt p1 (getMaxPerm m))
-        (P2: permMapLt p2 (getMaxPerm m)),
-        (forall b, (p1 !! b) = (p2 !! b)) ->
-        restrPermMap P1 = restrPermMap P2.
-
-  Lemma restrPermMap_nextblock :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)),
-      Mem.nextblock (restrPermMap Hlt) = Mem.nextblock m.
-
-  Lemma restrPermMap_valid :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)) b,
-      Mem.valid_block (restrPermMap Hlt) b <-> Mem.valid_block m b.
-
-  Lemma restrPermMap_contents :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)),
-      contents_at (restrPermMap Hlt) = contents_at m.
-
-  Lemma restrPermMap_max :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)),
-      max_access_at (restrPermMap Hlt) = max_access_at m.
-
-  Lemma getMax_restr :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)) b,
-      (getMaxPerm (restrPermMap Hlt)) !!  b = (getMaxPerm m) !! b.
-
-  Lemma restrPermMap_irr' : forall p' p'' m
-                             (Hlt : permMapLt p' (getMaxPerm m))
-                             (Hlt': permMapLt p'' (getMaxPerm m))
-                             (Heq_new: p' = p''),
-                             restrPermMap Hlt = restrPermMap Hlt'.
-
-  Lemma restrPermMap_disjoint_inv:
-    forall (mi mj m : mem) (pi pj : access_map)
-      (Hltj: permMapLt pj (getMaxPerm m))
-      (Hlti: permMapLt pi (getMaxPerm m))
-      (Hdisjoint: permMapsDisjoint pi pj)
-      (Hrestrj: restrPermMap Hltj = mj)
-      (Hrestri: restrPermMap Hlti = mi),
-      permMapsDisjoint (getCurPerm mi) (getCurPerm mj).
-
-  Lemma restrPermMap_correct :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m))
-      b ofs,
-      permission_at (restrPermMap Hlt) b ofs Max =
-      Maps.PMap.get b (getMaxPerm m) ofs /\
-
-  Corollary restrPermMap_Cur :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)) b ofs,
-      permission_at (restrPermMap Hlt) b ofs Cur =
-      Maps.PMap.get b p' ofs.
-
-  Corollary restrPermMap_Max :
-    forall p' m (Hlt: permMapLt p' (getMaxPerm m)) b ofs,
-      permission_at (restrPermMap Hlt) b ofs Max =
-      Maps.PMap.get b (getMaxPerm m) ofs.
-
-  Lemma restrPermMap_can : forall (p : access_map) (m m': mem)
-                             (Hlt: permMapLt p (getMaxPerm m))
-                             (Hrestrict: restrPermMap Hlt = m'),
-      isCanonical (getCurPerm m').
-
-  Lemma restrPermMap_can_max : forall (p : access_map) (m m': mem)
-                                 (Hlt: permMapLt p (getMaxPerm m))
-                                 (Hrestrict: restrPermMap Hlt = m'),
-      isCanonical (getMaxPerm m').
-
-  Definition erasePerm (m : mem) : mem.
-
-  Lemma erasePerm_Perm :
-    forall m b ofs k ,
-      (Mem.valid_block m b ->
-
-   Lemma erasePerm_V :
-    forall m b ofs k,
-      Mem.valid_block m b ->
-
-  Lemma erasePerm_I :
-    forall m b ofs k,
-      ~ Mem.valid_block m b ->
-
-   Definition decay m_before m_after := forall b ofs,
-      (~Mem.valid_block m_before b ->
-       Mem.valid_block m_after b ->
-       (forall k, Maps.PMap.get b (Mem.mem_access m_after) ofs k = Some Freeable)
-       \/ (forall k, Maps.PMap.get b (Mem.mem_access m_after) ofs k = None)) /\
-      (Mem.valid_block m_before b ->
-       (forall k,
-           (Maps.PMap.get b (Mem.mem_access m_before) ofs k = Some Freeable /\
-            Maps.PMap.get b (Mem.mem_access m_after) ofs k = None)) \/
-       (forall k, Maps.PMap.get b (Mem.mem_access m_before) ofs k =
-             Maps.PMap.get b (Mem.mem_access m_after) ofs k)).
-
-   Definition strong_decay m_before m_after := forall b ofs,
-       (~Mem.valid_block m_before b ->
-       Mem.valid_block m_after b ->
-       (forall k, Maps.PMap.get b (Mem.mem_access m_after) ofs k = Some Freeable)
-       \/ (forall k, Maps.PMap.get b (Mem.mem_access m_after) ofs k = None)) /\
-      (Mem.valid_block m_before b ->
-       (forall k, Maps.PMap.get b (Mem.mem_access m_before) ofs k =
-             Maps.PMap.get b (Mem.mem_access m_after) ofs k)).
-
-   Lemma strong_decay_implies_decay:
-     forall m m',
-       strong_decay m m' ->
-       decay m m'.
-
-  Lemma decay_refl:
-    forall m,
-      decay m m.
-
-  Lemma decay_trans :
-    forall m m' m'',
-      (forall b, Mem.valid_block m b -> Mem.valid_block m' b) ->
-
-  Definition permMapJoin (pmap1 pmap2 pmap3: access_map) :=
-    forall b ofs,
-      permjoin ((pmap1 !! b) ofs) ((pmap2 !! b) ofs) ((pmap3 !! b) ofs).
-
-  Lemma permMapJoin_order:
-    forall p1 p2 p3
-      (Hjoin: permMapJoin p1 p2 p3),
-    forall b ofs,
-      Mem.perm_order'' (p3 !! b ofs) (p1 !! b ofs) /\
-
-  Lemma permMapLt_invalid_block:
-    forall pmap m b ofs
-      (Hlt: permMapLt pmap (getMaxPerm m))
-      (Hinvalid: ~ Mem.valid_block m b),
-
-  Lemma perm_order_valid_block:
-    forall pmap m b ofs p
-      (Hperm: Mem.perm_order'' (pmap !! b ofs) (Some p))
-
-  Definition perm_order''_dec : forall (op op' : option permission),
-      {Mem.perm_order'' op op'} + {~ Mem.perm_order'' op op'}.
-
-  Definition perm_eq_dec: forall (op op' : option permission),
-      {op = op'} + {~ op = op'}.
-
-End permMapDefs.
-
-Require Import VST.concurrency.common.core_semantics.
-Require Import compcert.lib.Coqlib.
-
-Lemma storebytes_decay:
-  forall m loc p vl m', Mem.storebytes m loc p vl = Some m' -> decay m m'.
-
-Lemma alloc_decay:
-  forall m lo hi m1 b1, Mem.alloc m lo hi = (m1,b1) -> decay m m1.
-
-Lemma free_decay: forall m b lo hi m', Mem.free m b lo hi = Some m' -> decay m m'.
-
-Lemma msem_decay: 
-  forall C (Sem: MemSem C) c m c' m',
-   corestep (csem Sem)  c m c' m' ->
-  decay m m'. *)
-
-Require Import Coq.ZArith.ZArith.
-
 Require Import compcert.lib.Coqlib.
 (* compcert.lib.Coqlib:
 Require Export String.
@@ -5237,795 +4494,398 @@ Lemma nlist_forall2_imply:
   (forall v1 v2, nIn v1 l1 -> nIn v2 l2 -> P1 v1 v2 -> P2 v1 v2) ->
   nlist_forall2 P2 l1 l2. *)
 
-
-
 Module MemoryLemmas.
 
-
-
   Global Notation "a # b" := (Maps.PMap.get b a) (at level 1).
-
   Transparent Mem.store.
-
   
-
   Lemma store_contents_other:
-
     forall m m' b b' ofs ofs' v chunk
-
       (Hstore: Mem.store chunk m b ofs v = Some m')
-
       (Hstable: ~ Mem.perm m b' ofs' Cur Writable),
-
       Maps.ZMap.get ofs' (Mem.mem_contents m') # b' =
-
       Maps.ZMap.get ofs' (Mem.mem_contents m) # b'.
-
   Proof.
-
     intros.
-
     erewrite Mem.store_mem_contents; eauto.
-
     simpl.
-
     destruct (Pos.eq_dec b b') as [Heq | Hneq];
-
       [| erewrite Maps.PMap.gso by auto; reflexivity ].
-
     subst b'.
-
     rewrite Maps.PMap.gss.
-
     destruct (Z_lt_le_dec ofs' ofs) as [Hlt | Hge].
-
     erewrite Mem.setN_outside by (left; auto);
-
       reflexivity.
-
     destruct (Z_lt_ge_dec
-
                 ofs' (ofs + (size_chunk chunk)))
-
       as [Hlt | Hge'].
-
     
-
     apply Mem.store_valid_access_3 in Hstore.
-
     unfold Mem.valid_access in Hstore. simpl in Hstore.
-
     destruct Hstore as [Hcontra _].
-
     unfold Mem.range_perm in Hcontra.
-
     specialize (Hcontra ofs' (conj Hge Hlt));
-
       exfalso; intuition.
-
     erewrite Mem.setN_outside; auto.
-
     right; rewrite size_chunk_conv in Hge';
-
       rewrite encode_val_length; auto.
-
   Qed.
-
-
 
   Transparent Mem.alloc.
 
-
-
   Lemma val_at_alloc_1:
-
     forall m m' lo hi nb b ofs
-
       (Halloc: Mem.alloc m lo hi  = (m', nb))
-
       (Hvalid: Mem.valid_block m b),
-
       Maps.ZMap.get ofs (Maps.PMap.get b (Mem.mem_contents m)) =
-
       Maps.ZMap.get ofs (Maps.PMap.get b (Mem.mem_contents m')).
-
   Proof.
-
     intros.
-
     unfold Mem.alloc in Halloc.
-
     inv Halloc.
-
     simpl.
-
     rewrite Maps.PMap.gso; auto.
-
     intro; subst. unfold Mem.valid_block in *.
-
     eapply Plt_strict; eauto.
-
   Qed.
-
-
 
   Lemma val_at_alloc_2:
-
     forall m m' lo hi nb ofs
-
       (Halloc: Mem.alloc m lo hi = (m', nb)),
-
       Maps.ZMap.get ofs (Maps.PMap.get nb (Mem.mem_contents m')) = Undef.
-
   Proof.
-
     intros.
-
     unfold Mem.alloc in Halloc.
-
     inv Halloc.
-
     simpl.
-
     rewrite PMap.gss, ZMap.gi.
-
     reflexivity.
-
   Qed.
-
-
 
   Lemma val_at_alloc_3:
-
     forall m m' lo hi  nb b ofs
-
       (Halloc: Mem.alloc m lo hi = (m', nb))
-
       (Hvalid: b <> nb),
-
       Maps.ZMap.get ofs (Maps.PMap.get b (Mem.mem_contents m)) =
-
       Maps.ZMap.get ofs (Maps.PMap.get b (Mem.mem_contents m')).
-
   Proof.
-
     intros.
-
     unfold Mem.alloc in Halloc.
-
     inv Halloc.
-
     simpl.
-
     rewrite Maps.PMap.gso; auto.
-
   Qed.
-
-
 
   Lemma permission_at_alloc_1:
-
     forall m m' lo hi nb b ofs
-
       (Halloc: Mem.alloc m lo hi = (m', nb))
-
       (Hvalid: Mem.valid_block m b),
-
     forall k, permissions.permission_at m b ofs k =
-
          permissions.permission_at m' b ofs k.
-
   Proof.
-
     intros.
-
     unfold Mem.alloc in Halloc.
-
     inv Halloc.
-
     unfold permissions.permission_at. simpl.
-
     rewrite Maps.PMap.gso; auto.
-
     intro; subst. unfold Mem.valid_block in *.
-
     eapply Plt_strict; eauto.
-
   Qed.
-
-
 
   Lemma permission_at_alloc_2:
-
     forall m m' lo sz nb ofs
-
       (Halloc: Mem.alloc m lo sz = (m', nb))
-
       (Hofs: (lo <= ofs < sz)%Z),
-
       forall k, permissions.permission_at m' nb ofs k = Some Freeable.
-
   Proof.
-
     intros.
-
     eapply Memory.alloc_access_same in Halloc; eauto.
-
   Qed.
-
-
 
   Lemma permission_at_alloc_3:
-
     forall m m' lo sz nb ofs
-
       (Halloc: Mem.alloc m lo sz = (m', nb))
-
       (Hofs: (ofs < lo \/ ofs >= sz)%Z),
-
       forall k, permissions.permission_at m' nb ofs k = None.
-
   Proof.
-
     intros.
-
     pose proof (Mem.fresh_block_alloc _ _ _ _ _ Halloc) as Hinvalid.
-
     apply Mem.nextblock_noaccess with (ofs := ofs) (k := k) in Hinvalid.
-
     unfold permission_at.
-
     eapply Memory.alloc_access_other with (b' := nb) (k := k) in Halloc;
-
       unfold Memory.access_at, permission_at in *; simpl in *; eauto.
-
     rewrite <- Halloc;
-
       now auto.
-
   Qed.
-
-
 
   Lemma permission_at_alloc_4:
-
     forall m m' lo hi nb b ofs
-
       (Halloc: Mem.alloc m lo hi = (m', nb))
-
       (Hb: b <> nb),
-
     forall k, permissions.permission_at m b ofs k =
-
          permissions.permission_at m' b ofs k.
-
   Proof.
-
     intros.
-
     unfold Mem.alloc in Halloc.
-
     inv Halloc.
-
     unfold permissions.permission_at. simpl.
-
     rewrite Maps.PMap.gso; auto.
-
   Qed.
-
-
 
   Lemma permission_at_free_1 :
-
     forall m m' (lo hi : Z) b b' ofs'
-
       (Hfree: Mem.free m b lo hi = Some m')
-
       (Hnon_freeable: ~ Mem.perm m b' ofs' Cur Freeable),
-
     forall k : perm_kind,
-
       permission_at m b' ofs' k = permission_at m' b' ofs' k.
-
   Proof.
-
     intros.
-
     pose proof (Mem.free_result _ _ _ _ _ Hfree) as Hfree'.
-
     subst.
-
     unfold Mem.unchecked_free. unfold permission_at. simpl.
-
     destruct (Pos.eq_dec b' b); subst.
-
     - destruct (zle lo ofs' && zlt ofs' hi) eqn:Hintv.
-
       + exfalso.
-
         apply andb_true_iff in Hintv.
-
         destruct Hintv as [Hle Hlt].
-
         destruct (zle lo ofs'); simpl in *; auto.
-
         destruct (zlt ofs' hi); simpl in *; auto.
-
         apply Mem.free_range_perm in Hfree.
-
         unfold Mem.range_perm in Hfree.
-
         specialize (Hfree ofs' (conj l l0)).
-
         auto.
-
       + rewrite Maps.PMap.gss.
-
         rewrite Hintv.
-
         reflexivity.
-
     - rewrite Maps.PMap.gso;
-
       auto.
-
   Qed.
-
-
 
   Lemma permission_at_free_2 :
-
     forall m m' (lo hi : Z) b b' ofs'
-
       (Hfree: Mem.free m b lo hi = Some m')
-
       (Hb: b <> b'),
-
     forall k : perm_kind,
-
       permission_at m b' ofs' k = permission_at m' b' ofs' k.
-
   Proof.
-
     intros.
-
     pose proof (Mem.free_result _ _ _ _ _ Hfree) as Hfree'.
-
     subst.
-
     unfold Mem.unchecked_free. unfold permission_at. simpl.
-
     destruct (Pos.eq_dec b' b); subst.
-
     - exfalso; now auto.
-
     - rewrite Maps.PMap.gso;
-
         auto.
-
   Qed.
-
-
 
   Lemma permission_at_free_list_1:
-
     forall m m' l b ofs
-
       (Hfree: Mem.free_list m l = Some m')
-
       (Hnon_freeable: ~ Mem.perm m b ofs Cur Freeable),
-
     forall k : perm_kind,
-
       permission_at m b ofs k = permission_at m' b ofs k.
-
   Proof.
-
     intros m m' l.
-
     generalize dependent m.
-
     induction l; intros.
-
     - simpl in Hfree; inv Hfree; reflexivity.
-
     - simpl in Hfree. destruct a, p.
-
       destruct (Mem.free m b0 z0 z) eqn:Hfree'; try discriminate.
-
       pose proof Hfree' as Hfree''.
-
       eapply permission_at_free_1 with (k := k) in Hfree'; eauto.
-
       eapply permission_at_free_1 with (k := Cur) in Hfree''; eauto.
-
       rewrite Hfree'. eapply IHl; eauto.
-
       unfold Mem.perm in *. unfold permission_at in *.
-
       rewrite <- Hfree''. assumption.
-
   Qed.
-
-
 
   Lemma mem_free_contents:
-
     forall m m2 lo hi b
-
       (Hfree: Mem.free m b lo hi = Some m2),
-
     forall b' ofs,
-
       Maps.ZMap.get ofs (Maps.PMap.get b' (Mem.mem_contents m)) =
-
       Maps.ZMap.get ofs (Maps.PMap.get b' (Mem.mem_contents m2)).
-
   Proof.
-
     intros.
-
     apply Mem.free_result in Hfree.
-
     subst; unfold Mem.unchecked_free.
-
     reflexivity.
-
   Qed.
-
-
 
   Lemma mem_store_max:
-
     forall chunk b ofs v m m',
-
       Mem.store chunk m b ofs v = Some m' ->
-
       forall b' ofs',
-
         (getMaxPerm m) # b' ofs' = (getMaxPerm m') # b' ofs'.
-
   Proof.
-
     intros.
-
     unfold Mem.store in *.
-
     destruct (Mem.valid_access_dec m chunk b ofs Writable); try discriminate.
-
     inversion H; subst.
-
     do 2 rewrite getMaxPerm_correct.
-
     reflexivity.
-
   Qed.
-
-
 
   Lemma mem_storebytes_cur :
-
     forall b (ofs : Z) bytes (m m' : mem),
-
       Mem.storebytes m b ofs bytes = Some m' ->
-
       forall (b' : positive) (ofs' : Z),
-
         (getCurPerm m) !! b' ofs' = (getCurPerm m') !! b' ofs'.
-
   Proof.
-
     intros.
-
     Transparent Mem.storebytes.
-
     unfold Mem.storebytes in *.
-
     destruct (Mem.range_perm_dec m b ofs (ofs + Z.of_nat (length bytes)) Cur
-
                                  Writable); try discriminate.
-
     inversion H; subst.
-
     do 2 rewrite getCurPerm_correct.
-
     reflexivity.
-
   Qed.
-
-
 
   Lemma mem_store_cur:
-
     forall chunk b ofs v m m',
-
       Mem.store chunk m b ofs v = Some m' ->
-
       forall b' ofs',
-
         (getCurPerm m) # b' ofs' = (getCurPerm m') # b' ofs'.
-
   Proof.
-
     intros.
-
     apply Mem.store_storebytes in H.
-
     eapply mem_storebytes_cur; eauto.
-
   Qed.
-
-
 
   Lemma mem_storev_store:
-
     forall chunk ptr v m m',
-
       Mem.storev chunk m ptr v = Some m' ->
-
       exists b ofs, ptr = Vptr b ofs /\
-
                Mem.store chunk m b (Integers.Ptrofs.intval ofs) v = Some m'.
-
   Proof.
-
     intros.
-
     destruct ptr; try discriminate.
-
     simpl in H.
-
     do 2 eexists; split; eauto.
-
   Qed.
-
-
 
   Lemma load_valid_block:
-
     forall (m : mem) b ofs chunk v,
-
       Mem.load chunk m b ofs = Some v ->
-
       Mem.valid_block m b.
-
   Proof.
-
     intros m b ofs chunk v Hload.
-
     apply Mem.load_valid_access in Hload.
-
     apply Mem.valid_access_valid_block with (chunk:=chunk) (ofs:= ofs).
-
     eapply Mem.valid_access_implies; eauto.
-
     constructor.
-
   Qed.
-
-
 
   Definition max_inv mf := forall b ofs, Mem.valid_block mf b ->
-
                                     permission_at mf b ofs Max = Some Freeable.
 
-
-
   Lemma max_inv_store:
-
     forall m m' chunk b ofs v pmap
-
       (Hlt: permMapLt pmap (getMaxPerm m))
-
       (Hmax: max_inv m)
-
       (Hstore: Mem.store chunk (restrPermMap Hlt) b ofs v = Some m'),
-
       max_inv m'.
-
   Proof.
-
     intros.
-
     intros b0 ofs0 Hvalid0.
-
     unfold permission_at.
-
     erewrite Mem.store_access; eauto.
-
     assert (H := restrPermMap_Max Hlt b0 ofs0).
-
     eapply Mem.store_valid_block_2 in Hvalid0; eauto.
-
     erewrite restrPermMap_valid in Hvalid0.
-
     specialize (Hmax b0 ofs0 Hvalid0).
-
     unfold permission_at in H.
-
     rewrite H.
-
     rewrite getMaxPerm_correct;
-
       assumption.
-
   Qed.
-
-
 
    Lemma sim_valid_access:
-
     forall (mf m1f : mem)
-
       (b1 b2 : block) (ofs : Z)
-
       (Hm1f: m1f = makeCurMax mf)
-
       (HmaxF: max_inv mf)
-
       (Hvalidb2: Mem.valid_block mf b2)
-
       (Halign: (4 | ofs)%Z),
-
       Mem.valid_access m1f Mint32 b2 ofs Freeable.
-
   Proof.
-
     unfold Mem.valid_access. simpl. split; try assumption.
-
     unfold Mem.range_perm. intros ofs0 Hbounds. subst m1f.
-
     specialize (HmaxF _ ofs0 Hvalidb2).
-
     unfold Mem.perm.
-
     assert (Hperm := makeCurMax_correct mf b2 ofs0 Cur).
-
     rewrite HmaxF in Hperm.
-
     unfold permission_at in Hperm.
-
     unfold Mem.perm.
-
     rewrite <- Hperm.
-
     simpl;
-
       constructor.
-
   Qed.
-
-
 
   Lemma setPermBlock_lt:
-
     forall pmap m b ofs sz p
-
       (Hinv: max_inv m)
-
       (Hvalid: Mem.valid_block m b)
-
       (Hlt: permMapLt pmap (getMaxPerm m)),
-
       permMapLt (setPermBlock p b ofs pmap sz) (getMaxPerm m).
-
   Proof.
-
     intros.
-
     intros b' ofs'.
-
     specialize (Hlt b' ofs').
-
     destruct (Pos.eq_dec b b').
-
     - subst.
-
       destruct (Intv.In_dec ofs' (ofs, ofs + Z.of_nat sz)%Z).
-
       + erewrite setPermBlock_same; [|eauto].
-
         specialize (Hinv _ ofs' Hvalid).
-
         erewrite getMaxPerm_correct in *.
-
         erewrite Hinv in *.
-
         simpl; destruct p; eauto using perm_order.
-
       + destruct sz. simpl.
-
         assumption.
-
         erewrite setPermBlock_other_1.
-
         assumption.
-
         eapply Intv.range_notin in n; eauto.
-
         simpl. zify; omega.
-
     - erewrite setPermBlock_other_2; [| eauto].
-
       assumption.
-
   Qed.
-
-
 
   Lemma setN_inside: forall (vl : list memval) (c : ZMap.t memval) (ofs0 ofs: Z),
-
       Intv.In ofs0 (ofs, (ofs + Z.of_nat (length vl))%Z) ->
-
       ZMap.get ofs0 (Mem.setN vl ofs c) = List.nth (Z.to_nat (ofs0 - ofs)%Z) vl Undef.
-
   Proof.
-
     intros vl.
-
     induction vl using rev_ind; intros.
-
     - unfold Intv.In in H.
-
       simpl in H. exfalso.
-
       now omega.
-
     - simpl in *.
-
       unfold Intv.In in H. simpl in H.
-
       rewrite Mem.setN_concat.
-
       simpl.
-
       rewrite ZMap.gsspec.
-
       destruct (ZIndexed.eq ofs0 (ofs + Z.of_nat (length vl))). subst.
-
       + assert ((Z.to_nat (ofs + Z.of_nat (length vl) - ofs)) = length vl)
-
           by (rewrite <- Z.add_sub_assoc;
-
               rewrite Zplus_minus, Nat2Z.id; reflexivity).
-
         rewrite H0.
-
         rewrite List.app_nth2.
-
         rewrite NPeano.Nat.sub_diag. reflexivity.
-
         omega.
-
       + rewrite List.app_length in H.
-
         simpl in H.
-
         rewrite NPeano.Nat.add_1_r in H.
-
         simpl in H.
-
         rewrite Zpos_P_of_succ_nat in H.
-
         apply threads_lemmas.lt_succ_neq in H; eauto.
-
         rewrite List.app_nth1.
-
         eapply IHvl. auto.
-
         destruct H.
-
         clear - H0 H.
-
         zify.
-
         erewrite Z2Nat.id in * by omega.
-
         omega.
-
   Qed.
 
-
-
 End MemoryLemmas.
-

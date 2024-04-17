@@ -1,1162 +1,1709 @@
 
-
 Require Export copy.
-
-Require Export del.
-
-Require Export rece_copy1.
-
-Require Export rece_copy2.
-
-Require Export rece_copy3.
-
-Require Export rece_dec.
-
-Require Export rece_inc.
-
-
+(* copy:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
 
 Unset Standard Proposition Elimination Names.
 
+Section DEF_COPY.
 
+Definition copy_trans (c : Config) (s1 s2 : Site) :=
+  mkconfig (S (time c)) (dt c) (Inc_send_table (st c) s1) 
+    (rt c) (Post_message copy (bm c) s1 s2). 
 
-Section EVOLUTION.
+End DEF_COPY.
 
-	
-
-Inductive class_trans (c : Config) : Set :=
-
-  | make_copy :
-
-      forall s1 s2 : Site,
-
-      s1 <> s2 -> s2 <> owner -> access s1 (rt c) -> class_trans c
-
-  | receive_dec :
-
-      forall s1 s2 : Site,
-
-      first Message (bm c s1 s2) = value Message dec -> class_trans c
-
-  | receive_inc :
-
-      forall s1 s3 : Site,
-
-      first Message (bm c s1 owner) = value Message (inc_dec s3) ->
-
-      class_trans c
-
-  | receive_copy1 :
-
-      forall s1 s2 : Site,
-
-      rt c s2 = true ->
-
-      first Message (bm c s1 s2) = value Message copy -> class_trans c
-
-  | receive_copy2 :
-
-      forall s2 : Site,
-
-      rt c s2 = false ->
-
-      first Message (bm c owner s2) = value Message copy -> class_trans c
-
-  | receive_copy3 :
-
-      forall s1 s2 : Site,
-
-      rt c s2 = false ->
-
-      s1 <> owner ->
-
-      first Message (bm c s1 s2) = value Message copy -> class_trans c
-
-  | delete_entry :
-
-      forall s : Site,
-
-      st c s = 0%Z -> rt c s = true -> s <> owner -> class_trans c.
-
-
-
-Definition transition (c : Config) (t : class_trans c) :=
-
-  match t with
-
-  | make_copy s1 s2 h1 h2 h3 => copy_trans c s1 s2
-
-  | receive_dec s1 s2 h1 => rec_dec_trans c s1 s2
-
-  | receive_inc s1 s3 h1 => rec_inc_trans c s1 s3
-
-  | receive_copy1 s1 s2 h1 h2 => rec_copy1_trans c s1 s2
-
-  | receive_copy2 s2 h1 h2 => rec_copy2_trans c s2
-
-  | receive_copy3 s1 s2 h1 h2 h3 => rec_copy3_trans c s1 s2
-
-  | delete_entry s h1 h2 h3 => delete_trans c s
-
-  end.
-
-
-
-Inductive legal : Config -> Prop :=
-
-  | begin : legal config_init
-
-  | after :
-
-      forall (c : Config) (t : class_trans c),
-
-      legal c -> legal (transition c t).
-
-	
-
-End EVOLUTION.
-
-
-
-Section M_INVARIANTS.
-
-
-
-Lemma le_dt_time :
-
- forall (c0 : Config) (s0 : Site), legal c0 -> dt c0 s0 <= time c0.
-
-Proof.
-
- intros; elim H.
-
- apply init_le_dt_time.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_le_dt_time; trivial.
-
-
-
- apply rdec_trans_le_dt_time; trivial.
-
-
-
- apply rinc_trans_le_dt_time; trivial.
-
-
-
- apply rcop1_trans_le_dt_time; trivial.
-
-
-
- apply rcop2_trans_le_dt_time; trivial.
-
-
-
- apply rcop3_trans_le_dt_time; trivial.
-
-
-
- apply del_trans_le_dt_time; trivial.
-
-Qed.
-
-
-
-Lemma not_owner_inc :
-
- forall (c : Config) (s0 s1 s2 : Site),
-
- legal c -> In_queue Message (inc_dec s0) (bm c s1 s2) -> s0 <> owner.
-
-Proof.
-
- intros c s0 s1 s2 H; elim H; simpl in |- *.
-
- contradiction.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply H1; apply copy_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
-
-
-
- apply H1; apply rdec_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
-
-
-
- apply H1; apply rinc_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
-
-
-
- apply H1; apply rcop1_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
-
-
-
- apply H1; apply rcop2_trans_in_queue with (s2 := s3); trivial.
-
-
-
- case (eq_site_dec s0 s3); intro.
-
- rewrite e1; trivial.
-
-
-
- apply H1; apply rcop3_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
-
-
-
- apply H1; apply del_trans_in_queue with (s1 := s); trivial.
-
-Qed.
-
-
-
-Lemma not_owner_first_inc :
-
- forall (c : Config) (s0 s1 s2 : Site),
-
- legal c ->
-
- first Message (bm c s1 s2) = value Message (inc_dec s0) -> s0 <> owner.
-
-Proof.
-
- intros; apply (not_owner_inc c s0 s1 s2).
-
- trivial.
-
-
-
- apply first_in; trivial.
-
-Qed.
-
-
-
-Lemma copy_diff_site :
-
- forall (c0 : Config) (s1 s2 : Site),
-
- legal c0 -> In_queue Message copy (bm c0 s1 s2) -> s1 <> s2.
-
-Proof.
-
- intros c0 s1 s2 Hlegal; elim Hlegal.
-
- intros; apply init_copy_diff_site; trivial.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
-
-
-
- apply rdec_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
-
-
-
- apply rinc_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
-
-
-
- apply rcop1_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
-
-
-
- apply rcop2_trans_diff_site with (c0 := c) (s2 := s0); trivial.
-
-
-
- apply rcop3_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
-
-
-
- apply del_trans_diff_site with (c0 := c) (s0 := s); trivial.
-
-Qed.
-
-
-
-Lemma first_copy_diff_site :
-
- forall (c0 : Config) (s1 s2 : Site),
-
- legal c0 -> first Message (bm c0 s1 s2) = value Message copy -> s1 <> s2.
-
-Proof.
-
- intros; apply (copy_diff_site c0 s1 s2).
-
- trivial.
-
-
-
- apply first_in; trivial.
-
-Qed.
-
-
-
-End M_INVARIANTS.
-
-
-
-Section X_INVARIANTS.
-
-
-
-Lemma two :
-
- forall (c0 : Config) (s0 : Site),
-
- legal c0 -> s0 <> owner -> st c0 s0 = sigma_ctrl s0 (bm c0).
-
-Proof.
-
- intros; elim H; simpl in |- *.
-
- rewrite sigma_ctrl_init; auto.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- rewrite copy_trans_sigma_ctrl. 
-
- rewrite copy_trans_st.
-
- case (eq_site_dec s0 s1); intro; omega.
-
-
-
- rewrite rdec_trans_sigma_ctrl. 
-
- rewrite rdec_trans_st.
-
- case (eq_site_dec s0 s2); intro; omega.
-
-
-
- trivial.
-
-
-
- rewrite rinc_trans_sigma_ctrl. 
-
- rewrite rinc_trans_st.
-
- rewrite case_ineq; auto.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- rewrite rcop1_trans_sigma_ctrl; auto. 
-
-
-
- rewrite rcop2_trans_sigma_ctrl; auto. 
-
-
-
- rewrite rcop3_trans_sigma_ctrl; auto. 
-
-
-
- rewrite del_trans_sigma_ctrl; auto. 
-
-Qed.
-
-
-
-Lemma four :
-
- forall c : Config, legal c -> (st c owner + sigma_yi c)%Z = sigma_xi c.
-
-Proof.
-
- intros; elim H; simpl in |- *.
-
- rewrite sigma_xi_init; rewrite sigma_yi_init; trivial.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- rewrite copy_trans_st.
-
- rewrite copy_trans_sigma_xi.
-
- rewrite copy_trans_sigma_yi.
-
- case (eq_site_dec owner s1); intro; omega.
-
-
-
- rewrite rdec_trans_st.
-
- rewrite rdec_trans_sigma_xi.
-
- rewrite rdec_trans_sigma_yi.
-
- case (eq_site_dec owner s2); intro; omega.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- rewrite rinc_trans_st.
-
- rewrite rinc_trans_sigma_xi.
-
- rewrite rinc_trans_sigma_yi.
-
- rewrite case_eq; omega.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- apply (not_owner_inc c0 s3 s1 owner).
-
- trivial.
-
-
-
- apply first_in; auto.
-
-
-
- rewrite rcop1_trans_sigma_xi.
-
- rewrite rcop1_trans_sigma_yi.
-
- auto.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- rewrite rcop2_trans_sigma_xi.
-
- rewrite rcop2_trans_sigma_yi.
-
- auto.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- rewrite rcop3_trans_sigma_xi.
-
- rewrite rcop3_trans_sigma_yi.
-
- simpl in |- *; omega.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- rewrite del_trans_sigma_xi.
-
- rewrite del_trans_sigma_yi.
-
- auto.
-
-
-
- trivial.
-
-Qed.
-
-
-
-End X_INVARIANTS.
-
-
-
-Section ALT_PROP.
-
-
-
-Lemma legal_false_D :
-
- forall (c0 : Config) (s0 : Site),
-
- legal c0 -> rt c0 s0 = false -> D_queue (bm c0 s0 owner).
-
-Proof.
-
- intros c0 s0 H; elim H.
-
- intro; apply D_init.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_D; auto.
-
-
-
- apply rdec_trans_D; auto.
-
-
-
- apply rinc_trans_D.
-
- apply (not_owner_first_inc c s3 s1 owner); auto.
-
-
-
- auto.
-
-
-
- apply rcop1_trans_D; auto.
-
-
-
- apply rcop2_trans_D; auto.
-
-
-
- apply rcop3_trans_D; auto.
-
-
-
- apply del_trans_D; auto.
-
-Qed.
-
-
-
-Lemma legal_alternate :
-
- forall (s0 : Site) (c0 : Config), legal c0 -> alternate (bm c0 s0 owner).
-
-Proof.
-
- intros; elim H.
-
- apply alt_init.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_alt; trivial.
-
-
-
- apply rdec_trans_alt; trivial.
-
-
-
- apply rinc_trans_alt.
-
- apply (not_owner_first_inc c s3 s1 owner); auto.
-
-
-
- trivial.
-
-
-
- apply rcop1_trans_alt; trivial.
-
-
-
- apply rcop2_trans_alt; trivial.
-
-
-
- apply rcop3_trans_alt.
-
- trivial.
-
-
-
- apply legal_false_D; trivial.
-
-
-
- trivial.
-
-
-
- apply del_trans_alt; trivial.
-
-Qed.
-
-
-
-End ALT_PROP.
-
-
-
-Section POS_PROP.
-
-
+Section COPY_EFFECT.
 
 Variable c0 : Config.
 
+Variable s1 s2 : Site.
 
+Hypothesis diff_s1_s2 : s1 <> s2.
 
-Hypothesis Hlegal : legal c0.
+Lemma copy_trans_le_dt_time :
+ forall s0 : Site,
+ dt c0 s0 <= time c0 ->
+ dt (copy_trans c0 s1 s2) s0 <= time (copy_trans c0 s1 s2).
 
+Lemma copy_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (copy_trans c0 s1 s2) s3 s4) -> s3 <> s4.
 
+Lemma copy_trans_st :
+ forall s0 : Site,
+ st (copy_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 s1 then  (st c0 s0 + 1)%Z else  st c0 s0).
 
-Lemma le_xi_yi : forall s0 : Site, (xi c0 s0 >= yi c0 s0)%Z.
+Lemma copy_trans_in_queue :
+ forall s0 s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (copy_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
 
-Proof.
+Lemma copy_trans_st_rt :
+ forall s0 : Site,
+ s0 <> owner ->
+ access s1 (rt c0) ->
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (copy_trans c0 s1 s2) s0 > 0)%Z -> rt (copy_trans c0 s1 s2) s0 = true.
 
- intros; unfold xi, yi, ctrl_copy, ctrl_dec, ctrl_inc in |- *.
+End COPY_EFFECT.
 
- generalize (pos_card_mess copy (bm c0 owner s0)); intros.
-
- generalize (legal_alternate s0 c0 Hlegal); intros.
-
- case (eq_bool_dec (rt c0 s0)); intro; rewrite e; unfold Int in |- *.
-
- generalize (alt_dec_inc (bm c0 s0 owner) H0); omega.
-
-
-
- generalize (legal_false_D c0 s0 Hlegal e); intro.
-
- generalize (D_dec_inc (bm c0 s0 owner) H0 H1); omega.
-
-Qed.
-
-
-
-Lemma le_sigma_xi_yi : (sigma_xi c0 >= sigma_yi c0)%Z.
-
-Proof.
-
- unfold sigma_xi, sigma_yi in |- *; apply ge_sigma_sigma.
-
- intros; apply le_xi_yi.
-
-Qed.
-
-
-
-Lemma st_owner_pos : (st c0 owner >= 0)%Z.
-
-Proof.
-
- generalize (four c0 Hlegal); generalize le_sigma_xi_yi; omega.
-
-Qed.
-
-
-
-End POS_PROP.
-
-
-
-Section ANC_RT.
-
-
+Section COPY_CTRL.
 
 Variable c0 : Config.
 
-
-
-Hypothesis Hlegal : legal c0.
-
-
-
-Lemma st_rt :
-
- forall s0 : Site, s0 <> owner -> (st c0 s0 > 0)%Z -> rt c0 s0 = true.
-
-Proof.
-
- elim Hlegal.
-
- intros; apply st_rt_init; trivial.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_st_rt; auto.
-
-
-
- apply rdec_trans_st_rt; auto.
-
-
-
- apply rinc_trans_st_rt; auto.
-
-
-
- apply rcop1_trans_st_rt; auto.
-
-
-
- apply rcop2_trans_st_rt; auto.
-
-
-
- apply rcop3_trans_st_rt; auto.
-
-
-
- apply del_trans_st_rt; auto.
-
-Qed.
-
-
-
-Lemma parent_rt : forall s0 s1 : Site, parent c0 s1 s0 -> rt c0 s1 = true.
-
-Proof.
-
- intros; elim H; intros; apply st_rt.
-
- apply (not_owner_inc c0 s2 s3 owner); trivial.
-
-
-
- rewrite two.
-
- apply sigma_ctrl_strct_pos with (s1 := s3); trivial.
-
-
-
- trivial.
-
-
-
- apply (not_owner_inc c0 s2 s3 owner); auto.
-
-Qed.
-
-
-
-Lemma ancestor_rt : forall s1 s2 : Site, ancestor c0 s2 s1 -> rt c0 s2 = true.
-
-Proof.
-
- intros; elim H.
-
- intros; apply parent_rt with (s0 := s3); trivial.
-
-
-
- intros; apply parent_rt with (s0 := s3); trivial.
-
-Qed.
-
-
-
-End ANC_RT.
-
-
-
-Section PARENT_CRESH.
-
-
-
-Lemma in_queue_parent_dec :
-
- forall (c1 : Config) (s1 : Site),
-
- {s2 : Site | In_queue Message (inc_dec s2) (bm c1 s1 owner)} +
-
- {(forall s2 : Site, ~ In_queue Message (inc_dec s2) (bm c1 s1 owner))}.
-
-Proof.
-
- intros; elim (bm c1 s1 owner).
-
- right; intro; apply not_in_empty.
-
-
-
- intros; case d; simpl in |- *.
-
- elim H; intro y.
-
- elim y; intros.
-
- left; exists x; auto.
-
-
-
- right; intro; red in |- *; intros; elim H0; intro.
-
- discriminate H1.
-
-
-
- absurd (In_queue Message (inc_dec s2) q); auto.
-
-
-
- intros; left; split with s; auto.
-
-
-
- elim H; intro y.
-
- elim y; intros.
-
- left; split with x; auto.
-
-
-
- right; intros; red in |- *; intros; elim H0; intro.
-
- discriminate H1.
-
-
-
- absurd (In_queue Message (inc_dec s2) q); auto.
-
-Qed.
-
-
-
-Lemma parent_dec :
-
- forall (c1 : Config) (s1 : Site),
-
- {s2 : Site | parent c1 s2 s1} + {(forall s2 : Site, ~ parent c1 s2 s1)}.
-
-Proof.
-
- intros; generalize (in_queue_parent_dec c1 s1); intro.
-
- elim H; intros y.
-
- elim y; intros.
-
- left; split with x.
-
- apply parent_intro; trivial.
-
-
-
- right; intro.
-
- red in |- *; intro.
-
- inversion H0.
-
- absurd (In_queue Message (inc_dec s2) (bm c1 s1 owner)); auto.
-
-Qed.
-
-
-
-Lemma parent_cr :
-
- forall (c0 : Config) (s1 s2 : Site),
-
- legal c0 -> parent c0 s1 s2 -> dt c0 s1 < dt c0 s2.
-
-Proof.
-
- intros c0 s1 s2 H; elim H.
-
- intros; apply init_parent_cr; trivial.
-
-
-
- simple induction t; unfold transition in |- *; intros.
-
- apply copy_trans_parent_cr; trivial.
-
-
-
- apply rdec_trans_parent_cr; trivial.
-
-
-
- apply rinc_trans_parent_cr; trivial.
-
-
-
- apply rcop1_trans_parent_cr; trivial.
-
-
-
- apply rcop2_trans_parent_cr; trivial.
-
-
-
- apply rcop3_trans_parent_cr.
-
- apply (first_copy_diff_site c); trivial.
-
-
-
- trivial.
-
-
-
- exact (ancestor_rt c H0).
-
-
-
- intros; apply le_dt_time; trivial.
-
-
-
- trivial.
-
-
-
- trivial.
-
-
-
- apply del_trans_parent_cr; trivial.
-
-Qed.
-
-
-
-Lemma wf_parent : forall c0 : Config, legal c0 -> well_founded (parent c0).
-
-Proof.
-
- intros; apply wf_R with (f := dt c0).
-
- intros; apply parent_cr; trivial.
-
-Qed.
-
-
-
-End PARENT_CRESH.
-
-
-
-Section SAFETY.
-
-
+Variable s0 s1 s2 : Site.
+
+Lemma copy_trans_ctrl_copy :
+ forall s' : Site,
+ ctrl_copy s0 s' (bm (copy_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then
+   
+   if eq_site_dec s' s2
+   then  (ctrl_copy s0 s' (bm c0) + 1)%Z
+   else  ctrl_copy s0 s' (bm c0)
+  else  ctrl_copy s0 s' (bm c0)).
+
+Lemma copy_trans_ctrl_dec :
+ forall s' : Site,
+ ctrl_dec s0 s' (bm (copy_trans c0 s1 s2)) = ctrl_dec s0 s' (bm c0).
+
+Lemma copy_trans_ctrl_inc :
+ forall s' : Site,
+ ctrl_inc s0 s' (bm (copy_trans c0 s1 s2)) = ctrl_inc s0 s' (bm c0).
+
+Remark copy_trans_sigma_copy :
+ sigma_ctrl_copy s0 (bm (copy_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl_copy s0 (bm c0) + 1)%Z
+  else  sigma_ctrl_copy s0 (bm c0)).
+
+Remark copy_trans_sigma_dec :
+ sigma_ctrl_dec s0 (bm (copy_trans c0 s1 s2)) = sigma_ctrl_dec s0 (bm c0).
+
+Remark copy_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (copy_trans c0 s1 s2)) = sigma_ctrl_inc s0 (bm c0).
+
+Lemma copy_trans_sigma_ctrl :
+ sigma_ctrl s0 (bm (copy_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl s0 (bm c0) + 1)%Z
+  else  sigma_ctrl s0 (bm c0)).
+
+End COPY_CTRL.
+
+Section COPY_XY.
 
 Variable c0 : Config.
 
+Variable s1 s2 : Site.
 
+Remark copy_trans_xi :
+ forall s0 : Site,
+ xi (copy_trans c0 s1 s2) s0 =
+ (if eq_site_dec owner s1
+  then
+   
+   if eq_site_dec s0 s2 then  (xi c0 s0 + 1)%Z else  xi c0 s0
+  else  xi c0 s0).
 
-Hypothesis Hlegal : legal c0.
+Remark copy_trans_yi :
+ forall s0 : Site, yi (copy_trans c0 s1 s2) s0 = yi c0 s0.
 
+Lemma copy_trans_sigma_xi :
+ sigma_xi (copy_trans c0 s1 s2) =
+ (if eq_site_dec owner s1
+  then  (sigma_xi c0 + 1)%Z
+  else  sigma_xi c0).
 
+Lemma copy_trans_sigma_yi : sigma_yi (copy_trans c0 s1 s2) = sigma_yi c0.
+
+End COPY_XY.
+
+Section COPY_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis s2_not_owner : s2 <> owner.
+
+Lemma copy_trans_D :
+ D_queue (bm c0 s0 owner) -> D_queue (bm (copy_trans c0 s1 s2) s0 owner).
+
+Lemma copy_trans_alt :
+ alternate (bm c0 s0 owner) -> alternate (bm (copy_trans c0 s1 s2) s0 owner).
+
+End COPY_ALT.
+
+Section COPY_RELAT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Remark copy_trans_parent :
+ forall s3 s4 : Site, parent (copy_trans c0 s1 s2) s4 s3 -> parent c0 s4 s3.
+
+Lemma copy_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (copy_trans c0 s1 s2) s3 s4 ->
+ dt (copy_trans c0 s1 s2) s3 < dt (copy_trans c0 s1 s2) s4.
+
+End COPY_RELAT. *)
+Require Export del.
+(* del:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_DEL.
+
+Definition delete_trans (c : Config) (s : Site) :=
+  mkconfig (S (time c)) (dt c) (st c) (Reset_rec_table (rt c) s)
+    (Post_message dec (bm c) s owner).
+
+End DEF_DEL.
+
+Section DEL_EFFECT.
+
+Variable c0 : Config.
 
 Variable s0 : Site.
 
+Hypothesis rt_true : rt c0 s0 = true.
 
+Lemma del_trans_le_dt_time :
+ forall s1 : Site,
+ dt c0 s1 <= time c0 ->
+ dt (delete_trans c0 s0) s1 <= time (delete_trans c0 s0).
 
-Hypothesis s0_not_owner : s0 <> owner.
+Lemma del_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (delete_trans c0 s0) s3 s4) -> s3 <> s4.
 
+Lemma del_trans_rt :
+ forall s1 : Site,
+ Int (rt (delete_trans c0 s0) s1) =
+ (if eq_site_dec s1 s0
+  then  (Int (rt c0 s1) - 1)%Z
+  else  Int (rt c0 s1)).
 
+Lemma del_trans_in_queue :
+ forall s1 s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (delete_trans c0 s1) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
 
-Hypothesis access_so : rt c0 s0 = true.
+Lemma del_trans_st_rt :
+ forall s1 : Site,
+ st c0 s1 = 0%Z ->
+ rt c0 s1 = true ->
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (delete_trans c0 s1) s0 > 0)%Z -> rt (delete_trans c0 s1) s0 = true.
 
+End DEL_EFFECT.
 
+Section DEL_CTRL.
 
-Definition root_parent :=
+Variable c0 : Config.
 
-  root Site (dt c0) (parent c0) (parent_dec c0)
+Variable s0 s1 : Site.
 
-    (fun s1 s2 : Site => parent_cr c0 s1 s2 Hlegal).
+Lemma del_trans_ctrl_copy :
+ forall s2 : Site,
+ ctrl_copy s0 s2 (bm (delete_trans c0 s1)) = ctrl_copy s0 s2 (bm c0).
 
+Lemma del_trans_ctrl_dec :
+ forall s2 : Site,
+ ctrl_dec s0 s2 (bm (delete_trans c0 s1)) =
+ (if eq_site_dec owner s0
+  then
+   
+   if eq_site_dec s2 s1
+   then  (ctrl_dec s0 s2 (bm c0) + 1)%Z
+   else  ctrl_dec s0 s2 (bm c0)
+  else  ctrl_dec s0 s2 (bm c0)).
 
+Lemma del_trans_ctrl_inc :
+ forall s2 : Site,
+ ctrl_inc s0 s2 (bm (delete_trans c0 s1)) = ctrl_inc s0 s2 (bm c0).
 
-Lemma root_no_parent : forall y : Site, ~ parent c0 y (root_parent s0).
+Remark del_trans_sigma_copy :
+ sigma_ctrl_copy s0 (bm (delete_trans c0 s1)) = sigma_ctrl_copy s0 (bm c0).
 
+Remark del_trans_sigma_dec :
+ s0 <> owner ->
+ sigma_ctrl_dec s0 (bm (delete_trans c0 s1)) = sigma_ctrl_dec s0 (bm c0).
+
+Remark del_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (delete_trans c0 s1)) = sigma_ctrl_inc s0 (bm c0).
+
+Lemma del_trans_sigma_ctrl :
+ s0 <> owner ->
+ sigma_ctrl s0 (bm (delete_trans c0 s1)) = sigma_ctrl s0 (bm c0).
+
+End DEL_CTRL.
+
+Section DEL_XY.
+
+Variable c0 : Config.
+
+Variable s1 : Site.
+
+Hypothesis rt_true : rt c0 s1 = true.
+
+Remark del_trans_xi : forall s0 : Site, xi (delete_trans c0 s1) s0 = xi c0 s0.
+
+Remark del_trans_yi : forall s0 : Site, yi (delete_trans c0 s1) s0 = yi c0 s0.
+
+Lemma del_trans_sigma_xi : sigma_xi (delete_trans c0 s1) = sigma_xi c0.
+
+Lemma del_trans_sigma_yi : sigma_yi (delete_trans c0 s1) = sigma_yi c0.
+
+End DEL_XY.
+
+Section DEL_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 : Site.
+
+Lemma del_trans_D :
+ (rt c0 s0 = false -> D_queue (bm c0 s0 owner)) ->
+ rt (delete_trans c0 s1) s0 = false ->
+ D_queue (bm (delete_trans c0 s1) s0 owner).
+
+Lemma del_trans_alt :
+ alternate (bm c0 s0 owner) -> alternate (bm (delete_trans c0 s1) s0 owner).
+
+End DEL_ALT.
+
+Section DEL_RELAT.
+
+Variable c0 : Config.
+
+Variable s0 : Site.
+
+Remark del_trans_parent :
+ forall s1 s2 : Site, parent (delete_trans c0 s0) s2 s1 -> parent c0 s2 s1.
+
+Lemma del_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (delete_trans c0 s0) s3 s4 ->
+ dt (delete_trans c0 s0) s3 < dt (delete_trans c0 s0) s4.
+
+End DEL_RELAT. *)
+Require Export rece_copy1.
+(* rece_copy1:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_REC_COP1.
+
+Definition rec_copy1_trans (c : Config) (s1 s2 : Site) :=
+  mkconfig (S (time c)) (dt c) (st c) (rt c)
+    (Post_message dec (Collect_message (bm c) s1 s2) s2 s1). 
+
+End DEF_REC_COP1.
+
+Section REC_COP1_EFFECT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Lemma rcop1_trans_le_dt_time :
+ forall s0 : Site,
+ dt c0 s0 <= time c0 ->
+ dt (rec_copy1_trans c0 s1 s2) s0 <= time (rec_copy1_trans c0 s1 s2).
+
+Lemma rcop1_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (rec_copy1_trans c0 s1 s2) s3 s4) -> s3 <> s4.
+
+Lemma rcop1_trans_in_queue :
+ forall s0 s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (rec_copy1_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rcop1_trans_st_rt :
+ forall s0 : Site,
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (rec_copy1_trans c0 s1 s2) s0 > 0)%Z ->
+ rt (rec_copy1_trans c0 s1 s2) s0 = true.
+
+End REC_COP1_EFFECT.
+
+Section REC_COP1_CTRL.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message copy.
+
+Lemma rcop1_trans_ctrl_copy :
+ forall s3 : Site,
+ ctrl_copy s0 s3 (bm (rec_copy1_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then
+   
+   if eq_site_dec s3 s2
+   then  (ctrl_copy s0 s3 (bm c0) - 1)%Z
+   else  ctrl_copy s0 s3 (bm c0)
+  else  ctrl_copy s0 s3 (bm c0)).
+
+Lemma rcop1_trans_ctrl_dec :
+ forall s3 : Site,
+ ctrl_dec s0 s3 (bm (rec_copy1_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then
+   
+   if eq_site_dec s3 s2
+   then  (ctrl_dec s0 s3 (bm c0) + 1)%Z
+   else  ctrl_dec s0 s3 (bm c0)
+  else  ctrl_dec s0 s3 (bm c0)).
+
+Lemma rcop1_trans_ctrl_inc :
+ forall s3 : Site,
+ ctrl_inc s0 s3 (bm (rec_copy1_trans c0 s1 s2)) = ctrl_inc s0 s3 (bm c0).
+
+Remark rcop1_trans_sigma_copy :
+ sigma_ctrl_copy s0 (bm (rec_copy1_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl_copy s0 (bm c0) - 1)%Z
+  else  sigma_ctrl_copy s0 (bm c0)).
+
+Remark rcop1_trans_sigma_dec :
+ sigma_ctrl_dec s0 (bm (rec_copy1_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl_dec s0 (bm c0) + 1)%Z
+  else  sigma_ctrl_dec s0 (bm c0)).
+
+Remark rcop1_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (rec_copy1_trans c0 s1 s2)) =
+ sigma_ctrl_inc s0 (bm c0).
+
+Lemma rcop1_trans_sigma_ctrl :
+ sigma_ctrl s0 (bm (rec_copy1_trans c0 s1 s2)) = sigma_ctrl s0 (bm c0).
+
+End REC_COP1_CTRL.
+
+Section REC_COP1_XY.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message copy.
+
+Remark rcop1_trans_xi :
+ forall s0 : Site, xi (rec_copy1_trans c0 s1 s2) s0 = xi c0 s0.
+
+Remark rcop1_trans_yi :
+ forall s0 : Site, yi (rec_copy1_trans c0 s1 s2) s0 = yi c0 s0.
+
+Lemma rcop1_trans_sigma_xi :
+ sigma_xi (rec_copy1_trans c0 s1 s2) = sigma_xi c0.
+
+Lemma rcop1_trans_sigma_yi :
+ sigma_yi (rec_copy1_trans c0 s1 s2) = sigma_yi c0.
+
+End REC_COP1_XY.
+
+Section REC_COP1_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Lemma rcop1_trans_D :
+ D_queue (bm c0 s0 owner) -> D_queue (bm (rec_copy1_trans c0 s1 s2) s0 owner).
+
+Lemma rcop1_trans_alt :
+ alternate (bm c0 s0 owner) ->
+ alternate (bm (rec_copy1_trans c0 s1 s2) s0 owner).
+
+End REC_COP1_ALT.
+
+Section REC_COP1_RELAT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Remark rcop1_trans_parent :
+ forall s3 s4 : Site,
+ parent (rec_copy1_trans c0 s1 s2) s4 s3 -> parent c0 s4 s3.
+
+Lemma rcop1_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (rec_copy1_trans c0 s1 s2) s3 s4 ->
+ dt (rec_copy1_trans c0 s1 s2) s3 < dt (rec_copy1_trans c0 s1 s2) s4.
+
+End REC_COP1_RELAT. *)
+Require Export rece_copy2.
+(* rece_copy2:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_REC_COP2.
+
+Definition rec_copy2_trans (c : Config) (s2 : Site) :=
+  mkconfig (S (time c)) (dt c) (st c) (Set_rec_table (rt c) s2)
+    (Collect_message (bm c) owner s2).
+
+End DEF_REC_COP2.
+
+Section REC_COP2_EFFECT.
+
+Variable c0 : Config.
+
+Variable s2 : Site.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Lemma rcop2_trans_le_dt_time :
+ forall s0 : Site,
+ dt c0 s0 <= time c0 ->
+ dt (rec_copy2_trans c0 s2) s0 <= time (rec_copy2_trans c0 s2).
+
+Lemma rcop2_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (rec_copy2_trans c0 s2) s3 s4) -> s3 <> s4.
+
+Lemma rcop2_trans_rt :
+ forall s0 : Site,
+ Int (rt (rec_copy2_trans c0 s2) s0) =
+ (if eq_site_dec s0 s2
+  then  (Int (rt c0 s0) + 1)%Z
+  else  Int (rt c0 s0)).
+
+Lemma rcop2_trans_in_queue :
+ forall s0 s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (rec_copy2_trans c0 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rcop2_trans_st_rt :
+ forall s0 : Site,
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (rec_copy2_trans c0 s2) s0 > 0)%Z ->
+ rt (rec_copy2_trans c0 s2) s0 = true.
+
+End REC_COP2_EFFECT.
+
+Section REC_COP2_CTRL.
+
+Variable c0 : Config.
+
+Variable s0 s2 : Site.
+
+Hypothesis first_mess : first Message (bm c0 owner s2) = value Message copy.
+
+Lemma rcop2_trans_ctrl_copy :
+ forall s1 : Site,
+ ctrl_copy s0 s1 (bm (rec_copy2_trans c0 s2)) =
+ (if eq_site_dec s0 owner
+  then
+   
+   if eq_site_dec s1 s2
+   then  (ctrl_copy s0 s1 (bm c0) - 1)%Z
+   else  ctrl_copy s0 s1 (bm c0)
+  else  ctrl_copy s0 s1 (bm c0)).
+
+Lemma rcop2_trans_ctrl_dec :
+ forall s1 : Site,
+ ctrl_dec s0 s1 (bm (rec_copy2_trans c0 s2)) = ctrl_dec s0 s1 (bm c0).
+
+Lemma rcop2_trans_ctrl_inc :
+ forall s1 : Site,
+ ctrl_inc s0 s1 (bm (rec_copy2_trans c0 s2)) = ctrl_inc s0 s1 (bm c0).
+
+Remark rcop2_trans_sigma_copy :
+ s0 <> owner ->
+ sigma_ctrl_copy s0 (bm (rec_copy2_trans c0 s2)) = sigma_ctrl_copy s0 (bm c0).
+
+Remark rcop2_trans_sigma_dec :
+ sigma_ctrl_dec s0 (bm (rec_copy2_trans c0 s2)) = sigma_ctrl_dec s0 (bm c0).
+
+Remark rcop2_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (rec_copy2_trans c0 s2)) = sigma_ctrl_inc s0 (bm c0).
+
+Lemma rcop2_trans_sigma_ctrl :
+ s0 <> owner ->
+ sigma_ctrl s0 (bm (rec_copy2_trans c0 s2)) = sigma_ctrl s0 (bm c0).
+
+End REC_COP2_CTRL.
+
+Section REC_COP2_XY.
+
+Variable c0 : Config.
+
+Variable s0 s2 : Site.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Hypothesis first_mess : first Message (bm c0 owner s2) = value Message copy.
+
+Remark rcop2_trans_xi :
+ forall s1 : Site, xi (rec_copy2_trans c0 s2) s1 = xi c0 s1.
+
+Remark rcop2_trans_yi :
+ forall s1 : Site, yi (rec_copy2_trans c0 s2) s1 = yi c0 s1.
+
+Lemma rcop2_trans_sigma_xi : sigma_xi (rec_copy2_trans c0 s2) = sigma_xi c0.
+
+Lemma rcop2_trans_sigma_yi : sigma_yi (rec_copy2_trans c0 s2) = sigma_yi c0.
+
+End REC_COP2_XY.
+
+Section REC_COP2_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s2 : Site.
+
+Lemma rcop2_trans_D :
+ (rt c0 s0 = false -> D_queue (bm c0 s0 owner)) ->
+ rt (rec_copy2_trans c0 s2) s0 = false ->
+ D_queue (bm (rec_copy2_trans c0 s2) s0 owner).
+
+Lemma rcop2_trans_alt :
+ alternate (bm c0 s0 owner) ->
+ alternate (bm (rec_copy2_trans c0 s2) s0 owner).
+
+End REC_COP2_ALT.
+
+Section REC_COP2_RELAT.
+
+Variable c0 : Config.
+
+Variable s2 : Site.
+
+Remark rcop2_trans_parent :
+ forall s3 s4 : Site, parent (rec_copy2_trans c0 s2) s4 s3 -> parent c0 s4 s3.
+
+Lemma rcop2_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (rec_copy2_trans c0 s2) s3 s4 ->
+ dt (rec_copy2_trans c0 s2) s3 < dt (rec_copy2_trans c0 s2) s4.
+
+End REC_COP2_RELAT. *)
+Require Export rece_copy3.
+(* rece_copy3:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_REC_COP3.
+
+Definition rec_copy3_trans (c : Config) (s1 s2 : Site) :=
+  mkconfig (S (time c)) (Update_table (dt c) s2 (S (time c))) 
+    (st c) (Set_rec_table (rt c) s2)
+    (Post_message (inc_dec s1) (Collect_message (bm c) s1 s2) s2 owner). 
+
+End DEF_REC_COP3.
+
+Section REC_COP3_EFFECT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 s3 s4 : Site.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Lemma rcop3_trans_le_dt_time :
+ dt c0 s0 <= time c0 ->
+ dt (rec_copy3_trans c0 s1 s2) s0 <= time (rec_copy3_trans c0 s1 s2).
+
+Lemma rcop3_trans_diff_site :
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (rec_copy3_trans c0 s1 s2) s3 s4) -> s3 <> s4.
+
+Lemma rcop3_trans_rt :
+ Int (rt (rec_copy3_trans c0 s1 s2) s0) =
+ (if eq_site_dec s0 s2
+  then  (Int (rt c0 s0) + 1)%Z
+  else  Int (rt c0 s0)).
+
+Lemma rcop3_trans_in_queue :
+ s0 <> s1 ->
+ In_queue Message (inc_dec s0) (bm (rec_copy3_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rcop3_trans_in_other_queue :
+ s2 <> s3 \/ s4 <> owner ->
+ In_queue Message (inc_dec s0) (bm (rec_copy3_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rcop3_trans_st_rt :
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (rec_copy3_trans c0 s1 s2) s0 > 0)%Z ->
+ rt (rec_copy3_trans c0 s1 s2) s0 = true.
+
+End REC_COP3_EFFECT.
+
+Section REC_COP3_CTRL.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis not_owner : s1 <> owner.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message copy.
+
+Lemma rcop3_trans_ctrl_copy :
+ forall s3 : Site,
+ ctrl_copy s0 s3 (bm (rec_copy3_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then
+   
+   if eq_site_dec s3 s2
+   then  (ctrl_copy s0 s3 (bm c0) - 1)%Z
+   else  ctrl_copy s0 s3 (bm c0)
+  else  ctrl_copy s0 s3 (bm c0)).
+
+Lemma rcop3_trans_ctrl_dec :
+ forall s3 : Site,
+ ctrl_dec s0 s3 (bm (rec_copy3_trans c0 s1 s2)) = ctrl_dec s0 s3 (bm c0).
+
+Lemma rcop3_trans_ctrl_inc :
+ forall s3 : Site,
+ ctrl_inc s0 s3 (bm (rec_copy3_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then
+   
+   if eq_site_dec s3 s2
+   then  (ctrl_inc s0 s3 (bm c0) + 1)%Z
+   else  ctrl_inc s0 s3 (bm c0)
+  else  ctrl_inc s0 s3 (bm c0)).
+
+Remark rcop3_trans_sigma_copy :
+ sigma_ctrl_copy s0 (bm (rec_copy3_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl_copy s0 (bm c0) - 1)%Z
+  else  sigma_ctrl_copy s0 (bm c0)).
+
+Remark rcop3_trans_sigma_dec :
+ sigma_ctrl_dec s0 (bm (rec_copy3_trans c0 s1 s2)) =
+ sigma_ctrl_dec s0 (bm c0).
+
+Remark rcop3_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (rec_copy3_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s1
+  then  (sigma_ctrl_inc s0 (bm c0) + 1)%Z
+  else  sigma_ctrl_inc s0 (bm c0)).
+
+Lemma rcop3_trans_sigma_ctrl :
+ sigma_ctrl s0 (bm (rec_copy3_trans c0 s1 s2)) = sigma_ctrl s0 (bm c0).
+
+End REC_COP3_CTRL.
+
+Section REC_COP3_XY.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Hypothesis not_owner : s1 <> owner.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message copy.
+
+Remark rcop3_trans_xi :
+ forall s0 : Site,
+ xi (rec_copy3_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 s2 then  (xi c0 s0 + 1)%Z else  xi c0 s0).
+
+Remark rcop3_trans_yi :
+ forall s0 : Site,
+ yi (rec_copy3_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 s2 then  (yi c0 s0 + 1)%Z else yi c0 s0).
+
+Lemma rcop3_trans_sigma_xi :
+ sigma_xi (rec_copy3_trans c0 s1 s2) = (sigma_xi c0 + 1)%Z.
+
+Lemma rcop3_trans_sigma_yi :
+ sigma_yi (rec_copy3_trans c0 s1 s2) = (sigma_yi c0 + 1)%Z.
+
+End REC_COP3_XY.
+
+Section REC_COP3_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Hypothesis not_owner : s1 <> owner.
+
+Lemma rcop3_trans_D :
+ (rt c0 s0 = false -> D_queue (bm c0 s0 owner)) ->
+ rt (rec_copy3_trans c0 s1 s2) s0 = false ->
+ D_queue (bm (rec_copy3_trans c0 s1 s2) s0 owner).
+
+Lemma rcop3_trans_alt :
+ D_queue (bm c0 s2 owner) ->
+ alternate (bm c0 s0 owner) ->
+ alternate (bm (rec_copy3_trans c0 s1 s2) s0 owner).
+
+End REC_COP3_ALT.
+
+Section REC_COP3_RELAT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis diff_site : s1 <> s2.
+
+Hypothesis rt_true : rt c0 s2 = false.
+
+Hypothesis
+  ancestor_rt : forall s1 s2 : Site, ancestor c0 s2 s1 -> rt c0 s2 = true.
+
+Hypothesis le_dt_time : forall s0 : Site, dt c0 s0 <= time c0.
+
+Remark no_ancestor_s2 : forall s : Site, ~ ancestor c0 s2 s.
+
+Remark rcop3_trans_parent :
+ forall s3 s4 : Site,
+ s1 <> s4 \/ s2 <> s3 ->
+ parent (rec_copy3_trans c0 s1 s2) s4 s3 -> parent c0 s4 s3.
+
+Remark rcop3_trans_no_parent :
+ forall s3 s4 : Site,
+ s1 <> s4 \/ s2 <> s3 ->
+ ~ parent c0 s4 s3 -> ~ parent (rec_copy3_trans c0 s1 s2) s4 s3.
+
+Lemma rcop3_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (rec_copy3_trans c0 s1 s2) s3 s4 ->
+ dt (rec_copy3_trans c0 s1 s2) s3 < dt (rec_copy3_trans c0 s1 s2) s4.
+
+End REC_COP3_RELAT. *)
+Require Export rece_dec.
+(* rece_dec:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_REC_DEC.
+
+Definition rec_dec_trans (c : Config) (s1 s2 : Site) :=
+  mkconfig (S (time c)) (dt c) (Dec_send_table (st c) s2) 
+    (rt c) (Collect_message (bm c) s1 s2). 
+
+End DEF_REC_DEC.
+
+Section REC_DEC_EFFECT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Lemma rdec_trans_le_dt_time :
+ dt c0 s0 <= time c0 ->
+ dt (rec_dec_trans c0 s1 s2) s0 <= time (rec_dec_trans c0 s1 s2).
+
+Lemma rdec_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (rec_dec_trans c0 s1 s2) s3 s4) -> s3 <> s4.
+
+Lemma rdec_trans_st :
+ st (rec_dec_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 s2 then (st c0 s0 - 1)%Z else st c0 s0).
+
+Lemma rdec_trans_in_queue :
+ forall s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (rec_dec_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rdec_trans_st_rt :
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (rec_dec_trans c0 s1 s2) s0 > 0)%Z ->
+ rt (rec_dec_trans c0 s1 s2) s0 = true.
+
+End REC_DEC_EFFECT.
+
+Section REC_DEC_CTRL.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message dec.
+
+Lemma rdec_trans_ctrl_copy :
+ forall s3 : Site,
+ ctrl_copy s0 s3 (bm (rec_dec_trans c0 s1 s2)) = ctrl_copy s0 s3 (bm c0).
+
+Lemma rdec_trans_ctrl_dec :
+ forall s3 : Site,
+ ctrl_dec s0 s3 (bm (rec_dec_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then
+  if eq_site_dec s3 s1
+   then (ctrl_dec s0 s3 (bm c0) - 1)%Z
+   else ctrl_dec s0 s3 (bm c0)
+  else ctrl_dec s0 s3 (bm c0)).
+
+Lemma rdec_trans_ctrl_inc :
+ forall s3 : Site,
+ ctrl_inc s0 s3 (bm (rec_dec_trans c0 s1 s2)) = ctrl_inc s0 s3 (bm c0).
+
+Remark rdec_trans_sigma_copy :
+ sigma_ctrl_copy s0 (bm (rec_dec_trans c0 s1 s2)) =
+ sigma_ctrl_copy s0 (bm c0).
+
+Remark rdec_trans_sigma_dec :
+ sigma_ctrl_dec s0 (bm (rec_dec_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then (sigma_ctrl_dec s0 (bm c0) - 1)%Z
+  else sigma_ctrl_dec s0 (bm c0)).
+
+Remark rdec_trans_sigma_inc :
+ sigma_ctrl_inc s0 (bm (rec_dec_trans c0 s1 s2)) = sigma_ctrl_inc s0 (bm c0).
+
+Lemma rdec_trans_sigma_ctrl :
+ sigma_ctrl s0 (bm (rec_dec_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then (sigma_ctrl s0 (bm c0) - 1)%Z
+  else sigma_ctrl s0 (bm c0)).
+
+End REC_DEC_CTRL.
+
+Section REC_DEC_XY.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis first_mess : first Message (bm c0 s1 s2) = value Message dec.
+
+Remark rdec_trans_xi :
+ forall s0 : Site,
+ xi (rec_dec_trans c0 s1 s2) s0 =
+ (if eq_site_dec owner s2
+  then
+   if eq_site_dec s0 s1 then (xi c0 s0 - 1)%Z else xi c0 s0
+  else xi c0 s0).
+
+Remark rdec_trans_yi :
+ forall s0 : Site, yi (rec_dec_trans c0 s1 s2) s0 = yi c0 s0.
+
+Lemma rdec_trans_sigma_xi :
+ sigma_xi (rec_dec_trans c0 s1 s2) =
+ (if eq_site_dec owner s2
+  then (sigma_xi c0 - 1)%Z
+  else sigma_xi c0).
+
+Lemma rdec_trans_sigma_yi : sigma_yi (rec_dec_trans c0 s1 s2) = sigma_yi c0.
+
+End REC_DEC_XY.
+
+Section REC_DEC_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Lemma rdec_trans_D :
+ D_queue (bm c0 s0 owner) -> D_queue (bm (rec_dec_trans c0 s1 s2) s0 owner).
+
+Lemma rdec_trans_alt :
+ alternate (bm c0 s0 owner) ->
+ alternate (bm (rec_dec_trans c0 s1 s2) s0 owner).
+
+End REC_DEC_ALT.
+
+Section REC_DEC_RELAT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Remark rdec_trans_parent :
+ forall s3 s4 : Site,
+ parent (rec_dec_trans c0 s1 s2) s4 s3 -> parent c0 s4 s3.
+
+Lemma rdec_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (rec_dec_trans c0 s1 s2) s3 s4 ->
+ dt (rec_dec_trans c0 s1 s2) s3 < dt (rec_dec_trans c0 s1 s2) s4.
+
+End REC_DEC_RELAT. *)
+Require Export rece_inc.
+(* rece_inc:
+Require Export init.
+Require Export table_act.
+Require Export mess_act.
+
+Unset Standard Proposition Elimination Names.
+
+Section DEF_REC_INC.
+
+Definition rec_inc_trans (c : Config) (s1 s3 : Site) :=
+  mkconfig (S (time c)) (dt c) (Inc_send_table (st c) owner) 
+    (rt c) (Post_message dec (Collect_message (bm c) s1 owner) owner s3). 
+
+End DEF_REC_INC.
+
+Section REC_INC_EFFECT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Lemma rinc_trans_le_dt_time :
+ forall s0 : Site,
+ dt c0 s0 <= time c0 ->
+ dt (rec_inc_trans c0 s1 s2) s0 <= time (rec_inc_trans c0 s1 s2).
+
+Lemma rinc_trans_diff_site :
+ forall s3 s4 : Site,
+ (In_queue Message copy (bm c0 s3 s4) -> s3 <> s4) ->
+ In_queue Message copy (bm (rec_inc_trans c0 s1 s2) s3 s4) -> s3 <> s4.
+
+Lemma rinc_trans_st :
+ forall s0 : Site,
+ st (rec_inc_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 owner
+  then (st c0 s0 + 1)%Z
+  else st c0 s0).
+
+Lemma rinc_trans_in_queue :
+ forall s0 s3 s4 : Site,
+ In_queue Message (inc_dec s0) (bm (rec_inc_trans c0 s1 s2) s3 s4) ->
+ In_queue Message (inc_dec s0) (bm c0 s3 s4).
+
+Lemma rinc_trans_st_rt :
+ forall s0 : Site,
+ s0 <> owner ->
+ ((st c0 s0 > 0)%Z -> rt c0 s0 = true) ->
+ (st (rec_inc_trans c0 s1 s2) s0 > 0)%Z ->
+ rt (rec_inc_trans c0 s1 s2) s0 = true.
+
+End REC_INC_EFFECT.
+
+Section REC_INC_CTRL.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis
+  first_mess : first Message (bm c0 s1 owner) = value Message (inc_dec s2).
+
+Lemma rinc_trans_ctrl_copy :
+ forall s0 s3 : Site,
+ ctrl_copy s0 s3 (bm (rec_inc_trans c0 s1 s2)) = ctrl_copy s0 s3 (bm c0).
+
+Lemma rinc_trans_ctrl_dec :
+ forall s0 s3 : Site,
+ ctrl_dec s0 s3 (bm (rec_inc_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then
+   if eq_site_dec s3 owner
+   then (ctrl_dec s0 s3 (bm c0) + 1)%Z
+   else ctrl_dec s0 s3 (bm c0)
+  else ctrl_dec s0 s3 (bm c0)).
+
+Lemma rinc_trans_ctrl_inc :
+ forall s0 s3 : Site,
+ ctrl_inc s0 s3 (bm (rec_inc_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then
+   if eq_site_dec s3 s1
+   then (ctrl_inc s0 s3 (bm c0) - 1)%Z
+   else ctrl_inc s0 s3 (bm c0)
+  else ctrl_inc s0 s3 (bm c0)).
+
+Remark rinc_trans_sigma_copy :
+ forall s0 : Site,
+ sigma_ctrl_copy s0 (bm (rec_inc_trans c0 s1 s2)) =
+ sigma_ctrl_copy s0 (bm c0).
+
+Remark rinc_trans_sigma_dec :
+ forall s0 : Site,
+ sigma_ctrl_dec s0 (bm (rec_inc_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then (sigma_ctrl_dec s0 (bm c0) + 1)%Z
+  else sigma_ctrl_dec s0 (bm c0)).
+
+Remark rinc_trans_sigma_inc :
+ forall s0 : Site,
+ sigma_ctrl_inc s0 (bm (rec_inc_trans c0 s1 s2)) =
+ (if eq_site_dec s0 s2
+  then (sigma_ctrl_inc s0 (bm c0) - 1)%Z
+  else sigma_ctrl_inc s0 (bm c0)).
+
+Lemma rinc_trans_sigma_ctrl :
+ forall s0 : Site,
+ sigma_ctrl s0 (bm (rec_inc_trans c0 s1 s2)) = sigma_ctrl s0 (bm c0).
+
+End REC_INC_CTRL.
+
+Section REC_INC_XY.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Hypothesis
+  first_mess : first Message (bm c0 s1 owner) = value Message (inc_dec s2).
+
+Hypothesis not_owner : s2 <> owner.
+
+Remark rinc_trans_xi :
+ forall s0 : Site, xi (rec_inc_trans c0 s1 s2) s0 = xi c0 s0.
+
+Remark rinc_trans_yi :
+ forall s0 : Site,
+ yi (rec_inc_trans c0 s1 s2) s0 =
+ (if eq_site_dec s0 s1 then (yi c0 s0 - 1)%Z else yi c0 s0).
+
+Lemma rinc_trans_sigma_xi : sigma_xi (rec_inc_trans c0 s1 s2) = sigma_xi c0.
+
+Lemma rinc_trans_sigma_yi :
+ sigma_yi (rec_inc_trans c0 s1 s2) = (sigma_yi c0 - 1)%Z.
+
+End REC_INC_XY.
+
+Section REC_INC_ALT.
+
+Variable c0 : Config.
+
+Variable s0 s1 s2 : Site.
+
+Hypothesis s2_not_owner : s2 <> owner.
+
+Lemma rinc_trans_D :
+ D_queue (bm c0 s0 owner) -> D_queue (bm (rec_inc_trans c0 s1 s2) s0 owner).
+
+Lemma rinc_trans_alt :
+ alternate (bm c0 s0 owner) ->
+ alternate (bm (rec_inc_trans c0 s1 s2) s0 owner).
+
+End REC_INC_ALT.
+
+Section REC_INC_RELAT.
+
+Variable c0 : Config.
+
+Variable s1 s2 : Site.
+
+Remark rinc_trans_parent :
+ forall s3 s4 : Site,
+ parent (rec_inc_trans c0 s1 s2) s4 s3 -> parent c0 s4 s3.
+
+Lemma rinc_trans_parent_cr :
+ forall s3 s4 : Site,
+ (parent c0 s3 s4 -> dt c0 s3 < dt c0 s4) ->
+ parent (rec_inc_trans c0 s1 s2) s3 s4 ->
+ dt (rec_inc_trans c0 s1 s2) s3 < dt (rec_inc_trans c0 s1 s2) s4.
+
+End REC_INC_RELAT. *)
+
+Unset Standard Proposition Elimination Names.
+
+Section EVOLUTION.
+	
+Inductive class_trans (c : Config) : Set :=
+  | make_copy :
+      forall s1 s2 : Site,
+      s1 <> s2 -> s2 <> owner -> access s1 (rt c) -> class_trans c
+  | receive_dec :
+      forall s1 s2 : Site,
+      first Message (bm c s1 s2) = value Message dec -> class_trans c
+  | receive_inc :
+      forall s1 s3 : Site,
+      first Message (bm c s1 owner) = value Message (inc_dec s3) ->
+      class_trans c
+  | receive_copy1 :
+      forall s1 s2 : Site,
+      rt c s2 = true ->
+      first Message (bm c s1 s2) = value Message copy -> class_trans c
+  | receive_copy2 :
+      forall s2 : Site,
+      rt c s2 = false ->
+      first Message (bm c owner s2) = value Message copy -> class_trans c
+  | receive_copy3 :
+      forall s1 s2 : Site,
+      rt c s2 = false ->
+      s1 <> owner ->
+      first Message (bm c s1 s2) = value Message copy -> class_trans c
+  | delete_entry :
+      forall s : Site,
+      st c s = 0%Z -> rt c s = true -> s <> owner -> class_trans c.
+
+Definition transition (c : Config) (t : class_trans c) :=
+  match t with
+  | make_copy s1 s2 h1 h2 h3 => copy_trans c s1 s2
+  | receive_dec s1 s2 h1 => rec_dec_trans c s1 s2
+  | receive_inc s1 s3 h1 => rec_inc_trans c s1 s3
+  | receive_copy1 s1 s2 h1 h2 => rec_copy1_trans c s1 s2
+  | receive_copy2 s2 h1 h2 => rec_copy2_trans c s2
+  | receive_copy3 s1 s2 h1 h2 h3 => rec_copy3_trans c s1 s2
+  | delete_entry s h1 h2 h3 => delete_trans c s
+  end.
+
+Inductive legal : Config -> Prop :=
+  | begin : legal config_init
+  | after :
+      forall (c : Config) (t : class_trans c),
+      legal c -> legal (transition c t).
+	
+End EVOLUTION.
+
+Section M_INVARIANTS.
+
+Lemma le_dt_time :
+ forall (c0 : Config) (s0 : Site), legal c0 -> dt c0 s0 <= time c0.
 Proof.
+ intros; elim H.
+ apply init_le_dt_time.
 
- intro; unfold root_parent in |- *; apply root_no_R.
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_le_dt_time; trivial.
 
+ apply rdec_trans_le_dt_time; trivial.
+
+ apply rinc_trans_le_dt_time; trivial.
+
+ apply rcop1_trans_le_dt_time; trivial.
+
+ apply rcop2_trans_le_dt_time; trivial.
+
+ apply rcop3_trans_le_dt_time; trivial.
+
+ apply del_trans_le_dt_time; trivial.
 Qed.
 
-
-
-Lemma rt_root : rt c0 (root_parent s0) = true.
-
+Lemma not_owner_inc :
+ forall (c : Config) (s0 s1 s2 : Site),
+ legal c -> In_queue Message (inc_dec s0) (bm c s1 s2) -> s0 <> owner.
 Proof.
+ intros c s0 s1 s2 H; elim H; simpl in |- *.
+ contradiction.
 
- unfold root_parent in |- *; apply prop_root.
+ simple induction t; unfold transition in |- *; intros.
+ apply H1; apply copy_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
+
+ apply H1; apply rdec_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
+
+ apply H1; apply rinc_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
+
+ apply H1; apply rcop1_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
+
+ apply H1; apply rcop2_trans_in_queue with (s2 := s3); trivial.
+
+ case (eq_site_dec s0 s3); intro.
+ rewrite e1; trivial.
+
+ apply H1; apply rcop3_trans_in_queue with (s1 := s3) (s2 := s4); trivial.
+
+ apply H1; apply del_trans_in_queue with (s1 := s); trivial.
+Qed.
+
+Lemma not_owner_first_inc :
+ forall (c : Config) (s0 s1 s2 : Site),
+ legal c ->
+ first Message (bm c s1 s2) = value Message (inc_dec s0) -> s0 <> owner.
+Proof.
+ intros; apply (not_owner_inc c s0 s1 s2).
+ trivial.
+
+ apply first_in; trivial.
+Qed.
+
+Lemma copy_diff_site :
+ forall (c0 : Config) (s1 s2 : Site),
+ legal c0 -> In_queue Message copy (bm c0 s1 s2) -> s1 <> s2.
+Proof.
+ intros c0 s1 s2 Hlegal; elim Hlegal.
+ intros; apply init_copy_diff_site; trivial.
+
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
+
+ apply rdec_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
+
+ apply rinc_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
+
+ apply rcop1_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
+
+ apply rcop2_trans_diff_site with (c0 := c) (s2 := s0); trivial.
+
+ apply rcop3_trans_diff_site with (c0 := c) (s1 := s0) (s2 := s3); trivial.
+
+ apply del_trans_diff_site with (c0 := c) (s0 := s); trivial.
+Qed.
+
+Lemma first_copy_diff_site :
+ forall (c0 : Config) (s1 s2 : Site),
+ legal c0 -> first Message (bm c0 s1 s2) = value Message copy -> s1 <> s2.
+Proof.
+ intros; apply (copy_diff_site c0 s1 s2).
+ trivial.
+
+ apply first_in; trivial.
+Qed.
+
+End M_INVARIANTS.
+
+Section X_INVARIANTS.
+
+Lemma two :
+ forall (c0 : Config) (s0 : Site),
+ legal c0 -> s0 <> owner -> st c0 s0 = sigma_ctrl s0 (bm c0).
+Proof.
+ intros; elim H; simpl in |- *.
+ rewrite sigma_ctrl_init; auto.
+
+ simple induction t; unfold transition in |- *; intros.
+ rewrite copy_trans_sigma_ctrl. 
+ rewrite copy_trans_st.
+ case (eq_site_dec s0 s1); intro; omega.
+
+ rewrite rdec_trans_sigma_ctrl. 
+ rewrite rdec_trans_st.
+ case (eq_site_dec s0 s2); intro; omega.
 
  trivial.
 
+ rewrite rinc_trans_sigma_ctrl. 
+ rewrite rinc_trans_st.
+ rewrite case_ineq; auto.
 
+ trivial.
+
+ trivial.
+
+ rewrite rcop1_trans_sigma_ctrl; auto. 
+
+ rewrite rcop2_trans_sigma_ctrl; auto. 
+
+ rewrite rcop3_trans_sigma_ctrl; auto. 
+
+ rewrite del_trans_sigma_ctrl; auto. 
+Qed.
+
+Lemma four :
+ forall c : Config, legal c -> (st c owner + sigma_yi c)%Z = sigma_xi c.
+Proof.
+ intros; elim H; simpl in |- *.
+ rewrite sigma_xi_init; rewrite sigma_yi_init; trivial.
+
+ simple induction t; unfold transition in |- *; intros.
+ rewrite copy_trans_st.
+ rewrite copy_trans_sigma_xi.
+ rewrite copy_trans_sigma_yi.
+ case (eq_site_dec owner s1); intro; omega.
+
+ rewrite rdec_trans_st.
+ rewrite rdec_trans_sigma_xi.
+ rewrite rdec_trans_sigma_yi.
+ case (eq_site_dec owner s2); intro; omega.
+
+ trivial.
+
+ trivial.
+
+ rewrite rinc_trans_st.
+ rewrite rinc_trans_sigma_xi.
+ rewrite rinc_trans_sigma_yi.
+ rewrite case_eq; omega.
+
+ trivial.
+
+ trivial.
+
+ apply (not_owner_inc c0 s3 s1 owner).
+ trivial.
+
+ apply first_in; auto.
+
+ rewrite rcop1_trans_sigma_xi.
+ rewrite rcop1_trans_sigma_yi.
+ auto.
+
+ trivial.
+
+ trivial.
+
+ rewrite rcop2_trans_sigma_xi.
+ rewrite rcop2_trans_sigma_yi.
+ auto.
+
+ trivial.
+
+ trivial.
+
+ trivial.
+
+ rewrite rcop3_trans_sigma_xi.
+ rewrite rcop3_trans_sigma_yi.
+ simpl in |- *; omega.
+
+ trivial.
+
+ trivial.
+
+ trivial.
+
+ trivial.
+
+ rewrite del_trans_sigma_xi.
+ rewrite del_trans_sigma_yi.
+ auto.
+
+ trivial.
+Qed.
+
+End X_INVARIANTS.
+
+Section ALT_PROP.
+
+Lemma legal_false_D :
+ forall (c0 : Config) (s0 : Site),
+ legal c0 -> rt c0 s0 = false -> D_queue (bm c0 s0 owner).
+Proof.
+ intros c0 s0 H; elim H.
+ intro; apply D_init.
+
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_D; auto.
+
+ apply rdec_trans_D; auto.
+
+ apply rinc_trans_D.
+ apply (not_owner_first_inc c s3 s1 owner); auto.
+
+ auto.
+
+ apply rcop1_trans_D; auto.
+
+ apply rcop2_trans_D; auto.
+
+ apply rcop3_trans_D; auto.
+
+ apply del_trans_D; auto.
+Qed.
+
+Lemma legal_alternate :
+ forall (s0 : Site) (c0 : Config), legal c0 -> alternate (bm c0 s0 owner).
+Proof.
+ intros; elim H.
+ apply alt_init.
+
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_alt; trivial.
+
+ apply rdec_trans_alt; trivial.
+
+ apply rinc_trans_alt.
+ apply (not_owner_first_inc c s3 s1 owner); auto.
+
+ trivial.
+
+ apply rcop1_trans_alt; trivial.
+
+ apply rcop2_trans_alt; trivial.
+
+ apply rcop3_trans_alt.
+ trivial.
+
+ apply legal_false_D; trivial.
+
+ trivial.
+
+ apply del_trans_alt; trivial.
+Qed.
+
+End ALT_PROP.
+
+Section POS_PROP.
+
+Variable c0 : Config.
+
+Hypothesis Hlegal : legal c0.
+
+Lemma le_xi_yi : forall s0 : Site, (xi c0 s0 >= yi c0 s0)%Z.
+Proof.
+ intros; unfold xi, yi, ctrl_copy, ctrl_dec, ctrl_inc in |- *.
+ generalize (pos_card_mess copy (bm c0 owner s0)); intros.
+ generalize (legal_alternate s0 c0 Hlegal); intros.
+ case (eq_bool_dec (rt c0 s0)); intro; rewrite e; unfold Int in |- *.
+ generalize (alt_dec_inc (bm c0 s0 owner) H0); omega.
+
+ generalize (legal_false_D c0 s0 Hlegal e); intro.
+ generalize (D_dec_inc (bm c0 s0 owner) H0 H1); omega.
+Qed.
+
+Lemma le_sigma_xi_yi : (sigma_xi c0 >= sigma_yi c0)%Z.
+Proof.
+ unfold sigma_xi, sigma_yi in |- *; apply ge_sigma_sigma.
+ intros; apply le_xi_yi.
+Qed.
+
+Lemma st_owner_pos : (st c0 owner >= 0)%Z.
+Proof.
+ generalize (four c0 Hlegal); generalize le_sigma_xi_yi; omega.
+Qed.
+
+End POS_PROP.
+
+Section ANC_RT.
+
+Variable c0 : Config.
+
+Hypothesis Hlegal : legal c0.
+
+Lemma st_rt :
+ forall s0 : Site, s0 <> owner -> (st c0 s0 > 0)%Z -> rt c0 s0 = true.
+Proof.
+ elim Hlegal.
+ intros; apply st_rt_init; trivial.
+
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_st_rt; auto.
+
+ apply rdec_trans_st_rt; auto.
+
+ apply rinc_trans_st_rt; auto.
+
+ apply rcop1_trans_st_rt; auto.
+
+ apply rcop2_trans_st_rt; auto.
+
+ apply rcop3_trans_st_rt; auto.
+
+ apply del_trans_st_rt; auto.
+Qed.
+
+Lemma parent_rt : forall s0 s1 : Site, parent c0 s1 s0 -> rt c0 s1 = true.
+Proof.
+ intros; elim H; intros; apply st_rt.
+ apply (not_owner_inc c0 s2 s3 owner); trivial.
+
+ rewrite two.
+ apply sigma_ctrl_strct_pos with (s1 := s3); trivial.
+
+ trivial.
+
+ apply (not_owner_inc c0 s2 s3 owner); auto.
+Qed.
+
+Lemma ancestor_rt : forall s1 s2 : Site, ancestor c0 s2 s1 -> rt c0 s2 = true.
+Proof.
+ intros; elim H.
+ intros; apply parent_rt with (s0 := s3); trivial.
+
+ intros; apply parent_rt with (s0 := s3); trivial.
+Qed.
+
+End ANC_RT.
+
+Section PARENT_CRESH.
+
+Lemma in_queue_parent_dec :
+ forall (c1 : Config) (s1 : Site),
+ {s2 : Site | In_queue Message (inc_dec s2) (bm c1 s1 owner)} +
+ {(forall s2 : Site, ~ In_queue Message (inc_dec s2) (bm c1 s1 owner))}.
+Proof.
+ intros; elim (bm c1 s1 owner).
+ right; intro; apply not_in_empty.
+
+ intros; case d; simpl in |- *.
+ elim H; intro y.
+ elim y; intros.
+ left; exists x; auto.
+
+ right; intro; red in |- *; intros; elim H0; intro.
+ discriminate H1.
+
+ absurd (In_queue Message (inc_dec s2) q); auto.
+
+ intros; left; split with s; auto.
+
+ elim H; intro y.
+ elim y; intros.
+ left; split with x; auto.
+
+ right; intros; red in |- *; intros; elim H0; intro.
+ discriminate H1.
+
+ absurd (In_queue Message (inc_dec s2) q); auto.
+Qed.
+
+Lemma parent_dec :
+ forall (c1 : Config) (s1 : Site),
+ {s2 : Site | parent c1 s2 s1} + {(forall s2 : Site, ~ parent c1 s2 s1)}.
+Proof.
+ intros; generalize (in_queue_parent_dec c1 s1); intro.
+ elim H; intros y.
+ elim y; intros.
+ left; split with x.
+ apply parent_intro; trivial.
+
+ right; intro.
+ red in |- *; intro.
+ inversion H0.
+ absurd (In_queue Message (inc_dec s2) (bm c1 s1 owner)); auto.
+Qed.
+
+Lemma parent_cr :
+ forall (c0 : Config) (s1 s2 : Site),
+ legal c0 -> parent c0 s1 s2 -> dt c0 s1 < dt c0 s2.
+Proof.
+ intros c0 s1 s2 H; elim H.
+ intros; apply init_parent_cr; trivial.
+
+ simple induction t; unfold transition in |- *; intros.
+ apply copy_trans_parent_cr; trivial.
+
+ apply rdec_trans_parent_cr; trivial.
+
+ apply rinc_trans_parent_cr; trivial.
+
+ apply rcop1_trans_parent_cr; trivial.
+
+ apply rcop2_trans_parent_cr; trivial.
+
+ apply rcop3_trans_parent_cr.
+ apply (first_copy_diff_site c); trivial.
+
+ trivial.
+
+ exact (ancestor_rt c H0).
+
+ intros; apply le_dt_time; trivial.
+
+ trivial.
+
+ trivial.
+
+ apply del_trans_parent_cr; trivial.
+Qed.
+
+Lemma wf_parent : forall c0 : Config, legal c0 -> well_founded (parent c0).
+Proof.
+ intros; apply wf_R with (f := dt c0).
+ intros; apply parent_cr; trivial.
+Qed.
+
+End PARENT_CRESH.
+
+Section SAFETY.
+
+Variable c0 : Config.
+
+Hypothesis Hlegal : legal c0.
+
+Variable s0 : Site.
+
+Hypothesis s0_not_owner : s0 <> owner.
+
+Hypothesis access_so : rt c0 s0 = true.
+
+Definition root_parent :=
+  root Site (dt c0) (parent c0) (parent_dec c0)
+    (fun s1 s2 : Site => parent_cr c0 s1 s2 Hlegal).
+
+Lemma root_no_parent : forall y : Site, ~ parent c0 y (root_parent s0).
+Proof.
+ intro; unfold root_parent in |- *; apply root_no_R.
+Qed.
+
+Lemma rt_root : rt c0 (root_parent s0) = true.
+Proof.
+ unfold root_parent in |- *; apply prop_root.
+ trivial.
 
  intros; apply parent_rt with (s0 := y); trivial.
-
 Qed.
-
-
 
 Lemma pos_root_xi : (xi c0 (root_parent s0) > 0)%Z.
-
 Proof.
-
  unfold xi in |- *; rewrite rt_root; unfold Int in |- *.
-
  generalize (ctrl_copy_pos (bm c0) owner (root_parent s0)).
-
  generalize (ctrl_dec_pos (bm c0) owner (root_parent s0)).
-
  omega.
-
 Qed.
-
-
 
 Lemma root_no_in_queue_inc :
-
  forall y : Site,
-
  ~ In_queue Message (inc_dec y) (bm c0 (root_parent s0) owner).
-
 Proof.
-
  intro; red in |- *; intro.
-
  elim (root_no_parent y); apply parent_intro; trivial.
-
 Qed.
-
-
 
 Lemma null_root_ctrl_inc :
-
  (fun s : Site => ctrl_inc s (root_parent s0) (bm c0)) =
-
  (fun s : Site => 0%Z).
-
 Proof.
-
  apply funct_eq; intro.
-
  unfold ctrl_inc, card_mess in |- *; apply card_null.
-
  apply root_no_in_queue_inc.
-
 Qed.
-
-
 
 Lemma null_root_yi : yi c0 (root_parent s0) = 0%Z.
-
 Proof.
-
  unfold yi in |- *; rewrite null_root_ctrl_inc; apply sigma_null.
-
 Qed.
-
-
 
 Lemma lt_root_xi_yi : (xi c0 (root_parent s0) > yi c0 (root_parent s0))%Z.
-
 Proof.
-
  rewrite null_root_yi; exact pos_root_xi.
-
 Qed.
 
-
-
 Lemma lt_sigma_xi_yi : (sigma_xi c0 > sigma_yi c0)%Z.
-
 Proof.
-
  apply Zlt_gt; unfold sigma_xi, sigma_yi in |- *; apply lt_sigma_sigma.
-
-
 
  intro; apply Zge_le; apply le_xi_yi; trivial.
 
-
-
  exists (root_parent s0); split.
-
  apply Zgt_lt; apply lt_root_xi_yi.
 
-
-
  apply in_s_LS.
-
 Qed.
-
-
 
 Lemma pos_st_owner : (st c0 owner > 0)%Z.
-
 Proof.
-
  generalize (four c0 Hlegal); generalize lt_sigma_xi_yi; omega.
-
 Qed.
 
-
-
 End SAFETY.
-

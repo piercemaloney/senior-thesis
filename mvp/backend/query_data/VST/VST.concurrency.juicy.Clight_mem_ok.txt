@@ -1990,7 +1990,6 @@ Hint Resolve Ptrofs.modulus_pos Ptrofs.eqm_refl Ptrofs.eqm_refl2 Ptrofs.eqm_sym 
   Ptrofs.eqm_unsigned_repr Ptrofs.eqm_unsigned_repr_l Ptrofs.eqm_unsigned_repr_r
   Ptrofs.unsigned_range Ptrofs.unsigned_range_2
   Ptrofs.repr_unsigned Ptrofs.repr_signed Ptrofs.unsigned_repr : ints. *)
-
 Require Import compcert.lib.Coqlib.
 (* compcert.lib.Coqlib:
 Require Export String.
@@ -2725,7 +2724,6 @@ Lemma nlist_forall2_imply:
   forall (P2: A -> B -> Prop),
   (forall v1 v2, nIn v1 l1 -> nIn v2 l2 -> P1 v1 v2 -> P2 v1 v2) ->
   nlist_forall2 P2 l1 l2. *)
-
 Require Import compcert.lib.Maps.
 (* compcert.lib.Maps:
 Require Import Equivalence EquivDec.
@@ -3664,7 +3662,6 @@ Module PTree_Properties := Tree_Properties(PTree).
 
 Notation "a ! b" := (PTree.get b a) (at level 1).
 Notation "a !! b" := (PMap.get b a) (at level 1). *)
-
 Require Import compcert.common.Values.
 (* compcert.common.Values:
 Require Import Coqlib.
@@ -5120,7 +5117,6 @@ Definition compose_meminj (f f': meminj) : meminj :=
 Lemma val_inject_compose:
   forall f f' v1 v2 v3,
   Val.inject f v1 v2 -> Val.inject f' v2 v3 -> *)
-
 Require Import compcert.common.Globalenvs.
 (* compcert.common.Globalenvs:
 Local Unset Elimination Schemes.
@@ -5992,7 +5988,6 @@ End TRANSFORM_TOTAL.
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t. *)
-
 Require Import compcert.common.Memory.
 (* compcert.common.Memory:
 Require Import Zwf.
@@ -7797,7 +7792,6 @@ Hint Resolve
   Mem.valid_access_free_inv_2
   Mem.unchanged_on_refl
 : mem. *)
-
 Require Import compcert.cfrontend.Ctypes.
 (* compcert.cfrontend.Ctypes:
 Require Import Axioms Coqlib Maps Errors.
@@ -8548,7 +8542,6 @@ Theorem link_match_program:
   exists tp, link tp1 tp2 = Some tp /\ match_program p tp.
 
 End LINK_MATCH_PROGRAM. *)
-
 Require Import compcert.cfrontend.Clight.
 (* compcert.cfrontend.Clight:
 Require Import Coqlib.
@@ -9105,2511 +9098,833 @@ Definition semantics2 (p: program) :=
 
 Lemma semantics_receptive:
   forall (p: program), receptive (semantics1 p). *)
-
 Require Import VST.sepcomp.event_semantics.
-(* VST.sepcomp.event_semantics:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-
-Require Import VST.msl.Extensionality.
-Require Import VST.sepcomp.mem_lemmas.
-Require Import VST.sepcomp.semantics.
-Require Import VST.sepcomp.semantics_lemmas.
-
-Inductive mem_event :=
-  Write : forall (b : block) (ofs : Z) (bytes : list memval), mem_event
-| Read : forall (b:block) (ofs n:Z) (bytes: list memval), mem_event
-| Alloc: forall (b:block)(lo hi:Z), mem_event
-
-| Free: forall (l: list (block * Z * Z)), mem_event.
-
-Fixpoint ev_elim (m:mem) (T: list mem_event) (m':mem):Prop :=
-  match T with
-   nil => m'=m
- | (Read b ofs n bytes :: R) => Mem.loadbytes m b ofs n = Some bytes /\ ev_elim m R m'
- | (Write b ofs bytes :: R) => exists m'', Mem.storebytes m b ofs bytes = Some m'' /\ ev_elim m'' R m'
- | (Alloc b lo hi :: R) => exists m'', Mem.alloc m lo hi = (m'',b) /\ ev_elim m'' R m'
- | (Free l :: R) => exists m'', Mem.free_list m l = Some m'' /\ ev_elim m'' R m'
-  end.
-
-Definition pmax (popt qopt: option permission): option permission :=
-  match popt, qopt with
-    _, None => popt
-  | None, _ => qopt
-  | Some p, Some q => if Mem.perm_order_dec p q then Some p else Some q
-  end.
-
-Lemma po_pmax_I p q1 q2:
-  Mem.perm_order'' p q1 -> Mem.perm_order'' p q2 -> Mem.perm_order'' p (pmax q1 q2).
-
-Fixpoint cur_perm (l: block * Z) (T: list mem_event): option permission :=
-  match T with
-      nil => None
-    | (mu :: R) =>
-          let popt := cur_perm l R in
-          match mu, l with
-            | (Read b ofs n bytes), (b',ofs') =>
-                 pmax (if eq_block b b' && zle ofs ofs' && zlt ofs' (ofs+n)
-                       then Some Readable else None) popt
-            | (Write b ofs bytes), (b',ofs') =>
-                 pmax (if eq_block b b' && zle ofs ofs' && zlt ofs' (ofs+ Zlength bytes)
-                       then Some Writable else None) popt
-            | (Alloc b lo hi), (b',ofs') =>  
-                 if eq_block b b' then None else popt
-            | (Free l), (b',ofs') =>
-                 List.fold_right (fun tr qopt => match tr with (b,lo,hi) =>
-                                                   if eq_block b b' && zle lo ofs' && zlt ofs' hi
-                                                   then Some Freeable else qopt
-                                                end)
-                                 popt l
-          end
-  end.
-
-Lemma po_None popt: Mem.perm_order'' popt None.
-
-Lemma ev_perm b ofs: forall T m m', ev_elim m T m' ->
-      Mem.perm_order'' ((Mem.mem_access m) !! b ofs Cur) (cur_perm (b,ofs) T).
-
-Lemma ev_elim_app: forall T1 m1 m2 (EV1:ev_elim m1 T1 m2) T2 m3  (EV2: ev_elim m2 T2 m3), ev_elim m1 (T1++T2) m3.
-
-Lemma ev_elim_split: forall T1 T2 m1 m3 (EV1:ev_elim m1 (T1++T2) m3),
-      exists m2, ev_elim m1 T1 m2 /\ ev_elim m2 T2 m3.
-
-Record EvSem {C} :=
-  { 
-    msem :> @MemSem C
-
-  ; ev_step: C -> mem -> list mem_event -> C -> mem -> Prop
-
-  ; ev_step_ax1: forall c m T c' m',
-       ev_step c m T c' m' ->
-            corestep msem c m c' m'
-  ; ev_step_ax2: forall c m c' m',
-       corestep msem c m c' m' ->
-       exists T, ev_step c m T c' m'
-  ; ev_step_fun: forall c m T' c' m' T'' c'' m'',
-       ev_step c m T' c' m' -> ev_step c m T'' c'' m'' -> T'=T''
-
-  ; ev_step_elim: forall c m T c' m' (STEP: ev_step c m T c' m'),
-       ev_elim m T m' 
-  }.
-
-Lemma Ev_sem_cur_perm {C} (R: @EvSem C) c m T c' m' b ofs (D: ev_step R c m T c' m'):
-      Mem.perm_order'' ((Mem.mem_access m) !! b ofs Cur) (cur_perm (b,ofs) T).
-
-Require Import List.
-Import ListNotations.
-
-Definition in_free_list (b : block) ofs xs :=
-  exists x, List.In x xs /\
-       let '(b', lo, hi) := x in
-       b = b' /\
-       (lo <= ofs < hi)%Z.
-
-Fixpoint in_free_list_trace (b : block) ofs es :=
-  match es with
-  | Free l :: es =>
-    in_free_list b ofs l \/ in_free_list_trace b ofs es
-  | _ :: es =>
-    in_free_list_trace b ofs es
-  | nil =>
-    False
-  end.
-
-Lemma EFLT_char es: forall b ofs, in_free_list_trace b ofs es <->
-                             exists l lo hi, In (Free l) es /\ In ((b, lo), hi) l /\ lo <= ofs < hi.
-
-Lemma freelist_mem_access_1 b ofs p: forall l m (ACC:(Mem.mem_access m) !! b ofs Cur = Some p)
-
-Lemma freelist_access_2 b ofs: forall l  (FL: in_free_list b ofs l)
-                                 m m' (FR : Mem.free_list m l = Some m'),
-
-Lemma freelist_access_3 b ofs: forall l m (ACC: (Mem.mem_access m) !! b ofs Cur = None)
-
-Lemma ev_elim_accessNone b ofs: forall ev m' m'' (EV:ev_elim m'' ev m')
-                                  (ACC: (Mem.mem_access m'') !! b ofs Cur = None)
-
-Lemma ev_elim_valid_block: forall ev m m' (EV: ev_elim m ev m') b
-                             (VB : Mem.valid_block m b), Mem.valid_block m' b.
-
-Lemma ev_elim_free_1 b ofs:
-  forall ev m m',
-    ev_elim m ev m' ->
-    in_free_list_trace b ofs ev ->
-    (Mem.perm m b ofs Cur Freeable \/
-
-Lemma perm_order_pp_refl p: Mem.perm_order'' p p.
-
-Lemma in_free_list_dec b ofs xs: {in_free_list b ofs xs} + {~in_free_list b ofs xs}.
-
-Lemma in_free_list_trace_dec b ofs: forall es, {in_free_list_trace b ofs es} + {~in_free_list_trace b ofs es}.
-
-Lemma freelist_access_1 b ofs: forall l,
-    ~ in_free_list b ofs l ->
-    forall m m' : mem, Mem.free_list m l = Some m' -> (Mem.mem_access m') !! b ofs Cur = (Mem.mem_access m) !! b ofs Cur.
-
-Lemma ev_elim_free_2 b ofs:
-  forall ev m m' (EV: ev_elim m ev m')
-    (T: ~ in_free_list_trace b ofs ev),
-    Mem.perm_order'' ((Mem.mem_access m') !! b ofs Cur)
-
-Lemma free_list_cases:
-  forall l m m' b ofs
-    (Hfree: Mem.free_list m l = Some m'), *)
-
 Require Import VST.veric.Clight_new.
-(* VST.veric.Clight_new:
-Require Import VST.sepcomp.semantics.
-Require Import VST.veric.Clight_base.
-Require Import VST.veric.Clight_lemmas.
-Require compcert.common.Globalenvs.
-
-Inductive cont': Type :=
-  | Kseq: statement -> cont'       
-  | Kloop1: statement -> statement -> cont'
-  | Kloop2: statement -> statement  -> cont'
-  | Kswitch: cont'       
-  | Kcall: forall (l: option ident),                  
-           function ->                      
-           env ->                           
-           temp_env ->                      
-           cont'.
-
-Definition cont := list cont'.
-
-Fixpoint call_cont (k: cont) : cont :=
-  match k with
-  | Kseq s :: k => call_cont k
-  | Kloop1 _ _ :: k => call_cont k
-  | Kloop2 _ _ :: k => call_cont k
-  | Kswitch :: k => call_cont k
-  | _ => k
-  end.
-
-Fixpoint current_function (k: cont) : option function :=
- match k with
-  | Kseq s :: k => current_function k
-  | Kloop1 _ _ :: k => current_function k
-  | Kloop2 _ _:: k =>current_function k
-  | Kswitch :: k => current_function k
-  | Kcall _ f _ _ :: _ => Some f
-  | _ => None
-  end.
-
-Fixpoint continue_cont (k: cont) : cont :=
-  match k with
-  | Kseq s :: k' => continue_cont k'
-  | Kloop1 s1 s2 :: k' => Kseq s2 :: Kloop2 s1 s2 :: k'
-  | Kswitch :: k' => continue_cont k'
-  | _ => nil 
-  end.
-
-Lemma call_cont_nonnil: forall k f, current_function k = Some f -> call_cont k <> nil.
-
-Fixpoint precontinue_cont (k: cont) : cont :=
-  match k with
-  | Kseq s :: k' => precontinue_cont k'
-  | Kloop1 _ _ :: _ => k
-  | Kswitch :: k' => precontinue_cont k'
-  | _ => nil 
-  end.
-
-Fixpoint break_cont (k: cont) : cont :=
-  match k with
-  | Kseq s :: k' => break_cont k'
-  | Kloop1 _ _ :: k' => k'
-  | Kloop2 _ _ :: k' => k'
-  | Kswitch :: k' => k'
-  | _ =>  nil 
-  end.
-
-Inductive corestate :=
- | State: forall (ve: env) (te: temp_env) (k: cont), corestate
- | ExtCall: forall (ef: external_function) (args: list val)
-                   (lid: option ident) (ve: env) (te: temp_env) (k: cont),
-                corestate.
-
-Fixpoint strip_skip (k: cont) : cont :=
- match k with Kseq Sskip :: k' => strip_skip k' | _ => k end.
-
-Definition cl_at_external (c: corestate) : option (external_function * list val) :=
-  match c with
-  | State _ _ k => None
-  | ExtCall ef args lid ve te k => Some (ef, args)
- end.
-
-Definition cl_after_external (vret: option val) (c: corestate) : option corestate :=
-  match vret, c with
-  | Some v, ExtCall ef args (Some id) ve te k => Some (State ve (PTree.set id v te) k)
-  | None, ExtCall ef args (Some id) ve te k => Some (State ve (PTree.set id Vundef te) k)
-  | Some v, ExtCall ef args None ve te k => Some (State ve te k)
-  | None, ExtCall ef args None ve te k => Some (State ve te k)
-  | _, _ => None
-  end.
-
-Fixpoint find_label (lbl: label) (s: statement) (k: cont)
-                    {struct s}: option cont :=
-  match s with
-  | Ssequence s1 s2 =>
-      match find_label lbl s1 (Kseq s2 :: k) with
-      | Some sk => Some sk
-      | None => find_label lbl s2 k
-      end
-  | Sifthenelse a s1 s2 =>
-      match find_label lbl s1 k with
-      | Some sk => Some sk
-      | None => find_label lbl s2 k
-      end
-  | Sloop s1 a3 =>
-      match find_label lbl s1 (Kseq Scontinue :: Kloop1 s1 a3 :: k) with
-      | Some sk => Some sk
-      | None => find_label lbl a3 (Kloop2 s1 a3 :: k)
-      end
-  | Sswitch e sl =>
-      find_label_ls lbl sl (Kswitch :: k)
-  | Slabel lbl' s' =>
-      if ident_eq lbl lbl' then Some(Kseq s' :: k) else find_label lbl s' k
-  | _ => None
-  end
-
-with find_label_ls (lbl: label) (sl: labeled_statements) (k: cont)
-                    {struct sl}: option cont :=
-  match sl with
-  | LSnil => None
-  | LScons _ s sl' =>
-      match find_label lbl s (Kseq (seq_of_labeled_statement sl') :: k) with
-      | Some sk => Some sk
-      | None => find_label_ls lbl sl' k
-      end
-  end.
-
-Inductive cl_step (ge: Clight.genv): forall (q: corestate) (m: mem) (q': corestate) (m': mem), Prop :=
-
-  | step_assign: forall ve te k m a1 a2 loc ofs v2 v m',
-     type_is_volatile (typeof a1) = false ->
-      Clight.eval_lvalue ge ve te m a1 loc ofs ->
-      Clight.eval_expr ge ve te m a2 v2 ->
-      Cop.sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      Clight.assign_loc ge (typeof a1) m loc ofs v m' ->
-      cl_step ge (State ve te (Kseq (Sassign a1 a2):: k)) m (State ve te k) m'
-
-  | step_set:   forall ve te k m id a v,
-      Clight.eval_expr ge ve te m a v ->
-      cl_step ge (State ve te (Kseq (Sset id a) :: k)) m (State ve (PTree.set id v te) k) m
-
-  | step_call_internal:   forall ve te k m optid a al tyargs tyres cc vf vargs f m1 ve' le',
-      Cop.classify_fun (typeof a) = Cop.fun_case_f tyargs tyres cc ->
-      Clight.eval_expr ge ve te m a vf ->
-      Clight.eval_exprlist ge ve te m al tyargs vargs ->
-      Genv.find_funct ge vf = Some (Internal f) ->
-      type_of_function f = Tfunction tyargs tyres cc ->
-      list_norepet (var_names f.(fn_params) ++ var_names f.(fn_temps)) ->
-      forall (NRV: list_norepet (var_names f.(fn_vars))),
-      Clight.alloc_variables ge empty_env m (f.(fn_vars)) ve' m1 ->
-      bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some
-le' ->
-      cl_step ge (State ve te (Kseq (Scall optid a al) :: k)) m
-                   (State ve' le' (Kseq f.(fn_body) :: Kseq (Sreturn None) :: Kcall optid f ve te :: k)) m1
-
-  | step_call_external:   forall ve te k m optid a al tyargs tyres cc vf vargs ef,
-      Cop.classify_fun (typeof a) = Cop.fun_case_f tyargs tyres cc ->
-      Clight.eval_expr ge ve te m a vf ->
-      Clight.eval_exprlist ge ve te m al tyargs vargs ->
-      Genv.find_funct ge vf = Some (External ef tyargs tyres cc) ->
-      cl_step ge (State ve te (Kseq (Scall optid a al) :: k)) m (ExtCall ef vargs optid ve te k) m
-
-  | step_seq: forall ve te k m s1 s2 st' m',
-          cl_step ge (State ve te (Kseq s1 :: Kseq s2 :: k)) m st' m' ->
-          cl_step ge (State ve te (Kseq (Ssequence s1 s2) :: k)) m st' m'
-
-  | step_skip: forall ve te k m st' m',
-          cl_step ge (State ve te k) m st' m' ->
-          cl_step ge (State ve te (Kseq Sskip :: k)) m st' m'
-
-  | step_continue: forall ve te k m st' m',
-           cl_step ge (State ve te (continue_cont k)) m st' m' ->
-           cl_step ge (State ve te (Kseq Scontinue :: k)) m st' m'
-
-  | step_break: forall ve te k m st' m',
-                   cl_step ge (State ve te (break_cont k)) m st' m' ->
-                   cl_step ge (State ve te (Kseq Sbreak :: k)) m st' m'
-
-  | step_ifthenelse:  forall ve te k m a s1 s2 v1 b,
-      Clight.eval_expr ge ve te m a v1 ->
-      Cop.bool_val v1 (typeof a) m = Some b ->
-      cl_step ge (State ve te (Kseq (Sifthenelse a s1 s2) :: k)) m (State ve te  (Kseq (if b then s1 else s2) :: k)) m
-
-  | step_for: forall ve te k m s1 s2,
-      cl_step ge (State ve te (Kseq (Sloop s1 s2) :: k)) m
-              (State ve te (Kseq s1 :: Kseq Scontinue :: Kloop1 s1 s2 :: k)) m
-
-  | step_loop2: forall ve te k m a3 s,
-      cl_step ge (State ve te (Kloop2 s a3 :: k)) m
-             (State ve te (Kseq s :: Kseq Scontinue :: Kloop1 s a3 :: k)) m
-
-  | step_return: forall f ve te optexp optid k m v' m' ve' te' te'' k',
-      call_cont k = Kcall optid f ve' te' :: k' ->
-      Mem.free_list m (Clight.blocks_of_env ge ve) = Some m' ->
-      match optexp with None => v' = Vundef
-                                  | Some a => exists v, Clight.eval_expr ge ve te m a v
-                                     /\ Cop.sem_cast v (typeof a) f.(fn_return) m = Some v'
-                            end ->
-      match optid with None => True /\ te''=te'
-                                | Some id => True /\ te'' = PTree.set id v' te'
-      end ->
-      cl_step ge (State ve te (Kseq (Sreturn optexp) :: k)) m (State ve' te'' k') m'
-
-  | step_switch: forall ve te k m a sl v n,
-      Clight.eval_expr ge ve te m a v ->
-      Cop.sem_switch_arg v (typeof a) = Some n ->
-      cl_step ge (State ve te (Kseq (Sswitch a sl) :: k)) m
-              (State ve te (Kseq (seq_of_labeled_statement (select_switch n sl)) :: Kswitch :: k)) m
-
-  | step_label: forall ve te k m lbl s st' m',
-       cl_step ge (State ve te (Kseq s :: k)) m st' m' ->
-       cl_step ge (State ve te (Kseq (Slabel lbl s) :: k)) m st' m'
-
-  | step_goto: forall f ve te k m lbl k'
-                     
-      (CUR: current_function k = Some f),
-      find_label lbl f.(fn_body) (Kseq (Sreturn None) :: (call_cont k)) = Some k' ->
-      cl_step ge (State ve te (Kseq (Sgoto lbl) :: k)) m (State ve te k') m.
-
-Definition vret2v (vret: list val) : val :=
-  match vret with v::nil => v | _ => Vundef end.
-
-Definition cl_halted (c: corestate) : option val := None.
-
-Definition empty_function : function := mkfunction Tvoid cc_default nil nil nil Sskip.
-
-Fixpoint temp_bindings (i: positive) (vl: list val) :=
- match vl with
- | nil => PTree.empty val
- | v::vl' => PTree.set i v (temp_bindings (i+1)%positive vl')
- end.
-
-Definition Tint32s := Tint I32 Signed noattr.
-Definition true_expr : Clight.expr := Clight.Econst_int Int.one Tint32s.
-
-Fixpoint typed_params (i: positive) (n: nat) : list (ident * type) :=
-  match n with
-  | O => nil
-  | S n' => (i, Tint32s) :: typed_params (i+1)%positive n'
-  end.
-
-Fixpoint params_of_types (i: positive) (l : list type) : list (ident * type) :=
-  match l with
-  | nil => nil
-  | t :: l => (i, t) :: params_of_types (i+1)%positive l
-  end.
-
-Fixpoint typelist2list (tl: typelist) : list type :=
-  match tl with
-  | Tcons t r => t::typelist2list r
-  | Tnil => nil
-  end.
-
-Definition params_of_fundef (f: fundef) : list type :=
-  match f with
-  | Internal {| fn_params := fn_params |} => map snd fn_params
-  | External _ t _ _ => typelist2list t
-  end.
-
-Inductive val_casted_list: list val -> typelist -> Prop :=
-  | vcl_nil:
-      val_casted_list nil Tnil
-  | vcl_cons: forall v1 vl ty1 tyl,
-      val_casted v1 ty1 -> val_casted_list vl tyl ->
-      val_casted_list (v1 :: vl) (Tcons  ty1 tyl).
-
-Definition cl_initial_core (ge: genv) (v: val) (args: list val) (q: corestate) : Prop :=
-  match v with
-    Vptr b i =>
-    if Ptrofs.eq_dec i Ptrofs.zero then
-      match Genv.find_funct_ptr ge b with
-        Some f =>
-        match type_of_fundef f with Tfunction targs _ c =>
-        c = cc_default /\
-        val_casted_list args targs /\
-        Val.has_type_list args (Ctypes.typlist_of_typelist targs) /\
-        q = State empty_env (temp_bindings 1%positive (v::args))
-                    (Kseq (Scall None
-                                 (Etempvar 1%positive (type_of_fundef f))
-                                 (map (fun x => Etempvar (fst x) (snd x))
-                                      (params_of_types 2%positive
-                                                       (params_of_fundef f)))) ::
-                          Kseq (Sloop Sskip Sskip) :: nil)
-        | _ => False end
-      | _ => False end
-    else False
-  | _ => False
-end.
-
-Lemma cl_corestep_not_at_external:
-  forall ge m q m' q', cl_step ge q m q' m' -> cl_at_external q = None.
-
-Lemma cl_corestep_not_halted :
-  forall ge m q m' q', cl_step ge q m q' m' -> cl_halted q = None.
-
-Lemma cl_after_at_external_excl :
-  forall retv q q', cl_after_external retv q = Some q' -> cl_at_external q' = None.
-
-Definition arg_well_formed args m0:=
-  Val.inject_list (Mem.flat_inj (Mem.nextblock m0)) args args.
-
-Program Definition cl_core_sem  (ge: genv):
-  @CoreSemantics corestate mem :=
-  @Build_CoreSemantics _ _
-    
-    (fun _ m c m' v args => cl_initial_core ge v args c /\ arg_well_formed args m /\ m' = m)
-    (fun c _ => cl_at_external c)
-    (fun ret c _ => cl_after_external ret c)
-    (fun c _ =>  False )
-    (cl_step ge)
-    _
-    (cl_corestep_not_at_external ge).
-
-Lemma cl_corestep_fun: forall ge m q m1 q1 m2 q2,
-    cl_step ge q m q1 m1 ->
-    cl_step ge q m q2 m2 ->
-    (q1,m1)=(q2,m2). *)
-
 Require Import VST.concurrency.juicy.mem_wd2.
-(* VST.concurrency.juicy.mem_wd2:
-Require Import compcert.lib.Integers.
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.common.AST.
-Require Import compcert.common.Values.
-Require Import compcert.common.Globalenvs.
-Require Import compcert.common.Memory.
-Require Import VST.sepcomp.mem_lemmas.
-Require Import VST.sepcomp.mem_wd.
-Require Import VST.concurrency.juicy.semax_simlemmas.
-Require Import VST.msl.eq_dec.
-
-Definition mem_wd2 m := forall b ofs, memval_inject (Mem.flat_inj (Mem.nextblock m))
-    (ZMap.get ofs (PMap.get b (Mem.mem_contents m))) (ZMap.get ofs (PMap.get b (Mem.mem_contents m))).
-
-Lemma mem_wd2_alloc: forall m b lo hi m' (ALL: Mem.alloc m lo hi = (m',b))
-
-Lemma mem_wd2_store: forall m b ofs v m' chunk (WDm: mem_wd2 m)
-  (ST: Mem.store chunk m b ofs v = Some m')
-
-Import FunInd.
-
-Definition mem_wd' m m' := forall b ofs, memval_inject (Mem.flat_inj (Mem.nextblock m))
-    (ZMap.get ofs (PMap.get b (Mem.mem_contents m'))) (ZMap.get ofs (PMap.get b (Mem.mem_contents m'))).
-
-Lemma mem_wd'_store: forall m0 m b ofs v m' chunk (WDm: mem_wd' m0 m)
-  (ST: Mem.store chunk m b ofs v = Some m')
-
-Lemma mem_wd'_store_zeros: forall m0 m b p n m1
-    (STORE_ZERO: store_zeros m b p n = Some m1) (WD: mem_wd' m0 m), mem_wd' m0 m1.
-
-Lemma mem_wd'_store_init_data: forall {F V} (ge: Genv.t F V) a (b:block) (z:Z)
-
-Lemma mem_wd'_store_init_datalist: forall {F V} (ge: Genv.t F V) l (b:block)
-
-Lemma mem_wd'_alloc: forall m0 m b lo hi m' (ALL: Mem.alloc m lo hi = (m',b))
-
-Lemma mem_wd'_drop: forall m0 m b lo hi p m' (DROP: Mem.drop_perm m b lo hi p = Some m')
-
-Lemma mem_wd'_alloc_global: forall  {F V} (ge: Genv.t F V) a m m0 m1
-
-Lemma mem_wd2_alloc_globals:
-   forall F V (ge: Genv.t F V) init_list m0 m *)
-
-
 
 Require Import VST.msl.eq_dec.
-(* VST.msl.eq_dec:
-Require Import VST.msl.base.
-
-Class EqDec (A : Type) : Type :=
-  eq_dec : forall a a' : A, {a = a'} + {a <> a'}.
-
-Instance EqDec_nat : EqDec nat := eq_nat_dec.
-
-Definition upd {A} `{EqDec A} (B : Type) (f : A -> B) (a : A) (b : B) : A -> B :=
-  fun a' => if eq_dec a a' then b else f a'.
-Arguments upd [A H B] _ _ _ _.
-
-Lemma upd_eq {A} `{EqDec A} : forall B (f : A -> B) a b,
-  upd f a b a = b.
-Arguments upd_eq [A H B] _ _ _.
-
-Lemma upd_eq' {A} `{EqDec A} : forall B (f : A -> B) a b a',
-  a = a' ->
-  upd f a b a' = b.
-Arguments upd_eq' [A H B] _ _ _ _ _.
-
-Lemma upd_neq {A} `{EqDec A} : forall B (f : A -> B) a b a',
-  a <> a' ->
-  upd f a b a' = f a'. *)
-
 Require Import BinNums.
-
 Require Import List. Import ListNotations.
-(* List:
-Set Implicit Arguments.
-
-Require Import FCF.FCF.
-
-Local Open Scope nat_scope.
-
-Theorem qam_count_gen : 
-  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
-    queries_at_most c q ->
-    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S)(n : nat),
-      (forall a b x y,
-        In (a, b) (getSupport (o x y)) ->
-          count b <= n + (count x)) ->
-      forall a b, 
-      In (a, b) (getSupport (c _ _ o s)) ->
-      count b <= q * n + (count s).
-
-Local Open Scope rat_scope.
-
-Theorem evalDist_bind_event_le : 
-  forall (A : Set)(c : Comp A)(f : A -> Comp bool)(evta : A -> bool) (k1 k2 : Rat),
-    Pr[a <-$ c; ret (evta a)] <= k1 ->
-    (forall a, In a (getSupport c) -> evta a = false -> Pr[f a] <= k2) ->
-    Pr[a <-$ c; f a] <= k1 + k2.
-
-Theorem oc_eventProb : 
-  forall (A B C : Set)(c : OracleComp A B C) n,
-    queries_at_most c n ->
-    forall
-    (S : Set)(eqds : EqDec S)(o : S -> A -> Comp (B * S))
-    (count : S -> nat)(evt : S -> bool)(s : S)(k : nat -> Rat) i,
-      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
-      evt s = false ->
-      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (i + (count s))%nat)) ->
-      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
-                        count s' <= i + (count s))%nat ->
-      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k (i * n + (count s))%nat).
-
-Theorem oc_eventProb_0_1 : 
-  forall (S : Set)(count : S -> nat)(evt : S -> bool)(k : nat -> Rat)
-         (A B C : Set)(c : OracleComp A B C) n,
-    queries_at_most c n ->
-    forall
-    (eqds : EqDec S)(o : S -> A -> Comp (B * S))
-    (s : S),
-      (forall (n1 n2 : nat), (n1 <= n2)%nat -> (k n1 <= k n2)) ->
-      evt s = false ->
-      (forall s a, evt s = false -> Pr[p <-$ o s a; ret (evt (snd p))] <= (k (1 + (count s))%nat)) ->
-      (forall s s' a b, In (b, s') (getSupport (o s a)) ->
-                        count s' <= 1 + (count s))%nat ->
-      count s = 0%nat ->
-      Pr[p <-$ c _ _ o s; ret (evt (snd p))] <= (n / 1) * (k n).  
-
-Local Open Scope nat_scope.
-
-Theorem qam_count : 
-  forall (A B C : Set)(c : OracleComp A B C)(q : nat),
-    queries_at_most c q ->
-    forall (S : Set)(count : S -> nat)(eqds : EqDec S)(o : S -> A -> Comp (B * S))(s : S),
-      (forall a b x y,
-        In (a, b) (getSupport (o x y)) ->
-          count b <= 1 + (count x)) ->
-      count s = 0 ->
-      forall a b, 
-      In (a, b) (getSupport (c _ _ o s)) ->
-      count b <= q.
-
-Local Transparent evalDist.
-
-Section RndInList.
-  
-  Variable eta : nat.
-
-  Theorem RndInList_prob_h :
-    forall (ls : list (Bvector eta)),
-      (Pr[r <-$ {0, 1}^eta;
-        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
-      ] <= (length ls) / 2 ^ eta)%rat.
-
-  Theorem RndInList_prob :
-    forall (ls : list (Bvector eta))(q : nat),
-      length ls <= q ->
-      (Pr[r <-$ {0, 1}^eta;
-        ret (if (in_dec (EqDec_dec _) r ls) then true else false)
-      ] <= q / 2 ^ eta)%rat.
-  
-End RndInList.
-
-Local Open Scope rat_scope.
-
-Theorem RndNat_eq_any : 
-  forall (eta : nat)(x : Bvector eta),
-    Pr  [a0 <-$ { 0 , 1 }^eta; ret (eqb x a0) ] == 1 / 2^eta.
-
-Require Import FCF.CompFold.
-Local Opaque evalDist.
-
-Section FixedInRndList.
-  
-  Variable A : Set.
-  Variable eta : nat.
-
-  Theorem FixedInRndList_prob :
-    forall (ls : list A)(x : Bvector eta),
-      (Pr[lsR <-$ compMap _ (fun _ => {0, 1}^eta) ls; ret (if (in_dec (EqDec_dec _) x lsR) then true else false)
-      ] <= (length ls) / 2 ^ eta)%rat.
-  
-End FixedInRndList.
-
-Section RndInAdaptive.
-
-  Variable A B C : Set.
-  
-  Local Open Scope rat_scope.
-
-  Theorem orb_prob : 
-    forall (A B : Set)(c : Comp A)(f : A -> Comp B) evt1 evt2 k1 k2,
-      Pr[x <-$ c; ret (evt1 x)] <= k1 ->
-      (forall a, In a (getSupport c) -> evt1 a = false -> Pr[y <-$ f a; ret (evt2 y)] <= k2) ->
-      Pr[x <-$ c; y <-$ f x; ret (evt1 x || evt2 y)] <= k1 + k2.
-
-  Theorem RndInAdaptive_prob : 
-    forall (c : OracleComp A B C)(q : nat),
-      queries_at_most c q ->
-      forall (S : Set)(evt : S -> bool)(eqd : EqDec S)(o : S -> A -> Comp (B * S))(k : Rat),
-        (forall a b, 
-          evt a = false ->
-          Pr[ d <-$ o a b; ret (evt (snd d))] <= k)->
-        (forall a b x y,
-          In (a, b) (getSupport (o x y)) -> evt x = true -> evt b = true) ->
-        forall (s : S),
-          evt s = false ->
-          Pr[ d <-$ c _ _ o s; ret (evt (snd d))] <= q / 1 * k.
-
-End RndInAdaptive. *)
-
 Require Import VST.msl.Coqlib2.
-(* VST.msl.Coqlib2:
-Require Import compcert.lib.Coqlib.
-Require Import VST.msl.base.
-Require Export VST.msl.Extensionality.
-
-Hint Extern 1 (@eq _ _ _) => exact (proof_irr _ _) : extensionality.
-
-Hint Extern 2 (eq _ _)  => apply exist_ext : extensionality.
-
-Hint Extern 2 (@eq _ (@existT _ _ _ _) (@existT _ _ _ _))  => apply existT_ext : extensionality.
-
-Tactic Notation "forget" constr(X) "as" ident(y) :=
-   set (y:=X) in *; clearbody y.
-
-Ltac proof_irr := match goal with H: ?A, H' : ?A |- _ => generalize (proof_irr H H'); intro; subst H' end.
-
-Ltac inversion2 H1 H2 :=
- rewrite H1 in H2; symmetry in H2; inv H2.
-
-Ltac invT H :=
-match type of H  with
-  | existT _ ?a ?b = existT _ ?a ?c =>
-     generalize (inj_pair2 _ _ a b c H); clear H; intro H; invT H
-  | existT _ _ _ = existT _ _ _ =>
-       let HH := fresh in (injection H; intros _ HH; invT HH; invT H)
-  | _ => inv H
- end.
-
-Ltac invSome :=
- match goal with
- | H: match ?A with Some _ =>  _ | None => None end = Some _ |- _ =>
-        let Hx := fresh in
-               (revert H; case_eq A; [intros ? H Hx | intros H Hx]; inv Hx)
- | H: match ?A with Some _ => _  | None => False end |- _ =>
-             (revert H; case_eq A; [intros ? H ? | intros; contradiction])
-
- | H: match ?A return _ with Some _ =>  _ | None => _ end eq_refl = Some _ |- _ =>
- let Hx := fresh in
-           (revert H; generalize (eq_refl A); pattern A at 1 3; destruct A;
-            [ intros Hx H | intros ? H; discriminate H])
- end.
-
-Ltac split3 := split; [|split].
-
-Lemma if_true: forall (A: Prop) (E: {A}+{~A}) (T: Type) (B C: T), A -> (if E then B else C) = B.
-
-Lemma if_false: forall (A: Prop) (E: {A}+{~A}) (T: Type) (B C: T), ~A -> (if E then B else C) = C.
-
-Ltac spec H :=
-  match type of H with ?a -> _ =>
-    let H1 := fresh in (assert (H1: a); [|generalize (H H1); clear H H1; intro H]) end.
-
-Lemma f_equal_Some: forall A (x y: A), x=y -> Some x = Some y.
-
-Lemma f_equal_prod: forall A B (x1 x2: A) (y1 y2: B), x1=x2 -> y1=y2 -> (x1,y1) = (x2,y2).
-
-Hint Resolve f_equal_Some f_equal_prod.
-
-Unset Implicit Arguments.
-
-Lemma list_norepet_append_inv:
-  forall (A : Set) (l1 l2 : list A),
-   list_norepet (l1 ++ l2) ->
-  list_norepet l1 /\ list_norepet l2 /\ list_disjoint l1 l2.
-
-Set Implicit Arguments.
-
-Ltac simple_if_tac := 
-  match goal with |- context [if ?A then _ else _] => 
-    lazymatch type of A with
-    | bool => destruct A 
-    | sumbool _ _ => fail "Use if_tac instead of simple_if_tac, since your expression "A" has type sumbool"
-    | ?t => fail "Use simple_if_tac only for bool; your expression"A" has type" t
-  end end.
-
-Tactic Notation "if_tac" := 
-  match goal with |- context [if ?a then _ else _] =>
-    lazymatch type of a with
-    | sumbool _ _ =>destruct a as [?H | ?H]
-    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
-    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
-   end end.
-
-Tactic Notation "if_tac" simple_intropattern(H)
-   := match goal with |- context [if ?a then _ else _] =>
-    lazymatch type of a with
-    | sumbool _ _ =>destruct a as H
-    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
-    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
-   end end.
-
-Tactic Notation "if_tac" "in" hyp(H0)
- := match type of H0 with context [if ?a then _ else _] =>
-    lazymatch type of a with
-    | sumbool _ _ =>destruct a as [?H | ?H]
-    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
-    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
-   end end.
-
-Tactic Notation "if_tac" simple_intropattern(H) "in" hyp(H1)
- := match type of H1 with context [if ?a then _ else _] => 
-    lazymatch type of a with
-    | sumbool _ _ =>destruct a as H
-    | bool => fail "Use simple_if_tac instead of if_tac, since your expression"a" has type bool"
-    | ?t => fail "Use if_tac only for sumbool; your expression"a" has type" t
-   end end.
-
-Lemma predicate_max:
-  forall (F: nat -> Prop) (Fdec: forall n, {F n}+{~ F n}) n,
-  F 0%nat ->
-  ~ F n ->
-  exists i, F i /\ (i<n)%nat /\ ~ F (S i).
-
-Lemma sumbool_dec_iff: forall A B, {A} + {~A} -> (A <-> B) -> {B} + {~B}.
-
-Lemma sumbool_dec_and: forall A B, {A} + {~A} -> {B} + {~B} -> {A /\ B} + {~(A /\ B)}.
-
-Lemma sumbool_dec_or: forall A B, {A} + {~A} -> {B} + {~B} -> {A \/ B} + {~(A \/ B)}.
-
-Ltac super_pattern t x :=
-  let t0 := fresh "t" in
-  set (t0 := t);
-  pattern x in t0;
-  cbv beta in (type of t0);
-  subst t0.
-
-Ltac super_pattern_in_func t x :=
-  let t0 := fresh "t" in
-  let a := fresh "a" in
-  match type of t with
-  | ?type_of_t =>
-    evar (t0 : type_of_t)
-  end;
-  assert (t = t0) as _;
-  [
-    extensionality a;
-    cbv beta;
-    match goal with
-    | |- ?left = _ =>
-      super_pattern left x
-    end;
-    match goal with
-    | |- ?left _ = _ =>
-      super_pattern left a
-    end;
-    match goal with
-    | |- ?left _ _ = _ =>
-      instantiate (1 := fun a => left a x) in (Value of t0)
-    end;
-    reflexivity
-  |
-    change t with t0;
-    subst t0
-  ].
-
-Ltac build_func_abs_right :=
-match goal with
-| |- @eq ?typ_expr (_ ?arg) ?expr =>
-     match type of arg with
-     | ?typ_arg =>
-       super_pattern expr arg;
-       match goal with
-       | |- @eq typ_expr _ (?func arg) =>
-            exact (@eq_refl typ_expr
-                    ((ltac:(clear arg; intros arg;
-                            let res := eval cbv beta in (func arg) in
-                            exact res): (typ_arg -> typ_expr))
-                     arg)
-                  )
-
-       end
-     end
-end. *)
-
-
 
 Set Bullet Behavior "Strict Subproofs".
 
-
-
 Section GE.
-
 Variable ge: Clight.genv.
 
-
-
 Section CTL_OK.
-
   Variable nextb : block.
-
-
 
 Definition block_ok (b: block) := Plt b nextb.
 
-
-
 Definition val_ok (v: val) : Prop := 
-
  match v with
-
  | Vptr b _ => block_ok b
-
  | _ => True
-
  end.
-
-
 
 Definition venv_ok (ve: Clight.env) :=
-
   forall i bt, PTree.get i ve = Some bt -> block_ok (fst bt).
 
-
-
 Definition tenv_ok (te: Clight.temp_env) :=
-
   forall i (v: val), PTree.get i te = Some v -> val_ok v.
 
-
-
 Definition cont'_ok (k: Clight_new.cont') := 
-
  match k with
-
  | Clight_new.Kcall _ _ ve te => venv_ok ve /\ tenv_ok te
-
  | _ => True
-
  end.
-
-
 
 Definition cont_ok (k: Clight_new.cont) := Forall cont'_ok k.
 
-
-
 Definition corestate_ok (q: Clight_new.corestate) : Prop :=
-
  match q with
-
  | Clight_new.State ve te k => venv_ok ve /\ tenv_ok te /\ cont_ok k
-
  | Clight_new.ExtCall f vl _ ve te k => Forall val_ok vl /\ venv_ok ve /\ tenv_ok te /\ cont_ok k
-
  end.
-
-
 
 End CTL_OK.
 
-
-
 Section ALLOC_OK.
-
 Variable nextb: positive.
-
 Variable nextb': positive.
-
 Variable LESS:  (nextb <= nextb')%positive.
 
-
-
 Lemma alloc_block_ok: forall b, block_ok nextb b -> block_ok nextb' b.
-
 Proof.
-
 intros.
-
 red in H|-*. eapply Pos.lt_le_trans; eauto.
-
 Qed.
-
-
 
 Lemma alloc_val_ok: forall v, val_ok nextb v -> val_ok nextb' v.
-
 Proof.
-
 intros; destruct v; auto.
-
 red in H|-*. eapply alloc_block_ok; eauto.
-
 Qed.
-
-
 
 Lemma alloc_venv_ok: forall ve, venv_ok nextb ve -> venv_ok nextb' ve.
-
 Proof.
-
 intros.
-
 red in H|-*; intros.
-
 eapply alloc_block_ok; eauto.
-
 Qed.
-
-
 
 Lemma alloc_tenv_ok: forall te, tenv_ok nextb te -> tenv_ok nextb' te.
-
 Proof.
-
 intros.
-
 red in H|-*; intros.
-
 eapply alloc_val_ok; eauto.
-
 Qed.
-
-
 
 Lemma alloc_cont'_ok: forall k, cont'_ok nextb k -> cont'_ok nextb' k.
-
 Proof.
-
 destruct k; simpl; auto.
-
 intros [? ?]; split.
-
 eapply alloc_venv_ok; eauto.
-
 eapply alloc_tenv_ok; eauto.
-
 Qed.
-
-
 
 Lemma alloc_cont_ok: forall k, cont_ok nextb k -> cont_ok nextb' k.
-
 Proof.
-
 intros.
-
 red in H|-*.
-
 revert H; apply Forall_impl.
-
 apply alloc_cont'_ok.
-
 Qed.
-
-
 
 Lemma alloc_corestate_ok: forall q, corestate_ok nextb q -> corestate_ok nextb' q.
-
 Proof.
-
 destruct q; simpl.
-
 intros [? [? ?]]; split; [|split].
-
 eapply alloc_venv_ok; eauto.
-
 eapply alloc_tenv_ok; eauto.
-
 eapply alloc_cont_ok; eauto.
-
 intros [? [? [? ?]]]; split; [|split; [|split]].
-
 revert H; apply Forall_impl.
-
 apply alloc_val_ok.
-
 eapply alloc_venv_ok; eauto.
-
 eapply alloc_tenv_ok; eauto.
-
 eapply alloc_cont_ok; eauto.
-
 Qed.
-
-
 
 End ALLOC_OK.
 
-
-
 Lemma set_tenv_ok:
-
   forall nextb i (v: val) te, val_ok nextb v -> tenv_ok nextb te ->
-
             tenv_ok nextb (PTree.set i v te).
-
 Proof.
-
 intros.
-
 hnf in H0|-*.
-
 intros.
-
 destruct (eq_dec i i0).
-
 subst. rewrite PTree.gss in H1. inv H1. auto.
-
 rewrite PTree.gso in H1 by auto.
-
 apply H0 in H1. auto.
-
 Qed.
-
-
 
 Lemma set_venv_ok:
-
   forall nextb i v ve, block_ok nextb (fst v) -> venv_ok nextb ve ->
-
             venv_ok nextb (PTree.set i v ve).
-
 Proof.
-
 intros.
-
 hnf in H0|-*.
-
 intros.
-
 destruct (eq_dec i i0).
-
 subst. rewrite PTree.gss in H1. inv H1. auto.
-
 rewrite PTree.gso in H1 by auto.
-
 apply H0 in H1. auto.
-
 Qed.
-
-
 
 Lemma sem_add_ptr_int_ok:
-
   forall nextb ty si v1 v2 v,
-
   val_ok nextb v1 ->
-
   val_ok nextb v2 ->
-
   Cop.sem_add_ptr_int (genv_cenv ge) ty si v1 v2 = Some v -> 
-
   val_ok nextb v.
-
 Proof.
-
 intros.
-
 unfold Cop.sem_add_ptr_int in H1.
-
 destruct v1; try discriminate;
-
 destruct v2; try discriminate.
-
 destruct Archi.ptr64; inv H1.  auto. 
-
 inv H1; auto.
-
 Qed.
-
-
 
 Lemma sem_add_ptr_long_ok:
-
   forall nextb ty v1 v2 v,
-
   val_ok nextb v1 ->
-
   val_ok nextb v2 ->
-
   Cop.sem_add_ptr_long (genv_cenv ge) ty v1 v2 = Some v -> 
-
   val_ok nextb v.
-
 Proof.
-
 intros.
-
 unfold Cop.sem_add_ptr_long in H1.
-
 destruct v1; try discriminate;
-
 destruct v2; try discriminate.
-
 destruct Archi.ptr64; inv H1.  auto. 
-
 inv H1; auto.
-
 Qed.
-
-
 
 Lemma sem_cast_ok:
-
   forall nextb v1 t1 t2 m v,
-
     val_ok nextb v1 ->
-
     Cop.sem_cast v1 t1 t2 m = Some v ->
-
      val_ok nextb v.
-
 Proof.
-
 intros.
-
 unfold Cop.sem_cast in H0.
-
 destruct (Cop.classify_cast t1 t2); try discriminate;
-
 destruct v1; try discriminate;
-
 try solve [inv H0; auto].
-
 destruct (Cop.cast_float_int si2 f); inv H0; auto.
-
 destruct (Cop.cast_single_int si2 f); inv H0; auto.
-
 destruct (Cop.cast_float_long si2 f); inv H0; auto.
-
 destruct (Cop.cast_single_long si2 f); inv H0; auto.
-
 destruct Archi.ptr64; inv H0; auto.
-
 destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); inv H2; auto.
-
 hnf; auto.
-
 if_tac in H0; inv H0; auto.
-
 if_tac in H0; inv H0; auto.
-
 Qed.
-
-
 
 Lemma val_of_bool_ok:
-
   forall nextb b, val_ok nextb (Val.of_bool b).
-
 Proof.
-
 intros. destruct b; hnf; auto.
-
 Qed.
-
-
 
 Lemma sem_cmp_ok: 
-
   forall nextb op v1 t1 v2 t2 m v,
-
  Cop.sem_cmp op v1 t1 v2 t2 m = Some v ->
-
  val_ok nextb v1 -> val_ok nextb v2 -> val_ok nextb v.
-
 Proof.
-
 intros.
-
 pose proof (val_of_bool_ok nextb).
-
 unfold Cop.sem_cmp in H.
-
 destruct (Cop.classify_cmp t1 t2); try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct v2; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct Archi.ptr64; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct v1; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct Archi.ptr64; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct v2; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 destruct v1; try discriminate.
-
 unfold Cop.cmp_ptr in H.
-
 try match type of H with _ _ ?X = _ => destruct X; inv H; auto end.
-
 unfold Cop.sem_binarith in H.
-
 destruct (Cop.sem_cast v1 t1
-
         (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
 destruct (Cop.sem_cast v2 t2
-
         (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
 eapply sem_cast_ok in Heqo; eauto.
-
 eapply sem_cast_ok in Heqo0; eauto.
-
 destruct (Cop.classify_binarith t1 t2); try discriminate.
-
 destruct v0;  try discriminate.
-
 destruct v3;  try discriminate.
-
 inv H; auto.
-
 destruct v0;  try discriminate.
-
 destruct v3;  try discriminate.
-
 inv H; auto.
-
 destruct v0;  try discriminate.
-
 destruct v3;  try discriminate.
-
 inv H; auto.
-
 destruct v0;  try discriminate.
-
 destruct v3;  try discriminate.
-
 inv H; auto.
-
 Qed.
-
-
 
 Lemma binary_operation_ok:
-
 forall nextb (op : Cop.binary_operation) (v1 : val) (t1 : type) 
-
   (v2 : val) (t2 : type) (m : mem) (v : val),
-
   val_ok nextb v1 ->
-
   val_ok nextb v2 ->
-
   Cop.sem_binary_operation (Clight.genv_cenv ge) op v1 t1 v2 t2 m = Some v ->
-
   val_ok nextb v.
-
 Proof.
-
 intros.
-
  destruct op; simpl in *;
-
    try solve [revert H1 H H0; apply sem_cmp_ok];
-
 try solve [
-
   match type of H1 with ?A _ _ _ _ _ = _ => unfold A in H1 end;
-
    unfold Cop.sem_binarith in H1;
-
    destruct (Cop.sem_cast v1 t1
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate;
-
    destruct (Cop.sem_cast v2 t2
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate;
-
    eapply sem_cast_ok in Heqo; eauto;
-
    eapply sem_cast_ok in Heqo0; eauto;
-
    destruct (Cop.classify_binarith t1 t2); try discriminate;
-
    try solve [destruct v0; inv H1; destruct v3; inv H3; auto];
-
    destruct v0; inv H1; destruct v3; inv H3; destruct s; inv H2;
-
    revert H3; simple_if_tac; intro H3; inv H3; auto].
-
 - unfold Cop.sem_add in H1.
-
    destruct (Cop.classify_add t1 t2);
-
    try solve [eapply sem_add_ptr_int_ok; try eapply H1; eauto];
-
    try solve [eapply sem_add_ptr_long_ok; try eapply H1; eauto].
-
    unfold Cop.sem_binarith in H1.
-
    destruct (Cop.sem_cast v1 t1
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
    destruct (Cop.sem_cast v2 t2
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
    eapply sem_cast_ok in Heqo; eauto.
-
    eapply sem_cast_ok in Heqo0; eauto.
-
    destruct (Cop.classify_binarith t1 t2); try discriminate;
-
    try solve [destruct v0; inv H1; destruct v3; inv H3; auto].
-
 - unfold Cop.sem_sub in H1.
-
    destruct (Cop.classify_sub t1 t2).
-
    destruct v1; try discriminate;
-
    destruct v2; try discriminate; destruct Archi.ptr64; try discriminate; inv H1; auto.
-
    destruct v1; try discriminate;
-
    destruct v2; try discriminate; destruct Archi.ptr64; try discriminate; inv H1; auto.
-
    destruct (eq_block b b0); try discriminate.
-
    destruct (proj_sumbool (zlt 0 (sizeof ty)) &&
-
        proj_sumbool (zle (sizeof ty) Ptrofs.max_signed)); try discriminate.
-
    inv H3. unfold Vptrofs. destruct (Archi.ptr64); simpl; auto.
-
    destruct (eq_block b b0); try discriminate.
-
    destruct (proj_sumbool (zlt 0 (sizeof ty)) &&
-
        proj_sumbool (zle (sizeof ty) Ptrofs.max_signed)); try discriminate.
-
    inv H3. unfold Vptrofs. destruct (Archi.ptr64); simpl; auto.
-
    destruct v1; try discriminate;
-
    destruct v2; try discriminate; destruct Archi.ptr64; try discriminate; inv H1; auto.
-
    unfold Cop.sem_binarith in H1.
-
    destruct (Cop.sem_cast v1 t1
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
    destruct (Cop.sem_cast v2 t2
-
          (Cop.binarith_type (Cop.classify_binarith t1 t2)) m) eqn:?; try discriminate.
-
    eapply sem_cast_ok in Heqo; eauto.
-
    eapply sem_cast_ok in Heqo0; eauto.
-
    destruct (Cop.classify_binarith t1 t2); try discriminate;
-
    try solve [destruct v0; inv H1; destruct v3; inv H3; auto].
-
 -
-
    unfold Cop.sem_shl, Cop.sem_shift in H1.
-
    destruct (Cop.classify_shift t1 t2); try discriminate;
-
    destruct v1; try discriminate; destruct v2; try discriminate;
-
    revert H1; simple_if_tac; intro H1; inv H1; auto.
-
 -
-
    unfold Cop.sem_shr, Cop.sem_shift in H1.
-
    destruct (Cop.classify_shift t1 t2); try discriminate;
-
    destruct v1; try discriminate; destruct v2; try discriminate;
-
    revert H1; simple_if_tac; intro H1; inv H1; auto.
-
 Qed.
-
-
 
 Lemma loadbytes_proj_ok:
-
   forall m loc ofs sz bl ch q,
-
   block_ok (Mem.nextblock m) loc ->
-
   mem_wd2 m ->
-
   Mem.loadbytes m loc ofs sz = Some bl ->
-
   val_ok (Mem.nextblock m) (Val.load_result ch (proj_value q bl)).
-
 Proof.
-
 intros.
-
 assert (forall ch, val_ok (Mem.nextblock m) (Val.load_result ch Vundef)) 
-
  by (intros; destruct ch0; simpl; hnf; auto).
-
 unfold proj_value.
-
 destruct bl; auto.
-
 destruct m0; auto.
-
 destruct (check_value (size_quantity_nat q) v q (Fragment v q0 n :: bl)) eqn:?H; auto.
-
 assert (val_ok (Mem.nextblock m) v). {
-
  clear - H1 H H0.
-
  red in H0.
-
  specialize (H0 loc ofs).
-
  apply mem_lemmas.loadbytes_D in H1.
-
  destruct H1.
-
  destruct (nat_of_Z sz).
-
  inv H2.
-
  simpl in H2.
-
  inv H2.
-
  rewrite <- H4 in H0.
-
  inv H0.
-
  inv H3; try solve [hnf; auto].
-
  unfold Mem.flat_inj in H6.
-
  if_tac in H6; inv H6.
-
  simpl.
-
  apply H0.
-
 }
-
 unfold Val.load_result.
-
 destruct ch; try solve [hnf; auto];
-
 destruct v; try solve [hnf; auto].
-
 destruct Archi.ptr64; auto.
-
 hnf; auto.
-
 Qed.
-
-
 
 Lemma deref_loc_ok: 
-
   forall m loc ofs t1 v,
-
   mem_wd2 m ->
-
   block_ok (Mem.nextblock m) loc ->
-
   deref_loc t1 m loc ofs v -> 
-
   val_ok (Mem.nextblock m) v.
-
 Proof.
-
 intros.
-
 inv H1; auto.
-
 unfold Mem.loadv in H3.
-
 apply Mem.load_loadbytes in H3.
-
 destruct H3 as [bl [? ?]].
-
 subst.
-
 unfold decode_val.
-
 destruct (proj_bytes bl) eqn:?H.
-
 destruct chunk; hnf; auto.
-
 destruct chunk; try solve [hnf; auto].
-
 1,2: destruct Archi.ptr64; try solve [hnf; auto].
-
 all: eapply loadbytes_proj_ok; eauto.
-
 Qed.
-
-
 
 Lemma eval_expr_ok:
-
   forall (m : mem) (ve : Clight.env) (te : Clight.temp_env)
-
   (a : Clight.expr) (v : val),
-
 @Smallstep.globals_not_fresh Clight.fundef type (Clight.genv_genv ge) m ->
-
 mem_wd2 m ->
-
 venv_ok (Mem.nextblock m) ve ->
-
 tenv_ok (Mem.nextblock m) te ->
-
 eval_expr ge ve te m a v -> 
-
 val_ok (Mem.nextblock m) v
-
  with eval_lvalue_ok:
-
   forall (m : mem) (ve : Clight.env) (te : Clight.temp_env)
-
   (a : Clight.expr) (v : block) ofs,
-
 @Smallstep.globals_not_fresh Clight.fundef type (Clight.genv_genv ge) m ->
-
 mem_wd2 m ->
-
 venv_ok (Mem.nextblock m) ve ->
-
 tenv_ok (Mem.nextblock m) te ->
-
 eval_lvalue ge ve te m a v ofs -> 
-
 block_ok (Mem.nextblock m) v.
-
 Proof.
-
 * clear eval_expr_ok.
-
 intros.
-
 assert (Hof_bool: forall v, val_ok (Mem.nextblock m) (Val.of_bool v))
-
     by (intro v'; destruct v'; apply I).
-
 induction H3; try solve [apply I].
-
  + apply H2 in H3; auto.
-
  + apply eval_lvalue_ok in H3; auto.
-
  + destruct op; simpl in H4. 
-
      - clear - Hof_bool H4 IHeval_expr.
-
         unfold Cop.sem_notbool, Cop.bool_val in H4. 
-
         destruct (Clight.typeof a) as [ | [| | | ] [| ]| | [ | ] |  | | | | ];
-
         simpl in H4; try discriminate;
-
         try match type of H4 with context [Archi.ptr64] => 
-
                           destruct Archi.ptr64; simpl in H4; try discriminate end;
-
         try (destruct v1; inv H4; auto;
-
            destruct Archi.ptr64; inv H0;
-
            destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); inv H1;
-
            apply I).
-
     - clear - Hof_bool H4 IHeval_expr.
-
         unfold Cop.sem_notint, Cop.bool_val in H4. 
-
         destruct (Clight.typeof a) as [ | [| | | ] [| ]| | [ | ] |  | | | | ];
-
         simpl in H4; try discriminate;
-
         try match type of H4 with context [Archi.ptr64] => 
-
                           destruct Archi.ptr64; simpl in H4; try discriminate end;
-
         try (destruct v1; inv H4; auto;
-
            destruct Archi.ptr64; inv H0;
-
            destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); inv H1;
-
            apply I).
-
     - unfold Cop.sem_neg in H4.
-
         destruct (Cop.classify_neg (Clight.typeof a)); inv H4;
-
         destruct v1; inv H6; auto.
-
    - unfold Cop.sem_absfloat in H4.
-
         destruct (Cop.classify_neg (Clight.typeof a)); inv H4;
-
         destruct v1; inv H6; auto.
-
  + eapply binary_operation_ok; try apply H3; eauto.
-
  + eapply sem_cast_ok; try apply H4; eauto.
-
  + apply eval_lvalue_ok in H3; auto.
-
      eapply deref_loc_ok; try apply H4; auto.
-
 * clear eval_lvalue_ok.
-
   intros.
-
   induction H3.
-
   apply H1 in H3. auto.
-
   clear - H H4.
-
   red in H.
-
   red. apply Genv.genv_symb_range in H4.
-
   eapply Pos.lt_le_trans; eauto.
-
   apply eval_expr_ok in H3; auto.
-
   apply eval_expr_ok in H3; auto.
-
   apply eval_expr_ok in H3; auto.
-
 Qed.
-
-
 
 Lemma eval_exprlist_ok:
-
   forall (m : mem) (ve : Clight.env) (te : Clight.temp_env)
-
   (al : list Clight.expr) tl (vl : list val),
-
 @Smallstep.globals_not_fresh Clight.fundef type (Clight.genv_genv ge) m ->
-
 mem_wd2 m ->
-
 venv_ok (Mem.nextblock m) ve ->
-
 tenv_ok (Mem.nextblock m) te ->
-
 eval_exprlist ge ve te m al tl vl -> 
-
 Forall (val_ok (Mem.nextblock m)) vl.
-
 Proof.
-
 intros.
-
 induction H3.
-
 constructor.
-
 eapply eval_expr_ok in H3; eauto.
-
 constructor; auto.
-
 eapply sem_cast_ok in H4; eauto.
-
 Qed.
-
-
 
 Lemma find_label_ok:
-
  forall nextb lbl s (al : list cont') (k' : cont),
-
   cont_ok nextb al ->
-
   find_label lbl s al = Some k' ->
-
   cont_ok nextb k'
-
 with find_label_ls_ok:
-
  forall nextb lbl s (al : list cont') (k' : cont),
-
   cont_ok nextb al ->
-
   find_label_ls lbl s al = Some k' ->
-
   cont_ok nextb k'.
-
 Proof.
-
 * clear find_label_ok.
-
 induction s; simpl; intros; try discriminate.
-
 -
-
 destruct (find_label lbl s1
-
          (Kseq s2 :: al)) eqn:?; inv H0.
-
 apply IHs1 in Heqo; auto.
-
 repeat constructor; auto.
-
 apply IHs2 in H2; auto.
-
 -
-
 destruct (find_label lbl s1 al) eqn:?; inv H0.
-
 apply IHs1 in Heqo; auto.
-
 apply IHs2 in H2; auto.
-
 -
-
 destruct (Kseq Scontinue :: Kloop1 s1 s2 :: al) eqn:?; inv H0.
-
 destruct (find_label lbl s1 []) eqn:?; inv H2.
-
 simpl in Heql. inv Heql.
-
 apply IHs2 in H1; auto.
-
 repeat constructor; auto.
-
 simpl in Heql. inv Heql.
-
 destruct  (Kseq Scontinue :: Kloop1 s1 s2 :: al) eqn:?; inv H2.
-
 simpl in Heql; inv Heql.
-
 simpl in Heql; inv Heql.
-
 destruct (find_label lbl s1
-
          (Kseq Scontinue :: Kloop1 s1 s2 :: al)) eqn:?; inv H1.
-
 apply IHs1 in Heqo; auto.
-
 repeat constructor; auto.
-
 apply IHs2 in H2; auto.
-
 repeat constructor; auto.
-
 - 
-
  eapply find_label_ls_ok; try apply H0; eauto.
-
  repeat constructor; auto.
-
 -
-
  if_tac in H0. subst. inv H0. constructor; auto. constructor; auto.
-
  apply IHs in H0; auto.
-
 * clear find_label_ls_ok.
-
 induction s; intros.
-
 inv H0.
-
 simpl in H0.
-
 destruct (find_label lbl s
-
          (Kseq (seq_of_labeled_statement s0) :: al)) eqn:?H; inv H0.
-
 eapply find_label_ok; try apply H1; eauto.
-
 repeat constructor; auto.
-
 apply IHs in H3; auto.
-
 Qed.
-
-
 
 Lemma mem_ok_goto:
-
  forall (k : cont) (lbl : Clight.label)
-
        (s' : Clight.statement) (nextb : block),
-
    cont_ok nextb k ->
-
    forall (s : Clight.statement) (k' : cont),
-
    find_label lbl s
-
      (Kseq s' :: Clight_new.call_cont k) = 
-
     Some k' -> cont_ok nextb k'.
-
 Proof.
-
 intros.
-
 change (Clight_new.Kseq s' :: Clight_new.call_cont k) with
-
   ([Clight_new.Kseq s'] ++ Clight_new.call_cont k) in H0.
-
 assert (Forall (cont'_ok nextb) [Clight_new.Kseq s'] ).
-
 repeat constructor.
-
 remember [Clight_new.Kseq s'] as al.
-
 clear Heqal.
-
 eapply find_label_ok; try apply H0.
-
 red.
-
 apply sublist.Forall_app.
-
 split; auto.
-
 red in H.
-
 clear - H.
-
 induction k.
-
 constructor.
-
 inv H.
-
 destruct a; simpl; auto.
-
 Qed.
-
-
 
 Lemma loadbytes_storebytes_wd2:
-
    forall m b' z' sz b z bytes m',
-
    mem_wd2 m ->
-
    Mem.loadbytes m b' z' sz = Some bytes ->
-
    Mem.storebytes m b z bytes = Some m' -> mem_wd2 m'.
-
 Proof.
-
 intros.
-
 red in H.
-
 apply mem_lemmas.loadbytes_D in H0.
-
 destruct H0.
-
 subst bytes.
-
 generalize (H b'); intro.
-
 forget ((Mem.mem_contents m) !! b') as f.
-
 assert (Forall (fun x => memval_inject (Mem.flat_inj (Mem.nextblock m))  x x) 
-
   (Mem.getN (nat_of_Z sz) z' f)).
-
 clear H0 H1. revert z'.
-
 induction (nat_of_Z sz); intros. simpl. constructor.
-
 constructor. auto. auto.
-
 forget (Mem.getN (nat_of_Z sz) z' f) as bytes.
-
 generalize (H b); intro.
-
 red.
-
 rewrite (Mem.nextblock_storebytes _ _ _ _ _ H1).
-
 apply Mem.storebytes_mem_contents in H1.
-
 rewrite H1. clear H1.
-
 intros.
-
 destruct (eq_block b0 b);
-
   [  | rewrite PMap.gso by auto; apply H].
-
 subst.
-
 rewrite PMap.gss.
-
 forget ((Mem.mem_contents m) !! b) as g.
-
 clear - H4 H3.
-
 revert g H4.
-
 revert z H3; induction bytes; intros.
-
 simpl. auto.
-
 inv H3.
-
 simpl.
-
 apply IHbytes; auto.
-
 intros.
-
 destruct (zeq ofs0 z).
-
 subst.
-
 rewrite ZMap.gss; auto.
-
 rewrite ZMap.gso; auto.
-
 Qed.
-
-
 
 Lemma mem_wd_freelist:
-
   forall m bl m', Mem.free_list m bl = Some m' -> mem_wd2 m -> mem_wd2 m'.
-
 Proof.
-
 intros.
-
 revert  bl m H H0; induction bl; simpl; intros.
-
 inv H; auto.
-
 destruct a as [[??]?].
-
 destruct (Mem.free m b z z0) eqn:?H; inv H.
-
 apply IHbl with m0; auto.
-
 clear - H0 H1.
-
 hnf; intros.
-
 Transparent Mem.free.
-
 destruct (eq_block b0 b).
-
 subst b0.
-
 unfold Mem.free in H1.
-
 if_tac in H1.
-
 inv H1.
-
 simpl.
-
 apply H0.
-
 inv H1.
-
 unfold Mem.free in H1.
-
 if_tac in H1.
-
 inv H1.
-
 simpl.
-
 apply H0.
-
 inv H1.
-
 Opaque Mem.free.
-
 Qed.
-
-
 
 Lemma alloc_variables_ok: 
-
   forall ve m vl ve' m',
-
    mem_wd2 m ->
-
    venv_ok (Mem.nextblock m) ve ->
-
    alloc_variables ge ve m vl ve' m' ->
-
    venv_ok (Mem.nextblock m') ve' /\ mem_wd2 m' /\ (Mem.nextblock m <= Mem.nextblock m')%positive.
-
 Proof.
-
   intros.
-
   revert ve m H H0 H1; induction vl; simpl; intros.
-
   inv H1. split3; auto. apply Pos.le_refl.
-
   inv H1.
-
   apply IHvl in H9.
-
   destruct H9 as [? [? ?]].
-
   split3; auto.
-
   eapply Pos.le_trans; try apply H3.
-
   apply Mem.nextblock_alloc in H6. rewrite H6.
-
   apply Ple_succ.
-
   eapply mem_wd2_alloc; eauto.
-
   apply set_venv_ok.
-
   apply Mem.valid_new_block in H6. red in H6. apply H6.
-
   eapply alloc_venv_ok; try eassumption.
-
   apply Mem.nextblock_alloc in H6. rewrite H6.
-
   apply Ple_succ.
-
 Qed.
-
-
 
 Lemma bind_parameter_temps_ok:
-
   forall m fl vl te te',
-
     tenv_ok (Mem.nextblock m) te ->
-
     Forall (val_ok (Mem.nextblock m))vl ->
-
     bind_parameter_temps fl vl te = Some te' ->
-
     tenv_ok (Mem.nextblock m) te'.
-
 Proof.
-
 induction fl; intros; auto.
-
 inv H1. destruct vl; inv H3. auto.
-
 inv H1.
-
 destruct a.
-
 destruct vl; inv H3.
-
 inv H0.
-
 apply IHfl in H2; auto.
-
 apply set_tenv_ok; auto.
-
 Qed.
-
-
 
 Lemma call_cont_ok_lemma:
-
  forall f optid k m ve' te' k',
-
 call_cont k = Kcall optid f ve' te' :: k' ->
-
 Forall (cont'_ok (Mem.nextblock m)) k ->
-
 venv_ok (Mem.nextblock m) ve' /\
-
 tenv_ok (Mem.nextblock m) te' /\ cont_ok (Mem.nextblock m) k'.
-
 Proof.
-
 intros.
-
 revert H; induction k; simpl; intros. inv H.
-
 inv H0.
-
 destruct a; try solve [apply IHk in H; auto].
-
 inv H.
-
 inv H3. split3; auto.
-
 Qed.
-
-
 
 Lemma cl_step_ok:
-
   forall c m c' m',
-
 Clight_new.cl_step ge c m c' m' ->
-
 Smallstep.globals_not_fresh (Clight.genv_genv ge) m /\
-
 mem_wd2 m /\ corestate_ok (Mem.nextblock m) c ->
-
 mem_wd2 m' /\
-
 corestate_ok (Mem.nextblock m') c' /\
-
 (Mem.nextblock m <= Mem.nextblock m')%positive.
-
 intros until m'. intro Hstep.
-
  induction Hstep; intros [? [? ?]]. 
-
 * 
-
   destruct H6 as [? [? Hk]].
-
   eapply eval_expr_ok in H1; eauto.
-
   eapply eval_lvalue_ok in H0; eauto.
-
   eapply sem_cast_ok in H2; eauto.
-
   assert (mem_wd.val_valid v m). {
-
    clear - H2.
-
     hnf. hnf in H2. destruct v; auto.
-
  }
-
   inv H3.
-
   unfold Mem.storev in H10.
-
   pose proof (mem_wd2_store _ _ _ _ _ _ H5 H10 H8).
-
   rewrite (Mem.nextblock_store _ _ _ _ _ _ H10).
-
   split3; auto.
-
   split3; auto. inv Hk; auto.
-
   apply Pos.le_refl.
-
   rewrite (Mem.nextblock_storebytes _ _ _ _ _ H14).
-
   split3.
-
   2: split3; auto; inv Hk; auto.
-
   2: apply Pos.le_refl.
-
   eapply loadbytes_storebytes_wd2; eauto.
-
 * 
-
    destruct H2 as [? [? ?]]. inv H4.
-
    repeat split;  auto.
-
    2: apply Pos.le_refl.
-
    apply set_tenv_ok; auto.
-
    eapply eval_expr_ok; eauto.
-
 * 
-
  destruct H9 as [? [? ?]]. inv H11. clear H14.
-
   eapply eval_expr_ok in H0; eauto.
-
   eapply eval_exprlist_ok in H1; eauto.
-
   eapply alloc_variables_ok in H5; eauto;
-
    [ | clear; hnf; intros; rewrite PTree.gempty in H; inv H].
-
   destruct H5 as [? [? ?]].
-
   eapply bind_parameter_temps_ok in H6; eauto.
-
   split3; auto.
-
   split3; auto.
-
   eapply alloc_tenv_ok; eauto.
-
   repeat constructor; auto.
-
   eapply alloc_venv_ok; eauto.
-
   eapply alloc_tenv_ok; eauto.
-
   clear - H12 H15.
-
   revert H15; apply Forall_impl.
-
   apply alloc_cont'_ok; auto.
-
   clear. induction (fn_temps f); simpl. intros ? ? ?. rewrite PTree.gempty in H. inv H. destruct a.
-
   apply set_tenv_ok; auto. hnf; auto.  
-
 *  
-
  destruct H5 as [? [? ?]]. inv H7. clear H10.
-
   eapply eval_expr_ok in H0; eauto.
-
   eapply eval_exprlist_ok in H1; eauto.
-
   split3; auto.
-
   2: apply Pos.le_refl.
-
   split3; auto.
-
 * 
-
   apply IHHstep. split; [|split]; auto.
-
   destruct H1 as [? [? ?]];  split; [|split]; auto.
-
   repeat constructor. inv H3; auto.
-
 * 
-
   apply IHHstep. split; [|split]; auto.
-
   simpl in H1. destruct H1 as [? [? ?]]. split; [|split]; auto. inv H3. auto.
-
 * 
-
   apply IHHstep. split; [|split]; auto.
-
   simpl in H1. destruct H1 as [? [? ?]]. split; [|split]; auto. inv H3.
-
   clear - H7.
-
   induction k. constructor.
-
   inv H7.
-
   specialize (IHk H2).
-
   destruct a; auto. simpl in *. repeat constructor. auto.
-
   repeat constructor. simpl in *. constructor.
-
 * 
-
   apply IHHstep. split; [|split]; auto.
-
   simpl in H1. destruct H1 as [? [? ?]]. split; [|split]; auto. inv H3.
-
   clear - H7.
-
   induction k. constructor.
-
   inv H7.
-
   specialize (IHk H2).
-
   destruct a; auto. simpl in *. repeat constructor.
-
 * 
-
   split; auto.
-
   split.
-
    2: apply Pos.le_refl.
-
   destruct H3 as [? [? ?]]. split;[ |split]; auto.
-
   constructor. constructor. inv H5; auto.
-
 * 
-
   split; auto.
-
   split.
-
    2: apply Pos.le_refl.
-
   destruct H1 as [? [? ?]]. split;[ |split]; auto.
-
   repeat constructor.
-
   inv H3. auto.
-
 * 
-
   split; auto.
-
   split.
-
    2: apply Pos.le_refl.
-
   destruct H1 as [? [? ?]]. split;[ |split]; auto.
-
   repeat constructor.
-
   inv H3. auto.
-
 * 
-
   rewrite (mem_lemmas.nextblock_freelist _ _ _ H0).
-
   split3.
-
   eapply mem_wd_freelist; eassumption.
-
   2: apply Pos.le_refl.
-
   clear - H H3 H1 H2 H4 H5.
-
   destruct H5 as [? [? ?]].
-
   inv H6. clear H9.
-
   assert (val_ok (Mem.nextblock m) v'). {
-
     destruct optexp.
-
     destruct H1  as [? [? ?]]. eapply eval_expr_ok in H1; eauto.
-
     eapply sem_cast_ok in H6; eauto. subst; hnf; auto.
-
   }
-
   clear H1.
-
   assert (venv_ok (Mem.nextblock m) ve' /\ tenv_ok (Mem.nextblock m) te' /\ cont_ok (Mem.nextblock m) k'). {
-
    eapply call_cont_ok_lemma; eauto.
-
   }
-
   destruct H1 as [? [? ?]].
-
   split3; auto.
-
   clear - H7 H2 H6.
-
   destruct optid; destruct H2; subst; auto.
-
   apply set_tenv_ok; auto.
-
 * 
-
   destruct H3 as [? [? ?]].
-
   split3; auto.
-
   2: apply Pos.le_refl.
-
   split3; auto. inv H5. constructor; auto.
-
 * 
-
   apply IHHstep. split; [|split]; auto.
-
   simpl in H1. destruct H1 as [? [? ?]]. split; [|split]; auto. inv H3.
-
   constructor; auto.
-
 * 
-
   split; auto.
-
   split.
-
    2: apply Pos.le_refl.
-
   destruct H2 as [? [? ?]]. split; [|split]; auto.
-
   inv H4.
-
   eapply mem_ok_goto; eauto.
-
 Qed.
 
-
-
 End GE.
-

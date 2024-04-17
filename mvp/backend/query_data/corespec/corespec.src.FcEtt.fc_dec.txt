@@ -796,8 +796,6 @@ Axiom AnnDefEq_unique    :
 
 End fc_unique_sig. *)
 
-
-
 Require Import FcEtt.fc_dec_fuel.
 (* FcEtt.fc_dec_fuel:
 Require Import FcEtt.sigs.
@@ -1045,7 +1043,6 @@ with ind_fuel_deq := Induction for fuel_deq Sort Prop.
 Combined Scheme fuel_mutind from ind_fuel_tpg, ind_fuel_pwf, ind_fuel_iso, ind_fuel_deq.
 
 End fc_dec_fuel. *)
-
 Require Import FcEtt.fc_dec_fun.
 (* FcEtt.fc_dec_fun:
 Require Import FcEtt.sigs.
@@ -1584,7 +1581,6 @@ with AnnIso_dec (G: context) (S : available_props) (g : co) (fuel : fuel_iso g)
 .
 
 End fc_dec_fun. *)
-
 Require Import FcEtt.fc_dec_aux.
 (* FcEtt.fc_dec_aux:
 Require Import FcEtt.sigs.
@@ -1704,8 +1700,6 @@ Program Fixpoint RhoCheck_erase_dec rho x a (_ : lc_tm a) : {RhoCheck rho x (era
 
 End fc_dec_aux. *)
 
-
-
 Require Import FcEtt.imports.
 (* FcEtt.imports:
 Require Export Coq.Unicode.Utf8.
@@ -1726,8 +1720,6 @@ Global Set Implicit Arguments.
 Global Set Bullet Behavior "Strict Subproofs".
 
 Notation sort := sort (only parsing). *)
-
-
 
 Require Import FcEtt.ett_ind.
 (* FcEtt.ett_ind:
@@ -2209,178 +2201,303 @@ Lemma tm_subst_cast : forall a x g,
     tm_subst_tm_tm a x (a_Conv (a_Var_f x) g) = a_Conv a (tm_subst_tm_co a x g).
 
 Hint Rewrite tm_subst_cast. *)
-
 Require Export FcEtt.fc_invert.
+(* FcEtt.fc_invert:
+Require Import FcEtt.sigs.
 
+Require Import FcEtt.imports.
+Require Import FcEtt.tactics.
+Require Import FcEtt.fset_facts.
 
+Require Import FcEtt.ett_ott.
+Require Import FcEtt.ett_inf.
+Require Import FcEtt.ett_inf_cs.
+Require Import FcEtt.ett_ind.
+
+Require Import FcEtt.erase_syntax.
+Require Export Metalib.CoqEqDec.
+Require Import Coq.Logic.Decidable.
+Require Import Metalib.Metatheory.
+Require Import FcEtt.fc_unique.
+
+Require Import FcEtt.fc_wf.
+Require Import FcEtt.toplevel.
+Require Import FcEtt.fc_context_fv.
+
+Module fc_invert (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig).
+Import weak subst.
+
+Module unique := fc_unique wf subst.
+Import unique.
+
+Set Bullet Behavior "Strict Subproofs".
+Set Implicit Arguments.
+
+Lemma AnnTyping_regularity :
+  (forall G a A, AnnTyping G a A -> AnnTyping G A a_Star).
+
+Lemma AnnPropWff_regularity :
+  forall G A B A1, AnnPropWff G (Eq A B A1) -> exists B1 g,
+      AnnTyping G A A1 /\ AnnTyping G B B1 /\ AnnDefEq G empty g A1 B1.
+
+Lemma erase_pi : forall G AB0 rho A B S, erase AB0 = (a_Pi rho A B) -> AnnTyping G AB0 S ->
+  exists A1 B0, erase AB0 = erase (a_Pi rho A1 B0) /\ erase A1 = A /\ erase B0 = B /\ AnnTyping G (a_Pi rho A1 B0) a_Star.
+
+Lemma erase_cpi : forall AB0 A B G S,
+    erase AB0 = (a_CPi A B) -> AnnTyping G AB0 S ->
+    exists A1 B0, erase AB0 = erase (a_CPi A1 B0) /\ erase_constraint A1 = A /\ erase B0 = B
+             /\ AnnTyping G (a_CPi A1 B0) a_Star.
+
+Lemma erase_app_Rel :
+  forall AB0 A B C G, erase AB0 = (a_App A Rel B) -> AnnTyping G AB0 C ->
+  exists A1 B0 g D, erase AB0 = erase (a_App A1 Rel B0) /\ erase A1 = A /\ erase B0 = B /\
+          AnnTyping G (a_App A1 Rel B0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma erase_app_Irrel :
+  forall AB0 A C G, erase AB0 = (a_App A Irrel a_Bullet) -> AnnTyping G AB0 C ->
+  exists A1 B0 g D, erase AB0 = erase (a_App A1 Irrel B0) /\ erase A1 = A /\
+          AnnTyping G (a_App A1 Irrel B0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma erasure_compatible : forall G a A (H1 :AnnTyping G a A),
+    forall b B (H2 : AnnTyping G b B)
+      (E : erase a = erase b)
+      (F : erase A = erase B),
+    exists g1, AnnDefEq G (dom G) g1 a b.
+
+Lemma AnnDefEqAnnIso_regularity :
+  (forall G0 a A, AnnTyping G0 a A -> True ) /\
+  (forall G0 phi,   AnnPropWff G0 phi -> True ) /\
+  (forall G D g p1 p2, AnnIso G D g p1 p2 ->
+                 AnnPropWff G p1 /\ AnnPropWff G p2) /\
+  (forall G D g A B,   AnnDefEq G D g A B ->
+           exists C1 C2 g', AnnTyping G A C1 /\ AnnTyping G B C2 /\ AnnDefEq G (dom G) g' C1 C2) /\
+  (forall G0, AnnCtx G0 -> True).
+
+Definition  AnnDefEq_regularity :
+    (forall G D g A B,   AnnDefEq G D g A B ->
+                    exists C1 C2 g', AnnTyping G A C1 /\ AnnTyping G B C2
+                                /\ AnnDefEq G (dom G) g' C1 C2) :=
+  fourth AnnDefEqAnnIso_regularity.
+
+Definition AnnIso_regularity :
+  forall G D g phi1 phi2, AnnIso G D g phi1 phi2 ->
+                     AnnPropWff G phi1 /\ AnnPropWff G phi2 :=
+  third AnnDefEqAnnIso_regularity.
+
+  Lemma An_Sym2
+    : ∀ (G : context) (D : available_props) (g : co) (a b : tm),
+      AnnDefEq G D g b a → AnnDefEq G D (g_Sym g) a b.
+
+Lemma An_Trans2
+     : ∀ (G : context) (D : available_props) (g1 g2 : co)
+       (a b a1 : tm),
+       AnnDefEq G D g1 a a1
+       → AnnDefEq G D g2 a1 b
+       → AnnDefEq G D (g_Trans g1 g2) a b .
+
+Lemma erase_a_Const : forall G0 a0 A0 A1 T,
+       erase a0 = a_Const T ->
+       binds T (Cs A1) an_toplevel ->
+       AnnTyping G0 a0 A0   ->
+       exists g, AnnDefEq G0 (dom G0) g A0 A1.
+
+Lemma erase_capp :
+  forall AB0 C G, AnnTyping G AB0 C -> forall A, erase AB0 = (a_CApp A g_Triv) ->
+  exists a1 g0 g D, erase AB0 = erase (a_CApp a1 g0) /\ erase a1 = A /\
+          AnnTyping G (a_CApp a1 g0) D /\ AnnDefEq G (dom G) g C D.
+
+Lemma An_AppCong2 : ∀ (G : context) (D : available_props) rho (g1 g2 : co)
+       (a1 a2 b1 b2 A B : tm),
+       AnnDefEq G D g1 a1 b1
+       → AnnDefEq G D g2 a2 b2
+         → AnnTyping G (a_App a1 rho a2) A
+           → AnnTyping G (a_App b1 rho b2) B
+           → AnnDefEq G D (g_AppCong g1 rho g2) (a_App a1 rho a2) (a_App b1 rho b2).
+
+Lemma An_CAppCong2 :
+      ∀ (G : context) (D : available_props) (g1 g2 g3 : co) (a1 b1 a2 b2 a3 b3 A B : tm),
+       AnnDefEq G D g1 a1 b1
+       → AnnDefEq G (dom G) g2 a2 b2
+       → AnnDefEq G (dom G) g3 a3 b3
+       → AnnTyping G (a_CApp a1 g2) A
+       → AnnTyping G (a_CApp b1 g3) B
+       → AnnDefEq G D (g_CAppCong g1 g2 g3) (a_CApp a1 g2) (a_CApp b1 g3).
+
+Lemma An_Trans'
+     : ∀ (G : context) (D : available_props) (g1 g2 : co)
+       (a b a1 : tm),
+       AnnDefEq G D g1 a a1
+       → AnnDefEq G D g2 a1 b
+       → exists g, AnnDefEq G D g a b .
+
+Lemma An_Sym'
+   : ∀ (G : context) (D : available_props) (g : co) (a b : tm),
+       AnnDefEq G D g b a → exists g, AnnDefEq G D g a b.
+
+Lemma An_Refl_Star : forall G D a b A,
+     erase a = erase b -> AnnTyping G b a_Star ->
+     AnnTyping G a A -> erase A = a_Star ->
+     exists g, AnnDefEq G D g a b.
+
+Lemma An_IsoRefl2_derivable  : ∀ (G : context) (D : available_props) (phi1 phi2 : constraint),
+       AnnPropWff G phi1
+       → AnnPropWff G phi2
+       → erase_constraint phi1 = erase_constraint phi2 →
+       exists g,
+       AnnIso G D g phi1 phi2.
+
+Lemma An_Pi_exists2
+     : ∀ (x : atom) (G : list (atom * sort)) (rho : relflag) (A B : tm),
+       x `notin` union (dom G) (fv_tm_tm_tm B)
+       → AnnTyping ([(x, Tm A)] ++ G) (open_tm_wrt_tm B (a_Var_f x)) a_Star
+       → AnnTyping G (a_Pi rho A B) a_Star.
+
+Lemma An_Abs_exists2
+  : ∀ (x : atom) (G : context) (rho : relflag) (A a B : tm),
+    x `notin` union (dom G) (union (fv_tm_tm_tm a) (fv_tm_tm_tm B))
+    → AnnTyping ([(x, Tm A)] ++ G) (open_tm_wrt_tm a (a_Var_f x)) (open_tm_wrt_tm B (a_Var_f x))
+    → RhoCheck rho x (erase_tm (open_tm_wrt_tm a (a_Var_f x)))
+    → AnnTyping G (a_Abs rho A a) (a_Pi rho A B).
+
+Lemma An_CPi_exists2
+  : ∀ (c : atom) (G : context) (phi : constraint) (B : tm),
+       c `notin` union (dom G) (fv_co_co_tm B)
+       → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co B (g_Var_f c)) a_Star
+       → AnnTyping G (a_CPi phi B) a_Star.
+
+Lemma An_CAbs_exists2
+   : ∀ (c : atom) (G : context) (phi : constraint) (a B : tm),
+       c `notin` union (dom G) (union (fv_co_co_tm a) (fv_co_co_tm B))
+       → AnnTyping ([(c, Co phi)] ++ G) (open_tm_wrt_co a (g_Var_f c)) (open_tm_wrt_co B (g_Var_f c))
+       → AnnTyping G (a_CAbs phi a) (a_CPi phi B).
+
+Lemma An_Fam2 :  ∀ (G : context) (F : tyfam) (A a : tm),
+       AnnCtx G
+       → binds F (Ax a A) an_toplevel
+       → AnnTyping G (a_Fam F) A.
+
+Lemma An_AbsCong_exists2
+      : ∀ (x1 x2 : atom) (G : context) (D : available_props) (rho : relflag) (g1 g2 : co)
+        (A1 b1 A2 b3 b2 B : tm),
+        x1 `notin` union (dom G) (union (fv_tm_tm_tm b1) (union (fv_tm_tm_tm b2) (fv_tm_tm_co g2)))
+        → x2 `notin` union (dom G) (union (fv_tm_tm_tm b2) (union (fv_tm_tm_tm b3) (fv_tm_tm_co g1)))
+          → AnnDefEq G D g1 A1 A2
+            → AnnDefEq ([(x1, Tm A1)]++ G) D (open_co_wrt_tm g2 (a_Var_f x1))
+                (open_tm_wrt_tm b1 (a_Var_f x1)) (open_tm_wrt_tm b2 (a_Var_f x1))
+              → open_tm_wrt_tm b3 (a_Var_f x2) = open_tm_wrt_tm b2 (a_Conv (a_Var_f x2) (g_Sym g1))
+                  → AnnTyping G A2 a_Star
+                    → RhoCheck rho x1 (erase_tm (open_tm_wrt_tm b1 (a_Var_f x1)))
+                      → RhoCheck rho x2 (erase_tm (open_tm_wrt_tm b3 (a_Var_f x2)))
+                        → AnnTyping G (a_Abs rho A1 b2) B
+                          → AnnDefEq G D (g_AbsCong rho g1 g2) (a_Abs rho A1 b1) (a_Abs rho A2 b3).
+
+ Lemma An_CPiCong_exists2
+      : ∀ (c : atom) (G : context) (D : available_props)
+        (g1 g3 : co) (phi1 : constraint) (B1 : tm)
+        (phi2 : constraint) (B3 B2 : tm),
+        AnnIso G D g1 phi1 phi2
+        → c
+          `notin` (union (dom G)
+                   (union D
+                    (union (fv_co_co_tm B2)
+                       (union (fv_co_co_tm B1)
+                          (union (fv_co_co_co g3)
+                              (union (fv_co_co_co g1)
+                                     (fv_co_co_tm B3)))))))
+          → AnnDefEq ([(c, Co phi1)] ++ G) D
+                     (open_co_wrt_co g3 (g_Var_f c))
+                     (open_tm_wrt_co B1 (g_Var_f c))
+                     (open_tm_wrt_co B2 (g_Var_f c))
+          → open_tm_wrt_co B3 (g_Var_f c) =
+            open_tm_wrt_co B2 (g_Cast (g_Var_f c) (g_Sym g1))
+          → AnnTyping G (a_CPi phi1 B1) a_Star
+          → AnnTyping G (a_CPi phi1 B2) a_Star
+          → AnnDefEq G D (g_CPiCong g1 g3) (a_CPi phi1 B1) (a_CPi phi2 B3).
+
+End fc_invert. *)
 
 Require Import Coq.Init.Specif.
-
 Require Import Coq.micromega.Lia.
-
-
 
 Module fc_dec (wf : fc_wf_sig) (weak : fc_weak_sig) (subst : fc_subst_sig) (unique: fc_unique_sig).
 
-
-
 Module invert := fc_invert wf weak subst.
-
 Module fuel := fc_dec_fuel wf weak subst unique.
-
 Module tc_fun := fc_dec_fun wf weak subst unique.
-
 Module aux := fc_dec_aux wf weak subst unique.
-
-
 
 Import tc_fun fuel aux unique wf subst invert.
 
-
-
 Definition fuel_at n : Type :=
-
     (∀ a, size_tm a <= n ->  fuel_tpg a) *
-
     (∀ phi, size_constraint phi <= n -> fuel_pwf phi) *
-
     (∀ gamma, size_co gamma <= n -> fuel_iso gamma) *
-
     (∀ gamma, size_co gamma <= n -> fuel_deq gamma).
 
-
-
 Ltac wfind :=
-
   match goal with
-
     | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_tpg ?a ] => eapply (Hind (size_tm a))
-
     | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_deq ?g ] => eapply (Hind (size_co g))
-
     | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_iso ?g ] => eapply (Hind (size_co g))
-
     | [ Hind: ∀ z : nat, z < ?x → fuel_at z |- fuel_pwf ?g ] => eapply (Hind (size_constraint g))
-
   end.
 
-
-
 Lemma fuel_all : ∀ n, fuel_at n.
-
 Proof.
-
   intro n. eapply (well_founded_induction_type lt_wf). clear n. intros.
-
   repeat split.
-
   + intros a sz.
-
     destruct a; auto; unfold size_tm in sz; fold size_tm in sz; fold size_co in sz; fold size_constraint in sz.
 
-
-
     all: try econstructor; intros.
-
     all: try wfind.
-
     all: try rewrite size_tm_open_tm_wrt_tm_var; try rewrite size_tm_open_tm_wrt_co_var.
-
     all: try lia.
-
-
 
   + intros phi sz.
-
     destruct phi; auto; unfold size_constraint in sz; fold size_tm in sz; fold size_co in sz; fold size_constraint in sz.
-
     econstructor; intros.
-
     all: wfind.
-
     all: try lia.
 
-
-
   + intros g sz.
-
     destruct g; auto; unfold size_co in sz; unfold size_tm in sz; fold size_tm in sz; fold size_co in sz; fold size_constraint in sz.
-
-
 
     all: try econstructor; intros.
-
     all: try wfind.
-
     all: try rewrite size_tm_open_tm_wrt_tm_var; try rewrite size_tm_open_tm_wrt_co_var.
-
     all: try lia.
 
-
-
   + intros g sz.
-
     destruct g; auto; unfold size_co in sz; unfold size_tm in sz; fold size_tm in sz; fold size_co in sz; fold size_constraint in sz.
-
     all: econstructor; intros.
-
     all: try wfind.
-
     all: try
-
       solve [ lia
-
             | rewrite size_co_open_co_wrt_co_var; lia
-
             | rewrite size_tm_open_tm_wrt_co_var; lia
-
             | rewrite size_co_open_co_wrt_tm_var; lia
-
             | rewrite size_tm_open_tm_wrt_tm_var; lia].
-
 Qed.
-
-
 
 Definition gaspump : ∀ t : tm, fuel_tpg t.
-
 Proof.
-
   move => t.
-
   move: (fuel_all (size_tm t)) => f.
-
   do 3 move: f => [f _].
-
   apply f.
-
   done.
-
 Qed.
-
-
 
 Definition FC_typechecker : ∀ t : tm, {T : tm | AnnTyping nil t T } + {(forall T, ¬ AnnTyping nil t T)} :=
-
   fun t => AnnTyping_dec nil t (gaspump t) An_Empty.
 
-
-
 Theorem FC_typechecking_decidable : ∀ t : tm, (exists T : tm, AnnTyping nil t T) \/ (∀ T, ¬ AnnTyping nil t T).
-
 Proof.
-
   intros t.
-
   case: (FC_typechecker t).
-
   - intros [T p]. left. exists T. exact p.
-
   - intros n. right. intros T. apply n.
-
 Qed.
 
-
-
 End fc_dec.
-

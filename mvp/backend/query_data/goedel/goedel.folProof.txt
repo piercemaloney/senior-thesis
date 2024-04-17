@@ -1,13 +1,329 @@
 Require Import Ensembles.
-
 Require Import Coq.Lists.List.
-
 Require Import Arith.
 
-
-
 Require Export fol.
+(* fol:
+Require Import Coq.Lists.List.
+Require Import Ensembles.
+Require Import Peano_dec.
+Require Import Eqdep_dec.
+Require Import Arith.
+Require Import Compare_dec.
+Require Import Max.
+Require Import misc.
 
+Unset Standard Proposition Elimination Names.
+
+Record Language : Type := language
+  {Relations : Set; Functions : Set; arity : Relations + Functions -> nat}.
+
+Section First_Order_Logic.
+
+Variable L : Language.
+
+Inductive Term : Set :=
+  | var : nat -> Term
+  | apply : forall f : Functions L, Terms (arity L (inr _ f)) -> Term
+with Terms : nat -> Set :=
+  | Tnil : Terms 0
+  | Tcons : forall n : nat, Term -> Terms n -> Terms (S n).
+ 
+Scheme Term_Terms_ind := Induction for Term Sort Prop
+  with Terms_Term_ind := Induction for Terms Sort Prop.
+
+Scheme Term_Terms_rec := Minimality for Term Sort Set
+  with Terms_Term_rec := Minimality for Terms Sort Set.
+
+Scheme Term_Terms_rec_full := Induction for Term
+  Sort Set
+  with Terms_Term_rec_full := Induction for Terms Sort Set.
+
+Inductive Formula : Set :=
+  | equal : Term -> Term -> Formula
+  | atomic : forall r : Relations L, Terms (arity L (inl _ r)) -> Formula
+  | impH : Formula -> Formula -> Formula
+  | notH : Formula -> Formula
+  | forallH : nat -> Formula -> Formula.
+
+Definition Formulas := list Formula.
+
+Definition System := Ensemble Formula.
+Definition mem := Ensembles.In.
+
+Section Fol_Full.
+
+Definition orH (A B : Formula) := impH (notH A) B.
+
+Definition andH (A B : Formula) := notH (orH (notH A) (notH B)).
+
+Definition iffH (A B : Formula) := andH (impH A B) (impH B A).
+
+Definition existH (x : nat) (A : Formula) := notH (forallH x (notH A)).
+
+End Fol_Full.
+
+Section Fol_Plus.
+
+Definition ifThenElseH (A B C : Formula) := andH (impH A B) (impH (notH A) C).
+
+End Fol_Plus.
+
+Section Formula_Decideability.
+
+Definition language_decideable :=
+  ((forall x y : Functions L, {x = y} + {x <> y}) *
+   (forall x y : Relations L, {x = y} + {x <> y}))%type.
+
+Hypothesis language_dec : language_decideable.
+
+Let nilTermsHelp : forall n : nat, n = 0 -> Terms n.
+
+Lemma nilTerms : forall x : Terms 0, Tnil = x.
+
+Let consTermsHelp : forall n : nat, Terms n -> Set.
+
+Lemma consTerms :
+ forall (n : nat) (x : Terms (S n)),
+ {t : Term * Terms n | Tcons n (fst t) (snd t) = x}.
+
+Lemma term_dec : forall x y : Term, {x = y} + {x <> y}.
+
+Lemma terms_dec : forall (n : nat) (x y : Terms n), {x = y} + {x <> y}.
+
+Lemma formula_dec : forall x y : Formula, {x = y} + {x <> y}.
+
+End Formula_Decideability.
+
+Section Formula_Depth_Induction.
+
+Fixpoint depth (A : Formula) : nat :=
+  match A with
+  | equal _ _ => 0
+  | atomic _ _ => 0
+  | impH A B => S (max (depth A) (depth B))
+  | notH A => S (depth A)
+  | forallH _ A => S (depth A)
+  end.
+
+Definition lt_depth (A B : Formula) : Prop := depth A < depth B.
+
+Lemma depthImp1 : forall A B : Formula, lt_depth A (impH A B).
+
+Lemma depthImp2 : forall A B : Formula, lt_depth B (impH A B).
+
+Lemma depthNot : forall A : Formula, lt_depth A (notH A).
+
+Lemma depthForall : forall (A : Formula) (v : nat), lt_depth A (forallH v A).
+
+Lemma eqDepth :
+ forall A B C : Formula, depth B = depth A -> lt_depth B C -> lt_depth A C.
+
+Definition Formula_depth_rec_rec :
+  forall P : Formula -> Set,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall (n : nat) (b : Formula), depth b <= n -> P b.
+
+Definition Formula_depth_rec (P : Formula -> Set)
+  (rec : forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a)
+  (a : Formula) : P a :=
+  Formula_depth_rec_rec P rec (depth a) a (le_n (depth a)).
+
+Lemma Formula_depth_rec_indep :
+ forall (Q P : Formula -> Set)
+   (rec : forall a : Formula,
+          (forall b : Formula, lt_depth b a -> Q b -> P b) -> Q a -> P a),
+ (forall (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+  (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+  forall q : Q a, rec a z1 q = rec a z2 q) ->
+ forall (a : Formula) (q : Q a),
+ Formula_depth_rec (fun x : Formula => Q x -> P x) rec a q =
+ rec a
+   (fun (b : Formula) _ =>
+    Formula_depth_rec (fun x : Formula => Q x -> P x) rec b) q.
+
+Definition Formula_depth_rec2rec (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) :
+  (forall b : Formula, lt_depth b a -> P b) -> P a :=
+  match a return ((forall b : Formula, lt_depth b a -> P b) -> P a) with
+  | equal t s => fun _ => f1 t s
+  | atomic r t => fun _ => f2 r t
+  | impH f g =>
+      fun hyp => f3 f (hyp f (depthImp1 f g)) g (hyp g (depthImp2 f g))
+  | notH f => fun hyp => f4 f (hyp f (depthNot f))
+  | forallH n f => fun hyp => f5 n f hyp
+  end.
+
+Definition Formula_depth_rec2 (P : Formula -> Set)
+  (f1 : forall t t0 : Term, P (equal t t0))
+  (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+        P (atomic r t))
+  (f3 : forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0))
+  (f4 : forall f : Formula, P f -> P (notH f))
+  (f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> P b) ->
+        P (forallH v a)) (a : Formula) : P a :=
+  Formula_depth_rec P (Formula_depth_rec2rec P f1 f2 f3 f4 f5) a.
+
+Remark Formula_depth_rec2rec_nice :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula)
+   (z1 z2 : forall b : Formula, lt_depth b a -> Q b -> P b),
+ (forall (b : Formula) (p : lt_depth b a) (q : Q b), z1 b p q = z2 b p q) ->
+ forall q : Q a,
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z1 q =
+ Formula_depth_rec2rec (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a z2 q.
+
+Lemma Formula_depth_rec2_imp :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a b : Formula) (q : Q (impH a b)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 
+   (impH a b) q =
+ f3 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) b
+   (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b) q.
+
+Lemma Formula_depth_rec2_not :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (a : Formula) (q : Q (notH a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 (notH a) q =
+ f4 a (Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 a) q.
+
+Lemma Formula_depth_rec2_forall :
+ forall (Q P : Formula -> Set)
+   (f1 : forall t t0 : Term, Q (equal t t0) -> P (equal t t0))
+   (f2 : forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+         Q (atomic r t) -> P (atomic r t))
+   (f3 : forall f : Formula,
+         (Q f -> P f) ->
+         forall f0 : Formula,
+         (Q f0 -> P f0) -> Q (impH f f0) -> P (impH f f0)),
+ (forall (f g : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall z3 z4 : Q g -> P g,
+  (forall q : Q g, z3 q = z4 q) ->
+  forall q : Q (impH f g), f3 f z1 g z3 q = f3 f z2 g z4 q) ->
+ forall f4 : forall f : Formula, (Q f -> P f) -> Q (notH f) -> P (notH f),
+ (forall (f : Formula) (z1 z2 : Q f -> P f),
+  (forall q : Q f, z1 q = z2 q) ->
+  forall q : Q (notH f), f4 f z1 q = f4 f z2 q) ->
+ forall
+   f5 : forall (v : nat) (a : Formula),
+        (forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b) ->
+        Q (forallH v a) -> P (forallH v a),
+ (forall (v : nat) (a : Formula)
+    (z1 z2 : forall b : Formula, lt_depth b (forallH v a) -> Q b -> P b),
+  (forall (b : Formula) (q : lt_depth b (forallH v a)) (r : Q b),
+   z1 b q r = z2 b q r) ->
+  forall q : Q (forallH v a), f5 v a z1 q = f5 v a z2 q) ->
+ forall (v : nat) (a : Formula) (q : Q (forallH v a)),
+ Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5
+   (forallH v a) q =
+ f5 v a
+   (fun (b : Formula) _ (q : Q b) =>
+    Formula_depth_rec2 (fun x : Formula => Q x -> P x) f1 f2 f3 f4 f5 b q) q.
+
+Definition Formula_depth_ind :
+  forall P : Formula -> Prop,
+  (forall a : Formula, (forall b : Formula, lt_depth b a -> P b) -> P a) ->
+  forall a : Formula, P a.
+
+Lemma Formula_depth_ind2 :
+ forall P : Formula -> Prop,
+ (forall t t0 : Term, P (equal t t0)) ->
+ (forall (r : Relations L) (t : Terms (arity L (inl (Functions L) r))),
+  P (atomic r t)) ->
+ (forall f : Formula, P f -> forall f0 : Formula, P f0 -> P (impH f f0)) ->
+ (forall f : Formula, P f -> P (notH f)) ->
+ (forall (v : nat) (a : Formula),
+  (forall b : Formula, lt_depth b (forallH v a) -> P b) -> P (forallH v a)) ->
+ forall f4 : Formula, P f4.
+
+End Formula_Depth_Induction.
+
+End First_Order_Logic. *)
 Require Import folProp.
 (* folProp:
 Require Import Wf_nat.
@@ -309,213 +625,107 @@ Definition Sentence (f:Formula) := (forall v : nat, ~ In v (freeVarFormula f)).
 
 End Fol_Properties. *)
 
-
-
 Section ProofH.
-
-
 
 Variable L : Language.
 
-
-
 Let Formula := Formula L.
-
 Let Formulas := Formulas L.
-
 Let System := System L.
-
 Let Term := Term L.
-
 Let Terms := Terms L.
-
 Let var := var L.
-
 Let apply := apply L.
-
 Let equal := equal L.
-
 Let atomic := atomic L.
-
 Let impH := impH L.
-
 Let notH := notH L.
-
 Let iffH := iffH L.
-
 Let forallH := forallH L.
 
-
-
 Definition nVars (n : nat) : Terms n * Terms n.
-
 intros.
-
 induction n as [| n Hrecn].
-
 split.
-
 exact (Tnil L).
-
 exact (Tnil L).
-
 induction Hrecn as (a, b).
-
 split.
-
 constructor.
-
 exact (var (n + n)).
-
 exact a.
-
 constructor.
-
 exact (var (S (n + n))).
-
 exact b.
-
 Defined.
-
-
 
 Definition AxmEq4 (R : Relations L) : Formula.
-
 intros.
-
 assert (forall (f : Formula) (n : nat), Formula).
-
 intros.
-
 induction n as [| n Hrecn].
-
 exact f.
-
 exact (impH (equal (var (n + n)) (var (S (n + n)))) Hrecn).
-
 apply H.
-
 induction (nVars (arity L (inl _ R))).
-
 apply (iffH (atomic R a) (atomic R b)).
-
 apply (arity L (inl _ R)).
-
 Defined.
-
-
 
 Definition AxmEq5 (f : Functions L) : Formula.
-
 intros.
-
 assert (forall (f : Formula) (n : nat), Formula).
-
 intros.
-
 induction n as [| n Hrecn].
-
 exact f0.
-
 exact (impH (equal (var (n + n)) (var (S (n + n)))) Hrecn).
-
 apply H.
-
 induction (nVars (arity L (inr _ f))).
-
 apply (equal (apply f a) (apply f b)).
-
 apply (arity L (inr _ f)).
-
 Defined.
 
-
-
 Inductive Prf : Formulas -> Formula -> Set :=
-
   | AXM : forall A : Formula, Prf (A :: nil) A
-
   | MP :
-
       forall (Axm1 Axm2 : Formulas) (A B : Formula),
-
       Prf Axm1 (impH A B) -> Prf Axm2 A -> Prf (Axm1 ++ Axm2) B
-
   | GEN :
-
       forall (Axm : Formulas) (A : Formula) (v : nat),
-
       ~ In v (freeVarListFormula L Axm) -> Prf Axm A -> Prf Axm (forallH v A)
-
   | IMP1 : forall A B : Formula, Prf nil (impH A (impH B A))
-
   | IMP2 :
-
       forall A B C : Formula,
-
       Prf nil (impH (impH A (impH B C)) (impH (impH A B) (impH A C)))
-
   | CP :
-
       forall A B : Formula,
-
       Prf nil (impH (impH (notH A) (notH B)) (impH B A))
-
   | FA1 :
-
       forall (A : Formula) (v : nat) (t : Term),
-
       Prf nil (impH (forallH v A) (substituteFormula L A v t))
-
   | FA2 :
-
       forall (A : Formula) (v : nat),
-
       ~ In v (freeVarFormula L A) -> Prf nil (impH A (forallH v A))
-
   | FA3 :
-
       forall (A B : Formula) (v : nat),
-
       Prf nil
-
         (impH (forallH v (impH A B)) (impH (forallH v A) (forallH v B)))
-
   | EQ1 : Prf nil (equal (var 0) (var 0))
-
   | EQ2 : Prf nil (impH (equal (var 0) (var 1)) (equal (var 1) (var 0)))
-
   | EQ3 :
-
       Prf nil
-
         (impH (equal (var 0) (var 1))
-
            (impH (equal (var 1) (var 2)) (equal (var 0) (var 2))))
-
   | EQ4 : forall R : Relations L, Prf nil (AxmEq4 R)
-
   | EQ5 : forall f : Functions L, Prf nil (AxmEq5 f).
 
-
-
 Definition SysPrf (T : System) (f : Formula) :=
-
   exists Axm : Formulas,
-
     (exists prf : Prf Axm f,
-
        (forall g : Formula, In g Axm -> mem _ T g)).
-
-
 
 Definition Inconsistent (T : System) := forall f : Formula, SysPrf T f.
 
-
-
 Definition Consistent (T : System) := exists f : Formula, ~ SysPrf T f.
 
-
-
 End ProofH.
-

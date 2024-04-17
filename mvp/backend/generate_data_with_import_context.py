@@ -12,21 +12,20 @@ import fnmatch
 
 # Paths to the directories
 
-data_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/data'
+data_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/.temp'
 import_context_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/import_context'
-output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/data_with_import_context'
+output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/new_data_with_import_context'
 # txt_file_builder_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/txt_file_with_context_builder.py'
 
 
-def insert_import_context(data_file_path, import_context_dir, output_file_path):
-    proj_name = os.path.basename(os.path.dirname(data_file_path))
+def insert_import_context(data_file_path, import_context_dir, output_file_path, proj_name):
     with open(data_file_path, 'r') as data_file, open(output_file_path, 'w') as output_file:
         for line in data_file:
             output_file.write(line)
-            if "Require Import" in line:
+            if "Require Import" in line or "Require Export" in line:
                 import_names = extract_import_names(line)
                 for import_name in import_names:
-                    pattern = f"*{import_name}.txt"
+                    pattern = f"*.{import_name}.txt"
                     matching_files = []
 
                     # Collect all matching files first
@@ -34,35 +33,17 @@ def insert_import_context(data_file_path, import_context_dir, output_file_path):
                         for import_context_file in fnmatch.filter(import_context_files, pattern):
                             matching_files.append(os.path.join(import_context_root, import_context_file))
 
-                    # Function to filter files based on matching segments from the end
-                    def filter_files_by_segment(data_file_path, matching_files):
-                        data_file_segments = os.path.basename(data_file_path).split('.')[::-1]  # Reverse the order for backward comparison
-                        for segment in data_file_segments:
-                            filtered_files = [file for file in matching_files if os.path.basename(file).split('.')[::-1].count(segment)]
-                            if len(filtered_files) == 1:
-                                return filtered_files  # Return immediately if only one file matches
-                            elif len(filtered_files) > 1:
-                                matching_files = filtered_files  # Narrow down the list for the next iteration
-                            else:
-                                break  # If no files match the current segment, stop filtering
-                        return matching_files  # Return the filtered list of files
-
-                    # Apply the filtering process
-                    filtered_files = filter_files_by_segment(data_file_path, matching_files)
-
                     # If there's only one file left after filtering, use it; otherwise, you might need a fallback or additional logic
-                    if len(filtered_files) == 1:
-                        best_match = filtered_files[0]
+                    if len(matching_files) == 1:
+                        best_match = matching_files[0]
                         with open(best_match, 'r') as import_context_file:
                             import_context_content = import_context_file.read().strip()
                             output_file.write(f"(* {import_name}:\n{import_context_content} *)\n")
-                    else:
-                        # no single best match after filtering
-                        pass
+
 
 def extract_import_names(line):
     import_statement_parts = line.strip().split()
-    import_names_start_index = import_statement_parts.index("Import") + 1
+    import_names_start_index = import_statement_parts.index("Import") + 1 if "Import" in import_statement_parts else import_statement_parts.index("Export") + 1
     import_names = import_statement_parts[import_names_start_index:]
     for i, import_name in enumerate(import_names):
         if import_name.endswith('.'):
@@ -75,15 +56,27 @@ def extract_import_names(line):
     return import_names
 
 def process_files(data_dir, import_context_dir, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    for root, dirs, files in os.walk(data_dir):
-        for file in tqdm(files):
-            if file.endswith(".txt"):
-                data_file_path = os.path.join(root, file)
-                relative_path = os.path.relpath(data_file_path, data_dir)
-                output_file_path = os.path.join(output_dir, relative_path)
-                os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
-                insert_import_context(data_file_path, import_context_dir, output_file_path)
+    # Directories to process
+    directories_to_process = ['train', 'test']
+    
+    for directory in directories_to_process:
+        current_data_dir = os.path.join(data_dir, directory)
+        current_output_dir = os.path.join(output_dir, directory)
+        
+        # Ensure the output directory exists
+        os.makedirs(current_output_dir, exist_ok=True)
+        
+        # Process each file in the current directory
+        for root, dirs, files in os.walk(current_data_dir):
+            for file in tqdm(files):
+                if file.endswith(".txt"):
+                    data_file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(data_file_path, current_data_dir)
+                    output_file_path = os.path.join(current_output_dir, relative_path.replace('.json', ''))
+                    proj_name = output_file_path.split('/')[-1].split('.')[0]
+                    # print(f"Processing {data_file_path} -> {output_file_path}")
+                    # print(f"Project name: {proj_name}")
+                    insert_import_context(data_file_path, import_context_dir, output_file_path, proj_name)
 
 def main():
     process_files(data_dir, import_context_dir, output_dir)

@@ -1,18 +1,1778 @@
 Require Export RelDefinitions.
+(* RelDefinitions:
+Require Export Coq.Program.Basics.
+Require Export Coq.Relations.Relation_Definitions.
+Require Export Coq.Classes.Morphisms.
+Require Setoid.
+Require Export Delay.
 
+Class NotEvar {A} (x: A).
+
+Hint Extern 1 (NotEvar ?x) =>
+  not_evar x; constructor : typeclass_instances.
+
+Class Unconvertible {A B} (a: A) (b: B) := unconvertible : unit.
+
+Ltac unconvertible a b :=
+  first
+    [ unify a b with typeclass_instances; fail 1
+    | exact tt ].
+
+Hint Extern 1 (Unconvertible ?a ?b) =>
+  unconvertible a b : typeclass_instances.
+
+Class Convertible {A} (x y: A) :=
+  convertible: x = y.
+
+Hint Extern 1 (Convertible ?x ?y) =>
+  eapply eq_refl : typeclass_instances.
+
+Class Once P := once : P.
+
+Hint Extern 1 (Once ?P) =>
+  red; once typeclasses eauto : typeclass_instances.
+
+Definition rel (A1 A2: Type) := A1 -> A2 -> Prop.
+
+Delimit Scope rel_scope with rel.
+Bind Scope rel_scope with rel.
+
+Bind Scope rel_scope with Relation_Definitions.relation.
+
+Class RStep (P Q: Prop) :=
+  rstep: P -> Q.
+
+Ltac rstep :=
+  lazymatch goal with
+    | |- ?Q =>
+      apply (rstep (Q := Q));
+      Delay.split_conjunction
+  end.
+
+Class RAuto (Q: Prop) :=
+  rauto : Q.
+
+Ltac rauto :=
+  lazymatch goal with
+    | |- ?Q =>
+      apply (rauto (Q := Q));
+      Delay.split_conjunction
+  end.
+
+Class RAutoSubgoals (P: Prop) :=
+  rauto_subgoals : P.
+
+Global Instance rauto_rstep P Q:
+  Once (RStep P Q) ->
+  RAutoSubgoals P ->
+  RAuto Q.
+
+Ltac rauto_split :=
+  red;
+  Delay.split_conjunction;
+  lazymatch goal with
+    | |- ?Q => change (RAuto Q)
+  end.
+
+Hint Extern 1 (RAutoSubgoals _) =>
+  rauto_split : typeclass_instances.
+
+Hint Extern 1000 (RAuto _) =>
+  red; solve [ delay ] : typeclass_instances.
+
+Class RIntro {A B} (P: Prop) (R: rel A B) (m: A) (n: B): Prop :=
+  rintro: P -> R m n.
+
+Arguments RIntro {A%type B%type} P%type R%rel m n.
+
+Ltac rintro :=
+  lazymatch goal with
+    | |- ?R ?m ?n =>
+      apply (rintro (R:=R) (m:=m) (n:=n));
+      Delay.split_conjunction
+  end.
+
+Global Instance rintro_rstep:
+  forall `(RIntro), RStep P (R m n) | 10.
+
+Class RExists {A B} (P: Prop) (R: rel A B) (m: A) (n: B): Prop :=
+  rexists: P -> R m n.
+
+Arguments RExists {A%type B%type} P%type R%rel m n.
+
+Ltac reexists :=
+  lazymatch goal with
+    | |- ?R ?m ?n =>
+      apply (rexists (R:=R) (m:=m) (n:=n));
+      Delay.split_conjunction
+  end.
+
+Global Instance rexists_rstep {A B} P R (m:A) (n:B):
+  RExists P R m n ->
+  NonDelayed (RAutoSubgoals P) ->
+  RStep True (R m n) | 70.
+
+Class RElim {A B} (R: rel A B) (m: A) (n: B) (P Q: Prop): Prop :=
+  relim: R m n -> P -> Q.
+
+Arguments RElim {A%type B%type} R%rel m n P%type Q%type.
+
+Ltac relim H :=
+  lazymatch goal with
+    | |- ?Q =>
+      apply (relim (Q:=Q) H)
+  end.
+
+Global Instance relim_base {A B} (R: rel A B) m n:
+  RElim R m n True (R m n) | 10.
+
+Class RDestruct {A B: Type} (R: rel A B) (T: rel A B -> Prop) :=
+  rdestruct m n: R m n -> forall P, T P -> P m n.
+
+Class Related {A B} (f: A) (g: B) (R: rel A B) :=
+  related: R f g.
+
+Arguments Related {A%type B%type} _ _ R%rel.
+
+Notation "'@' 'Monotonic' T m R" := (@Related T T m m R%rel)
+  (at level 10, T at next level, R at next level, m at next level).
+
+Notation Monotonic m R := (Related m m R%rel).
+
+Lemma unfold_monotonic_rstep {A B} (R: rel A B) m n:
+  RStep (R m n) (Related m n R).
+
+Hint Extern 1 (RStep _ (Related _ _ _)) =>
+  eapply unfold_monotonic_rstep : typeclass_instances.
+
+Definition subrel {A B}: rel (rel A B) (rel A B) :=
+  fun R1 R2 => forall x y, R1 x y -> R2 x y.
+
+Arguments subrel {A%type B%type} R1%rel R2%rel.
+
+Global Instance subrel_preorder A B:
+  @PreOrder (rel A B) subrel.
+
+Global Instance eq_subrel {A} (R: rel A A):
+  Reflexive R ->
+  Related eq R subrel.
+
+Definition arrow_rel {A1 A2 B1 B2}:
+  rel A1 A2 -> rel B1 B2 -> rel (A1 -> B1) (A2 -> B2) :=
+    fun RA RB f g => forall x y, RA x y -> RB (f x) (g y).
+
+Arguments arrow_rel {A1%type A2%type B1%type B2%type} RA%rel RB%rel _ _.
+
+Notation "RA ==> RB" := (arrow_rel RA RB)
+  (at level 55, right associativity) : rel_scope.
+
+Notation "RA ++> RB" := (arrow_rel RA RB)
+  (at level 55, right associativity) : rel_scope.
+
+Notation "RA --> RB" := (arrow_rel (flip RA) RB)
+  (at level 55, right associativity) : rel_scope.
+
+Global Instance arrow_subrel {A1 A2 B1 B2}:
+  Monotonic (@arrow_rel A1 A2 B1 B2) (subrel --> subrel ++> subrel).
+
+Global Instance arrow_subrel_params:
+  Params (@arrow_rel) 4.
+
+Lemma arrow_rintro {A1 A2 B1 B2} (RA: rel A1 A2) (RB: rel B1 B2) f g:
+  RIntro (forall x y, RA x y -> RB (f x) (g y)) (RA ++> RB) f g.
+
+Hint Extern 0 (RIntro _ (_ ++> _) _ _) =>
+  eapply arrow_rintro : typeclass_instances.
+
+Lemma arrow_relim {A1 A2 B1 B2} RA RB f g m n P Q:
+  @RElim B1 B2 RB (f m) (g n) P Q ->
+  @RElim (A1 -> B1) (A2 -> B2) (RA ++> RB) f g (RA m n /\ P) Q.
+
+Hint Extern 1 (RElim (_ ++> _) _ _ _ _) =>
+  eapply arrow_relim : typeclass_instances.
+
+Definition forall_rel {V1 V2} {E: V1->V2->Type} {FV1: V1->Type} {FV2: V2->Type}:
+    (forall v1 v2, E v1 v2 -> rel (FV1 v1) (FV2 v2)) ->
+    rel (forall v1, FV1 v1) (forall v2, FV2 v2) :=
+  fun FE f g =>
+    forall v1 v2 (e: E v1 v2), FE v1 v2 e (f v1) (g v2).
+
+Arguments forall_rel {V1%type V2%type E%type FV1%type FV2%type} FE%rel _ _.
+
+Notation "'forallr' e @ v1 v2 : E , R" :=
+  (forall_rel (E := E) (fun v1 v2 e => R))
+  (at level 200, e ident, v1 ident, v2 ident, right associativity) : rel_scope.
+
+Notation "'forallr' e @ v1 v2 , R" :=
+  (forall_rel (fun v1 v2 e => R))
+  (at level 200, e ident, v1 ident, v2 ident, right associativity) : rel_scope.
+
+Notation "'forallr' e : E , R" :=
+  (forall_rel (E := E) (fun _ _ e => R))
+  (at level 200, e ident, right associativity) : rel_scope.
+
+Notation "'forallr' e , R" :=
+  (forall_rel (fun _ _ e => R))
+  (at level 200, e ident, right associativity) : rel_scope.
+
+Lemma forall_rintro {V1 V2 E F1 F2} (FE: forall x y, _ -> rel _ _) f g:
+  RIntro
+    (forall u v e, FE u v e (f u) (g v))
+    (@forall_rel V1 V2 E F1 F2 FE) f g.
+
+Hint Extern 0 (RIntro _ (forall_rel _) _ _) =>
+  eapply forall_rintro : typeclass_instances.
+
+Lemma forall_relim {V1 V2 E FV1 FV2} R f g v1 v2 e P Q:
+  RElim (R v1 v2 e) (f v1) (g v2) P Q ->
+  RElim (@forall_rel V1 V2 E FV1 FV2 R) f g P Q.
+
+Hint Extern 1 (RElim (forall_rel _) _ _ _ _) =>
+  eapply forall_relim : typeclass_instances.
+
+Global Instance flip_subrel {A B}:
+  Monotonic (@flip A B Prop) (subrel ++> subrel).
+
+Global Instance flip_subrel_params:
+  Params (@flip) 3.
+
+Lemma flip_rintro {A B} (R: rel A B) m n:
+  RIntro (R n m) (flip R) m n.
+
+Hint Extern 1 (RIntro _ (flip _) _ _) =>
+  eapply flip_rintro : typeclass_instances.
+
+Lemma flip_relim {A B} (R: rel A B) m n P Q:
+  RElim R n m P Q ->
+  RElim (flip R) m n P Q.
+
+Hint Extern 1 (RElim (flip _) _ _ _ _) =>
+  eapply flip_relim : typeclass_instances.
+
+Lemma flip_rdestruct {A B} (R: rel A B) T:
+  RDestruct R T ->
+  RDestruct (flip R) (fun P => T (flip P)).
+
+Hint Extern 1 (RDestruct (flip _) _) =>
+  eapply flip_rdestruct : typeclass_instances. *)
 Require Export RelClasses.
+(* RelClasses:
+Require Export Coq.Classes.RelationClasses.
+Require Export RelDefinitions.
 
+Class Coreflexive {A} (R: relation A) :=
+  coreflexivity: forall x y, R x y -> x = y.
+
+Global Instance eq_corefl {A}:
+  Coreflexive (@eq A).
+
+Global Instance subrel_eq {A} (R: relation A):
+  Coreflexive R ->
+  Related R eq subrel.
+
+Class RCompose {A B C} (RAB : rel A B) (RBC : rel B C) (RAC : rel A C) :=
+  rcompose : forall x y z, RAB x y -> RBC y z -> RAC x z.
+
+Ltac rcompose b :=
+  lazymatch goal with
+    | |- ?R ?a ?c =>
+      apply (rcompose a b c)
+  end.
+
+Ltac ercompose :=
+  eapply rcompose.
+
+Global Instance rcompose_transitive {A} (R : relation A) :
+  RCompose R R R -> Transitive R.
+
+Lemma transitive_rcompose `(Transitive) :
+  RCompose R R R.
+
+Hint Immediate transitive_rcompose : typeclass_instances.
+
+Class RDecompose {A B C} (RAB : rel A B) (RBC : rel B C) (RAC : rel A C) :=
+  rdecompose : forall x z, RAC x z -> exists y, RAB x y /\ RBC y z.
+
+Tactic Notation "rdecompose" constr(H) "as" simple_intropattern(p) :=
+  lazymatch type of H with
+    | ?R ?a ?b =>
+      destruct (rdecompose a b H) as p
+    | _ =>
+      fail "Not an applied relation"
+  end.
+
+Tactic Notation "rdecompose" hyp(H) "as" simple_intropattern(p) :=
+  lazymatch type of H with
+    | ?R ?a ?b =>
+      apply rdecompose in H; destruct H as p
+    | _ =>
+      fail "Not an applied relation"
+  end.
+
+Tactic Notation "rdecompose" constr(H) :=
+  rdecompose H as (? & ? & ?).
+
+Tactic Notation "rdecompose" hyp(H) :=
+  rdecompose H as (? & ? & ?).
+
+Global Instance arrow_refl {A B} (RA : relation A) (RB : relation B) :
+  Coreflexive RA ->
+  Reflexive RB ->
+  Reflexive (RA ++> RB).
+
+Global Instance arrow_corefl {A B} (RA : relation A) (RB : relation B) :
+  Reflexive RA ->
+  Coreflexive RB ->
+  Coreflexive (RA ++> RB).
+Proof.
+  
+Abort.
+
+Section ARROW_REL_COMPOSE.
+  Context {A1 A2 A3} (RA12 : rel A1 A2) (RA23 : rel A2 A3) (RA13 : rel A1 A3).
+  Context {B1 B2 B3} (RB12 : rel B1 B2) (RB23 : rel B2 B3) (RB13 : rel B1 B3).
+
+  Global Instance arrow_rcompose :
+    RDecompose RA12 RA23 RA13 ->
+    RCompose RB12 RB23 RB13 ->
+    RCompose (RA12 ++> RB12) (RA23 ++> RB23) (RA13 ++> RB13).
+
+  Global Instance arrow_rdecompose :
+    RCompose RA12 RA23 RA13 ->
+    RDecompose RB12 RB23 RB13 ->
+    RDecompose (RA12 ++> RB12) (RA23 ++> RB23) (RA13 ++> RB13).
+  Proof.
+    
+  Abort.
+End ARROW_REL_COMPOSE. *)
 Require Export RelOperators.
+(* RelOperators:
+Require Export RelDefinitions.
+Require Import RelClasses.
+Require Import Relators.
 
+Definition rel_union {A B} (R1 R2: rel A B): rel A B :=
+  fun x y => R1 x y \/ R2 x y.
+
+Arguments rel_union {_ _} R1%rel R2%rel _ _.
+
+Infix "\/" := rel_union : rel_scope.
+
+Global Instance rel_union_subrel {A B}:
+  Monotonic (@rel_union A B) (subrel ++> subrel ++> subrel).
+
+Global Instance rel_union_subrel_params:
+  Params (@rel_union) 4.
+
+Lemma rel_union_rexists_l {A B} (R1 R2: rel A B) x y:
+  RExists (R1 x y) (R1 \/ R2) x y.
+
+Hint Extern 0 (RExists _ (_ \/ _) _ _) =>
+  eapply rel_union_rexists_l : typeclass_instances.
+
+Lemma rel_union_rexists_r {A B} (R1 R2: rel A B) x y:
+  RExists (R2 x y) (R1 \/ R2) x y.
+
+Hint Extern 0 (RExists _ (_ \/ _) _ _) =>
+  eapply rel_union_rexists_r : typeclass_instances.
+
+Lemma rel_union_subrel_rexists_l {A B} (R R1 R2: rel A B):
+  RExists (subrel R R1) subrel R (R1 \/ R2)%rel.
+
+Hint Extern 0 (RExists _ subrel _ (_ \/ _)%rel) =>
+  eapply rel_union_subrel_rexists_l : typeclass_instances.
+
+Lemma rel_union_subrel_rexists_r {A B} (R R1 R2: rel A B):
+  RExists (subrel R R2) subrel R (R1 \/ R2)%rel.
+
+Hint Extern 0 (RExists _ subrel _ (_ \/ _)%rel) =>
+  eapply rel_union_subrel_rexists_r : typeclass_instances.
+
+Lemma rel_union_lub {A B} (R1 R2 R: rel A B):
+  RIntro (subrel R1 R /\ subrel R2 R) subrel (R1 \/ R2)%rel R.
+
+Hint Extern 2 (RIntro _ subrel (_ \/ _)%rel _) =>
+  eapply rel_union_lub : typeclass_instances.
+
+Lemma rel_union_refl_l {A} (R1 R2: rel A A):
+  Reflexive R1 ->
+  Reflexive (R1 \/ R2).
+
+Hint Extern 1 (Reflexive (_ \/ _)) =>
+  eapply rel_union_refl_l : typeclass_instances.
+
+Lemma rel_union_refl_r {A} (R1 R2: rel A A):
+  Reflexive R2 ->
+  Reflexive (R1 \/ R2).
+
+Hint Extern 1 (Reflexive (_ \/ _)) =>
+  eapply rel_union_refl_r : typeclass_instances.
+
+Lemma rel_union_corefl {A} (R1 R2: rel A A):
+  Coreflexive R1 ->
+  Coreflexive R2 ->
+  Coreflexive (R1 \/ R2).
+
+Hint Extern 1 (Coreflexive (_ \/ _)) =>
+  eapply rel_union_corefl : typeclass_instances.
+
+Lemma rel_union_sym {A} (R1 R2: rel A A):
+  Symmetric R1 ->
+  Symmetric R2 ->
+  Symmetric (R1 \/ R2).
+
+Hint Extern 1 (Symmetric (_ \/ _)) =>
+  eapply rel_union_sym : typeclass_instances.
+
+Definition rel_inter {A B} (R1 R2: rel A B): rel A B :=
+  fun x y => R1 x y /\ R2 x y.
+
+Arguments rel_inter {_ _} R1%rel R2%rel _ _.
+
+Infix "/\" := rel_inter : rel_scope.
+
+Global Instance rel_inter_subrel {A B}:
+  Monotonic (@rel_inter A B) (subrel ++> subrel ++> subrel).
+
+Global Instance rel_inter_params:
+  Params (@rel_inter) 4.
+
+Lemma rel_inter_rexists {A B} (R1 R2: rel A B) x y:
+  RExists (R1 x y /\ R2 x y) (R1 /\ R2) x y.
+
+Hint Extern 0 (RExists _ (_ /\ _) _ _) =>
+  eapply rel_inter_rexists : typeclass_instances.
+
+Lemma rel_inter_subrel_rexists_l {A B} (R1 R2 R: rel A B):
+  RExists (subrel R1 R) subrel (R1 /\ R2)%rel R.
+
+Hint Extern 0 (RExists _ subrel (_ /\ _)%rel _) =>
+  eapply rel_inter_subrel_rexists_l : typeclass_instances.
+
+Lemma rel_inter_subrel_rexists_r {A B} (R1 R2 R: rel A B):
+  RExists (subrel R2 R) subrel (R1 /\ R2)%rel R.
+
+Hint Extern 0 (RExists _ subrel (_ /\ _)%rel _) =>
+  eapply rel_inter_subrel_rexists_r : typeclass_instances.
+
+Lemma rel_inter_glb {A B} (R R1 R2: rel A B):
+  RIntro (subrel R R1 /\ subrel R R2) subrel R (R1 /\ R2)%rel.
+
+Hint Extern 2 (RIntro _ subrel _ (_ /\ _)%rel) =>
+  eapply rel_inter_glb : typeclass_instances.
+
+Lemma rel_inter_refl {A} (R1 R2: rel A A):
+  Reflexive R1 ->
+  Reflexive R2 ->
+  Reflexive (R1 /\ R2).
+
+Hint Extern 2 (Reflexive (_ /\ _)) =>
+  eapply rel_inter_refl : typeclass_instances.
+
+Lemma rel_inter_corefl_l {A} (R1 R2: rel A A):
+  Coreflexive R1 ->
+  Coreflexive (R1 /\ R2).
+
+Hint Extern 1 (Coreflexive (_ /\ _)) =>
+  eapply rel_inter_corefl_l : typeclass_instances.
+
+Lemma rel_inter_corefl_r {A} (R1 R2: rel A A):
+  Coreflexive R2 ->
+  Coreflexive (R1 /\ R2).
+
+Hint Extern 1 (Coreflexive (_ /\ _)) =>
+  eapply rel_inter_corefl_r : typeclass_instances.
+
+Lemma rel_inter_trans {A} (R1 R2: rel A A):
+  Transitive R1 ->
+  Transitive R2 ->
+  Transitive (R1 /\ R2).
+
+Hint Extern 2 (Transitive (_ /\ _)) =>
+  eapply rel_inter_trans : typeclass_instances.
+
+Lemma rel_inter_sym {A} (R1 R2: rel A A):
+  Symmetric R1 ->
+  Symmetric R2 ->
+  Symmetric (R1 /\ R2).
+
+Hint Extern 2 (Symmetric (_ /\ _)) =>
+  eapply rel_inter_sym : typeclass_instances.
+
+Global Instance rel_inter_flip_sym {A} (R: rel A A):
+  Symmetric (R /\ flip R).
+
+Lemma subrel_sym_flip {A} (R R': relation A):
+  Symmetric R ->
+  RStep (subrel R R') (subrel R (flip R')).
+
+Hint Extern 60 (RStep _ (subrel _ (flip _))) =>
+  eapply subrel_sym_flip : typeclass_instances.
+
+Definition rel_impl {A B} (R1 R2: rel A B): rel A B :=
+  fun x y => R1 x y -> R2 x y.
+
+Global Instance rel_impl_subrel {A B}:
+  Monotonic (@rel_impl A B) (subrel --> subrel ++> subrel).
+
+Global Instance rel_impl_subrel_params:
+  Params (@rel_impl) 4.
+
+Lemma rel_impl_rintro {A B} (R1 R2: rel A B) x y:
+  RIntro (R1 x y -> R2 x y) (rel_impl R1 R2) x y.
+
+Hint Extern 0 (RIntro _ (rel_impl _ _) _ _) =>
+  eapply rel_impl_rintro : typeclass_instances.
+
+Lemma rel_impl_relim {A B} (R1 R2: rel A B) x y:
+  RElim (rel_impl R1 R2) x y (R1 x y) (R2 x y).
+
+Hint Extern 0 (RElim (rel_impl _ _) _ _ _ _) =>
+  eapply rel_impl_relim : typeclass_instances.
+
+Lemma rel_impl_subrel_codomain {A B} (R1 R2: rel A B):
+  Related R2 (rel_impl R1 R2) subrel.
+
+Definition rel_bot {A B}: rel A B :=
+  fun x y => False.
+
+Notation "⊥" := rel_bot : rel_scope.
+
+Lemma rel_bot_subrel {A B} (R: rel A B):
+  Related ⊥%rel R subrel.
+
+Hint Extern 0 (Related ⊥%rel _ _) =>
+  eapply rel_bot_subrel : typeclass_instances.
+
+Lemma rel_bot_relim {A B} (x: A) (y: B) P:
+  RElim ⊥ x y True P.
+
+Hint Extern 0 (RElim ⊥ _ _ _ _) =>
+  eapply rel_bot_relim : typeclass_instances.
+
+Definition rel_top {A B}: rel A B :=
+  fun x y => True.
+
+Notation "⊤" := rel_top : rel_scope.
+
+Lemma rel_top_rintro {A B} (x: A) (y: B):
+  RIntro True ⊤ x y.
+
+Hint Extern 0 (RIntro _ ⊤ _ _) =>
+  eapply rel_top_rintro : typeclass_instances.
+
+Global Instance rel_top_equiv {A}:
+  @Equivalence A ⊤.
+
+Definition eqrel {A B}: rel (rel A B) (rel A B) :=
+  (subrel /\ flip subrel)%rel.
+
+Arguments eqrel {_ _} RA%rel RB%rel.
+
+Global Instance eqrel_equivalence A B:
+  Equivalence (@eqrel A B).
+
+Global Instance eqrel_subrel A B:
+  Related (@eqrel A B) (@subrel A B) subrel.
+
+Definition rel_compose {A B C} (RAB: rel A B) (RBC: rel B C): rel A C :=
+  fun x z => exists y, RAB x y /\ RBC y z.
+
+Hint Unfold rel_compose.
+
+Global Instance rel_compose_subrel {A B C}:
+  Monotonic (@rel_compose A B C) (subrel ++> subrel ++> subrel).
+
+Global Instance rel_compose_eqrel {A B C}:
+  Monotonic (@rel_compose A B C) (eqrel ==> eqrel ==> eqrel).
+
+Global Instance rel_compose_params:
+  Params (@rel_compose) 4.
+
+Lemma rel_compose_id_left {A B} (R: rel A B):
+  eqrel (rel_compose R eq) R.
+
+Lemma rel_compose_id_right {A B} (R: rel A B):
+  eqrel (rel_compose eq R) R.
+
+Lemma rel_compose_assoc {A B C D} (RAB: rel A B) (RBC: rel B C) (RCD: rel C D):
+  eqrel
+    (rel_compose (rel_compose RAB RBC) RCD)
+    (rel_compose RAB (rel_compose RBC RCD)).
+
+Global Instance rel_compose_rcompose {A B C} (RAB : rel A B) (RBC : rel B C) :
+  RCompose RAB RBC (rel_compose RAB RBC).
+
+Global Instance rel_compose_rdecompose {A B C} (RAB : rel A B) (RBC : rel B C) :
+  RDecompose RAB RBC (rel_compose RAB RBC).
+
+Global Instance rcompose_subrel `(RCompose) :
+  Related (rel_compose RAB RBC) RAC subrel.
+
+Global Instance rdecompose_subrel `(RDecompose) :
+  Related RAC (rel_compose RAB RBC) subrel.
+
+Definition rel_pull {A B A' B'} f g (R: rel A' B'): rel A B :=
+  fun x y => R (f x) (g y).
+
+Notation "R @@ ( f , g )" := (rel_pull f g R)
+  (at level 30, right associativity) : rel_scope.
+
+Notation "R @@ f" := (rel_pull f f R)
+  (at level 30, right associativity) : rel_scope.
+
+Notation "R @@ ( f )" := (rel_pull f f R)
+  (at level 30, right associativity) : rel_scope.
+
+Global Instance rel_pull_subrel {A B A' B'} (f: A -> A') (g: B -> B'):
+  Monotonic (rel_pull f g) (subrel ++> subrel).
+
+Global Instance rel_pull_subrel_params:
+  Params (@rel_pull) 3.
+
+Lemma rel_pull_refl {A B} (f: A -> B) (R: rel B B):
+  Reflexive R ->
+  Reflexive (R @@ f).
+
+Hint Extern 1 (Reflexive (rel_pull _ _ _)) =>
+  eapply rel_pull_refl : typeclass_instances.
+
+Lemma rel_pull_sym {A B} (f: A -> B) R:
+  Symmetric R ->
+  Symmetric (R @@ f).
+
+Hint Extern 1 (Symmetric (rel_pull _ _ _)) =>
+  eapply rel_pull_sym : typeclass_instances.
+
+Lemma rel_pull_trans {A B} (f: A -> B) R:
+  Transitive R ->
+  Transitive (R @@ f).
+
+Hint Extern 1 (Transitive (rel_pull _ _ _)) =>
+  eapply rel_pull_trans : typeclass_instances.
+
+Lemma rel_pull_rintro {A B A' B'} (f: A -> A') (g: B -> B') R x y:
+  RStep (R (f x) (g y)) ((R @@ (f, g))%rel x y).
+
+Hint Extern 60 (RStep _ ((_ @@ (_, _))%rel _ _)) =>
+  eapply rel_pull_rintro : typeclass_instances.
+
+Lemma rel_pull_relim {A B A' B'} (f: A -> A') (g: B -> B') R x y P Q:
+  RElim R (f x) (g y) P Q ->
+  RElim (R @@ (f, g)) x y P Q.
+
+Hint Extern 1 (RElim (_ @@ (_, _)) _ _ _ _) =>
+  eapply rel_pull_relim : typeclass_instances.
+
+Inductive rel_push {A1 A2 B1 B2} f g (R: rel A1 A2): rel B1 B2 :=
+  rel_push_rintro x y: RIntro (R x y) (rel_push f g R) (f x) (g y).
+
+Hint Extern 1 (RIntro _ (rel_push _ _ _) _ _) =>
+  eapply rel_push_rintro : typeclass_instances.
+
+Notation "R !! ( f , g )" := (rel_push f g R)
+  (at level 1) : rel_scope.
+
+Notation "R !! f" := (rel_push f f R)
+  (at level 1) : rel_scope.
+
+Notation "R !! ( f )" := (rel_push f f R)
+  (at level 1) : rel_scope.
+
+Global Instance rel_push_subrel {A1 A2 B1 B2} (f: A1 -> B1) (g: A2 -> B2):
+  Proper (subrel ++> subrel) (rel_push f g).
+
+Global Instance rel_push_subrel_params:
+  Params (@rel_push) 3.
+
+Lemma rel_push_corefl {A B} (f: A -> B) (R: rel A A):
+  Coreflexive R ->
+  Coreflexive (R !! f).
+
+Hint Extern 1 (Coreflexive (_ !! _)) =>
+  eapply rel_push_corefl : typeclass_instances.
+
+Lemma rel_push_fst_rexists {A1 A2 B1 B2} (x1:A1) (x2:A2) (y1:B1) (y2:B2) R:
+  RExists (R (x1, y1) (x2, y2)) (R !! fst) x1 x2.
+
+Hint Extern 1 (RExists _ (_ !! fst) _ _) =>
+  eapply rel_push_fst_rexists : typeclass_instances.
+
+Lemma rel_push_snd_rexists {A1 A2 B1 B2} (x1:A1) (x2:A2) (y1:B1) (y2:B2) R:
+  RExists (R (x1, y1) (x2, y2)) (R !! snd) y1 y2.
+
+Hint Extern 1 (RExists _ (_ !! snd) _ _) =>
+  eapply rel_push_snd_rexists : typeclass_instances.
+
+Definition curry {A B C} (f: A * B -> C): A -> B -> C :=
+  fun a b => f (a, b).
+
+Definition uncurry {A B C} (f: A -> B -> C): A * B -> C :=
+  fun ab => match ab with (a, b) => f a b end.
+
+Definition rel_curry {A1 B1 C1 A2 B2 C2} (R: rel (A1*B1->C1) (A2*B2->C2)) :=
+  (R @@ uncurry)%rel.
+
+Definition rel_uncurry {A1 B1 C1 A2 B2 C2} (R: rel (A1->B1->C1) (A2->B2->C2)) :=
+  (R @@ curry)%rel.
+
+Notation "% R" := (rel_curry R) (at level 55, right associativity) : rel_scope.
+
+Class UnfoldUncurry {A} (before: A) (after: A) :=
+  unfold_uncurry_before_after: before = after.
+
+Ltac unfold_uncurry :=
+  match goal with
+    | |- context C[uncurry ?f ?p] =>
+      is_evar p;
+      let T := type of p in
+      let Av := fresh in evar (Av: Type);
+      let A := eval red in Av in clear Av;
+      let Bv := fresh in evar (Bv: Type);
+      let B := eval red in Bv in clear Bv;
+      unify T (prod A B)%type;
+      let av := fresh in evar (av : A);
+      let a := eval red in av in clear av;
+      let bv := fresh in evar (bv : B);
+      let b := eval red in bv in clear bv;
+      let G := context C[f a b] in
+      unify p (a, b);
+      change G
+  end.
+
+Hint Extern 1 (UnfoldUncurry ?P ?Q) =>
+  repeat unfold_uncurry; constructor : typeclass_instances.
+
+Lemma rel_curry_relim {A1 B1 C1 A2 B2 C2} R f g P Q Q':
+  @RElim (A1 * B1 -> C1) (A2 * B2 -> C2) R (uncurry f) (uncurry g) P Q ->
+  UnfoldUncurry Q Q' ->
+  @RElim (A1 -> B1 -> C1) (A2 -> B2 -> C2) (% R) f g P Q'.
+
+Hint Extern 60 (RStep _ ((% _)%rel _ _)) =>
+  eapply rel_pull_rintro : typeclass_instances.
+
+Hint Extern 1 (RElim (% _) _ _ _ _) =>
+  eapply rel_curry_relim : typeclass_instances.
+
+Inductive req {A} (a: A): rel A A :=
+  req_intro: req a a a.
+
+Lemma req_rintro {A} (a: A):
+  RIntro True (req a) a a.
+
+Hint Extern 0 (RIntro _ (req _) _ _) =>
+  eapply req_rintro : typeclass_instances.
+
+Lemma req_corefl {A} (a: A):
+  Coreflexive (req a).
+
+Hint Extern 0 (Coreflexive (req _)) =>
+  eapply req_corefl : typeclass_instances.
+
+Definition lsat {A B} (P: A -> Prop): rel A B :=
+  fun x y => P x.
+
+Global Instance lsat_subrel A B:
+  Monotonic (@lsat A B) ((- ==> impl) ++> subrel).
+
+Global Instance lsat_subrel_params:
+  Params (@lsat) 3.
+
+Definition rsat {A B} (P: B -> Prop): rel A B :=
+  fun x y => P y.
+
+Global Instance rsat_subrel A B:
+  Monotonic (@rsat A B) ((- ==> impl) ++> subrel).
+
+Global Instance rsat_subrel_params:
+  Params (@rsat) 3.
+
+Inductive psat {A} (I: A -> Prop) (x: A): A -> Prop :=
+  psat_intro: I x -> psat I x x.
+
+Global Instance psat_subrel A:
+  Monotonic (@psat A) ((- ==> impl) ++> subrel).
+
+Global Instance psat_subrel_params:
+  Params (@psat) 3.
+
+Lemma psat_corefl {A} (I: A -> Prop):
+  Coreflexive (psat I).
+
+Hint Extern 0 (Coreflexive (psat _)) =>
+  eapply psat_corefl : typeclass_instances.
+
+Definition rel_all {A B C} (R: C -> rel A B): rel A B :=
+  fun x y => forall c, R c x y.
+
+Notation "'rforall' x .. y , p" :=
+  (rel_all (fun x => .. (rel_all (fun y => p%rel)) .. ))
+  (at level 200, x binder, right associativity)
+  : rel_scope.
+
+Lemma rel_all_rintro {A B C} (R: C -> rel A B) m n:
+  RIntro (forall c : C, R c m n) (rel_all R) m n.
+
+Hint Extern 0 (RIntro _ (rel_all _) _ _) =>
+  eapply rel_all_rintro : typeclass_instances.
+
+Lemma rel_all_relim {A B C} (R: C -> rel A B) x y P Q:
+  (exists c, RElim (R c) x y P Q) ->
+  RElim (rel_all R) x y P Q.
+
+Hint Extern 1 (RElim (rel_all _) _ _ _ _) =>
+  eapply rel_all_relim; eexists : typeclass_instances.
+
+Definition rel_ex {A B C} (R: C -> rel A B): rel A B :=
+  fun x y => exists c, R c x y.
+
+Notation "'rexists' x .. y , p" :=
+  (rel_ex (fun x => .. (rel_ex (fun y => p%rel)) ..))
+  (at level 200, x binder, right associativity)
+  : rel_scope.
+
+Lemma rel_ex_rintro {A B C} (R: C -> rel A B) c m n:
+  RExists (R c m n) (rel_ex R) m n.
+
+Hint Extern 0 (RExists _ (rel_ex _) _ _) =>
+  eapply rel_ex_rintro : typeclass_instances.
+
+Lemma rel_ex_relim {A B C} (R: C -> rel A B) x y P Q:
+  (forall c, RElim (R c) x y P Q) ->
+  RElim (rel_ex R) x y P Q.
+
+Hint Extern 1 (RElim (rel_ex _) _ _ _ _) =>
+  eapply rel_ex_relim : typeclass_instances.
+
+Definition rel_incr {W A B} (acc: rel W W) (R: W -> rel A B): W -> rel A B :=
+  fun w a b => exists w', acc w w' /\ R w' a b.
+
+Global Instance rel_incr_subrel {W A B} acc:
+  Transitive acc ->
+  Monotonic (@rel_incr W A B acc) ((- ==> subrel) ++> acc --> subrel).
+
+Global Instance rel_incr_subrel_params:
+  Params (@rel_incr) 4.
+
+Lemma rel_incr_rintro {W A B} (acc: rel W W) (R: W -> rel A B) w w' m n:
+  RExists (R w' m n /\ acc w w') (rel_incr acc R w) m n.
+
+Hint Extern 0 (RExists _ (rel_incr _ _ _) _ _) =>
+  eapply rel_incr_rintro : typeclass_instances.
+
+Lemma rel_incr_rdestruct {W A B} acc R w T:
+  (forall w, exists Tw, RDestruct (R w) Tw /\ Convertible (T w) Tw) ->
+  RDestruct
+    (@rel_incr W A B acc R w)
+    (fun P => forall w', acc w w' -> Delay.unpack (T w' P)).
+
+Hint Extern 2 (RDestruct (rel_incr _ _ _) _) =>
+  eapply rel_incr_rdestruct; intro; eexists; split : typeclass_instances. *)
 Require Export Relators.
+(* Relators:
+Require Export RelDefinitions.
+Require Import RelClasses.
+Require Import Coq.Lists.List.
 
+Definition arrow_pointwise_rel A {B1 B2}:
+  rel B1 B2 -> rel (A -> B1) (A -> B2) :=
+    fun RB f g => forall a, RB (f a) (g a).
+
+Arguments arrow_pointwise_rel A%type {B1%type B2%type} RB%rel _ _.
+
+Notation "- ==> R" := (arrow_pointwise_rel _ R)
+  (at level 55, right associativity) : rel_scope.
+
+Global Instance arrow_pointwise_subrel {A B1 B2}:
+  Monotonic (@arrow_pointwise_rel A B1 B2) (subrel ++> subrel).
+
+Global Instance arrow_pointwise_subrel_params:
+  Params (@arrow_pointwise_rel) 3.
+
+Lemma arrow_pointwise_rintro {A B1 B2} (R: rel B1 B2) f g:
+  RIntro (forall x: A, R (f x) (g x)) (- ==> R) f g.
+
+Hint Extern 0 (RIntro _ (- ==> _) _ _) =>
+  eapply arrow_pointwise_rintro : typeclass_instances.
+
+Lemma arrow_pointwise_relim {A B1 B2} (R: rel B1 B2) f g (m n: A) P Q:
+  RElim R (f m) (g n) P Q ->
+  RElim (- ==> R) f g (m = n /\ P) Q.
+
+Hint Extern 1 (RElim (- ==> _) _ _ _ _) =>
+  eapply arrow_pointwise_relim : typeclass_instances.
+
+Lemma arrow_pointwise_refl {T} `(Reflexive) :
+  @Reflexive (T -> A) (- ==> R).
+
+Hint Extern 1 (Reflexive (- ==> _)) =>
+  eapply arrow_pointwise_refl : typeclass_instances.
+
+Global Instance arrow_pointwise_rel_compose {T} `(RCompose) :
+  RCompose (A := T -> A) (- ==> RAB) (- ==> RBC) (- ==> RAC).
+
+Definition forall_pointwise_rel {V: Type} {FV1 FV2: V -> Type}:
+    (forall v, rel (FV1 v) (FV2 v)) ->
+    rel (forall v, FV1 v) (forall v, FV2 v) :=
+  fun FE f g =>
+    forall v, FE v (f v) (g v).
+
+Arguments forall_pointwise_rel {V%type FV1%type FV2%type} FE%rel _ _.
+
+Notation "'forallr' - @ v : V , FE" :=
+  (forall_pointwise_rel (V := V) (fun v => FE))
+  (v ident, at level 200).
+
+Notation "'forallr' - @ v , FE" :=
+  (forall_pointwise_rel (fun v => FE))
+  (v ident, at level 200).
+
+Notation "'forallr' - : V , FE" :=
+  (forall_pointwise_rel (V := V) (fun _ => FE))
+  (at level 200).
+
+Notation "'forallr' - , FE" :=
+  (forall_pointwise_rel (fun _ => FE))
+  (at level 200).
+
+Lemma forall_pointwise_rintro {V FV1 FV2} (FE: forall v, rel _ _) f g:
+  RIntro
+    (forall v, FE v (f v) (g v))
+    (@forall_pointwise_rel V FV1 FV2 FE) f g.
+
+Hint Extern 0 (RIntro _ (forall_pointwise_rel _) _ _) =>
+  eapply forall_pointwise_rintro : typeclass_instances.
+
+Lemma forall_pointwise_relim {V FV1 FV2} R f g v P Q:
+  RElim (R v) (f v) (g v) P Q ->
+  RElim (@forall_pointwise_rel V FV1 FV2 R) f g P Q.
+
+Hint Extern 1 (RElim (forall_pointwise_rel _) _ _ _ _) =>
+  eapply forall_pointwise_relim : typeclass_instances.
+
+Definition forallp_rel {V1 V2} (E: rel V1 V2) {FV1: V1->Type} {FV2: V2->Type}:
+    (forall v1 v2, rel (FV1 v1) (FV2 v2)) ->
+    rel (forall v1, FV1 v1) (forall v2, FV2 v2) :=
+  fun FE f g =>
+    forall v1 v2, E v1 v2 -> FE v1 v2 (f v1) (g v2).
+
+Arguments forallp_rel {V1%type V2%type} E%rel {FV1%type FV2%type} FE%rel _ _.
+
+Notation "'forallr' v1 v2 : E , R" :=
+  (forallp_rel E (fun v1 v2 => R))
+  (at level 200, v1 ident, v2 ident, right associativity)
+  : rel_scope.
+
+Lemma forallp_rintro {V1 V2} {E: rel V1 V2} {F1 F2} (FE: forall v1 v2, rel _ _) f g:
+  RIntro
+    (forall v1 v2, E v1 v2 -> FE v1 v2 (f v1) (g v2))
+    (@forallp_rel V1 V2 E F1 F2 FE) f g.
+
+Hint Extern 0 (RIntro _ (forallp_rel _ _) _ _) =>
+  eapply forallp_rintro : typeclass_instances.
+
+Lemma forallp_relim {V1 V2 E FV1 FV2} R f g v1 v2 P Q:
+  RElim (R v1 v2) (f v1) (g v2) P Q ->
+  RElim (@forallp_rel V1 V2 E FV1 FV2 R) f g (E v1 v2 /\ P) Q.
+
+Hint Extern 1 (RElim (forallp_rel _ _) _ _ _ _) =>
+  eapply forallp_relim : typeclass_instances.
+
+Definition set_le {A B} (R: rel A B): rel (A -> Prop) (B -> Prop) :=
+  fun sA sB => forall a, sA a -> exists b, sB b /\ R a b.
+
+Global Instance set_le_subrel {A B}:
+  Monotonic (@set_le A B) (subrel ++> subrel).
+
+Global Instance set_le_subrel_params:
+  Params (@set_le) 3.
+
+Lemma set_le_refl {A} (R : relation A) :
+  Reflexive R ->
+  Reflexive (set_le R).
+
+Hint Extern 1 (Reflexive (set_le _)) =>
+  eapply set_le_refl : typeclass_instances.
+
+Global Instance set_le_compose `(RCompose) :
+  RCompose (set_le RAB) (set_le RBC) (set_le RAC).
+
+Definition set_ge {A B} (R: rel A B): rel (A -> Prop) (B -> Prop) :=
+  fun sA sB => forall b, sB b -> exists a, sA a /\ R a b.
+
+Global Instance set_ge_subrel {A B}:
+  Monotonic (@set_ge A B) (subrel ++> subrel).
+
+Global Instance set_ge_subrel_params:
+  Params (@set_ge) 3.
+
+Lemma set_ge_refl {A} (R : relation A) :
+  Reflexive R ->
+  Reflexive (set_ge R).
+
+Hint Extern 1 (Reflexive (set_ge _)) =>
+  eapply set_ge_refl : typeclass_instances.
+
+Global Instance set_ge_compose `(RCompose) :
+  RCompose (set_ge RAB) (set_ge RBC) (set_ge RAC).
+
+Inductive Empty_set_rel: rel Empty_set Empty_set := .
+
+Inductive unit_rel: rel unit unit :=
+  tt_rel: Proper unit_rel tt.
+
+Global Existing Instance tt_rel.
+
+Inductive sum_rel {A1 A2 B1 B2} RA RB: rel (A1 + B1)%type (A2 + B2)%type :=
+  | inl_rel_def: (RA ++> sum_rel RA RB)%rel (@inl A1 B1) (@inl A2 B2)
+  | inr_rel_def: (RB ++> sum_rel RA RB)%rel (@inr A1 B1) (@inr A2 B2).
+
+Infix "+" := sum_rel : rel_scope.
+
+Global Instance inl_rel:
+  Monotonic (@inl) (forallr RA, forallr RB, RA ++> RA + RB).
+
+Global Instance inr_rel:
+  Monotonic (@inr) (forallr RA, forallr RB, RB ++> RA + RB).
+
+Global Instance sum_subrel {A1 A2 B1 B2}:
+  Monotonic (@sum_rel A1 A2 B1 B2) (subrel ++> subrel ++> subrel).
+
+Global Instance sum_subrel_params:
+  Params (@sum) 4.
+
+Lemma sum_rel_refl {A B} (R1: rel A A) (R2: rel B B):
+  Reflexive R1 -> Reflexive R2 -> Reflexive (R1 + R2).
+
+Hint Extern 2 (Reflexive (_ + _)) =>
+  eapply sum_rel_refl : typeclass_instances.
+
+Lemma sum_rel_corefl {A B} (R1: rel A A) (R2: rel B B):
+  Coreflexive R1 -> Coreflexive R2 -> Coreflexive (R1 + R2).
+
+Hint Extern 2 (Coreflexive (_ + _)) =>
+  eapply sum_rel_corefl : typeclass_instances.
+
+Lemma sum_rel_trans {A B} (R1: rel A A) (R2: rel B B):
+  Transitive R1 -> Transitive R2 -> Transitive (R1 + R2).
+
+Hint Extern 2 (Transitive (_ + _)) =>
+  eapply sum_rel_trans : typeclass_instances.
+
+Lemma sum_rel_sym {A B} (R1: rel A A) (R2: rel B B):
+  Symmetric R1 -> Symmetric R2 -> Symmetric (R1 + R2).
+
+Hint Extern 2 (Symmetric (_ + _)) =>
+  eapply sum_rel_sym : typeclass_instances.
+
+Lemma sum_rel_preorder {A B} (R1: rel A A) (R2: rel B B):
+  PreOrder R1 -> PreOrder R2 -> PreOrder (R1 + R2).
+
+Hint Extern 2 (PreOrder (_ + _)) =>
+  eapply sum_rel_preorder : typeclass_instances.
+
+Definition prod_rel {A1 A2 B1 B2} RA RB: rel (A1 * B1)%type (A2 * B2)%type :=
+  fun x1 x2 => RA (fst x1) (fst x2) /\ RB (snd x1) (snd x2).
+
+Infix "*" := prod_rel : rel_scope.
+
+Global Instance pair_rel:
+  Monotonic (@pair) (forallr RA, forallr RB, RA ++> RB ++> RA * RB).
+
+Global Instance fst_rel:
+  Monotonic (@fst) (forallr RA, forallr RB, RA * RB ==> RA).
+
+Global Instance snd_rel:
+  Monotonic (@snd) (forallr RA, forallr RB, RA * RB ==> RB).
+
+Global Instance prod_subrel {A1 A2 B1 B2}:
+  Monotonic (@prod_rel A1 A2 B1 B2) (subrel ++> subrel ++> subrel).
+
+Global Instance prod_subrel_params:
+  Params (@prod_rel) 4.
+
+Global Instance prod_rdestruct {A1 B1 A2 B2} (RA: rel A1 A2) (RB: rel B1 B2):
+  RDestruct
+    (RA * RB)%rel
+    (fun P => forall a1 a2 b1 b2, RA a1 a2 -> RB b1 b2 -> P (a1, b1) (a2, b2)).
+
+Lemma prod_rel_refl {A B} (R1: rel A A) (R2: rel B B):
+  Reflexive R1 -> Reflexive R2 -> Reflexive (R1 * R2).
+
+Hint Extern 2 (Reflexive (_ * _)) =>
+  eapply prod_rel_refl : typeclass_instances.
+
+Lemma prod_rel_corefl {A B} (R1: rel A A) (R2: rel B B):
+  Coreflexive R1 -> Coreflexive R2 -> Coreflexive (R1 * R2).
+
+Hint Extern 2 (Coreflexive (_ * _)) =>
+  eapply prod_rel_corefl : typeclass_instances.
+
+Lemma prod_rel_trans {A B} (R1: rel A A) (R2: rel B B):
+  Transitive R1 -> Transitive R2 -> Transitive (R1 * R2).
+
+Hint Extern 2 (Transitive (_ * _)) =>
+  eapply prod_rel_trans : typeclass_instances.
+
+Lemma prod_rel_sym {A B} (R1: rel A A) (R2: rel B B):
+  Symmetric R1 -> Symmetric R2 -> Symmetric (R1 * R2).
+
+Hint Extern 2 (Symmetric (_ * _)) =>
+  eapply prod_rel_sym : typeclass_instances.
+
+Lemma prod_rel_preorder {A B} (R1: rel A A) (R2: rel B B):
+  PreOrder R1 -> PreOrder R2 -> PreOrder (R1 * R2).
+
+Hint Extern 2 (PreOrder (_ * _)) =>
+  eapply prod_rel_preorder : typeclass_instances.
+
+Inductive option_rel {A1 A2} (RA: rel A1 A2): rel (option A1) (option A2) :=
+  | Some_rel_def: (RA ++> option_rel RA)%rel (@Some A1) (@Some A2)
+  | None_rel_def: option_rel RA (@None A1) (@None A2).
+
+Global Instance Some_rel:
+  Monotonic (@Some) (forallr R @ A1 A2 : rel, R ++> option_rel R).
+
+Global Instance None_rel:
+  Monotonic (@None) (forallr R, option_rel R).
+
+Global Instance option_subrel {A1 A2}:
+  Monotonic (@option_rel A1 A2) (subrel ++> subrel).
+
+Global Instance option_subrel_params:
+  Params (@option_rel) 3.
+
+Lemma option_rel_refl `(HR: Reflexive):
+  Reflexive (option_rel R).
+
+Hint Extern 1 (Reflexive (option_rel _)) =>
+  eapply option_rel_refl : typeclass_instances.
+
+Global Instance option_map_rel:
+  Monotonic
+    (@option_map)
+    (forallr RA, forallr RB, (RA ++> RB) ++> option_rel RA ++> option_rel RB).
+
+Lemma option_rel_some_inv A B (R: rel A B) (x: option A) (y: option B) (a: A):
+  option_rel R x y ->
+  x = Some a ->
+  exists b,
+    y = Some b /\
+    R a b.
+
+Inductive list_rel {A1 A2} (R: rel A1 A2): rel (list A1) (list A2) :=
+  | nil_rel_def: (list_rel R) (@nil A1) (@nil A2)
+  | cons_rel_def: (R ++> list_rel R ++> list_rel R)%rel (@cons A1) (@cons A2).
+
+Global Instance nil_rel:
+  Monotonic (@nil) (forallr R, list_rel R).
+
+Global Instance cons_rel:
+  Monotonic (@cons) (forallr R, R ++> list_rel R ++> list_rel R).
+
+Global Instance list_subrel {A1 A2}:
+  Monotonic (@list_rel A1 A2) (subrel ++> subrel).
+
+Global Instance list_subrel_params:
+  Params (@list_rel) 3.
+
+Lemma list_rel_refl `(HR: Reflexive):
+  Reflexive (list_rel R).
+
+Hint Extern 1 (Reflexive (list_rel _)) =>
+  eapply list_rel_refl : typeclass_instances.
+
+Lemma list_rel_corefl `(HR: Coreflexive):
+  Coreflexive (list_rel R).
+
+Hint Extern 1 (Coreflexive (list_rel _)) =>
+  eapply list_rel_corefl : typeclass_instances.
+
+Lemma list_rel_sym `(HR: Symmetric):
+  Symmetric (list_rel R).
+
+Hint Extern 1 (Symmetric (list_rel _)) =>
+  eapply list_rel_sym : typeclass_instances.
+
+Lemma list_rel_trans `(HR: Transitive):
+  Transitive (list_rel R).
+
+Hint Extern 1 (Transitive (list_rel _)) =>
+  eapply list_rel_trans : typeclass_instances.
+
+Global Instance length_rel:
+  Monotonic
+    (@length)
+    (forallr R : rel, list_rel R ++> eq).
+
+Global Instance app_rel:
+  Monotonic
+    (@app)
+    (forallr R : rel, list_rel R ++> list_rel R ++> list_rel R).
+
+Global Instance map_rel:
+  Monotonic
+    (@map)
+    (forallr RA, forallr RB, (RA ++> RB) ++> list_rel RA ++> list_rel RB).
+
+Global Instance fold_right_rel:
+  Monotonic
+    (@fold_right)
+    (forallr RA, forallr RB, (RB ++> RA ++> RA) ++> RA ++> list_rel RB ++> RA).
+
+Global Instance fold_left_rel:
+  Monotonic
+    (@fold_left)
+    (forallr RA, forallr RB, (RA ++> RB ++> RA) ++> list_rel RB ++> RA ++> RA).
+
+Lemma fold_impl_rstep (A B: Prop):
+  RStep (impl A B) (A -> B).
+
+Hint Extern 1 (RStep _ (_ -> _)) =>
+  eapply fold_impl_rstep : typeclass_instances.
+
+Global Instance all_monotonic {A}:
+  Monotonic (@all A) ((- ==> impl) ++> impl).
+
+Global Instance all_monotonic_params:
+  Params (@all) 1.
+
+Global Instance ex_monotonic A:
+  Monotonic (@ex A) ((- ==> impl) ++> impl).
+
+Global Instance ex_monotonic_params:
+  Params (@ex) 1.
+
+Global Instance and_monotonic:
+  Monotonic (@and) (impl ++> impl ++> impl).
+
+Global Instance or_monotonic:
+  Monotonic (@or) (impl ++> impl ++> impl). *)
 Require Export Monotonicity.
+(* Monotonicity:
+Require Export RelDefinitions.
+Require Export RelOperators.
+Require Export Relators.
+Require Import Delay.
 
+Class QueryParams {A B} (m1: A) (m2: B) (n: nat).
+
+Lemma query_params_one {A B C} (h: A) p (m1: B) (m2: C) n:
+  Params h (p + n) ->
+  QueryParams m1 m2 n.
+
+Lemma query_params_both {A B C D} (h1: A) (h2: B) p1 p2 (m1: C) (m2: D) n:
+  Params h1 (p1 + n) ->
+  Params h2 (p2 + n) ->
+  QueryParams m1 m2 n.
+
+Lemma flip_context_candidate {A B} (R: rel A B) x y : R y x -> flip R x y.
+
+Ltac context_candidate :=
+  let rec is_prefix f m :=
+    first
+      [ unify f m
+      | lazymatch m with ?n _ => is_prefix f n end ] in
+  let rec is_prefixable f m :=
+    first
+      [ is_evar f
+      | is_evar m
+      | unify f m
+      | lazymatch m with ?n _ => is_prefixable f n end ] in
+  multimatch goal with
+    | H: _ ?f ?g |- @CandidateProperty ?A ?B ?R ?x ?y (_ ?m ?n) =>
+      red;
+      once first
+        [ is_prefix f m; is_prefixable g n
+        | is_prefix g n; is_prefixable f m
+        | is_prefix g m; is_prefixable f n; apply flip_context_candidate
+        | is_prefix f n; is_prefixable g m; apply flip_context_candidate ];
+      eexact H
+  end.
+
+Hint Extern 1 (CandidateProperty _ _ _ _) =>
+  context_candidate : typeclass_instances.
+
+Class RImpl (P Q: Prop): Prop :=
+  rimpl: P -> Q.
+
+Global Instance rimpl_refl {A B} (R : rel A B) m n:
+  RImpl (R m n) (R m n).
+
+Global Instance rimpl_subrel {A B} (R R': rel A B) m n:
+  NonDelayed (RAuto (subrel R R')) ->
+  RImpl (R m n) (R' m n).
+
+Global Instance rimpl_flip_subrel {A B} R R' (x: A) (y: B):
+  NonDelayed (RAuto (subrel R (flip R'))) ->
+  RImpl (R x y) (R' y x) | 2.
+
+Class Monotonicity (P Q: Prop): Prop :=
+  monotonicity: P -> Q.
+
+Global Instance apply_candidate {A B} (R: rel A B) m n P Q Q':
+  CandidateProperty R m n Q ->
+  RElim R m n P Q' ->
+  RImpl Q' Q ->
+  Monotonicity P Q.
+
+Ltac monotonicity :=
+  lazymatch goal with |- ?Q => apply (monotonicity (Q:=Q)) end;
+  Delay.split_conjunction.
+
+Global Instance monotonicity_rstep {A B} (P: Prop) (R: rel A B) m n:
+  Monotonicity P (R m n) ->
+  RStep P (R m n) | 50.
+
+Class SubrelMonotonicity (P Q: Prop): Prop :=
+  subrel_monotonicity: P -> Q.
+
+Global Instance apply_candidate_subrel {A B C D} (R: rel A B) m n P Rc Rg x y:
+  CandidateProperty R m n (Rg x y) ->
+  RElim R m n P (Rc x y) ->
+  SubrelMonotonicity (@subrel C D Rc Rg /\ P) (Rg x y).
+
+Ltac subrel_monotonicity :=
+  lazymatch goal with |- ?Q => apply (subrel_monotonicity (Q:=Q)) end;
+  Delay.split_conjunction.
+
+Class CommonPrefix {A B C} (m1: A) (m2: B) (f: C).
+
+Ltac common_prefix m1 m2 f :=
+  first
+    [ not_evar m1; not_evar m2;
+      unify m1 m2; unify f m1
+    | lazymatch m1 with ?m1' _ =>
+        lazymatch m2 with ?m2' _ =>
+          common_prefix m1' m2' f
+        end
+      end
+    | unify m1 m2; unify f m1 ].
+
+Hint Extern 1 (CommonPrefix ?m1 ?m2 ?f) =>
+  common_prefix m1 m2 f; constructor : typeclass_instances.
+
+Global Instance eq_candidate {A B C} R (m1: A) (m2: B) (f: C):
+  CommonPrefix m1 m2 f ->
+  CandidateProperty eq f f (R m1 m2) | 100.
+
+Lemma f_equal_relim {A B} f g m n P Q:
+  RElim eq (f m) (g n) P Q ->
+  RElim (@eq (A -> B)) f g (m = n /\ P) Q. *)
 Require Export RDestruct.
+(* RDestruct:
+Require Export RelDefinitions.
 
+Ltac rdestruct H :=
+  lazymatch type of H with
+    | ?R ?m ?n =>
+      not_evar R;
+      pattern m, n;
+      apply (rdestruct (R:=R) m n H);
+      clear H;
+      Delay.split_conjunction
+  end.
+
+Ltac rinversion_tac H Hm Hn :=
+  lazymatch type of H with
+    | ?R ?m ?n =>
+      not_evar R;
+      pattern m, n;
+      lazymatch goal with
+        | |- ?Q _ _ =>
+          generalize (eq_refl m), (eq_refl n);
+          change ((fun x y => Delay.delayed_goal (x = m -> y = n -> Q x y)) m n);
+          apply (rdestruct (R:=R) m n H);
+          Delay.split_conjunction;
+          intros Hm Hn
+      end
+  end.
+
+Tactic Notation "rinversion" constr(H) "as" ident(Hl) "," ident(Hr) :=
+  rinversion_tac H Hl Hr.
+
+Tactic Notation "rinversion" hyp(H) :=
+  let Hl := fresh H "l" in
+  let Hr := fresh H "r" in
+  rinversion_tac H Hl Hr.
+
+Tactic Notation "rinversion" constr(H) :=
+  let Hl := fresh "Hl" in
+  let Hr := fresh "Hr" in
+  rinversion_tac H Hl Hr.
+
+Ltac rdestruct_assert :=
+  lazymatch goal with
+    | |- _ (match ?m with _ => _ end) (match ?n with _ => _ end) =>
+      let Tm := type of m in
+      let Tn := type of n in
+      let R := fresh "R" in
+      evar (R: rel Tm Tn);
+      assert (R m n); subst R
+  end.
+
+Definition rdestruct_result {A B} m n (Q: rel A B): rel A B :=
+  fun x y => m = x /\ n = y -> Q x y.
+
+Lemma rdestruct_rstep {A B} m n (R: rel A B) P (Q: rel _ _):
+  RAuto (R m n) ->
+  RDestruct R P ->
+  P (rdestruct_result m n Q) ->
+  Q m n.
+
+Ltac use_rdestruct_rstep m n :=
+  let H := fresh in
+  intro H;
+  pattern m, n;
+  eapply (rdestruct_rstep m n);
+  [ .. | eexact H].
+
+Hint Extern 40 (RStep _ (_ (match ?m with _=>_ end) (match ?n with _=>_ end))) =>
+  use_rdestruct_rstep m n : typeclass_instances.
+
+CoInductive rdestruct_remember := rdestruct_remember_intro.
+
+Ltac rdestruct_remember :=
+  lazymatch goal with
+    | _ : rdestruct_remember |- _ =>
+      idtac
+    | _ =>
+      let H := fresh "Hrdestruct" in
+      pose proof rdestruct_remember_intro as H
+  end.
+
+Ltac rdestruct_forget :=
+  lazymatch goal with
+    | H : rdestruct_remember |- _ =>
+      clear H
+    | _ =>
+      idtac
+  end.
+
+Lemma rdestruct_forget_rintro {A B} m n (Q: rel A B) x y:
+  RIntro (Q x y) (rdestruct_result m n Q) x y.
+
+Lemma rdestruct_remember_rintro {A B} m n (Q: rel A B) x y:
+  RIntro (m = x -> n = y -> Q x y) (rdestruct_result m n Q) x y.
+
+Ltac rdestruct_result_rintro :=
+  lazymatch goal with
+    | _ : rdestruct_remember |- _ =>
+      eapply rdestruct_remember_rintro
+    | _ =>
+      eapply rdestruct_forget_rintro
+  end.
+
+Hint Extern 100 (RIntro _ (rdestruct_result _ _ _) _ _) =>
+  rdestruct_result_rintro : typeclass_instances.
+
+Ltac default_rdestruct :=
+  let m := fresh "m" in
+  let n := fresh "n" in
+  let Hmn := fresh "H" m n in
+  let P := fresh "P" in
+  let H := fresh in
+  intros m n Hmn P H;
+  revert m n Hmn;
+  delayed_conjunction (intros m n Hmn; destruct Hmn; delay);
+  pattern P;
+  eexact H.
+
+Hint Extern 100 (RDestruct _ _) =>
+  default_rdestruct : typeclass_instances.
+
+Ltac eq_rdestruct :=
+  let m := fresh "m" in
+  let n := fresh "n" in
+  let Hmn := fresh "H" m n in
+  let P := fresh "P" in
+  let H := fresh in
+  intros m n Hmn P H;
+  revert m n Hmn;
+  delayed_conjunction (intros m n Hmn; destruct Hmn; destruct m; delay);
+  pattern P;
+  eexact H.
+
+Hint Extern 99 (RDestruct eq _) =>
+  eq_rdestruct : typeclass_instances. *)
 Require Export MorphismsInterop.
+(* MorphismsInterop:
+Require Import Coq.Classes.Morphisms.
+Require Import Coq.Relations.Relation_Definitions.
+Require Import RelDefinitions.
+Require Import RelOperators.
+Require Import Relators.
+Require Import Monotonicity.
 
+Global Instance respectful_subrel A B:
+  Monotonic (@respectful A B) (subrel --> subrel ++> subrel).
+
+Global Instance respectful_params:
+  Params (@respectful) 4.
+
+Lemma respectful_rintro {A B} (RA: relation A) (RB: relation B) f g:
+  RIntro (forall x y, RA x y -> RB (f x) (g y)) (respectful RA RB) f g.
+
+Hint Extern 0 (RIntro _ (respectful _ _) _ _) =>
+  eapply respectful_rintro : typeclass_instances.
+
+Lemma respectful_relim {A B} (RA: relation A) (RB: relation B) f g m n P Q:
+  RElim RB (f m) (g n) P Q ->
+  RElim (respectful RA RB) f g (RA m n /\ P) Q.
+
+Hint Extern 1 (RElim (respectful _ _) _ _ _ _) =>
+  eapply respectful_relim : typeclass_instances.
+
+Global Instance forall_relation_subrel A P:
+  Monotonic (@forall_relation A P) ((forallr -, subrel) ++> subrel).
+
+Global Instance forall_relation_params:
+  Params (@forall_relation) 3.
+
+Lemma forall_relation_rintro {A B} (R: forall a:A, relation (B a)) f g:
+  RIntro (forall a, R a (f a) (g a)) (forall_relation R) f g.
+
+Hint Extern 0 (RIntro _ (forall_relation _) _ _) =>
+  eapply forall_relation_rintro : typeclass_instances.
+
+Lemma forall_relation_relim {A B} (R: forall a:A, relation (B a)) f g a P Q:
+  RElim (R a) (f a) (g a) P Q ->
+  RElim (forall_relation R) f g P Q.
+
+Hint Extern 1 (RElim (forall_relation _) _ _ _ _) =>
+  eapply forall_relation_relim : typeclass_instances.
+
+Global Instance pointwise_relation_subrel A B:
+  Monotonic (@pointwise_relation A B) (subrel ++> subrel).
+
+Global Instance pointwise_relation_params:
+  Params (@pointwise_relation) 3.
+
+Lemma pointwise_relation_rintro {A B} (R: relation B) f g:
+  RIntro (forall a, R (f a) (g a)) (pointwise_relation A R) f g.
+
+Hint Extern 0 (RIntro _ (pointwise_relation _ _) _ _) =>
+ eapply pointwise_relation_rintro : typeclass_instances.
+
+Lemma pointwise_relation_relim {A B} (R: relation B) f g a P Q:
+  RElim R (f a) (g a) P Q ->
+  RElim (pointwise_relation A R) f g P Q.
+
+Hint Extern 1 (RElim (pointwise_relation _ _) _ _ _ _) =>
+  eapply pointwise_relation_relim : typeclass_instances.
+
+Global Instance pointwise_relation_subrel_subrel A B:
+  Related (pointwise_relation A (pointwise_relation B impl)) subrel subrel.
+
+Global Instance morphisms_proper_related {A} (R: relation A) (a: A):
+  (normalization_done -> Proper R a) ->
+  Monotonic a R | 10.
+
+Lemma subrelation_subrel {A} (R1 R2: relation A):
+  subrelation R1 R2 ->
+  Related R1 R2 subrel.
+
+Hint Immediate subrelation_subrel : typeclass_instances.
+
+Ltac solve_morphisms_proper :=
+  match goal with
+    | _ : normalization_done |- _ =>
+      fail 1
+    | H : apply_subrelation |- _ =>
+      clear H;
+      red;
+      rauto
+  end.
+
+Hint Extern 10 (Morphisms.Proper _ _) =>
+  solve_morphisms_proper : typeclass_instances. *)
 Require Export Transport.
+(* Transport:
+Require Export Monotonicity.
+Require Import KLR.
 
+Class Transport {A B} (R: rel A B) (a: A) (b: B) (PA: Prop) (PB: Prop) :=
+  transport: R a b -> PA -> PB.
+
+Global Instance prod_rel_transport_eq_pair {A1 B1 A2 B2} (R1: rel A1 B1) (R2: rel A2 B2) x y a1 a2:
+  Transport (prod_rel R1 R2) x y (x = (a1, a2)) (exists b1 b2, y = (b1, b2) /\ R1 a1 b1 /\ R2 a2 b2).
+
+Lemma set_le_transport {A B} (R: rel A B) sA sB a:
+  Transport (set_le R) sA sB (sA a) (exists b, sB b /\ R a b).
+
+Ltac set_le_transport keyword :=
+  lazymatch goal with
+    | |- @Transport ?A ?B ?R ?a ?b ?PA ?PB =>
+      lazymatch PA with
+        | context [keyword] =>
+          let Xv := fresh "X" in evar (Xv: Type);
+          let X := eval red in Xv in clear Xv;
+          unify B (X -> Prop);
+          eapply set_le_transport
+      end
+  end.
+      
+Lemma rel_curry_set_le_transport {A1 A2 B1 B2} R sA sB (a1: A1) (a2: A2):
+  Transport (% set_le R) sA sB
+    (sA a1 a2)
+    (exists (b1: B1) (b2: B2), sB b1 b2 /\ R (a1, a2) (b1, b2)).
+
+Ltac rel_curry_set_le_transport keyword :=
+  lazymatch goal with
+    | |- @Transport ?A ?B ?R ?a ?b ?PA ?PB =>
+      lazymatch PA with
+        | context [keyword] =>
+          let Xv := fresh "X" in evar (Xv: Type);
+          let X := eval red in Xv in clear Xv;
+          let Yv := fresh "Y" in evar (Yv: Type);
+          let Y := eval red in Yv in clear Yv;
+          unify B (X -> Y -> Prop);
+          eapply rel_curry_set_le_transport
+      end
+  end.
+
+Lemma rel_curry2_set_le_transport {A1 A2 A3 B1 B2 B3} R sA sB (a1: A1) (a2: A2) (a3: A3):
+  Transport (% % set_le R) sA sB
+    (sA a1 a2 a3)
+    (exists (b1: B1) (b2: B2) (b3: B3), sB b1 b2 b3 /\ R (a1, a2, a3) (b1, b2, b3)).
+
+Ltac rel_curry2_set_le_transport keyword :=
+  lazymatch goal with
+    | |- @Transport ?A ?B ?R ?a ?b ?PA ?PB =>
+      lazymatch PA with
+        | context [keyword] =>
+          let Xv := fresh "X" in evar (Xv: Type);
+          let X := eval red in Xv in clear Xv;
+          let Yv := fresh "Y" in evar (Yv: Type);
+          let Y := eval red in Yv in clear Yv;
+          let Zv := fresh "Y" in evar (Yv: Type);
+          let Z := eval red in Yv in clear Yv;
+          unify B (X -> Y -> Z -> Prop);
+          eapply rel_curry2_set_le_transport
+      end
+  end.
+
+Lemma impl_transport P Q:
+  Transport impl P Q P Q.
+
+Ltac split_hyp H :=
+  lazymatch type of H with
+    | ex _ =>
+      destruct H as [? H];
+      split_hyp H
+    | _ /\ _ =>
+      let H1 := fresh in
+      let H2 := fresh in
+      destruct H as [H1 H2];
+      split_hyp H1;
+      split_hyp H2
+    | prod_rel ?Rx ?Ry (?x1, ?y1) (?x2, ?y2) =>
+      change (Rx x1 x2 /\ Ry y1 y2) in H;
+      split_hyp H
+    | rel_incr ?acc ?R ?w ?x ?y =>
+      let w' := fresh w "'" in
+      let Hw' := fresh "H" w' in
+      destruct H as (w' & Hw' & H);
+      split_hyp H
+    | klr_diam ?l ?R ?w ?x ?y =>
+      let w' := fresh w "'" in
+      let Hw' := fresh "H" w' in
+      destruct H as (w' & Hw' & H);
+      split_hyp H
+    | prod_klr ?Rx ?Ry ?w (?x1, ?y1) (?x2, ?y2) =>
+      change (Rx w x1 x2 /\ Ry w y1 y2) in H;
+      split_hyp H
+    | _ =>
+      idtac
+  end.
+
+Ltac split_hyps :=
+  repeat
+    lazymatch goal with
+      | H: ex _ |- _ =>
+        destruct H
+      | H: _ /\ _ |- _ =>
+        destruct H
+      | H: prod_rel ?Rx ?Ry (?x1, ?y1) (?x2, ?y2) |- _ =>
+        change (Rx x1 x2 /\ Ry y1 y2) in H
+      | H: klr_diam ?R ?w ?x ?y |- _ =>
+        let w' := fresh w "'" in
+        let Hw' := fresh "H" w' in
+        destruct H as (w' & Hw' & H)
+      | H: prod_klr ?Rx ?Ry ?w (?x1, ?y1) (?x2, ?y2) |- _ =>
+        change (Rx w x1 x2 /\ Ry w y1 y2) in H
+    end.
+
+Lemma transport_in_goal `{Transport} `{!RAuto (R a b)} `{!Unconvertible a b}:
+  forall (Q: Prop), (PB -> Q) -> (PA -> Q).
+
+Ltac transport H :=
+  revert H;
+  lazymatch goal with
+    | |- ?PA -> ?Q =>
+      apply (transport_in_goal (PA:=PA) Q)
+  end;
+  intro H;
+  split_hyp H.
+
+Ltac transport_hyps :=
+  repeat
+    match goal with
+      | H: _ |- _ => transport H
+    end. *)
 Require Export PreOrderTactic.
+(* PreOrderTactic:
+Require Import RelDefinitions.
 
+Definition rgraph_done {A B} (R: rel A B) a b := R a b.
+
+Inductive rgraph_queue {A} (R: rel A A) (m: A) :=
+  | rgraph_queue_nil:
+      rgraph_queue R m
+  | rgraph_queue_cons x:
+      (forall y, R x y -> R m y) ->
+      rgraph_queue R m ->
+      rgraph_queue R m.
+
+Ltac rgraph :=
+  lazymatch goal with
+    | |- ?R ?m ?n =>
+      not_evar R;
+      not_evar m;
+      not_evar n;
+      first
+        [ assert (Transitive R) by typeclasses eauto
+        | fail 1 R "is not declared transitive" ];
+      try assert (Symmetric R) by typeclasses eauto;
+      let rec step q :=
+        lazymatch q with
+          | rgraph_queue_cons _ _ ?t ?Ht ?tail =>
+            gather tail t Ht
+        end
+      with gather q t Ht :=
+        let push u Htu :=
+          let Hu := constr:(fun x Hux => transitivity (z:=x) (Ht u Htu) Hux) in
+          gather (rgraph_queue_cons R m u Hu q) t Ht in
+        lazymatch goal with
+          | Htn : R t n |- _ =>
+            exact (Ht n Htn)
+          | Hnt : R n t, HRsym: Symmetric R |- _ =>
+            exact (Ht n (symmetry (Symmetric := HRsym) Hnt))
+          | Htu: R t ?u |- _ =>
+            change (rgraph_done R t u) in Htu;
+            push u Htu
+          | Hut: R ?u t, HRsym: Symmetric R |- _ =>
+            change (rgraph_done R u t) in Hut;
+            push u (symmetry (Symmetric := HRsym) Hut)
+          | _ =>
+            step q
+        end in
+      first
+        [ gather (rgraph_queue_nil R m) m (fun x (H: R m x) => H)
+        | fail 1 n "not reachable from" m "using hypotheses from the context" ]
+    | _ =>
+      fail "the goal is not an applied relation"
+  end.
+
+Hint Extern 30 (RStep ?P (_ _ _)) =>
+  solve [ try unify P True; intro; rgraph ] : typeclass_instances. *)

@@ -31,9 +31,9 @@ def query_file_builder(coq_file_path: str, output_path: str):
     # Write the cleaned text to the output file
     with open(output_path, 'w') as file:
         for line in cleaned_text:
-            file.write(f"{line}\n")
+            file.write(f"{line}")
     
-def process_files(data_dir, import_context_dir, output_dir):
+def process_files(data_dir, import_context_dir, output_dir, instert_import_context=True):
     os.makedirs(output_dir, exist_ok=True)
     for root, dirs, files in os.walk(data_dir):
         for file in tqdm(files):
@@ -41,17 +41,19 @@ def process_files(data_dir, import_context_dir, output_dir):
                 data_file_path = os.path.join(root, file)
                 relative_path = os.path.relpath(data_file_path, data_dir)
                 output_file_path = os.path.join(output_dir, relative_path)
+                proj_name = root.split('/')[-1]
+                # raise Exception(f"Processing {data_file_path} -> {output_file_path}")
                 os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
-                insert_import_context(data_file_path, import_context_dir, output_file_path)
+                    
 
 if __name__ == "__main__":
     # Call query file builder to clean the files, output them to directory, then call process_files to add import context
     coq_projects_as_text_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/coq_projects_as_txt/'
     import_context_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/import_context'
-    output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/coq_projects_no_comments'
+    no_comments_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/coq_projects_no_comments'
     # for root, _, files in os.walk(coq_projects_as_text_dir):
     #     proj_name = root.split('/')[-1]
-    #     output_proj_dir = os.path.join(output_dir, proj_name)
+    #     output_proj_dir = os.path.join(no_comments_dir, proj_name)
     #     os.makedirs(output_proj_dir, exist_ok=True)
     #     for file in files:
     #         if file.endswith(".txt"):
@@ -60,5 +62,4 @@ if __name__ == "__main__":
     #             query_file_builder(coq_file_path, output_path)
     
     query_output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/query_data'
-    process_files(output_dir, import_context_dir, query_output_dir)
-
+    process_files(no_comments_dir, import_context_dir, query_output_dir)

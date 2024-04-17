@@ -1,592 +1,597 @@
 
-
+Set Implicit Arguments.
+Require Export inductive_wqo.
+(* inductive_wqo:
 Set Implicit Arguments.
 
-Require Export inductive_wqo.
+Require Export List.
 
+Section Wrap.
+
+Variable A : Set.
+Variable leA : A -> A -> Prop.
+Variable leA_dec : forall a a', {leA a a'} + {~ leA a a'}.
+
+Inductive greater : A -> list A -> Prop :=
+| Gr0 : forall a a' w, leA a' a -> greater a (a'::w)
+| Gr1 : forall a a' w, greater a w -> greater a (a'::w).
+
+Inductive good : list A -> Prop :=
+| Gd0 : forall a w, greater a w -> good (a::w)
+| Gd1 : forall a w, good w -> good (a::w).
+
+Definition bad (l : list A) : Prop := ~ good l.
+
+Lemma greater_dec : forall a l, {greater a l} + {~ greater a l}.
+
+Lemma good_dec : forall l, {good l} + {bad l}.
+
+Fixpoint bad_subsequence (l : list A) : list A :=
+match l with 
+| nil => nil
+| a :: l' => let bl := bad_subsequence l' in 
+		match (greater_dec a bl) with 
+		| left _ => bl
+		| right _ => a :: bl
+		end
+end.
+
+Lemma bad_subsequence_is_bad : forall l, bad (bad_subsequence l).
+
+Inductive continues : list A -> list A -> Prop :=
+| Ct0 : forall a l, ~ greater a l -> continues (a::l) l.
+
+Definition wqo_acc : Prop := forall l, bad l -> Acc continues l.
+
+End Wrap. *)
 Require Export tree.
+(* tree:
+Set Implicit Arguments.
+Require Export Arith.
+Require Export List.
+  
+Section Wrap.
 
+    Unset Elimination Schemes.
+
+    Variable A : Set.
+    Variable leA : A -> A -> Prop.
+
+    Inductive tree : Set := 
+      | node : A -> list tree -> tree.
+
+Section definitions.
+
+    Fixpoint tree_size (t : tree) : nat :=
+      match t with 
+	| node _ l => S ((fix l_size (l : list tree) : nat :=
+			    match l with 
+			      | nil => 0
+			      | t' :: l' => (tree_size t') + (l_size l')
+			    end) l)
+      end.
+
+   Definition root (t : tree) : A :=
+	match t with 
+	| node a l => a
+	end.
+
+   Definition subtrees (t : tree) : list tree :=
+	match t with 
+	| node _ l => l
+	end.
+
+Inductive tree_in_forest : tree -> list tree -> Prop :=
+| tif0 : forall t t' l, In t' l -> subtree t t' -> tree_in_forest t l
+with subtree : tree -> tree -> Prop :=
+| sub0 : forall t, subtree t t
+| sub1 : forall t l ts, tree_in_forest t ts -> subtree t (node l ts). 
+
+End definitions.
+
+Section tree_rect.
+
+    Variables
+      (P : tree -> Type)
+      (Q : list tree -> Type).
+
+    Hypotheses
+      (H1 : forall x, P (node x nil))
+      (H2 : forall f v, Q v -> P (node f v))
+      (H3 : Q nil)
+      (H4 : forall t v, P t -> Q v -> Q (t :: v)).
+
+    Fixpoint tree_rect_aux t : P t :=
+      match t as t return P t with
+	| node f v => H2 f
+	  ((fix vt_rect (v : list tree) : Q v :=
+	    match v as v return Q v with
+	      | nil => H3
+	      | cons t' v' => H4 (tree_rect_aux t') (vt_rect v')
+	    end) v)
+      end.
+
+End tree_rect.
+
+Set Elimination Schemes.
+			    
+Inductive lforall (P : tree -> Type) : list tree -> Type :=
+| lforall_nil : lforall P nil
+| lforall_cons : forall a l, lforall P l -> P a -> lforall P (a::l).
+
+Lemma tree_rect : forall P : tree -> Type, 
+      (forall x, P (node x nil)) -> (forall f v, lforall P v -> P (node f v)) ->
+      forall t, P t.
+
+Lemma tree_ind : forall P : tree -> Prop, 
+	(forall x, P (node x nil)) -> (forall f v, (forall u, In u v -> P u) -> P (node f v)) ->
+	forall t, P t.
+
+Fact im_sub_tree_size : forall a l t, In t l -> (tree_size t) < (tree_size (node a l)).
+
+Fact subtree_trans : forall t t' t'', subtree t t' -> subtree t' t'' -> subtree t t''.
+
+Fact eq_tree_dec : (forall (a a' : A), {a = a'} + {a <> a'}) -> 
+forall (t t' : tree), {t = t'} + {t <> t'}.
+
+End Wrap. *)
 Require Export higman_aux.
+(* higman_aux:
+Set Implicit Arguments.
+Require Export inductive_wqo.
+Require Export tree.
+Require Export list_embeding.
 
+Section higman_aux.
 
+Variable A : Set.
+Variable leA : A -> A -> Prop.
+Hypothesis eqA_dec : forall a a' : A, {a = a'} + {a <> a'}.
+Hypothesis leA_dec : forall a a', {leA a a'} + {~ leA a a'}.
+Hypothesis leA_trans : forall a a' a'', leA a a' -> leA a' a'' -> leA a a''.
+
+Definition embeds : list A -> list A -> Prop := Embeds leA.
+Definition sublist : list (list A) -> list (list A) -> Prop := Embeds (eq (A:= list A)).
+
+Fixpoint firsts (l : list (list A)) : list A :=
+match l with 
+| nil => nil
+| w::ws => match w with 
+		| nil => nil
+		| a::w' => a :: (firsts ws)
+	   end
+end.
+
+Definition Tree := tree (list (list A) * (list A)).
+
+Fact eq_Tree_dec : forall t t' : Tree, {t = t'} + {t <> t'}.
+
+Definition root_label (t : Tree) : option A := 
+match (root t) with 
+  | (l,r) => head r
+end.
+
+Fixpoint roots_labels (ts : list Tree) : option (list A) :=  
+match ts with 
+| nil => Some nil
+| t :: ts' => match (root_label t) with 
+                  | None => None
+                  | Some a => match (roots_labels ts') with 
+                                       | Some ts'' => Some (a :: ts'')
+                                       | None => None
+                                       end
+                  end
+end.
+
+Inductive is_insert_forest : list Tree -> list A -> A -> list Tree -> Prop :=
+| is_if0 : forall w a, is_insert_forest nil w a nil
+| is_if2 : forall vs a' ts f w a f' l, 
+             is_insert_forest f w a f' ->
+             ~(leA a' a) -> 
+             is_insert_forest ((node (vs,a'::l) ts) :: f) w a ((node (vs,a'::l) ts) :: f')
+| is_if4 : forall vs a'  ts f w a t' l, 
+             leA a' a -> 
+             is_insert_tree (node (vs,a'::l) ts) w a t' -> 
+             is_insert_forest ((node (vs,a'::l) ts):: f) w a (t' :: f) 
+with is_insert_tree : Tree -> list A -> A -> Tree -> Prop :=
+| is_it1 : forall vs l ts w a rrts, 
+             roots_labels ts = Some rrts ->  
+             ~ greater leA a rrts ->
+             is_insert_tree (node (vs,l) ts) w a (node (vs,l) ((node (w::vs, a::l) ts) :: ts))
+| is_it2 : forall l ts w a rrts f', 
+             roots_labels ts = Some rrts ->  
+             greater leA a rrts ->
+             is_insert_forest ts w a f' ->
+             is_insert_tree (node l ts) w a (node l f').
+
+Inductive is_forest : list (list A) -> list Tree -> Prop :=
+| is_f0 : is_forest nil nil
+| is_f1 : forall a w ws f f',  is_forest ws f ->
+            greater leA a (bad_subsequence leA leA_dec (firsts ws)) ->
+            is_insert_forest f w a f' -> is_forest ((a::w)::ws) f' 
+| is_f2 : forall a w ws f,  is_forest ws f ->
+            ~ greater leA a (bad_subsequence leA leA_dec (firsts ws)) ->
+            is_forest ((a::w)::ws) ((node (w::ws, a::nil) f)::f).
+
+Section through_is_insert.
+
+Variable P : list (list A) -> Tree -> Prop.
+
+Definition P_on_tree (ws : list (list A)) (t : Tree) : Prop := forall t', subtree t' t -> P ws t'.
+Definition P_on_forest (ws : list (list A)) (f : list Tree) : Prop := 
+  forall t, tree_in_forest t f -> P ws t.
+
+Fact P_on_node : forall a ts ws, P_on_tree ws (node a ts) -> 
+forall t, In t ts -> P_on_tree ws t.
+
+Definition from_insert_forest (t : Tree) (a : A) : Prop := 
+forall a' l vs ts, t = node (vs, a'::l) ts -> leA a' a.
+
+Hypothesis P_added_node : forall ws w vs a l ts, from_insert_forest (node (vs,l) ts) a ->
+  P ws (node (vs,l) ts) -> 
+  P ((a::w)::ws) (node (w::vs, a::l) ts).
+
+Hypothesis P_added_node_base : forall ws w a f, P_on_forest ws f ->
+P ((a::w)::ws) (node (w::ws,a::nil) f).
+
+Hypothesis P_split : forall ws a t f, P ws (node a (t::f)) -> P ws t -> P ws (node a f).
+
+Hypothesis P_merge : forall ws a t f, P ws (node a f) -> P ws t -> P ws (node a (t::f)).
+
+Hypothesis P_add : forall w ws t, P ws t -> P (w::ws) t.
+
+Lemma P_on_split : forall ws a t f, P_on_tree ws (node a (t::f)) -> P_on_tree ws t ->
+P_on_tree ws (node a f).
+
+Lemma P_on_merge : forall ws a t f, P_on_tree ws (node a f) -> P_on_tree ws t ->
+P_on_tree ws (node a (t::f)).
+
+Lemma P_on_add : forall w ws t, P_on_tree ws t -> P_on_tree (w::ws) t.
+
+Lemma is_insert_tree_invariant : forall ws t w a t', 
+from_insert_forest t a -> 
+is_insert_tree t w a t' -> 
+P_on_tree ws t -> P_on_tree ((a::w)::ws) t'.
+
+Lemma is_insert_forest_invariant : forall ws f w a f', is_insert_forest f w a f' -> 
+P_on_forest ws f -> P_on_forest ((a::w)::ws) f'.
+
+Lemma P_on_is_forest : forall f ws, is_forest ws f -> 
+ P_on_forest ws f.
+
+End through_is_insert.
+
+Definition no_nil (t : Tree) : Prop := forall vs l ts, t = node (vs,l) ts -> l <> nil.
+
+Fact in_is_forest_no_nil : forall f ws, is_forest ws f -> 
+ forall t, tree_in_forest t f -> no_nil t.
+
+Fact is_insert_tree_same_root : forall t t' w a, 
+is_insert_tree t w a t' -> root_label t = root_label t'.
+
+Fact is_insert_forest_same_roots : forall f f' w a, 
+is_insert_forest f w a f' -> roots_labels f = roots_labels f'.
+ 
+Fact roots_labels_exist : forall ts, (forall t, In t ts ->  no_nil t) -> 
+  exists rrts, roots_labels ts = Some rrts.
+
+Fact insert_forest_aux_get : forall f a w, 
+  (forall t, In t f -> no_nil t /\ exists t', is_insert_tree t w a t') ->
+  exists f', is_insert_forest f w a f'.
+
+Fact insert_tree_get : forall t w a, 
+  (forall t', subtree t' t -> no_nil t') ->
+  exists t', is_insert_tree t w a t'.
+
+Fact insert_forest_get : forall f a w ws, is_forest ws f -> exists f', is_insert_forest f w a f'.
+
+Fact nil_forest : forall ws, is_forest ws nil -> ws = nil.
+
+Fact roots_labels_greater_get_tree : 
+forall ts rrts, roots_labels ts = Some rrts ->
+forall a, greater leA a rrts -> exists vs, exists b, exists bs, exists ts', 
+leA b a /\ In (node (vs, b::bs) ts') ts.
+
+Fact is_insert_tree_neq : forall t, 
+forall w a t', is_insert_tree t w a t' -> t <> t'.
+
+Lemma is_insert_forest_neq_aux : forall f a w f', 
+(exists vs, exists a', exists l, exists ts, In (node (vs,a'::l) ts) f /\ leA a' a) ->
+is_insert_forest f w a f' -> f <> f'.
+
+Fact is_insert_forest_neq : forall f ws, is_forest ws f ->
+   forall a w f', greater leA a (bad_subsequence leA leA_dec (firsts ws)) ->
+   is_insert_forest f w a f' -> f <> f'.
+
+End higman_aux. *)
 
 Section higman.
 
-
-
 Variable A : Set.
-
 Variable leA : A -> A -> Prop.
-
 Hypothesis eqA_dec : forall a a' : A, {a = a'} + {a <> a'}.
-
 Hypothesis leA_dec : forall a a', {leA a a'} + {~ leA a a'}.
-
 Hypothesis leA_trans : forall a a' a'', leA a a' -> leA a' a'' -> leA a a''.
 
-
-
 Definition embeds : list A -> list A -> Prop := (higman_aux.embeds leA).
-
 Definition sublist : list (list A) -> list (list A) -> Prop := (higman_aux.sublist (A:=A)).
-
 Definition Tree := (higman_aux.Tree A).
-
 Definition is_forest := (higman_aux.is_forest leA leA_dec).
-
 Definition is_insert_forest := (higman_aux.is_insert_forest leA).
-
 Definition is_insert_tree := (higman_aux.is_insert_tree leA).
 
-
-
 Definition sub_seq_in_lbl (ws : list (list A)) (t : Tree) : Prop := 
-
 forall vs l ts, t = node (vs,l) ts -> sublist (merge_label vs l) ws.
 
-
-
 Lemma sub_seq_in_forest : forall ws f,
-
 is_forest ws f -> P_on_forest sub_seq_in_lbl ws f.
-
 Proof.
-
 intros ws f Hws.
-
 apply P_on_is_forest with leA leA_dec; intros.
 
-
-
 unfold sub_seq_in_lbl; simpl; intros.
-
 inversion H1; subst.
-
 simpl.
-
 constructor 3; trivial.
-
 unfold sub_seq_in_lbl in H0; apply H0 with ts0; trivial.
 
-
-
 unfold sub_seq_in_lbl; simpl; intros.
-
 inversion H0; subst; destruct ws0; simpl; apply sublist_refl with (A:=A).
 
-
-
 unfold sub_seq_in_lbl; simpl; intros.
-
 inversion H1; subst.
-
 unfold sub_seq_in_lbl in H; apply H with (t::ts); trivial.
-
  
-
 unfold sub_seq_in_lbl; simpl; intros.
-
 inversion H1; subst.
-
 unfold sub_seq_in_lbl in H; apply H with f0; trivial.
 
-
-
 unfold sub_seq_in_lbl in *; simpl in *.
-
 intros ws' l ts Ht; constructor 2; apply (H ws' l ts Ht).
-
 apply Hws.
-
 Qed.
-
-
 
 Definition sorted_in_label (t : Tree) : Prop := 
-
 forall vs l ts, t = node (vs, l) ts -> sorted leA l.
 
-
-
 Lemma sorted_in_forest : forall ws f, 
-
 is_forest ws f -> forall t, tree_in_forest t f -> sorted_in_label t.
-
 Proof.
-
 intros ws f Hf.
-
 assert (H : P_on_forest (fun (_:list (list A)) => sorted_in_label) ws f).
-
 2 : intros t Ht; apply (H t Ht); trivial.
-
 apply P_on_is_forest with leA leA_dec; intros; trivial.
 
-
-
 destruct l as [|a' l].
-
 	
-
 intros vs' l' ts' H'; inversion H'; subst.
-
 constructor 2.
-
 	
-
 intros vs' l' ts' H'; inversion H'; subst.
-
 constructor 3.
-
 apply (H a' l vs ts'); trivial.
-
 apply (H0 vs (a'::l) ts'); trivial.
 
-
-
 intros vs' l' ts' H'; inversion H'; subst.
-
 constructor 2.
 
-
-
 intros vs' l' ts' H'; inversion H'; subst.
-
 apply (H vs' l' (t::ts')); trivial.
 
-
-
 intros vs' l' ts' H'; inversion H'; subst.
-
 apply (H vs' l' f0); trivial.
-
 Qed.
-
-
 
 Definition bad_seq_in_lbl (t : Tree) : Prop := 
-
 forall vs l ts, t = node (vs,l) ts -> bad embeds vs.
 
-
-
 Lemma bad_seqs_in_forest : forall ws, bad embeds ws -> 
-
   forall f, is_forest ws f ->  forall t, tree_in_forest t f -> bad_seq_in_lbl t.
-
 Proof.
-
 intros ws Hws f Hf t Ht vs l ts H.
-
 generalize (sorted_in_forest Hf Ht H); intro H2.
-
 assert (H' : bad embeds (merge_label vs l)).
-
 apply (bad_sublist (leA:=leA) (sub_seq_in_forest Hf Ht H)); trivial.
-
 intro HF; apply H'.
-
 apply good_merge with (leA:=leA); trivial.
-
 Qed.
-
-
 
 Definition ltF : list Tree -> list Tree -> Prop := fun f' => fun f => exists w, exists a,
-
 is_insert_forest f w a f'  /\ (forall t, tree_in_forest t f' -> bad_seq_in_lbl t) /\ f<>f'.
 
-
-
 Fact acc_ltF_nil : Acc ltF nil.
-
 constructor; intros f Hf.
-
 elim Hf; clear Hf; intros w H; elim H; clear H; intros a H; 
-
 elim H; clear H; intros H1 H; elim H; clear H; intros H2 H3.
-
 inversion H1; subst.
-
 elim H3; trivial.
-
 Qed.
-
-
 
 Fact acc_ltF_cons : forall f t, Acc ltF f -> Acc ltF (t::nil) -> Acc ltF (t::f).
-
 Proof.
-
 intros f t Acc_f; generalize t; clear t; induction Acc_f as [f acc_f IHf].
-
 assert (H : forall f', Acc ltF f' -> forall t, f' = t::nil -> Acc ltF (t::f)).
-
 2:intros; apply (H (t::nil)); trivial.
-
 intros f' Hf'; induction Hf' as [f' acc_f' IHf'].
-
 intros; constructor.
-
 intros f'' H2.
-
 elim H2; clear H2; intros w H2; elim H2; clear H2; intros a H2.
-
 elim H2; clear H2; intros H2 H3; elim H3; clear H3; intros H3 H4.
-
 inversion H2; subst.
 
-
-
 apply IHf; trivial.
-
 exists w; exists a; repeat split; trivial.
-
 intros t Ht; apply (H3 t); trivial.
-
 inversion Ht; subst.
-
 constructor 1 with t'; trivial; try right; trivial.
-
 intro; subst; apply H4; trivial.
-
 constructor; apply acc_f'; trivial.
 
-
-
 apply IHf' with (t'::nil); trivial.
-
 exists w; exists a; repeat split; trivial.
-
 apply (is_if4 (leA := leA) (vs:=vs) (a':= a') (ts:=ts)); trivial.
-
 intros u Hu; inversion Hu; subst.
-
 apply (H3 u).
-
 elim H; clear H; intro H.
-
 subst t'0; constructor 1 with t'; try left; trivial.
-
 inversion H.
-
 intro H; subst; apply H4; inversion H; trivial.
-
 Qed.
-
-
 
 Lemma is_forest_roots_labels : forall ws f, is_forest ws f -> 
-
 roots_labels f = Some (bad_subsequence leA leA_dec (firsts ws)).
-
 Proof.
-
 intros ws f Hws; induction Hws; simpl; trivial.
-
 elim (greater_dec leA leA_dec a (bad_subsequence leA leA_dec (firsts ws))); intro case_ws.
-
 rewrite <- IHHws.
-
 symmetry; generalize H0; apply is_insert_forest_same_roots.
-
 elim case_ws; trivial.
-
 rewrite IHHws; simpl.
-
 elim (greater_dec leA leA_dec a (bad_subsequence leA leA_dec (firsts ws))); intro case_ws.
-
 elim H; trivial.
-
 trivial.
-
 Qed.
-
-
 
 Lemma acc_ltF_single : forall ws, Acc (continues embeds) ws ->
-
   forall l a bs, Acc (continues leA) bs ->
-
   forall ts, Acc ltF ts -> 
-
   forall t, root t = (ws,a::l) /\ subtrees t = ts /\ Some bs = roots_labels ts -> 
-
   Acc ltF (t::nil).
-
 Proof.
-
 intros ws acc_ws; induction acc_ws as [ws acc_ws IHws]; intros l a.
-
 intros bs acc_bs; induction acc_bs as [bs acc_bs IHbs].
-
 intros ts acc_ts; induction acc_ts as [ts acc_ts IHts].
-
 intros t Ht; elim Ht; clear Ht; intros H1 H2; elim H2; clear H2; intros H2 H3.
-
 constructor; intros f Hf.
-
 elim Hf; clear Hf; intros wf Hf.
-
 elim Hf; clear Hf; intros af Hf.
-
 elim Hf; clear Hf; intros Hf1 Hf2.
-
 elim Hf2; clear Hf2; intros Hf2 Hf3.
-
 destruct f as [|t' f].
 
-
-
 inversion Hf1.
-
-
 
 cut (f = nil).
-
 intro; subst f.
-
 inversion Hf1.
 
-
-
 subst f w a0 t' t f'; clear H7.
-
 elim Hf3; trivial.
 
-
-
 subst w a0 t' t f.
-
 inversion H8; subst.
-
 	
-
 apply IHbs with (y := af::bs) (ts := node (wf :: vs, af :: a' :: l) ts0 :: ts0); trivial.
-
 constructor.
-
 simpl in H3.
-
 rewrite H10 in H3; inversion H3; trivial.
-
 apply acc_ltF_cons; trivial.
-
 constructor; simpl in acc_ts; trivial.
-
 simpl in H1; inversion H1; subst.
-
 apply (IHws (wf::ws)) with (ts:= ts0) (bs := bs) (a:=af) (l:=a::l); trivial.
 
-
-
 constructor; trivial.
-
 intro HF; assert (Hbil : bad_seq_in_lbl (node (wf :: ws, af :: a :: l) ts0)).
-
 apply (Hf2 (node (wf :: ws, af :: a :: l) ts0)); simpl.
-
 constructor 1 with (node (ws, a :: l) (node (wf :: ws, af :: a :: l) ts0 :: ts0)); try left; trivial.
-
 constructor 2.
-
 constructor 1 with (node (wf :: ws, af :: a :: l) ts0); constructor; trivial.
-
 	
-
 apply (Hbil (wf::ws) (af::a::l) ts0); trivial.
-
 constructor; trivial.
-
 constructor; apply acc_bs.
-
 constructor; apply acc_ts.
-
 simpl in *; repeat split; trivial.
-
 inversion H1; subst; trivial.
-
 repeat split; simpl; trivial.
-
 simpl in H3; rewrite <- H3; simpl; trivial.
 
-
-
 apply IHts with (y := f'); trivial.
-
 exists wf; exists af.
-
 repeat split; simpl; trivial.
-
 intros u Hu; apply (Hf2 u); inversion Hu; subst.
-
 constructor 1 with (node (vs, a' :: l0) f'); try left; trivial.
-
 constructor 2.
-
 constructor 1 with t'; trivial.
-
 intro; subst; apply Hf3; trivial.
-
 repeat split; simpl; trivial.
-
 simpl in H3; rewrite H3.
-
 generalize H11; apply is_insert_forest_same_roots.
 
-
-
 destruct f; trivial.
-
 inversion Hf1; subst.
-
 inversion H7.
-
 Qed.
 
-
-
 Lemma higman_aux : 
-
   forall bs, Acc (continues leA) bs -> 
-
   forall f, Acc ltF f -> 
-
   forall ws, bs = bad_subsequence leA leA_dec (firsts ws) /\ is_forest ws f -> 
-
   bad embeds ws -> Acc (continues embeds) ws.
-
 Proof.
-
 intros bs acc_bs; induction acc_bs as [bs acc_bs IHbs].
-
 intros f acc_f; induction acc_f as [f acc_f IHf].
-
 intros ws H; elim H; clear H; intros H1 H2 H3.
-
 constructor; intros ws' Hws'.
-
 Unset Regular Subst Tactic.
-
 inversion Hws'; subst.
-
 Set Regular Subst Tactic.
-
 induction a as [| a w IHw].
 
-
-
 constructor; intros y Hy; inversion Hy; subst.
-
 elim H0; constructor 1. 
-
 unfold embeds; apply (nil_embeds).
-
-
 
 elim (greater_dec leA leA_dec a (bad_subsequence leA leA_dec (firsts ws))); intro case_a_bs.
 
-
-
 elim (insert_forest_get a w H2); intros f' Hf'.
-
 apply IHf with f'; trivial.
-
 exists w; exists a; repeat split; trivial.
-
 apply bad_seqs_in_forest with ((a::w)::ws); trivial.
-
 intro HF; inversion HF; subst.
-
 apply H; trivial.
-
 apply H3; trivial.
-
 constructor 2 with f; trivial.
-
 apply (is_insert_forest_neq (leA:=leA) (leA_dec:=leA_dec)) with ws a w; trivial.
-
 simpl; elim (greater_dec leA leA_dec a (bad_subsequence leA leA_dec (firsts ws))); intro c.
-
 split; trivial.
-
 constructor 2 with f; trivial.
-
 elim c; trivial.
-
 intro HF; inversion HF; subst.
-
 apply H; trivial.
-
 apply H3; trivial.
-
-
 
 apply IHbs with (y := a ::(bad_subsequence leA leA_dec (firsts ws)))
-
 		(f := (node (w::ws, a::nil) f)::f); simpl; trivial.
-
 constructor; trivial.
-
 apply acc_ltF_cons.
-
 constructor; apply acc_f.
-
 apply acc_ltF_single with (w::ws) (nil (A:=A)) a (bad_subsequence leA leA_dec (firsts ws)) f; trivial.
-
 apply IHw; trivial.
-
 intros HF; apply H; generalize HF; apply (greater_remove_letter (leA:=leA)).
-
 constructor.
-
 intros HF; apply H; generalize HF; apply (greater_remove_letter (leA:=leA)).
-
 constructor; apply acc_bs.
-
 constructor; apply acc_f.
-
 repeat split; trivial.
-
 symmetry; apply is_forest_roots_labels; trivial.
-
 elim (greater_dec leA leA_dec a (bad_subsequence leA leA_dec (firsts ws))); intro case'; 
-
 	[elim case_a_bs | idtac]; trivial.
-
 split; trivial.
-
 constructor 3; trivial.
-
 intro HF; inversion HF; subst.
-
 apply H; trivial.
-
 apply H3; trivial.
-
 Qed.
-
-
 
 Theorem Higman : 
-
   Acc (continues leA) nil -> Acc (continues embeds) nil.
-
 Proof.
-
 intro wqo_leA; apply (higman_aux wqo_leA) with (f:=nil (A := Tree)).
-
 apply acc_ltF_nil.
-
 split; simpl; trivial.
-
 unfold is_forest; constructor 1 with (leA := leA) (leA_dec := leA_dec).
-
 intro HF; inversion HF; trivial.
-
 Qed.
 
-
-
 End higman.
-

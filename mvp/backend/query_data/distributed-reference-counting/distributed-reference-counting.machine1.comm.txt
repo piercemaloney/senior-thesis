@@ -1,146 +1,673 @@
 
-
 Require Export reduce.
+(* reduce:
+Require Export Bool. 
+Require Export fifo. 
 
+Unset Standard Proposition Elimination Names.
+
+Section REDUCE.
+
+Variable E : Set.
+
+Variable f : E -> Z.
+
+Fixpoint reduce (q : queue E) : Z :=
+  match q with
+  | empty => 0%Z
+  | input d q' => (reduce q' + f d)%Z
+  end.
+
+Hypothesis positive_function : forall a : E, (f a > 0)%Z.
+
+Lemma sum_positive :
+ forall a b : Z, (a >= 0)%Z -> (b > 0)%Z -> (a + b >= 0)%Z.
+
+Lemma reduce_nil : reduce (empty E) = 0%Z.
+
+Lemma reduce_null_fun :
+ forall q : queue E, (forall d : E, f d = 0%Z) -> reduce q = 0%Z.
+
+Lemma reduce_positive : forall q : queue E, (reduce q >= 0)%Z.
+
+Lemma reduce_append :
+ forall (q1 : queue E) (d : E) (q2 : queue E),
+ reduce (append E q1 (input E d q2)) = (reduce (append E q1 q2) + f d)%Z.
+
+Lemma reduce_append_nil1 :
+ forall (d : E) (q2 : queue E), reduce (input E d q2) = (reduce q2 + f d)%Z.
+
+Lemma reduce_append_nil2 :
+ forall (q1 : queue E) (d : E),
+ reduce (append E q1 (input E d (empty E))) = (reduce q1 + f d)%Z.
+
+Lemma reduce_append_nil2_symmetric :
+ forall (q1 : queue E) (d : E),
+ reduce q1 = (reduce (append E q1 (input E d (empty E))) - f d)%Z.
+
+End REDUCE.
+
+Section DISJOINT.
+
+Variable E : Set.
+
+Definition fun_or (pred1 pred2 : E -> bool) (a : E) := pred1 a || pred2 a.
+
+Definition fun_sum (f1 f2 : E -> Z) (a : E) := (f1 a + f2 a)%Z.
+
+Definition fun_minus (f1 f2 : E -> Z) (a : E) := (f1 a - f2 a)%Z.
+
+Variable f : E -> Z.
+
+Lemma disjoint_reduce :
+ forall (f1 f2 : E -> Z) (q : queue E),
+ reduce E (fun_sum f1 f2) q = (reduce E f1 q + reduce E f2 q)%Z.
+
+Lemma disjoint_reduce3 :
+ forall (f1 f2 : E -> Z) (q : queue E),
+ reduce E (fun_minus f1 f2) q = (reduce E f1 q - reduce E f2 q)%Z.
+
+Lemma reduce_simpl :
+ forall (f1 f2 : E -> Z) (q : queue E),
+ (forall d : E, f1 d = f2 d) -> reduce E f1 q = reduce E f2 q.
+
+End DISJOINT.
+
+Section REDUCE_MORE.
+
+Variable data : Set.
+Hypothesis eq_data_dec : eq_dec data.
+
+Variable f : data -> Z.
+
+Lemma reduce_first_out :
+ forall (q : queue data) (m : data),
+ first data q = value data m ->
+ reduce data f (first_out data q) = (reduce data f q - f m)%Z.
+
+End REDUCE_MORE.
+
+Section reduce_pos.
+
+Variable E : Set.
+
+Variable f : E -> Z.
+Hypothesis positive_function : forall a : E, (f a >= 0)%Z.
+
+Lemma reduce_positive_or_null : forall q : queue E, (reduce E f q >= 0)%Z.
+
+End reduce_pos.
+
+Section reduce_strictly_pos.
+
+Variable E : Set.
+
+Variable f : E -> Z.
+Hypothesis positive_function : forall a : E, (f a >= 0)%Z.
+
+Hypothesis eq_E_dec : eq_dec E.
+
+Lemma reduce_in_queue_strictly_positive :
+ forall (x : E) (q : queue E),
+ (f x > 0)%Z -> In_queue E x q -> (reduce E f q > 0)%Z.
+End reduce_strictly_pos.
+
+Section reduce_in_q_null.
+Variable E : Set.
+
+Variable f : E -> Z.
+
+Hypothesis eq_E_dec : eq_dec E.
+
+Lemma reduce_in_queue_null :
+ forall q : queue E,
+ (forall x : E, In_queue E x q -> f x = 0%Z) -> reduce E f q = 0%Z.
+
+End reduce_in_q_null. *)
 Require Export DistributedReferenceCounting.machine1.cardinal.
-
 Require Export sigma2.
+(* sigma2:
+Require Import List.
+Require Export fifo.
+Require Export table. 
+Require Export reduce. 
 
+Unset Standard Proposition Elimination Names.
+
+Section TABLE.
+
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS : list Site.
+
+Variable Data : Set.
+Let Table := Site -> Data.
+
+Variable t : Table.
+Variable s0 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Data -> Z.
+
+Definition sigma_table (st : Table) :=
+  sigma Site LS (fun s : Site => f s (st s)).
+
+Definition update_table := change_x0 Site Data eq_site_dec t s0 d0.
+
+Definition sigma_but_table (st : Table) :=
+  sigma_but Site s0 eq_site_dec LS (fun s : Site => f s (st s)).
+
+End TABLE.
+
+Section SIGMA_TABLE.
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS : list Site.
+
+Variable Data : Set.
+Let Table := Site -> Data.
+
+Variable t : Table.
+Variable s0 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Data -> Z.
+
+Lemma sigma_table_change :
+ only_once Site eq_site_dec s0 LS ->
+ sigma_table Site LS Data f (update_table Site eq_site_dec Data t s0 d0) =
+ (sigma_table Site LS Data f t - f s0 (t s0) + f s0 d0)%Z.
+
+Lemma sigma_table_change_aux :
+ only_once Site eq_site_dec s0 LS ->
+ (sigma_table Site LS Data f (update_table Site eq_site_dec Data t s0 d0) +
+  f s0 (t s0) - f s0 d0)%Z = sigma_table Site LS Data f t.
+
+Variable f1 : Site -> Data -> Z.
+Variable f2 : Site -> Data -> Z.
+
+Definition fun_sum_site (f1 f2 : Site -> Data -> Z) 
+  (s : Site) (a : Data) := (f1 s a + f2 s a)%Z.
+
+Definition fun_minus_site (f1 f2 : Site -> Data -> Z) 
+  (s : Site) (a : Data) := (f1 s a - f2 s a)%Z.
+
+Lemma sigma_disjoint :
+ sigma_table Site LS Data (fun_sum_site f1 f2) t =
+ (sigma_table Site LS Data f1 t + sigma_table Site LS Data f2 t)%Z.
+
+Lemma sigma_disjoint2 :
+ sigma_table Site LS Data (fun_minus_site f1 f2) t =
+ (sigma_table Site LS Data f1 t - sigma_table Site LS Data f2 t)%Z.
+
+Definition Z_id (s : Site) (x : Z) := x.
+
+Lemma Z_id_reduce : forall (s : Site) (x : Z), Z_id s x = x.
+
+Lemma sigma_same_table :
+ forall t1 t2 : Site -> Z,
+ sigma_table Site LS Z Z_id (fun_sum Site t1 t2) =
+ (sigma_table Site LS Z Z_id t1 + sigma_table Site LS Z Z_id t2)%Z.
+
+Lemma sigma_same_table2 :
+ forall t1 t2 : Site -> Z,
+ sigma_table Site LS Z Z_id (fun_minus Site t1 t2) =
+ (sigma_table Site LS Z Z_id t1 - sigma_table Site LS Z Z_id t2)%Z.
+
+Lemma sigma_table_simpl :
+ forall t1 t2 : Site -> Data,
+ t1 = t2 -> sigma_table Site LS Data f t1 = sigma_table Site LS Data f t2.
+
+Lemma sigma_table_simpl_property :
+ forall (t1 t2 : Site -> Data) (P : (Site -> Data) -> Site -> Set),
+ ((forall d : Site, P t2 d) -> t1 = t2) ->
+ (forall d : Site, P t2 d) ->
+ sigma_table Site LS Data f t1 = sigma_table Site LS Data f t2.
+
+Lemma sigma_table_simpl2 :
+ forall (Data : Set) (t : Site -> Data) (f1 f2 : Site -> Data -> Z),
+ (forall (s : Site) (d : Data), f1 s d = f2 s d) ->
+ sigma_table Site LS Data f1 t = sigma_table Site LS Data f2 t.
+
+Lemma sigma_table_simpl2_partial :
+ forall (Data : Set) (t : Site -> Data) (f1 f2 : Site -> Data -> Z),
+ (forall (s : Site) (d : Data), t s = d -> f1 s d = f2 s d) ->
+ sigma_table Site LS Data f1 t = sigma_table Site LS Data f2 t.
+
+Lemma sigma_table_simpl2_property :
+ forall (Data : Set) (t : Site -> Data) (P : (Site -> Data) -> Site -> Set)
+   (f1 f2 : Site -> Data -> Z),
+ (forall (s : Site) (d : Data), P t s -> f1 s d = f2 s d) ->
+ (forall s : Site, P t s) ->
+ sigma_table Site LS Data f1 t = sigma_table Site LS Data f2 t.
+
+End SIGMA_TABLE.
+
+Section SIGMA_TABLE2.
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+
+Variable t : Table2.
+Variable s0 s1 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Site -> Data -> Z.
+
+Definition sigma2_table (t : Table2) :=
+  sigma_table Site LS1 Z (Z_id Site)
+    (fun s1 : Site => sigma_table Site LS2 Data (f s1) (t s1)).
+
+Definition update2_table :=
+  change_x0y0 Site Site Data eq_site_dec eq_site_dec t s0 s1 d0.
+
+End SIGMA_TABLE2.
+
+Section SIGMA2_BUT_TABLE.
+
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table := Site -> Data.
+Let Table2 := Site -> Site -> Data.
+
+Variable f1 : Site -> Data -> Z.
+Variable s0 : Site.
+Variable s1 : Site.
+
+Variable t : Table2.
+Variable f : Site -> Site -> Data -> Z.
+
+Definition sigma2_but_table (t : Table2) :=
+  sigma_table Site LS1 Z (Z_id Site)
+    (fun s : Site =>
+     if eq_site_dec s s0
+     then  sigma_but_table Site eq_site_dec LS2 Data s1 (f s) (t s)
+     else  sigma_table Site LS2 Data (f s) (t s)).
+
+Definition new_sigma2_but_table (t : Table2) :=
+  sigma2_table Site LS1 LS2 Data
+    (fun (s2 s3 : Site) (d : Data) =>
+     if eq_site_dec s2 s0
+     then
+       if eq_site_dec s3 s1 then  0%Z else  f s2 s3 d
+     else  f s2 s3 d) t.
+
+End SIGMA2_BUT_TABLE.
+
+Section SIGMA_TABLE3.
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+
+Variable t : Table2.
+
+Variable s0 s1 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Site -> Data -> Z.
+
+Variable f1 : Site -> Site -> Data -> Z.
+Variable f2 : Site -> Site -> Data -> Z.
+
+Definition fun_sum_site2 (f1 f2 : Site -> Site -> Data -> Z) 
+  (s1 : Site) :=
+  fun_sum_site Site Data (fun (s2 : Site) (a : Data) => f1 s1 s2 a)
+    (fun (s2 : Site) (a : Data) => f2 s1 s2 a).
+  
+Definition fun_minus_site2 (f1 f2 : Site -> Site -> Data -> Z) 
+  (s1 : Site) :=
+  fun_minus_site Site Data (fun (s2 : Site) (a : Data) => f1 s1 s2 a)
+    (fun (s2 : Site) (a : Data) => f2 s1 s2 a).
+  
+Lemma sigma2_disjoint :
+ sigma2_table Site LS1 LS2 Data (fun_sum_site2 f1 f2) t =
+ (sigma2_table Site LS1 LS2 Data f1 t + sigma2_table Site LS1 LS2 Data f2 t)%Z.
+
+Lemma sigma2_disjoint2 :
+ sigma2_table Site LS1 LS2 Data (fun_minus_site2 f1 f2) t =
+ (sigma2_table Site LS1 LS2 Data f1 t - sigma2_table Site LS1 LS2 Data f2 t)%Z.
+
+Definition a_fun (s : Site) := f s1 s (t s1 s).
+
+Remark sigma2_change_1 :
+ forall (l : list Site) (n0 : Z),
+ only_once Site eq_site_dec s0 l ->
+ (sigma Site l (change_x0 Site Z eq_site_dec a_fun s0 n0) + a_fun s0 - n0)%Z =
+ sigma Site l a_fun.
+
+Remark add_reduce1 :
+ forall x y z a b c : Z, (x + y - z - a + z)%Z = (x + y - a)%Z.
+
+Remark add_reduce2 :
+ forall x y z a b c : Z,
+ (x + y)%Z = (z + a - b + c)%Z -> (x + y)%Z = (a + z - b + c)%Z.
+
+Lemma sigma_table2_change :
+ only_once Site eq_site_dec s0 LS1 ->
+ only_once Site eq_site_dec s1 LS2 ->
+ sigma2_table Site LS1 LS2 Data f
+   (update2_table Site eq_site_dec Data t s0 s1 d0) =
+ (sigma2_table Site LS1 LS2 Data f t - f s0 s1 (t s0 s1) + f s0 s1 d0)%Z.
+
+Lemma sigma2_table_simpl :
+ forall (t : Site -> Site -> Data) (f1 f2 : Site -> Site -> Data -> Z),
+ (forall (s1 s2 : Site) (d : Data), f1 s1 s2 d = f2 s1 s2 d) ->
+ sigma2_table Site LS1 LS2 Data f1 t = sigma2_table Site LS1 LS2 Data f2 t.
+
+Lemma sigma2_table_simpl_partial :
+ forall (t : Site -> Site -> Data) (f1 f2 : Site -> Site -> Data -> Z),
+ (forall (s1 s2 : Site) (d : Data), t s1 s2 = d -> f1 s1 s2 d = f2 s1 s2 d) ->
+ sigma2_table Site LS1 LS2 Data f1 t = sigma2_table Site LS1 LS2 Data f2 t.
+
+Lemma sigma2_table_simpl_property :
+ forall (t : Site -> Site -> Data)
+   (P : (Site -> Site -> Data) -> Site -> Site -> Set)
+   (f1 f2 : Site -> Site -> Data -> Z),
+ (forall (s1 s2 : Site) (d : Data), P t s1 s2 -> f1 s1 s2 d = f2 s1 s2 d) ->
+ (forall s1 s2 : Site, P t s1 s2) ->
+ sigma2_table Site LS1 LS2 Data f1 t = sigma2_table Site LS1 LS2 Data f2 t.
+
+End SIGMA_TABLE3.
+
+Section SIGMA2_BUT.
+
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS0 : list Site.
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+
+Variable t : Table2.
+Variable s0 s1 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Site -> Site -> Data -> Z.
+
+Lemma sigma2_sigma_but :
+ sigma_but Site s0 eq_site_dec LS0
+   (fun s : Site => sigma2_table Site LS1 LS2 Data (f s) t) =
+ sigma2_table Site LS1 LS2 Data
+   (fun (s1 s2 : Site) (d : Data) =>
+    sigma_but Site s0 eq_site_dec LS0 (fun s : Site => f s s1 s2 d)) t.
+
+End SIGMA2_BUT.
+
+Section SIGMA_BUT.
+
+Variable Site : Set. 
+
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS0 : list Site.
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table := Site -> Data.
+
+Variable t : Table.
+Variable s s0 s1 owner : Site.
+Variable s2 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Site -> Site -> Data -> Z.
+
+Variable pred : Data -> bool.
+
+Variable
+  decidable_predicate : forall a : Data, {pred a = true} + {pred a = false}.
+
+Lemma decidable_pred_pred :
+ forall a : Data,
+ {fun_or Data pred pred a = true} + {fun_or Data pred pred a = false}.
+
+Lemma permute_sigma_reduce :
+ forall q : queue Data,
+ sigma Site LS0 (fun s : Site => reduce Data (f s s1 s2) q) =
+ reduce Data (fun d : Data => sigma Site LS0 (fun s : Site => f s s1 s2 d)) q.
+
+Lemma permute_sigma_reduce2 :
+ forall q : queue Data,
+ sigma Site LS0 (fun _ : Site => reduce Data (f s s1 s2) q) =
+ reduce Data (fun d : Data => sigma Site LS0 (fun _ : Site => f s s1 s2 d)) q.
+
+Lemma permute_sigma_but_reduce :
+ forall q : queue Data,
+ sigma_but Site owner eq_site_dec LS0
+   (fun s : Site => reduce Data (f s s1 s2) q) =
+ reduce Data
+   (fun d : Data =>
+    sigma_but Site owner eq_site_dec LS0 (fun s : Site => f s s1 s2 d)) q.
+
+Lemma sigma_but_null :
+ forall (f : Site -> Z) (l : list Site),
+ (forall s : Site, s <> owner -> f s = 0%Z) ->
+ sigma_but Site owner eq_site_dec l f = 0%Z.
+
+Lemma sigma_but_simpl :
+ forall (f1 f2 : Site -> Z) (l : list Site),
+ (forall s : Site, s <> owner -> f1 s = f2 s) ->
+ sigma_but Site owner eq_site_dec l f1 =
+ sigma_but Site owner eq_site_dec l f2.
+
+End SIGMA_BUT.
+
+Section positive.
+
+Variable E : Set.
+
+Hypothesis eq_E_dec : eq_dec E.
+
+Lemma sigma_strictly_positive :
+ forall (f : E -> Z) (x : E) (l : list E),
+ In x l -> (forall y : E, (f y >= 0)%Z) -> (f x > 0)%Z -> (sigma E l f > 0)%Z.
+
+Variable x0 : E.
+
+Lemma sigma_but_strictly_positive :
+ forall (f : E -> Z) (x : E) (l : list E),
+ In x l ->
+ x <> x0 ->
+ (forall y : E, (f y >= 0)%Z) ->
+ (f x > 0)%Z -> (sigma_but E x0 eq_E_dec l f > 0)%Z.
+
+End positive.
+
+Section positive2.
+
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+
+Variable t : Table2.
+Variable s0 s1 : Site.
+Variable d0 : Data.
+
+Variable f : Site -> Site -> Data -> Z.
+
+Lemma sigma2_strictly_positive :
+ forall (x y : Site) (l1 l2 : list Site),
+ In x l1 ->
+ In y l2 ->
+ (forall x' y' : Site, (f x' y' (t x' y') >= 0)%Z) ->
+ (f x y (t x y) > 0)%Z -> (sigma2_table Site l1 l2 Data f t > 0)%Z.
+
+End positive2.
+
+Section BUT_XY.
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+Variable f : Site -> Site -> Data -> Z.
+
+Remark add_reduce2_1 :
+ forall x y z a : Z, x = a -> (x + (y + z))%Z = (a + y + z)%Z.
+
+Remark add_reduce3 :
+ forall x y z a : Z, x = a -> y = z -> (x + y)%Z = (a + z)%Z.
+
+Lemma sigma2_sigma2_but_x_y :
+ forall (s0 s1 : Site) (t : Table2),
+ only_once Site eq_site_dec s0 LS1 ->
+ only_once Site eq_site_dec s1 LS2 ->
+ sigma2_table Site LS1 LS2 Data f t =
+ (sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 f t +
+  f s0 s1 (t s0 s1))%Z.
+
+Lemma sigma2_but_simpl :
+ forall (s0 s1 : Site) (t : Table2) (f g : Site -> Site -> Data -> Z),
+ (forall x y : Site, ~ (x = s0 /\ y = s1) -> f x y (t x y) = g x y (t x y)) ->
+ only_once Site eq_site_dec s0 LS1 ->
+ only_once Site eq_site_dec s1 LS2 ->
+ sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 f t =
+ sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 g t.
+
+Lemma sigma2_but_simpl2 :
+ forall (s0 s1 : Site) (t1 t2 : Table2) (f : Site -> Site -> Data -> Z),
+ (forall x y : Site, ~ (x = s0 /\ y = s1) -> f x y (t1 x y) = f x y (t2 x y)) ->
+ only_once Site eq_site_dec s0 LS1 ->
+ only_once Site eq_site_dec s1 LS2 ->
+ sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 f t1 =
+ sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 f t2.
+
+End BUT_XY.
+
+Section NEW_BUT_XY.
+
+Variable Site : Set. 
+Hypothesis eq_site_dec : eq_dec Site. 
+Variable LS1 : list Site.
+Variable LS2 : list Site.
+
+Variable Data : Set.
+Let Table2 := Site -> Site -> Data.
+Variable f : Site -> Site -> Data -> Z.
+
+Remark add_reduce17 : forall x y a : Z, x = y -> (x + a)%Z = (y + a)%Z.
+
+Remark add_reduce18 : forall x y a : Z, x = y -> a = 0%Z -> x = (y + a)%Z.
+
+Lemma new_sigma2_sigma2_but_x_y :
+ forall (s0 s1 : Site) (Data : Set) (f : Site -> Site -> Data -> Z)
+   (t : Site -> Site -> Data),
+ only_once Site eq_site_dec s0 LS1 ->
+ only_once Site eq_site_dec s1 LS2 ->
+ sigma2_table Site LS1 LS2 Data f t =
+ (new_sigma2_but_table Site eq_site_dec LS1 LS2 Data s0 s1 f t +
+  f s0 s1 (t s0 s1))%Z.
+
+End NEW_BUT_XY. *)
 Require Export sum.
+(* sum:
+Require Export reduce.
+Require Export table.
+Require Export abstract_machine.
 
+Section SUM_REDUCE.
 
+Variable Data : Set.
+
+Variable s0 : Site.
+
+Let Bag_of_message := Bag_of_Data Data.
+
+Variable f : Data -> Z.
+
+Definition sigma_reduce (bom : Bag_of_message) :=
+  sigma Site LS (fun si : Site => reduce Data f (bom s0 si)). 
+
+Lemma sigma_reduce_pos :
+ forall (s0 s1 : Site) (bom : Bag_of_message),
+ (forall m : Data, (f m > 0)%Z) -> (sigma_reduce bom >= 0)%Z.
+
+End SUM_REDUCE. *)
 
 Section CARDINAL_EFFECT.
 
-
-
 Let Bag_of_message := Bag_of_Data Message.
-
-
 
 Variable inc_fun : Site -> Z.
 
-
-
 Lemma cardinal_post_message :
-
  forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
-
  cardinal (Post_message Message m b s1 s2 s1 s2) =
-
  (cardinal (b s1 s2) + cardinal_count m)%Z.
-
 Proof.
-
   intros.
-
   unfold cardinal in |- *.
-
   apply reduce_post_message.
-
 Qed.
-
-
 
 Lemma cardinal_collect_message :
-
  forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
-
  first Message (b s1 s2) = value Message m ->
-
  cardinal (Collect_message Message b s1 s2 s1 s2) =
-
  (cardinal (b s1 s2) - cardinal_count m)%Z.
-
 Proof.
-
   intros.
-
   unfold cardinal in |- *.
-
   apply reduce_collect_message.
-
   auto.
-
 Qed.
-
-
 
 End CARDINAL_EFFECT.
 
-
-
 Section WEIGHT_EFFECT2.
 
-
-
 Lemma sigma_weight_post_message :
-
  forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
-
  sigma_weight (Post_message Message m b s1 s2) =
-
  (sigma_weight b + cardinal_count m)%Z.
-
 Proof.
-
   unfold sigma_weight in |- *.
-
   unfold Post_message in |- *.
-
   unfold change_queue in |- *.
-
   intros.
-
   rewrite sigma_table2_change.
-
   simpl in |- *.
-
   omega.
-
   apply finite_site.
-
   apply finite_site.
-
 Qed.
-
-
 
 Lemma sigma_weight_collect_message :
-
  forall (m : Message) (s1 s2 : Site) (b : Bag_of_message),
-
  first Message (b s1 s2) = value Message m ->
-
  sigma_weight (Collect_message Message b s1 s2) =
-
  (sigma_weight b - cardinal_count m)%Z.
-
 Proof.
-
   unfold sigma_weight in |- *.
-
   unfold Collect_message in |- *.
-
   unfold change_queue in |- *.
-
   intros.
-
   rewrite sigma_table2_change.
-
   rewrite cardinal_first_out with (m := m).
-
   omega.
-
   auto.
-
   apply finite_site.
-
   apply finite_site.
-
 Qed.
 
-
-
 End WEIGHT_EFFECT2.
-

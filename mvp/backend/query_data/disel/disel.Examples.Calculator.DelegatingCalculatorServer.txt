@@ -1,21 +1,12 @@
 From mathcomp.ssreflect
-
 Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
-
 From mathcomp
-
 Require Import path.
-
 Require Import Eqdep.
-
 Require Import Relation_Operators.
-
 From fcsl
-
 Require Import pred prelude ordtype finmap pcm unionmap heap.
-
 From DiSeL
-
 Require Import Freshness State EqTypeX Protocols Worlds NetworkSem Rely.
 (* Freshness:
 From mathcomp.ssreflect
@@ -852,9 +843,7 @@ Notation msgs i l := (dsoup (getStatelet i l)).
 Lemma rely_loc' l i j : network_rely i j -> loc j l = loc i l.
 
 End Rely. *)
-
 From DiSeL
-
 Require Import Actions Injection Process Always HoareTriples InferenceRules.
 (* Actions:
 From mathcomp.ssreflect
@@ -2177,10 +2166,251 @@ Lemma with_inv_rule i (r : cont A) :
         verify i (with_inv ii e) r.
 
 End InductiveInvLemmas. *)
-
 From DiSeL
-
 Require Import InductiveInv While.
+(* InductiveInv:
+From mathcomp.ssreflect
+Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
+From mathcomp
+Require Import path.
+Require Import Eqdep.
+Require Import Relation_Operators.
+From fcsl
+Require Import axioms pred prelude ordtype finmap pcm unionmap heap.
+From DiSeL
+Require Import Freshness State EqTypeX Protocols Worlds NetworkSem Rely.
+Require FunctionalExtensionality.
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+Module ProtocolWithInvariant.
+Section ProtocolWithInvariant.
+
+Variable p : protocol.
+
+Notation l := (plab p).
+Notation coh := (coh p).
+
+Variable I : dstatelet -> pred nid -> Prop.
+
+Variable d0 : dstatelet.
+
+Definition W := mkWorld p.
+
+Notation toSt d := (l \\-> d).
+
+Definition cohI :=
+  [Pred d | coh d /\ I d (nodes p d)].
+
+Lemma cohIVd d : cohI d -> valid (dstate d).
+
+Lemma cohIVs d : cohI d -> valid (dsoup d).
+
+Lemma cohIDom d : cohI d -> dom (dstate d) =i nodes p d.
+
+Definition CohI := CohPred (CohPredMixin cohIVd cohIVs cohIDom).
+
+Lemma st_helper d : (getStatelet (toSt d) l) = d.
+
+Lemma cohSt d : coh d -> Coh W (toSt d).
+
+Section SendInvWrapper.
+
+Variable st : send_trans coh.
+
+Definition send_safeI this to d m :=
+  send_safe st this to d m /\ I d (nodes p d).
+
+Lemma s_safe_cohI this to d m : send_safeI this to d m -> CohI d.
+
+Lemma s_safe_inI this to d m : send_safeI this to d m ->
+                               this \in nodes p d /\ to \in nodes p d.
+
+Definition send_stepI: send_step_t (send_safeI) :=
+  fun this to d msg S => (@send_step _ _ st this to d msg (proj1 S)).
+
+Lemma s_safe_defI this to d msg :
+  send_safeI this to d msg <->
+  exists b pf, @send_stepI this to d msg pf = Some b.
+
+Definition S_inv := forall this to d msg (S : send_safe st this to d msg) b,
+    I d (nodes p d) -> Some b = send_step S ->
+    let: f' := upd this b (dstate d) in
+    let: s' := (post_msg (dsoup d) (Msg (TMsg (t_snd st) msg) this to true)).1 in
+    let: d' := DStatelet f' s' in
+    (forall z, z == this = false -> getLocal z d' = getLocal z d) ->
+    I d' (nodes p d').
+
+Hypothesis HIstep : S_inv.
+
+Lemma s_step_cohI : s_step_coh_t CohI (t_snd st) send_stepI.
+
+Definition snd_transI := SendTrans s_safe_cohI s_safe_inI s_safe_defI s_step_cohI.
+
+End SendInvWrapper.
+
+Section ReceiveInvWrapper.
+
+Variable rt : receive_trans coh.
+
+Definition receive_stepI: receive_step_t CohI :=
+  fun this from m d C pf => receive_step rt from m (proj1 C) pf.
+
+Definition R_inv := forall d from this i (C : coh d) m
+                           (pf: this \in nodes p d),
+    I d (nodes p d) ->
+    find i (dsoup d) = Some (Msg m from this true) ->
+    this \in dom (dstate d) ->
+    msg_wf rt C this from m -> tag m = t_rcv rt ->
+    let: loc' := receive_step rt from m C pf in
+    let: s'' := consume_msg (dsoup d) i in
+    let: f' := upd this loc' (dstate d) in
+    let: d' := (DStatelet f' s'') in
+    (forall z, z == this = false -> getLocal z d' = getLocal z d) ->
+    I d' (nodes p d').
+
+Hypothesis HIstep : R_inv.
+
+Notation msg_wfI := (fun d (C : CohI d) => msg_wf rt (proj1 C)).
+
+Lemma r_step_cohI :
+  r_step_coh_t msg_wfI (t_rcv rt) receive_stepI.
+
+Definition rcv_transI := @ReceiveTrans _ CohI _ msg_wfI _ r_step_cohI.
+
+End ReceiveInvWrapper.
+
+Structure SendInv := SI {
+  st : send_trans coh;
+  st_inv : S_inv st;
+}.
+
+Structure ReceiveInv := RI {
+  rt : receive_trans coh;
+  rt_inv : R_inv rt;
+}.
+
+Structure InductiveInv := II {
+  sts : seq SendInv;
+  rts : seq ReceiveInv;
+  _ : map st sts = snd_trans p;
+  _ : map rt rts = rcv_trans p
+}.
+
+Definition stsI sts := map (fun stt =>
+                          @snd_transI (st stt) (@st_inv stt)) sts.
+Definition rtsI rts := map (fun rtt =>
+                          @rcv_transI (rt rtt) (@rt_inv rtt)) rts.
+
+Import FunctionalExtensionality.
+
+Variable ii : InductiveInv.
+
+Lemma us : uniq (map (@t_snd _ _) (stsI (sts ii))).
+
+Lemma ur : uniq (map (@t_rcv _ _) (rtsI (rts ii))).
+
+Definition ProtocolWithIndInv := @Protocol _ l _ _ _ us ur.
+
+Lemma stIn (s : SendInv) :
+  s \In (sts ii) ->
+  (snd_transI (@st_inv s)) \In (snd_trans ProtocolWithIndInv).
+
+Lemma rtIn (r : ReceiveInv) :
+  r \In (rts ii) ->
+  (rcv_transI (@rt_inv r)) \In (rcv_trans ProtocolWithIndInv).
+
+Lemma getInvSendTrans st z to msg s1 h :
+  st \In (snd_trans ProtocolWithIndInv) ->
+  forall (S : send_safe st z to (getStatelet s1 (plab p)) msg),
+  Some h = send_step S ->
+  exists st', [/\ st' \In get_st (mkWorld p) (plab p),
+     t_snd st' = t_snd st,
+     all_hooks_fire (mkWorld p) (plab p) (t_snd st') s1 z msg to &          
+     exists S': (send_safe st' z to (getStatelet s1 (plab p)) msg),
+       Some h = send_step S'].
+
+End ProtocolWithInvariant.
+
+Section InductiveInvConj.
+
+Variable p : protocol.
+
+Definition s_inv_conj (I1 I2 : dstatelet -> pred nid -> Prop)
+           (st : send_trans (coh p)) :=
+  S_inv (fun d n => I1 d n /\ I2 d n) st.
+
+Lemma s_inv_conjC I1 I2 st :
+  s_inv_conj I1 I2 st <-> s_inv_conj I2 I1 st.
+
+Lemma s_inv_conjA I1 I2 I3 st :
+  s_inv_conj I1 (fun d n => I2 d n /\ I3 d n) st <->
+  s_inv_conj (fun d n => I1 d n /\ I2 d n) I3 st.
+
+Definition r_inv_conj (I1 I2 : dstatelet -> pred nid -> Prop)
+           (rt : receive_trans (coh p)) :=
+  R_inv (fun d n => I1 d n /\ I2 d n) rt.
+
+Lemma r_inv_conjC I1 I2 rt :
+  r_inv_conj I1 I2 rt <-> r_inv_conj I2 I1 rt.
+
+Lemma r_inv_conjA I1 I2 I3 rt :
+  r_inv_conj I1 (fun d n => I2 d n /\ I3 d n) rt <->
+  r_inv_conj (fun d n => I1 d n /\ I2 d n) I3 rt.
+
+End InductiveInvConj.
+
+End ProtocolWithInvariant.
+
+Module PWIExports.
+Section PWIExports.
+
+Import ProtocolWithInvariant.
+
+Definition st_helper := st_helper.
+Definition cohSt := cohSt.
+
+Definition S_inv := ProtocolWithInvariant.S_inv.
+Definition R_inv := ProtocolWithInvariant.R_inv.
+
+Definition SendInv := SendInv.
+Definition SI := SI.
+Definition ReceiveInv := ReceiveInv.
+Definition RI := RI.
+
+Definition InductiveInv := InductiveInv.
+
+Lemma with_inv_coh pr I (ii : InductiveInv pr I) s:
+  s \In Coh (mkWorld (ProtocolWithIndInv ii)) ->    
+  s \In Coh (mkWorld pr).
+
+Lemma with_inv_nodes pr I (ii : InductiveInv pr I) l :
+  nodes (getProtocol (mkWorld (ProtocolWithIndInv ii)) l) =
+  nodes (getProtocol (mkWorld pr) l).
+
+Lemma with_inv_labE pr I (ii : InductiveInv pr I):
+  plab (ProtocolWithIndInv ii) = plab pr.
+
+Lemma with_inv_step pr I (ii : InductiveInv pr I) z s1 s2:
+  s1 \In Coh (mkWorld (ProtocolWithIndInv ii)) ->
+  network_step (mkWorld pr) z s1 s2 ->
+  network_step (mkWorld (ProtocolWithIndInv ii)) z s1 s2.
+
+Lemma with_inv_step' pr I (ii : InductiveInv pr I) z s1 s2:
+  network_step (mkWorld (ProtocolWithIndInv ii)) z s1 s2 ->
+  network_step (mkWorld pr) z s1 s2.
+
+Lemma with_inv_rely' pr I (ii : InductiveInv pr I) z s1 s2:
+  network_rely (mkWorld (ProtocolWithIndInv ii)) z s1 s2 ->
+  network_rely (mkWorld pr) z s1 s2.
+
+Definition ProtocolWithIndInv := ProtocolWithIndInv.
+
+End PWIExports.
+End PWIExports.
+
+Export PWIExports. *)
 (* While:
 From mathcomp.ssreflect
 Require Import ssreflect ssrbool ssrnat eqtype ssrfun seq.
@@ -2229,9 +2459,7 @@ Program Definition while b0 :
                   else ret _ _ b)) b0).
 
 End While. *)
-
 From DiSeL
-
 Require Import CalculatorProtocol CalculatorInvariant.
 (* CalculatorProtocol:
 From mathcomp.ssreflect
@@ -2565,9 +2793,7 @@ Program Definition ii := @ProtocolWithInvariant.II _ _ sts' rts' _ _.
 Definition cal_with_inv := ProtocolWithIndInv ii.
 
 End CalculatorInductiveInv. *)
-
 From DiSeL
-
 Require Import CalculatorClientLib CalculatorServerLib.
 (* CalculatorClientLib:
 From mathcomp.ssreflect
@@ -2829,341 +3055,171 @@ Program Definition send_answer (to : nid) (args : seq nat) (ans : nat) :
 
 End CalculatorServerLib. *)
 
-
-
 Export CalculatorProtocol.
-
-
 
 Section DelegatingCalculator.
 
-
-
 Variables (l1 l2 : Label).
-
 Hypothesis (lab_disj : l2 != l1).
 
-
-
 Variable f : input -> option nat.
-
 Variable prec : input -> bool.
-
 Variables (cs1 cls1 : seq nid).
-
 Variables (cs2 cls2 : seq nid).
-
 Notation nodes1 := (cs1 ++ cls1).
-
 Notation nodes2 := (cs2 ++ cls2).
-
 Hypothesis Huniq1 : uniq nodes1.
-
 Hypothesis Huniq2 : uniq nodes2.
 
-
-
 Notation cal1 := (cal_with_inv l1 f prec cs1 cls1).
-
 Notation cal2 := (cal_with_inv l2 f prec cs2 cls2).
 
-
-
 Notation W1 := (mkWorld cal1).
-
 Notation W2 := (mkWorld cal2).
 
-
-
 Definition V := W1 \+ W2.
-
 Lemma validV : valid V.
-
 Proof.
-
 rewrite /V; apply/andP=>/=.
-
 split; first by rewrite validPtUn/= validPt/= domPt inE/=.
-
 by rewrite unitR valid_unit.
-
 Qed.
-
-
 
 Variable sv : nid.
 
-
-
 Hypothesis  Hs1 : sv \in cs1.
-
-
 
 Hypothesis  Hc2 : sv \in cls2.
 
-
-
 Variable sd : nid.
-
 Hypothesis  Hs2 : sd \in cs2.
 
-
-
 Notation loc i k := (getLocal sv (getStatelet i k)).
-
 Notation loc1 i := (loc i l1).
-
 Notation loc2 i := (loc i l2).
-
-
 
 Definition delegate_f := compute_f l2 f prec cs2 cls2 _ Hc2 sd.
 
-
-
 Notation cal_ii := (ii l1 f prec cs1 cls1).
 
-
-
 Definition receive_msg :=
-
   with_inv cal_ii (blocking_receive_req l1 f prec cs1 cls1 _ Hs1).
-
 Definition send_ans to args ans :=
-
   with_inv cal_ii (send_answer l1 f prec cs1 cls1 _ Hs1 to args ans).
 
-
-
 Definition delegating_body_spec :=
-
   forall _ : unit,
-
       DHT [sv, V]
-
   (fun i =>
-
      loc1 i = st :-> ([::]:reqs) /\
-
      loc2 i = st :-> ([::]:reqs),                    
-
    fun (r : unit) m =>
-
      loc1 m = st :-> ([::]:reqs) /\
-
      loc2 m = st :-> ([::]:reqs)).
 
-
-
 Program Definition delegating_body :
-
   delegating_body_spec := fun (_ : unit) =>
-
   Do _ (
-
     r <-- uinject (receive_msg);
-
     let: (from, args) := r in
-
     
-
     ans <-- uinject (delegate_f args);
-
     uinject (send_ans from args ans);;
-
     ret sv V tt).
 
-
-
 Lemma hook_complete_unit (c : context) : hook_complete (c, Unit).
-
 Proof. by move=>????; rewrite dom0. Qed.
-
-
 
 Lemma hooks_consistent_unit (c : context) : hooks_consistent c Unit.
-
 Proof. by move=>????; rewrite dom0. Qed.
 
-
-
 Next Obligation.
-
 rewrite -(unitR V)/V.
-
 have V: valid (W1 \+ W2 \+ Unit) by rewrite unitR validV.
-
 apply: (injectL V); do?[apply: hook_complete_unit | apply: hooks_consistent_unit].
-
 by move=>??????; rewrite dom0.
-
 Defined.
 
-
-
 Next Obligation.
-
 rewrite -(unitR V)/V.
-
 have V: valid (W1 \+ W2 \+ Unit) by rewrite unitR validV.
-
 apply: (injectR V); do?[apply: hook_complete_unit | apply: hooks_consistent_unit].
-
 by move=>??????; rewrite dom0.
-
 Qed.
 
-
-
 Next Obligation.
-
 rewrite -(unitR V)/V.
-
 have V: valid (W1 \+ W2 \+ Unit) by rewrite unitR validV.
-
 apply: (injectL V); do?[apply: hook_complete_unit | apply: hooks_consistent_unit].
-
 by move=>??????; rewrite dom0.
-
 Defined.
-
-
 
 Lemma hcomp l : hook_complete (mkWorld l).
-
 Proof. by move=>????; rewrite dom0. Qed.
 
-
-
 Next Obligation.
-
 move=>i/=[K1 L1]; apply: vrf_coh=>CD1; apply: step.
-
 move: (coh_split CD1 (hcomp cal1) (hcomp cal2))=>[i1[j1]][C1 D1 Z]; subst i.
-
 apply: inject_rule=>//.
-
 have E1 : loc (i1 \+ j1) l1 = loc i1 l1
-
   by rewrite (locProjL CD1 _ C1)// domPt inE/=.
-
 rewrite E1 in K1.
-
 apply: with_inv_rule=>//.
-
 apply: (gh_ex (g:=[::])).
-
 apply: call_rule=>//[[from args]] i2/=[K2]H1 H2 _ j2 CD2 R1.
-
 have E2 : loc (i1 \+ j1) l2 = loc j1 l2.
-
   by rewrite (locProjR CD1 _ D1)// domPt inE/=.
 
-
-
 rewrite E2 -(rely_loc' l2 R1) in L1.
-
 apply: step; clear C1 D1.
-
 have D2: j2 \In Coh W2 by case: (rely_coh R1)=>/= _; rewrite injExtL//(cohW CD1). 
-
 clear R1; rewrite joinC; apply: inject_rule=>//.
-
 apply: call_rule=>//ans j3[L3]F D3 i3 CD3/= R2.
-
 have C3: i3 \In Coh W1 by case: (rely_coh R2)=>/= _; rewrite injExtR//(cohW CD3). 
-
 apply: step; rewrite joinC. 
-
 rewrite -(rely_loc' _ R2) in K2; move:K2=>K3; clear R2.
-
 apply: inject_rule=>//; apply: with_inv_rule=>//.
-
 apply: (gh_ex (g:=[:: (from, sv, args)])).
-
 apply: call_rule; first by rewrite inE eqxx.
-
 move=>_ i4 [K4 _] _ j4 CD4 R3.
-
 rewrite -(rely_loc' _ R3) in L3; move: L3=>L4.
-
 apply: ret_rule=>m R _; rewrite (rely_loc' _ R).
-
 move/rely_coh: (R3)=>[]; rewrite injExtL ?(cohW CD2)//.
-
 move=>_ D4; clear R3; rewrite !(rely_loc' _ R); clear R.
-
 have X: l2 \in dom W2.1 by rewrite domPt inE eqxx.
-
 rewrite (@locProjR _ _ _ _ _ CD4 X D4); split=>//.
-
 have X': l1 \in dom W1.1 by rewrite domPt inE eqxx.
-
 rewrite /= eqxx in K4; rewrite (@locProjL _ _ _ _ _ CD4 X' _)//.
-
 by apply: (cohUnKL CD4 D4); apply: hook_complete_unit.
-
 Qed.
-
-
 
 Definition delegating_server_loop_cond (res : unit) := true.
 
-
-
 Definition delegating_server_loop_inv :=
-
   fun (_ r : unit) i =>
-
     loc1 i = st :-> ([::]:reqs) /\
-
     loc2 i = st :-> ([::]:reqs).
 
-
-
 Program Definition delegating_server_loop :
-
   DHT [sv, V]
-
   (fun i => loc1 i = st :-> ([::]:reqs) /\
-
             loc2 i = st :-> ([::]:reqs),
-
    fun (r : unit) m => False) :=
-
   Do _ (@while sv V _ _ delegating_server_loop_cond delegating_server_loop_inv _
-
         (fun r => Do _ (delegating_body r))) tt.
 
-
-
 Next Obligation. by apply: with_spec (x x0). Defined.
-
 Next Obligation.
-
 by move:H; rewrite /delegating_server_loop_inv !(rely_loc' _ H0).
-
 Qed.
-
 Next Obligation. by apply: with_spec x. Defined.
-
 Next Obligation.
-
 by apply: ghC=>i1 s[H1 H2] C1/=; apply: call_rule.
-
 Qed.
-
 Next Obligation.
-
 move=>i/=E1; apply: call_rule'=>//.
-
 - by move=>C1; exists tt=>//. 
-
 by move=>s' m/(_ s')/=; case.
-
 Qed.    
 
-
-
 End DelegatingCalculator.
-

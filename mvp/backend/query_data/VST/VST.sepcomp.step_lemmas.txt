@@ -732,7 +732,6 @@ Lemma nlist_forall2_imply:
   forall (P2: A -> B -> Prop),
   (forall v1 v2, nIn v1 l1 -> nIn v2 l2 -> P1 v1 v2 -> P2 v1 v2) ->
   nlist_forall2 P2 l1 l2. *)
-
 Require Import compcert.lib.Maps.
 (* compcert.lib.Maps:
 Require Import Equivalence EquivDec.
@@ -1672,8 +1671,6 @@ Module PTree_Properties := Tree_Properties(PTree).
 Notation "a ! b" := (PTree.get b a) (at level 1).
 Notation "a !! b" := (PMap.get b a) (at level 1). *)
 
-
-
 Require Import compcert.common.AST.
 (* compcert.common.AST:
 Require Import String.
@@ -2174,7 +2171,6 @@ Inductive builtin_arg_constraint : Type :=
   | OK_addrstack
   | OK_addressing
   | OK_all. *)
-
 Require Import compcert.common.Values.
 (* compcert.common.Values:
 Require Import Coqlib.
@@ -3631,754 +3627,192 @@ Lemma val_inject_compose:
   forall f f' v1 v2 v3,
   Val.inject f v1 v2 -> Val.inject f' v2 v3 -> *)
 
-
-
 Require Import VST.sepcomp.extspec.
-(* VST.sepcomp.extspec:
-Require Import Coq.Lists.ListSet.
-Require Import compcert.common.AST.
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Globalenvs.
-Require Import compcert.lib.Maps.
-
-Definition PTree_injective {A} (t: PTree.t A) : Prop :=
-  forall id1 id2 b, t ! id1 = Some b -> t ! id2 = Some b -> id1 = id2.
-
-Definition injective_PTree A := sig (@PTree_injective A).
-
-Structure external_specification (M E Z : Type) :=
-  { ext_spec_type : E -> Type
-  ; ext_spec_pre: forall e: E,
-    ext_spec_type e -> injective_PTree block -> list typ -> list val -> Z -> M -> Prop
-  ; ext_spec_post: forall e: E,
-    ext_spec_type e -> injective_PTree block -> option typ -> option val -> Z -> M ->  Prop
-  ; ext_spec_exit: option val -> Z -> M ->  Prop }.
-
-Arguments ext_spec_type {M E Z} _ _.
-Arguments ext_spec_pre {M E Z} _ _ _ _ _ _ _ _.
-Arguments ext_spec_post {M E Z} _ _ _ _ _ _ _ _.
-Arguments ext_spec_exit {M E Z} _ _ _ _.
-
-Definition ext_spec := external_specification mem external_function.
-
-Lemma extfunct_eqdec (ef1 ef2 : external_function) : {ef1=ef2} + {~ef1=ef2}.
-
-Set Implicit Arguments.
-
-Definition ef_ext_spec (M Z : Type) :=
-  external_specification M AST.external_function Z.
-
-Definition spec_of
-  (M Z : Type) (ef : AST.external_function) (spec : ef_ext_spec M Z) :=
-  (ext_spec_pre spec ef, ext_spec_post spec ef).
-
-Definition oval_inject j (v tv : option val) :=
-  match v, tv with
-    | None, None => True
-    | Some v', Some tv' => Val.inject j v' tv'
-    | _, _ => False
-  end.
-
-Module ExtSpecProperties.
-
-Definition det (M E Z : Type) (spec : external_specification M E Z) :=
-  forall ef (x x' : ext_spec_type spec ef) ge tys z vals m
-         oty' ov' z' m' oty'' ov'' z'' m'',
-  ext_spec_pre spec ef x ge tys vals z m ->
-  ext_spec_post spec ef x ge oty' ov' z' m' ->
-  ext_spec_pre spec ef x' ge tys vals z m ->
-  ext_spec_post spec ef x' ge oty'' ov'' z'' m'' ->
-  oty'=oty'' /\ ov'=ov'' /\ z'=z'' /\ m'=m''.
-
-Record closed (Z : Type) (spec : ext_spec Z) :=
-  { P_closed :
-      forall ef (x : ext_spec_type spec ef) ge j tys vals z m tvals tm,
-      ext_spec_pre spec ef x ge tys vals z m ->
-      Val.inject_list j vals tvals ->
-      Mem.inject j m tm ->
-      ext_spec_pre spec ef x ge tys tvals z tm
-  ; Q_closed :
-      forall ef (x : ext_spec_type spec ef) ge j oty ov z m otv tm,
-      ext_spec_post spec ef x ge oty ov z m ->
-      oval_inject j ov otv ->
-      Mem.inject j m tm ->
-      ext_spec_post spec ef x ge oty otv z tm
-  ; exit_closed :
-      forall j ov z m otv tm,
-      ext_spec_exit spec ov z m ->
-      oval_inject j ov otv ->
-      Mem.inject j m tm ->
-      ext_spec_exit spec otv z tm }.
-
-End ExtSpecProperties. *)
-
 Require Import VST.sepcomp.semantics.
-(* VST.sepcomp.semantics:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.lib.Axioms.
-
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-
-Require Import VST.sepcomp.mem_lemmas.
-
-Record CoreSemantics {C M : Type} : Type :=
-  { initial_core : nat -> M -> C -> M -> val -> list val -> Prop
-  ; at_external : C -> M -> option (external_function * list val)
-  ; after_external : option val -> C -> M -> option C
-  ; halted : C -> int -> Prop
-  ; corestep : C -> M -> C -> M -> Prop
-  ; corestep_not_halted:
-      forall m q m' q' i, corestep q m q' m' -> ~ halted q i
-  ; corestep_not_at_external:
-      forall m q m' q', corestep q m q' m' -> at_external q m = None }.
-
-Arguments CoreSemantics : clear implicits.
-
-Inductive mem_step m m' : Prop :=
-    mem_step_storebytes: forall b ofs bytes,
-       Mem.storebytes m b ofs bytes = Some m' -> mem_step m m'
-  | mem_step_alloc: forall lo hi b',
-       Mem.alloc m lo hi = (m',b') -> mem_step m m'
-  | mem_step_freelist: forall l,
-       Mem.free_list m l = Some m' -> mem_step m m'
-  
-  | mem_step_trans: forall m'',
-       mem_step m m'' -> mem_step m'' m' -> mem_step m m'.
-
-Local Notation "a # b" := (PMap.get b a) (at level 1).
-Record perm_lesseq (m m': mem):= {
-  perm_le_Cur:
-    forall b ofs, Mem.perm_order'' ((Mem.mem_access m')#b ofs Cur) ((Mem.mem_access m)#b ofs Cur)
-; perm_le_Max:
-    forall b ofs, Mem.perm_order'' ((Mem.mem_access m')#b ofs Max) ((Mem.mem_access m)#b ofs Max)
-; perm_le_cont:
-    forall b ofs, Mem.perm m b ofs Cur Readable ->
-     ZMap.get ofs (Mem.mem_contents m') !! b= ZMap.get ofs (Mem.mem_contents m) !! b
-; perm_le_nb: Mem.nextblock m = Mem.nextblock m'
-}.
-
-Record MemSem {C} :=
-  { csem :> @CoreSemantics C mem
-
-  ; corestep_mem : forall c m c' m' (CS: corestep csem c m c' m'), mem_step m m'
-    }.
-
-Arguments MemSem : clear implicits. *)
-
 Require Import VST.sepcomp.semantics_lemmas.
-(* VST.sepcomp.semantics_lemmas:
-Require Import compcert.lib.Coqlib.
-Require Import compcert.lib.Maps.
-Require Import compcert.lib.Integers.
-Require Import compcert.lib.Axioms.
-
-Require Import compcert.common.Values.
-Require Import compcert.common.Memory.
-Require Import compcert.common.Events.
-Require Import compcert.common.AST.
-Require Import compcert.common.Globalenvs.
-Require Import VST.msl.Extensionality.
-
-Require Import VST.sepcomp.mem_lemmas.
-Require Import VST.sepcomp.semantics.
-
-Require Import VST.msl.Coqlib2.
-
-Lemma mem_step_refl m: mem_step m m.
-
-Lemma mem_step_free:
-      forall m b lo hi m', Mem.free m b lo hi = Some m' -> mem_step m m'.
-
-Lemma mem_step_store:
-      forall m ch b a v m', Mem.store ch m b a v = Some m' -> mem_step m m'.
-
-Record memstep_preserve (P:mem -> mem -> Prop) :=
-  {
-    preserve_trans: forall m1 m2 m3, P m1 m2 -> P m2 m3 -> P m1 m3;
-    preserve_mem: forall m m', mem_step m m' -> P m m'
-  }.
-
-Lemma preserve_refl {P} (HP: memstep_preserve P): forall m, P m m.
-
-Lemma preserve_free {P} (HP: memstep_preserve P):
-      forall m b lo hi m', Mem.free m b lo hi = Some m' -> P m m'.
-
-Theorem preserve_conj {P Q} (HP:memstep_preserve P) (HQ: memstep_preserve Q):
-        memstep_preserve (fun m m' => P m m' /\ Q m m').
-
-Theorem preserve_impl {A} (P:A -> mem -> mem -> Prop) (Q:A->Prop):
-        (forall a, Q a -> memstep_preserve (P a)) -> memstep_preserve (fun m m' => forall a, Q a -> P a m m').
-
-Lemma preserve_exensional {P Q} (HP:memstep_preserve P) (PQ:P=Q): memstep_preserve Q.
-
-Theorem preserve_univ {A} (P:A -> mem -> mem -> Prop):
-        (forall a, memstep_preserve (P a)) -> memstep_preserve (fun m m' => forall a, P a m m').
-
-Theorem mem_forward_preserve: memstep_preserve mem_forward.
-
-Theorem readonly_preserve b: memstep_preserve (fun m m' => mem_forward m m' /\ (Mem.valid_block m b -> readonly m b m')).
-
-Theorem readonly_preserve':
-   memstep_preserve (fun m m' => mem_forward m m' /\ (forall b, Mem.valid_block m b -> readonly m b m')).
-
-Lemma storebytes_unch_loc_unwritable b ofs: forall l m m' (L: Mem.storebytes m b ofs l = Some m'),
-
-Lemma unch_on_loc_not_writable_trans m1 m2 m3
-        (Q : Mem.unchanged_on (loc_not_writable m1) m1 m2)
-
-Theorem loc_not_writable_preserve:
-   memstep_preserve (fun m m' => mem_forward m m' /\ Mem.unchanged_on (loc_not_writable m) m m').
-
-Lemma freelist_perm: forall l m m' (L : Mem.free_list m l = Some m') b (B: Mem.valid_block m b)
-
-Theorem perm_preserve:
-   memstep_preserve (fun m m' =>  mem_forward m m' /\ forall b, Mem.valid_block m b -> forall ofs, Mem.perm m' b ofs Max Nonempty ->
-
-Lemma mem_step_forward m m': mem_step m m' -> mem_forward m m'.
-
-Lemma freelist_perm_inv: forall l m m' (L : Mem.free_list m l = Some m') b (B: Mem.valid_block m b)
-
-Theorem preserves_max_eq_or_free:
-   memstep_preserve (fun m m' =>  mem_forward m m' /\
-                                  forall b (VB: Mem.valid_block m b) ofs,
-
-Theorem mem_step_max_eq_or_free m m' (STEP: mem_step m m') b (VB: Mem.valid_block m b) ofs:
-
-Lemma memsem_preserves {C} (s: @MemSem C) P (HP:memstep_preserve P):
-      forall c m c' m', corestep s c m c' m'-> P m m'.
-
-Lemma corestep_fwd {C} (s:@MemSem C) c m c' m'
-   (CS:corestep s c m c' m' ): mem_forward m m'.
-
-Lemma corestep_rdonly {C} (s:@MemSem C) c m c' m'
-   (CS:corestep s c m c' m') b (VB:Mem.valid_block m b): readonly m b m'.
-
-Lemma mem_step_nextblock:  memstep_preserve (fun m m' => Mem.nextblock m <= Mem.nextblock m')%positive.
-
-Lemma mem_step_nextblock':
-  forall m m',
-     mem_step m m' ->
-   (Mem.nextblock m <= Mem.nextblock m')%positive.
-
-Lemma mem_step_obeys_cur_write:
-  forall m b ofs m',
-    Mem.valid_block m b ->
-
-Lemma ple_load m ch a v
-            (LD: Mem.loadv ch m a = Some v)
-
-Lemma ple_store:
-  forall ch m v1 v2 m' m1
-   (PLE: perm_lesseq m m1),
-   Mem.storev ch m v1 v2 = Some m' ->
-
-Lemma free_access_inv m b lo hi m' (FR: Mem.free m b lo hi = Some m') b' ofs k p
-
-Lemma free_access_inv_None m b lo hi m' (FR: Mem.free m b lo hi = Some m') b' ofs k
-
-Lemma ple_free: forall m m' b lo hi (FL: Mem.free m b lo hi = Some m') m1 (PLE:perm_lesseq m m1),
-
-Lemma ple_freelist: forall l m m' (FL: Mem.free_list m l = Some m') m1 (PLE:perm_lesseq m m1),
-
-Lemma ple_storebytes:
-  forall m b ofs bytes m' m1
-   (PLE: perm_lesseq m m1),
-   Mem.storebytes m b ofs bytes = Some m' ->
-
-Lemma ple_loadbytes m b ofs n bytes
-            (LD: Mem.loadbytes m b ofs n = Some bytes)
-
-Lemma alloc_access_inv m b lo hi m' (ALLOC: Mem.alloc m lo hi = (m', b)) b' ofs k p
-
-Lemma alloc_access_inv_None m b lo hi m' (ALLOC: Mem.alloc m lo hi = (m', b)) b' ofs k
-
-Lemma alloc_inc_perm: forall m lo hi m' b
-      (M: Mem.alloc m lo hi = (m',b)) m1 (PLE: perm_lesseq m m1),
-
-Lemma perm_lesseq_refl:
-  forall m, perm_lesseq m m.
-
-Definition corestep_fun {C M : Type} (sem : @CoreSemantics C M) :=
-  forall (m m' m'' : M) c c' c'',
-  corestep sem c m c' m' ->
-  corestep sem c m c'' m'' ->
-  c'=c'' /\ m'=m''.
-
-Section corestepN.
-  Context {C M E:Type} (Sem:@CoreSemantics C M).
-
-  Fixpoint corestepN (n:nat) : C -> M -> C -> M -> Prop :=
-    match n with
-      | O => fun c m c' m' => (c,m) = (c',m')
-      | S k => fun c1 m1 c3 m3 => exists c2, exists m2,
-        corestep Sem c1 m1 c2 m2 /\
-        corestepN k c2 m2 c3 m3
-    end.
-
-  Lemma corestepN_add : forall n m c1 m1 c3 m3,
-    corestepN (n+m) c1 m1 c3 m3 <->
-    exists c2, exists m2,
-      corestepN n c1 m1 c2 m2 /\
-      corestepN m c2 m2 c3 m3.
-
-  Definition corestep_plus c m c' m' :=
-    exists n, corestepN (S n) c m c' m'.
-
-  Definition corestep_star c m c' m' :=
-    exists n, corestepN n c m c' m'.
-
-  Lemma corestep_plus_star : forall c1 c2 m1 m2,
-    corestep_plus c1 m1 c2 m2 -> corestep_star c1 m1 c2 m2.
-
-  Lemma corestep_plus_trans : forall c1 c2 c3 m1 m2 m3,
-    corestep_plus c1 m1 c2 m2 -> corestep_plus c2 m2 c3 m3 ->
-    corestep_plus c1 m1 c3 m3.
-
-  Lemma corestep_star_plus_trans : forall c1 c2 c3 m1 m2 m3,
-    corestep_star c1 m1 c2 m2 -> corestep_plus c2 m2 c3 m3 ->
-    corestep_plus c1 m1 c3 m3.
-
-  Lemma corestep_plus_star_trans: forall c1 c2 c3 m1 m2 m3,
-    corestep_plus c1 m1 c2 m2 -> corestep_star c2 m2 c3 m3 ->
-    corestep_plus c1 m1 c3 m3.
-
-  Lemma corestep_star_trans: forall c1 c2 c3 m1 m2 m3,
-    corestep_star c1 m1 c2 m2 -> corestep_star c2 m2 c3 m3 ->
-    corestep_star c1 m1 c3 m3.
-
-  Lemma corestep_plus_one: forall c m c' m',
-    corestep  Sem c m c' m' -> corestep_plus c m c' m'.
-
-  Lemma corestep_plus_two: forall c m c' m' c'' m'',
-    corestep  Sem c m c' m' -> corestep  Sem c' m' c'' m'' ->
-    corestep_plus c m c'' m''.
-
-  Lemma corestep_star_zero: forall c m, corestep_star  c m c m.
-
-  Lemma corestep_star_one: forall c m c' m',
-    corestep  Sem c m c' m' -> corestep_star c m c' m'.
-
-  Lemma corestep_plus_split: forall c m c' m',
-    corestep_plus c m c' m' ->
-    exists c'', exists m'', corestep  Sem c m c'' m'' /\
-      corestep_star c'' m'' c' m'.
-
-End corestepN.
-
-Section memstepN.
-  Context {C:Type} (M:@MemSem C).
-
-Lemma corestepN_mem n: forall c m c' m', corestepN M n c m c' m' -> mem_step m m'.
-
-Lemma corestep_plus_mem c m c' m' (H:corestep_plus M c m c' m'): mem_step m m'.
-
-Lemma corestep_star_mem c m c' m' (H:corestep_star M c m c' m'): mem_step m m'.
-
-Lemma memsem_preservesN P (HP: memstep_preserve P)
-      n c m c' m' (H: corestepN M n c m c' m'): P m m'.
-
-Lemma memsem_preserves_plus P (HP:memstep_preserve P)
-      c m c' m' (H: corestep_plus M c m c' m'): P m m'.
-
-Lemma memsem_preserves_star P (HP:memstep_preserve P)
-      c m c' m' (H: corestep_star M c m c' m'): P m m'.
-
-Lemma corestepN_fwd n  c m c' m'
-   (CS:corestepN M n c m c' m'): mem_forward m m'.
-
-Lemma corestep_plus_fwd c m c' m'
-   (CS:corestep_plus M c m c' m'): mem_forward m m'.
-
-Lemma corestep_star_fwd c m c' m'
-   (CS:corestep_star M c m c' m'): mem_forward m m'.
-
-Lemma corestepN_rdonly n c m c' m'
-    (CS:corestepN M n c m c' m') b (VB:Mem.valid_block m b): readonly m b m'.
-
-Lemma corestep_plus_rdonly c m c' m'
-   (CS:corestep_plus M c m c' m') b (VB:Mem.valid_block m b): readonly m b m'.
-
-Lemma corestep_star_rdonly c m c' m'
-   (CS:corestep_star M c m c' m')b (VB:Mem.valid_block m b): readonly m b m'.
-
-End memstepN. *)
-
-
 
 Definition has_opttyp (v : option val) (t : option typ) :=
-
   match v, t with
-
     None, None => True
-
   | Some v, Some t => Val.has_type v t
-
   | _, _ => False
-
   end.
 
-
-
 Section safety.
-
   Context {G C M Z:Type}.
-
   Context {genv_symb: G -> injective_PTree block}.
-
   Context {Hrel: nat -> M -> M -> Prop}.
-
   Context (Hcore:@CoreSemantics C M).
-
   Variable (Hspec:external_specification M external_function Z).
-
-
 
   Variable ge : G.
 
-
-
   Inductive safeN_ : nat -> Z -> C -> M -> Prop :=
-
   | safeN_0: forall z c m, safeN_ O z c m
-
   | safeN_step:
-
       forall n z c m c' m',
-
       corestep Hcore c m c' m' ->
-
       safeN_ n z c' m' ->
-
       safeN_ (S n) z c m
-
   | safeN_external:
-
       forall n z c m e args x,
-
       at_external Hcore c m = Some (e,args) ->
-
       ext_spec_pre Hspec e x (genv_symb ge) (sig_args (ef_sig e)) args z m ->
-
       (forall ret m' z' n'
-
          (Hargsty : Val.has_type_list args (sig_args (ef_sig e)))
-
          (Hretty : has_opttyp ret (sig_res (ef_sig e))),
-
          (n' <= n)%nat ->
-
          Hrel n' m m' ->
-
          ext_spec_post Hspec e x (genv_symb ge) (sig_res (ef_sig e)) ret z' m' ->
-
          exists c',
-
            after_external Hcore ret c m' = Some c' /\
-
            safeN_ n' z' c' m') ->
-
       safeN_ (S n) z c m
-
   | safeN_halted:
-
       forall n z c m i,
-
       halted Hcore c i ->
-
       ext_spec_exit Hspec (Some (Vint i)) z m ->
-
       safeN_ n z c m.
-
-
 
   Definition corestep_fun  :=
-
        forall m q m1 q1 m2 q2 ,
-
        corestep Hcore q m q1 m1 ->
-
        corestep Hcore q m q2 m2 ->
-
        (q1, m1) = (q2, m2).
 
-
-
   Lemma safe_corestep_forward:
-
      corestep_fun ->
-
     forall c m c' m' n z,
-
     corestep Hcore c m c' m' -> safeN_ (S n) z c m -> safeN_ n z c' m'.
-
   Proof.
-
     simpl; intros; inv H1.
-
     assert ((c',m') = (c'0,m'0)) by (eapply H; eauto).
-
     inv H1; auto.
-
     erewrite corestep_not_at_external in H3; eauto; congruence.
-
     eapply safeN_halted; eauto.
-
     apply corestep_not_halted with (i0:=i) in H0. contradiction.
-
     apply corestep_not_halted with (i0:=i) in H0. contradiction.
-
   Unshelve. apply Integers.Int.zero.
-
 Qed.
 
-
-
   Lemma safe_corestep_backward:
-
     forall c m c' m' n z,
-
     corestep Hcore c m c' m' -> safeN_ n z c' m' -> safeN_ (S n) z c m.
-
   Proof.
-
     intros; eapply safeN_step; eauto.
-
   Qed.
-
-
 
   Lemma safe_downward1 :
-
     forall n c m z,
-
       safeN_ (S n) z c m -> safeN_ n z c m.
-
   Proof.
-
     induction n. econstructor; eauto.
-
     intros c m z H. inv H.
-
     + econstructor; eauto.
-
     + eapply safeN_external; eauto.
-
     + eapply safeN_halted; eauto.
-
   Qed.
-
-
 
   Lemma safe_downward :
-
     forall n n' c m z,
-
       le n' n ->
-
       safeN_ n z c m -> safeN_ n' z c m.
-
   Proof.
-
     do 6 intro. revert c m z. induction H; auto.
-
     intros. apply IHle. apply safe_downward1. auto.
-
   Qed.
-
-
 
   Lemma safe_corestepN_forward:
-
     corestep_fun ->
-
     forall z c m c' m' n n0,
-
       corestepN Hcore n0 c m c' m' ->
-
       safeN_ (n + S n0) z c m ->
-
       safeN_ n z c' m'.
-
   Proof.
-
     intros.
-
     revert c m c' m' n H0 H1.
-
     induction n0; intros; auto.
-
     simpl in H0; inv H0.
-
     eapply safe_downward in H1; eauto. omega.
-
     simpl in H0. destruct H0 as [c2 [m2 [STEP STEPN]]].
-
     apply (IHn0 _ _ _ _ n STEPN).
-
     assert (Heq: (n + S (S n0) = S (n + S n0))%nat) by omega.
-
     rewrite Heq in H1.
-
     eapply safe_corestep_forward in H1; auto.
-
    2: eauto. eauto.
-
  Qed.
 
-
-
   Lemma safe_step'_back2 :
-
     forall
-
       {ora st m st' m' n},
-
       corestep Hcore st m st' m' ->
-
       safeN_ (n-1) ora st' m' ->
-
       safeN_ n ora st m.
-
   Proof.
-
     intros.
-
     destruct n.
-
     constructor.
-
     simpl in H0. replace (n-0)%nat with n in H0.
-
     eapply safe_corestep_backward; eauto.
-
     omega.
-
   Qed.
-
-
 
   Lemma safe_corestepN_backward:
-
     forall z c m c' m' n n0,
-
       corestepN Hcore n0 c m c' m' ->
-
       safeN_ (n - n0) z c' m' ->
-
       safeN_ n z c m.
-
   Proof.
-
     simpl; intros.
-
     revert c m c' m' n H H0.
-
     induction n0; intros; auto.
-
     simpl in H; inv H.
-
     solve[assert (Heq: (n = n - 0)%nat) by omega; rewrite Heq; auto].
-
     simpl in H. destruct H as [c2 [m2 [STEP STEPN]]].
-
     assert (H: safeN_ (n - 1 - n0) z c' m').
-
     eapply safe_downward in H0; eauto. omega.
-
     specialize (IHn0 _ _ _ _ (n - 1)%nat STEPN H).
-
     solve[eapply safe_step'_back2; eauto].
-
   Qed.
-
-
 
   Lemma convergent_controls_safe :
-
     forall m q1 q2,
-
       (at_external Hcore q1 m = at_external Hcore q2 m) ->
-
       (forall ret m q', after_external Hcore ret q1 m = Some q' ->
-
                       after_external Hcore ret q2 m = Some q') ->
-
       (halted Hcore q1 = halted Hcore q2) ->
-
       (forall q' m', corestep Hcore q1 m q' m' ->
-
                      corestep Hcore q2 m q' m') ->
-
       (forall n z, safeN_ n z q1 m -> safeN_ n z q2 m).
-
   Proof.
-
     intros. destruct n; simpl in *; try constructor.
-
     inv H3.
-
     + econstructor; eauto.
-
     + eapply safeN_external; eauto.
-
       rewrite <-H; eauto.
-
       intros ???? Hargsty Hretty ? H8 H9.
-
       specialize (H7 _ _ _ _ Hargsty Hretty H3 H8 H9).
-
       destruct H7 as [c' [? ?]].
-
       exists c'; split; auto.
-
     + eapply safeN_halted; eauto.
-
       rewrite <-H1; auto.
-
   Qed.
-
-
 
   Lemma wlog_safeN_gt0 : forall
-
     n z q m,
-
     (lt 0 n -> safeN_ n z q m) ->
-
     safeN_ n z q m.
-
   Proof.
-
     intros. destruct n. constructor.
-
     apply H. omega.
-
   Qed.
-
-
 
 End safety.
 
-
-
 Section dry_safety.
-
   Context {G C M Z:Type}.
-
   Context {genv_symb: G -> injective_PTree block}.
-
   Context (Hcore:@CoreSemantics C M).
-
   Variable (Hspec:external_specification M external_function Z).
-
   Definition dry_safeN := @safeN_ G C M Z genv_symb (fun n' m m' => True) Hcore Hspec.
-
 End dry_safety.
-
