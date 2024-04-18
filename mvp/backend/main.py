@@ -103,7 +103,6 @@ async def eval_llemma_base(input_data: GenerateTacticsInput) -> dict:
 async def eval_gpt4(input_data: GenerateTacticsInput) -> dict:
     proof_step_eval_txt = input_data.inputs
     response = await call_openai_gpt4(proof_step_eval_txt)
-    print(response)
     eval = response.strip().rstrip('.')
     return {"eval": eval}
 
