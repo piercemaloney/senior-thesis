@@ -11,42 +11,78 @@ def get_json_set(directory):
 
 def evaluate_results(directory, common_files):
     results_summary = {
-        'total_generated_queries': 0,
+        'total_generated_tactics': 0,
+        'total_errors': 0,
         'total_eval_queries': 0,
         'total_proofs_attempted': 0,
         'total_proofs_completed': 0,
-        'directories_processed': 0
     }
 
     for subdir, _, files in os.walk(directory):
         for file in files:
-            if file in common_files:  # Check if the file is in the intersection set
+            # if file in common_files:  # Check if the file is in the intersection set
                 file_path = os.path.join(subdir, file)
                 with open(file_path, 'r') as f:
                     data = json.load(f)
                     max_eval_score = count_max_eval_score(data["tree"])
+                    errors = count_errors(data["tree"])
                     if max_eval_score <= 0.001 and directory.endswith('a_star'):
                         continue
                     results_summary['total_proofs_attempted'] += 1
-                    results_summary['total_generated_queries'] += data.get('num_generate_queries', 0)
-                    results_summary['total_eval_queries'] += data.get('num_evaluate_queries', 0)
-                    if data.get('successful_tactic_path'):
+                    results_summary['total_generated_tactics'] += count_children(data["tree"])
+                    results_summary['total_errors'] += errors
+                    if data.get('successful_tactic_path', False):
                         results_summary['total_proofs_completed'] += 1
 
-        results_summary['directories_processed'] += 1
 
     # Calculate percentages
     if results_summary['total_proofs_attempted'] > 0:
         proofs_percentage = (results_summary['total_proofs_completed'] / results_summary['total_proofs_attempted']) * 100
     else:
         proofs_percentage = 0
+    
+    legal_tactics_percentage = ((results_summary['total_generated_tactics'] - results_summary['total_errors']) / results_summary['total_generated_tactics']) * 100
+    
     print("-------")
     print(f"Results Summary for {directory}")
-    print(f"Total Directories Processed: {results_summary['directories_processed']}")
-    print(f"Total Generated Queries: {results_summary['total_generated_queries']}")
-    print(f"Total Eval Queries: {results_summary['total_eval_queries']}")
+    # print(f"Total Generated Tactics: {results_summary['total_generated_tactics']}")
+    # print(f"Total Errors: {results_summary['total_errors']}")
+    # print(f"Legal Tactics Percentage: {legal_tactics_percentage:.2f}%")
+    # print(f"Total Eval Queries: {results_summary['total_eval_queries']}")
     print(f"Total Proofs Attempted: {results_summary['total_proofs_attempted']}")
     print(f"Proofs Completed Successfully: {results_summary['total_proofs_completed']} ({proofs_percentage:.2f}%)")
+
+def count_errors(node):
+    """
+    Recursively counts the total number of errors in a tree.
+    
+    :param node: The current node in the tree.
+    :return: The total number of errors in the tree.
+    """
+    if not node.get('children'):  # Base case: no children
+        return 1 if node.get('eval_score') < 0 else 0
+    
+    # Count the errors of the current node
+    total_errors = 1 if node.get('eval_score') < 0 else 0
+    for child in node['children']:
+        total_errors += count_errors(child)
+    return total_errors
+
+def count_children(node):
+    """
+    Recursively counts the total number of children in a tree node.
+    
+    :param node: The current node in the tree.
+    :return: The total number of children in the tree.
+    """
+    if not node.get('children'):  # Base case: no children
+        return 0
+    else:
+        # Count the children of the current node
+        total_children = len(node['children'])
+        for child in node['children']:
+            total_children += count_children(child)
+        return total_children
 
 def count_max_children(node):
     """
@@ -88,7 +124,7 @@ if __name__ == "__main__":
     first_iteration = True
 
     for subdir in os.listdir(directory):
-        if subdir == 'llemma_v3_a_star':
+        if subdir == 'llemma_v3_a_star' or subdir == 'llemma_v5_a_star':
             continue
             
         subdir_path = os.path.join(directory, subdir)
@@ -103,7 +139,7 @@ if __name__ == "__main__":
     # Now common_files contains only the names of files present in all subdirectories
     # You can now call evaluate_results for each subdir, passing common_files as an argument
     for subdir in os.listdir(directory):
-        if subdir == 'llemma_v3_a_star':
+        if subdir == 'llemma_v3_a_star' or subdir == 'llemma_v5_a_star':
             continue
         subdir_path = os.path.join(directory, subdir)
         if os.path.isdir(subdir_path):
@@ -116,10 +152,10 @@ Most recent results
 -------
 Results Summary for results/llemma_base_a_star
 Total Directories Processed: 1
-Total Generated Queries: 271
-Total Eval Queries: 326
-Total Proofs Attempted: 51
-Proofs Completed Successfully: 28 (54.90%)
+Total Generated Queries: 369
+Total Eval Queries: 486
+Total Proofs Attempted: 68
+Proofs Completed Successfully: 36 (52.94%)
 -------
 Results Summary for results/llemma_v4_greedy
 Total Directories Processed: 1
@@ -135,11 +171,18 @@ Total Eval Queries: 824
 Total Proofs Attempted: 166
 Proofs Completed Successfully: 93 (56.02%)
 -------
+Results Summary for results/gpt4_a_star
+Total Directories Processed: 1
+Total Generated Queries: 270
+Total Eval Queries: 273
+Total Proofs Attempted: 54
+Proofs Completed Successfully: 20 (37.04%)
+-------
 Results Summary for results/llemma_base_greedy
 Total Directories Processed: 1
-Total Generated Queries: 344
-Total Eval Queries: 292
-Total Proofs Attempted: 53
-Proofs Completed Successfully: 30 (56.60%)
+Total Generated Queries: 474
+Total Eval Queries: 402
+Total Proofs Attempted: 73
+Proofs Completed Successfully: 36 (49.32%)
 """
     

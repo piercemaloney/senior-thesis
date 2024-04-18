@@ -106,6 +106,17 @@ async def eval_gpt4(input_data: GenerateTacticsInput) -> dict:
     eval = response.strip().rstrip('.')
     return {"eval": eval}
 
+@app.post("/generate_tactics_gpt4")
+async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict:
+    proof_step_generate_txt = input_data.inputs
+    response = await call_openai_gpt4(proof_step_generate_txt)
+    tactics = []
+    for tactic in response.strip().split(','):
+        if not tactic.endswith('.'):
+            tactic += '.'
+        tactics.append(tactic.strip())
+    return {"tactics": tactics}
+
 
 @app.post("/generate_tactics_llemma_base")
 async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict:
@@ -114,6 +125,20 @@ async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict
     # tactics = await asyncio.gather(*(generate_tactic_llemma_base(input_data) for _ in range(num_queries)))
     # unique_tactics = list(set(tactics))  # Remove duplicates
     
+    # First call without additional_bad_words_ids
+    first_call_result, first_call_ids = await generate_tactic_hf_endpoint(input_data, url=url)
+
+    second_call_result, _ = await generate_tactic_hf_endpoint(input_data, additional_bad_words_ids=[first_call_ids], url=url)
+    
+    # Combine results from both calls, ensuring uniqueness
+    tactics = list(set([first_call_result, second_call_result]))
+
+    print(tactics)
+    return {"tactics": tactics}
+
+@app.post("/generate_tactics_llemma_v5_finetuned")
+async def generate_tactics_llemma_base(input_data: GenerateTacticsInput) -> dict:
+    url = "https://ufr0i8ocgv59nmz4.us-east-1.aws.endpoints.huggingface.cloud"
     # First call without additional_bad_words_ids
     first_call_result, first_call_ids = await generate_tactic_hf_endpoint(input_data, url=url)
 
