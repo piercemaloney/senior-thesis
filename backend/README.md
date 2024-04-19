@@ -3,6 +3,9 @@
 To generate query data, use the `yangky11/coq-gym` docker image with this project mounted at `/app`. Inside the docker container, run the scripts in this order:
 
 ```bash
+cd /app/backend
+```
+```bash
 python generate_coq_projects_as_txt.py
 ```
 ```bash
