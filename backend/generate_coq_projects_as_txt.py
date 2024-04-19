@@ -30,7 +30,7 @@ def process_v_files(project_dir, output_dir):
 if __name__ == "__main__":
     # Example usage
     projects_dir = '/Users/piercemaloney/Desktop/Thesis/CoqGym/coq_projects'
-    output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/coq_projects_as_txt'
+    output_dir = './coq_projects_as_txt'
 
     for project_name in os.listdir(projects_dir):
         if project_name == 'coq':

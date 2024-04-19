@@ -12,8 +12,8 @@ import glob
 
 # Paths to the directories
 projects_dir = '/Users/piercemaloney/Desktop/Thesis/CoqGym/coq_projects'
-output_dir = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/import_context'
-context_file_builder_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/import_context_file_builder.py'
+output_dir = './import_context'
+context_file_builder_path = './import_context_file_builder.py'
 
 # Ensure the output directory exists
 os.makedirs(output_dir, exist_ok=True)

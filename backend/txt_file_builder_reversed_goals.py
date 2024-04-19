@@ -1,6 +1,8 @@
 """
 Author: Pierce Maloney
 Feb 2024
+
+To be run from the CoqGym docker container.
 """
 
 

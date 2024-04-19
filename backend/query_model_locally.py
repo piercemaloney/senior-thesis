@@ -11,8 +11,8 @@ else:
 print(f"Using device: {device}")
 
 # Define paths for the model and tokenizer
-model_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/models/llemma_7b_model'
-tokenizer_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/mvp/backend/models/llemma_7b_tokenizer'
+model_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/backend/models/llemma_7b_model'
+tokenizer_save_path = '/Users/piercemaloney/Desktop/Thesis/senior-thesis/backend/models/llemma_7b_tokenizer'
 
 # Load model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_save_path)
