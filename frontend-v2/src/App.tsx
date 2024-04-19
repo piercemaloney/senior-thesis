@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from "react";
-import proofTree from "./proof_tree.json";
+import React, { useState, useEffect, ChangeEvent } from "react";
 import {
   ChakraProvider,
   Box,
@@ -11,6 +10,7 @@ import {
   Th,
   Td,
   theme,
+  Input,
 } from "@chakra-ui/react";
 
 // Updated TreeNode interface to reflect fg_goals as an array of strings
@@ -23,28 +23,42 @@ interface TreeNode {
 }
 
 export const App = () => {
-  const [currentNode, setCurrentNode] = useState<TreeNode>(proofTree.tree); // Adjusted to access the tree property
-  const [path, setPath] = useState<TreeNode[]>([proofTree.tree]); // Adjusted to access the tree property
+  const [currentNode, setCurrentNode] = useState<TreeNode | null>(null); // Adjusted to access the tree property
+  const [path, setPath] = useState<TreeNode[]>([]); // Adjusted to access the tree property
 
-  useEffect(() => {
-    fetch("proof_tree.json")
-      .then((response) => response.json())
-      .then((data) => {
-        const preprocessTree = (node: TreeNode) => {
-          if (node.eval_score === "Infinity") {
-            node.eval_score = Infinity;
-          } else if (node.eval_score === "-Infinity") {
-            node.eval_score = -Infinity;
-          }
-          node.children.forEach((child) => preprocessTree(child));
-        };
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files ? event.target.files[0] : null;
+    if (!file) {
+      return;
+    }
 
-        preprocessTree(data.tree); // Preprocess the tree to handle Infinity values
-        setCurrentNode(data.tree);
-        setPath([data.tree]);
-      })
-      .catch((error) => console.error("Failed to load proof tree:", error));
-  }, []);
+    const reader = new FileReader();
+  reader.onload = (e) => {
+    let text = e.target?.result as string;
+    // Replace specific values in the text content here before parsing
+    text = text.replace(/"eval_score":\s*Infinity\b/g, '"eval_score": "100000000"');
+    text = text.replace(/"eval_score":\s*Infinity\b/g, '"eval_score": "-100000000"');
+    
+    try {
+      const data = JSON.parse(text);
+      preprocessTree(data.tree); // Assuming your JSON structure has a "tree" property
+      setCurrentNode(data.tree);
+      setPath([data.tree]);
+    } catch (error) {
+      console.error("Error parsing JSON:", error);
+    }
+  };
+  reader.readAsText(file);
+};
+
+  const preprocessTree = (node: TreeNode) => {
+    if (node.eval_score === "Infinity") {
+      node.eval_score = Infinity;
+    } else if (node.eval_score === "-Infinity") {
+      node.eval_score = -Infinity;
+    }
+    node.children.forEach((child) => preprocessTree(child));
+  };
 
   const handleOptionClick = (childNode: TreeNode, level: number) => {
     setCurrentNode(childNode);
@@ -90,17 +104,20 @@ export const App = () => {
 
   return (
     <ChakraProvider theme={theme}>
-      <Box display="flex" p={5}>
-        <Table variant="simple">
-          <Thead>
-            <Tr>
-              <Th>Proof Text</Th>
-              <Th>Tactic Options</Th>
-              <Th>Proof State</Th>
-            </Tr>
-          </Thead>
-          <Tbody>{renderProofPath()}</Tbody>
-        </Table>
+      <Box display="flex" flexDirection="column" p={5}>
+        <Input type="file" onChange={handleFileChange} accept=".json" />
+        {currentNode && (
+          <Table variant="simple">
+            <Thead>
+              <Tr>
+                <Th>Proof Text</Th>
+                <Th>Tactic Options</Th>
+                <Th>Proof State</Th>
+              </Tr>
+            </Thead>
+            <Tbody>{renderProofPath()}</Tbody>
+          </Table>
+        )}
       </Box>
     </ChakraProvider>
   );
