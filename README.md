@@ -1,4 +1,4 @@
-### Enhancing Automated Theorem Proving in Coq with Specialized Large Language Models and Tree of Thoughts
+# Enhancing Automated Theorem Proving in Coq with Specialized Large Language Models and Tree of Thoughts
 
 Paper: [Download PDF](./written_final_report.pdf)
 
@@ -24,7 +24,7 @@ Then, run the server
 uvicorn main:app --reload
 ```
 
-# Use the CoqGym Docker image
+### Use the CoqGym Docker image
 
 In a new terminal, pull the image:
 
@@ -32,7 +32,7 @@ In a new terminal, pull the image:
 docker pull yangky11/coq-gym
 ```
 
-# Run the image
+### Run the image
 
 ...mounting the backend folder to /app and the custom eval environment, and publish the container's port to the host, so that the theorem-prover can talk to the server.
 
@@ -43,7 +43,7 @@ docker run -it -p 8888:8888 \
 yangky11/coq-gym
 ```
 
-# Generate Query data
+### Generate Query data
 
 Inside the container, run:
 
